@@ -1,7 +1,8 @@
-import { advance, bounds, distance, nearest, pointAt, smooth, stations } from "../math/geometry.js";
+import { advance, bounds, distance, nearest, pointAt, smooth, stations } from "../math/geometry.ts";
 import { treeEnvironment, walkScatter } from "./scatter.js";
-import { fbm, noise, random } from "../math/noise.js";
-import { gatePose, insideYard } from "../edit/yards.js";
+import { fbm, noise, random } from "../math/noise.ts";
+import { gatePose } from "../edit/yards.js";
+import { insidePolygon } from "../math/polygon.ts";
 
 export const treeStyles = {
     forest: ["#537848", 2.1], small: ["#81a56d", 1.75], shrub: ["#9eaf74", .85], avenue: ["#467c67", 2.35]
@@ -10,7 +11,7 @@ export const treeStyles = {
 export { inClearing } from "./scatter.js";
 
 function covers(area, p, zone) {
-    return (!zone || !area.zones || area.zones.includes(zone)) && insideYard(area, p);
+    return (!zone || !area.zones || area.zones.includes(zone)) && insidePolygon(area, p);
 }
 
 function plantedTrees(design, terrain, areas, env) {
@@ -57,7 +58,7 @@ function plantedTrees(design, terrain, areas, env) {
                     // Keep rows parallel to the edge, inside the band where trees can grow.
                     const pose = gatePose(area, fraction);
                     p = advance(pose.point, pose.angle, -Math.min(area.feather, area.spacing / 2));
-                    if (!insideYard(area, p))
+                    if (!insidePolygon(area, p))
                         continue;
                 }
                 const k = terrain.grid.index(...p), zone = terrain.zones[terrain.zoneAt[k]]?.id;
@@ -72,7 +73,7 @@ function plantedTrees(design, terrain, areas, env) {
             for (let x = Math.floor((box[0] - shift) / 3) * 3 + shift; x <= box[2]; x += 3) {
                 const p = [x + (next() - .5) * 2.6, row * pitchY + (next() - .5) * 2.6], pick = next(), k = terrain.grid.index(...p);
                 const zone = terrain.zones[terrain.zoneAt[k]]?.id;
-                if (!insideYard(area, p) || pick >= densityAt(p, k) || !canPlant(p, k, zone))
+                if (!insidePolygon(area, p) || pick >= densityAt(p, k) || !canPlant(p, k, zone))
                     continue;
                 const minimum = area.species === "forest" ? .65 : null;
                 if (local.some(t => distance(t.point, p) < (minimum ?? t.radius + area.size[0])))

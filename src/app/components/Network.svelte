@@ -91,7 +91,7 @@
     import * as session from "../state/session.svelte";
     import { type RoadNode, type Route } from "../types";
     import { nodePose, segmentMode, throughPairs } from "../../core/design/model.js";
-    import { angleDiff, radians } from "../../core/math/geometry.js";
+    import { angleDiff, radians } from "../../core/math/geometry.ts";
     import { armBearing, summitHeights } from "../../core/checks/validation.js";
     import Part from "./Part.svelte";
     import Search from "./Search.svelte";

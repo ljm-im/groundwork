@@ -1,4 +1,4 @@
-import { bounds, pointAt } from "../math/geometry.js";
+import { bounds, pointAt } from "../math/geometry.ts";
 import { buildingShape, nodePose, zonePolygon } from "../design/model.js";
 
 export function objectIssues(island, selection) {

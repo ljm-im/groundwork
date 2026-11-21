@@ -1,4 +1,4 @@
-import { advance, angleDiff, bearing, clamp, distance, eachCell, nearest, pointAt, radians, resample, sample, stations } from "../math/geometry.js";
+import { advance, angleDiff, bearing, clamp, distance, eachCell, nearest, pointAt, radians, resample, sample, stations } from "../math/geometry.ts";
 import { nodePose, segmentMode, throughPairs } from "../design/model.js";
 import { biarc, fairAlignment, fillet, tangent, turnLimit } from "./alignment.js";
 import { selfOverlaps, sharpBends } from "./proximity.js";

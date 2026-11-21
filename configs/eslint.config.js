@@ -81,7 +81,7 @@ export default defineConfig(
     {
         files: ["**/*.{ts,svelte}"],
         plugins: { "@typescript-eslint": ts.plugin },
-        rules: { "@typescript-eslint/no-unused-vars": "error" }
+        rules: { "@typescript-eslint/no-unused-vars": "error", "@typescript-eslint/no-explicit-any": "error" }
     },
     // Preserve the four original getters that form part of the JavaScript engine's public API.
     ...Object.entries({ "src/core/edit/history.js": "dirty|canUndo|canRedo", "src/render/map.js": "scale" }).map(([file, names]) => ({
@@ -94,7 +94,7 @@ export default defineConfig(
     // Road ID sets batch engine work; components do not observe their contents.
     { files: ["src/app/state/session.svelte.ts"], rules: { "svelte/prefer-svelte-reactivity": "off" } },
     {
-        files: ["src/core/**/*.js"],
+        files: ["src/core/**/*.{js,ts}"],
         rules: {
             "no-restricted-globals": ["error", "document", "window", "localStorage", "HTMLCanvasElement"],
             "no-restricted-imports": ["error", { patterns: ["**/render/**", "**/app/**", "svelte", "svelte/*", "vite"] }]

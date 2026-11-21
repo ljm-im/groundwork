@@ -1,8 +1,8 @@
-import { bearing, bounds, distance, radians } from "../math/geometry.js";
+import { bearing, bounds, distance, radians } from "../math/geometry.ts";
 import { migrateDesign } from "./migrations/v1ToV2.js";
 import { upgradeWoodlands } from "./migrations/v3ToV4.js";
 import { areaBoundary, clearingShape, nodePose, zonePolygon } from "./shapes.js";
-import { simpleBoundary } from "../edit/yards.js";
+import { simpleBoundary } from "../math/polygon.ts";
 
 export { zoneNoise, elevation, zonePolygon, corners, buildingShape, areaBoundary, nodePose, moveNode, clearingShape } from "./shapes.js";
 

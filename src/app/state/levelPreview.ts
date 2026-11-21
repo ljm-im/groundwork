@@ -1,4 +1,4 @@
-import { bounds } from "../../core/math/geometry.js";
+import { bounds } from "../../core/math/geometry.ts";
 import { profile } from "../../core/roads/profiles.js";
 import { applyLevels, updateHeights } from "../../core/terrain/terrain.js";
 import { type Height, type IslandModel, type Route } from "../types";

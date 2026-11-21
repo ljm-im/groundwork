@@ -1,5 +1,5 @@
-import { advance, pointAt, radians, stations } from "../../math/geometry.js";
-import { fbm, noise } from "../../math/noise.js";
+import { advance, pointAt, radians, stations } from "../../math/geometry.ts";
+import { fbm, noise } from "../../math/noise.ts";
 
 function forestField(forest, n, x, y) {
     return ((x - forest.center[0]) / forest.radii[0]) ** 2 + ((y - forest.center[1]) / forest.radii[1]) ** 2 +

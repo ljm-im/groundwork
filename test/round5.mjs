@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFixture } from "../configs/read-fixture.ts";
 import { nearbyWall, openDoorAt, removeBuildingPart } from "../src/core/edit/buildings.js";
 import { moveHandle } from "../src/core/edit/controls.js";
-import { advance, distance, nearest, pointAt, radians, stations } from "../src/core/math/geometry.js";
+import { advance, distance, nearest, pointAt, radians, stations } from "../src/core/math/geometry.ts";
 import { History } from "../src/core/edit/history.js";
 import { Island } from "../src/core/island.js";
 import { issueShapes, objectIssues } from "../src/core/checks/issues.js";

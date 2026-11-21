@@ -1,4 +1,4 @@
-import { advance, bearing, distance, mixPoint, nearest, radians, sample } from "../math/geometry.js";
+import { advance, bearing, distance, mixPoint, nearest, radians, sample } from "../math/geometry.ts";
 import { corners, moveNode, nodePose } from "../design/model.js";
 import { newId } from "./topology.js";
 

@@ -1,4 +1,4 @@
-import { random } from "../math/noise.js";
+import { random } from "../math/noise.ts";
 
 export function erode(grid, land, surface, config, seed) {
     const { width, height, size, step } = grid;

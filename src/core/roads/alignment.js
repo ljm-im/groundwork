@@ -1,4 +1,4 @@
-import { advance, angleDiff, bearing, clamp, distance, nearest, radians, resample, sample, stations } from "../math/geometry.js";
+import { advance, angleDiff, bearing, clamp, distance, nearest, radians, resample, sample, stations } from "../math/geometry.ts";
 
 export function radiusAt(a, b, c) {
     const x = b[0] - a[0], y = b[1] - a[1], u = c[0] - b[0], v = c[1] - b[1];

@@ -1,4 +1,4 @@
-import { clamp, eachCell, pointAt, sample, smooth, stations } from "../math/geometry.js";
+import { clamp, eachCell, pointAt, sample, smooth, stations } from "../math/geometry.ts";
 
 function valueAt(s, h, d) {
     let lo = 0,

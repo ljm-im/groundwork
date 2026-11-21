@@ -1,4 +1,4 @@
-import { advance, bearing, clamp, distance, mixPoint, nearest } from "../core/math/geometry.js";
+import { advance, bearing, clamp, distance, mixPoint, nearest } from "../core/math/geometry.ts";
 import { areaBoundary, buildingShape, nodePose, zonePolygon } from "../core/design/model.js";
 import { titlePoint } from "../core/edit/buildings.js";
 import { issueShapes, issueView, objectIssues } from "../core/checks/issues.js";

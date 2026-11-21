@@ -1,8 +1,8 @@
-import { advance, bearing, clamp, distance, projection, radians } from "../math/geometry.js";
+import { advance, bearing, clamp, distance, projection, radians } from "../math/geometry.ts";
 import { areaBoundary, clearingShape, corners, moveNode, nodePose } from "../design/model.js";
 import { resizeRadius, rotateBuilding } from "./buildings.js";
 import { featureOf } from "./landforms.js";
-import { insideYard, simpleBoundary } from "./yards.js";
+import { insidePolygon, simpleBoundary } from "../math/polygon.ts";
 
 export const layerDefaults = {
     network: true,
@@ -115,7 +115,7 @@ export function moveHandle(d, h, p) {
     p = [clamp(p[0], d.grid.xMin, d.grid.xMax), clamp(p[1], d.grid.yMin, d.grid.yMax)].map(v => Math.round(v * 100) / 100);
     if (h.kind === "node" || h.kind === "via") {
         const node = h.kind === "node" ? d.nodes.find(n => n.id === id) : null;
-        if (node?.type !== "gate" && node?.type !== "door" && (d.yards ?? []).some(y => insideYard(areaBoundary(d, y), p))) return;
+        if (node?.type !== "gate" && node?.type !== "door" && (d.yards ?? []).some(y => insidePolygon(areaBoundary(d, y), p))) return;
         if (node?.type === "door") slideDoor(d, node, p);
         else if (node) moveNode(d, node, p);
         else d.edges.find(e => e.id === id).via[index] = p;

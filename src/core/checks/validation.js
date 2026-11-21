@@ -1,7 +1,8 @@
-import { angleDiff, bearing, bounds, distance, eachCell, mixPoint, nearest, pointAt, radians, resample, sample } from "../math/geometry.js";
+import { angleDiff, bearing, bounds, distance, eachCell, mixPoint, nearest, pointAt, radians, resample, sample } from "../math/geometry.ts";
 import { exemptRadius, radiusAt } from "../roads/alignment.js";
 import { areaBoundary, elevation, nodePose, throughPairs } from "../design/model.js";
-import { gateDistance, insideYard, perimeter } from "../edit/yards.js";
+import { gateDistance } from "../edit/yards.js";
+import { insidePolygon, perimeter } from "../math/polygon.ts";
 import { overlappingLocations, selfOverlaps, sharpBends } from "../roads/proximity.js";
 
 const percent = v => +(v * 100).toFixed(2) + "%";
@@ -81,7 +82,7 @@ function surfaceIssues(route, terrain, emit) {
             const key = "yard/" + yard.id;
             const hit = [0, -half, half].some(offset => {
                 const q = [p[0] + nx * offset, p[1] + ny * offset];
-                return insideYard(yard, q) && nearest(...q, yard.points, true).distance > .03;
+                return insidePolygon(yard, q) && nearest(...q, yard.points, true).distance > .03;
             });
             contact(key, hit, i, "yard-interior", "路面进入" + yard.name + "内部", "error");
         }

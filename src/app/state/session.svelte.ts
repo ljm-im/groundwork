@@ -3,7 +3,7 @@ import { Island } from "../../core/island.js";
 import { History } from "../../core/edit/history.js";
 import { layerDefaults } from "../../core/edit/controls.js";
 import { areaBoundary, nodePose, zonePolygon } from "../../core/design/model.js";
-import { bounds, sample } from "../../core/math/geometry.js";
+import { bounds, sample } from "../../core/math/geometry.ts";
 import { addDoor, doorNode, doorRoads, openDoorAt, removeBuildingPart } from "../../core/edit/buildings.js";
 import { removeVia, removeLinks } from "../../core/edit/topology.js";
 import { addFeature, clickDrawing, deleteFeature, featureBounds, featureNames, featureOf, finishExtension, newDrawing } from "../../core/edit/landforms.js";

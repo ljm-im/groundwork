@@ -1,11 +1,11 @@
-import { angleDiff, bearing, distance, radians, smooth } from "../math/geometry.js";
-import { fbm, noise, randomAt } from "../math/noise.js";
+import { angleDiff, bearing, distance, radians, smooth } from "../math/geometry.ts";
+import { fbm, noise, randomAt } from "../math/noise.ts";
 import { clearingShape } from "../design/shapes.js";
-import { insideYard } from "../edit/yards.js";
+import { insidePolygon } from "../math/polygon.ts";
 
 export function inClearing(shape, p) {
     if (shape.type === "polygon")
-        return insideYard(shape, p);
+        return insidePolygon(shape, p);
     const [x, y] = shape.center;
     if (shape.type === "ellipse")
         return ((p[0] - x) / shape.radii[0]) ** 2 + ((p[1] - y) / shape.radii[1]) ** 2 < 1;
@@ -33,7 +33,7 @@ export function treeEnvironment(design, terrain) {
     return {
         terrainFactors,
         clearingAt: (p, ambient) => clearings.some(c => c.ambient === ambient && inClearing(c.shape, p)),
-        freeGround: p => !terrain.yards.some(y => insideYard(y.yard, p)) && !rules.rooms.some(c => distance(p, c.center) < c.radius + 1.5),
+        freeGround: p => !terrain.yards.some(y => insidePolygon(y.yard, p)) && !rules.rooms.some(c => distance(p, c.center) < c.radius + 1.5),
         outsideBuffers: p => buffers.every(b => distance(p, b.center) >= b.radius),
         outsideBuildings: p => terrain.buildings.every(b => b.signedDistance(...p) >= 2)
     };

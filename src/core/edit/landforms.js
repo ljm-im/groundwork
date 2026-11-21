@@ -1,7 +1,7 @@
-import { bounds, distance, mixPoint, nearest, spline } from "../math/geometry.js";
+import { bounds, distance, mixPoint, nearest, spline } from "../math/geometry.ts";
 import { clearingShape, elevation, zonePolygon } from "../design/model.js";
 import { newId } from "./topology.js";
-import { simpleBoundary } from "./yards.js";
+import { simpleBoundary } from "../math/polygon.ts";
 
 export const featureNames = { peak: "山头", ridge: "山脊", planting: "绿化区", clearing: "林间空地" };
 

@@ -1,15 +1,32 @@
+/** Cartesian world coordinates in metres, east and north respectively. */
+export type Point = [number, number];
+export type Box = [number, number, number, number];
+export interface GridSpec {
+    /** Western grid edge in metres. */
+    xMin: number;
+    /** Eastern grid edge in metres. */
+    xMax: number;
+    /** Southern grid edge in metres. */
+    yMin: number;
+    /** Northern grid edge in metres. */
+    yMax: number;
+    /** Square cell width in metres. */
+    step: number;
+}
+export type Grid = ReturnType<typeof createGrid>;
+
 export const radians = Math.PI / 180;
-export const clamp = (x, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, x));
-export const smooth = x => {
+export const clamp = (x: number, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, x));
+export const smooth = (x: number) => {
     const t = clamp(x); return t * t * (3 - 2 * t);
 };
-export const distance = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
-export const mixPoint = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
-export const advance = (p, angle, length) => [p[0] + Math.cos(angle) * length, p[1] + Math.sin(angle) * length];
-export const bearing = (a, b) => Math.atan2(b[1] - a[1], b[0] - a[0]);
-export const angleDiff = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
+export const distance = (a: Point, b: Point) => Math.hypot(b[0] - a[0], b[1] - a[1]);
+export const mixPoint = (a: Point, b: Point, t: number): Point => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+export const advance = (p: Point, angle: number, length: number): Point => [p[0] + Math.cos(angle) * length, p[1] + Math.sin(angle) * length];
+export const bearing = (a: Point, b: Point) => Math.atan2(b[1] - a[1], b[0] - a[0]);
+export const angleDiff = (a: number, b: number) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
 
-export function bounds(points) {
+export function bounds(points: Point[]): Box {
     let x0 = Infinity,
         y0 = Infinity,
         x1 = -Infinity,
@@ -23,13 +40,13 @@ export function bounds(points) {
     return [x0, y0, x1, y1];
 }
 
-export function projection(x, y, a, b) {
+export function projection(x: number, y: number, a: Point, b: Point) {
     const dx = b[0] - a[0],
         dy = b[1] - a[1];
     return clamp(((x - a[0]) * dx + (y - a[1]) * dy) / (dx * dx + dy * dy || 1));
 }
 
-export function nearest(x, y, points, closed = false) {
+export function nearest(x: number, y: number, points: Point[], closed = false) {
     let squared = Infinity,
         segment = 0,
         t = 0;
@@ -50,38 +67,38 @@ export function nearest(x, y, points, closed = false) {
     return { distance: Math.sqrt(squared), segment, t };
 }
 
-export function stations(points) {
+export function stations(points: Point[]) {
     const s = new Float64Array(points.length);
     for (let i = 1; i < s.length; i++) s[i] = s[i - 1] + distance(points[i - 1], points[i]);
     return s;
 }
 
-export function pointAt(points, s, station) {
+export function pointAt(points: Point[], s: Float64Array, station: number): Point {
     if (station <= 0) return points[0];
-    if (station >= s.at(-1)) return points.at(-1);
+    if (station >= s.at(-1)!) return points.at(-1)!;
     let i = 1;
     while (s[i] < station) i++;
     return mixPoint(points[i - 1], points[i], (station - s[i - 1]) / (s[i] - s[i - 1]));
 }
 
-export function resample(points, step = 1) {
-    if (points.length < 2) return points.map(p => p.slice());
+export function resample(points: Point[], step = 1): Point[] {
+    if (points.length < 2) return points.map(p => p.slice() as Point);
     const s = stations(points),
-        length = s.at(-1),
-        out = [points[0].slice()];
+        length = s.at(-1)!,
+        out = [points[0].slice() as Point];
     let i = 1;
     for (let d = step; d < length - .3 * step; d += step) {
         while (s[i] < d) i++;
         out.push(mixPoint(points[i - 1], points[i], (d - s[i - 1]) / (s[i] - s[i - 1])));
     }
-    out.push(points.at(-1).slice());
+    out.push(points.at(-1)!.slice() as Point);
     return out;
 }
 
-export function spline(points, closed, divisions) {
+export function spline(points: Point[], closed: boolean, divisions: number): Point[] {
     const count = points.length,
         out = [];
-    const get = i => points[closed ? (i + count) % count : clamp(i, 0, count - 1)];
+    const get = (i: number) => points[closed ? (i + count) % count : clamp(i, 0, count - 1)];
     for (let i = 0; i < (closed ? count : count - 1); i++) {
         const a = get(i - 1),
             b = get(i),
@@ -91,21 +108,21 @@ export function spline(points, closed, divisions) {
             const t = j / divisions;
             out.push([0, 1].map(k => .5 * (2 * b[k] + (-a[k] + c[k]) * t +
         (2 * a[k] - 5 * b[k] + 4 * c[k] - d[k]) * t * t +
-        (-a[k] + 3 * b[k] - 3 * c[k] + d[k]) * t * t * t)));
+        (-a[k] + 3 * b[k] - 3 * c[k] + d[k]) * t * t * t)) as Point);
         }
     }
-    if (!closed) out.push(points.at(-1).slice());
+    if (!closed) out.push(points.at(-1)!.slice() as Point);
     return out;
 }
 
-export function createGrid(spec) {
+export function createGrid(spec: GridSpec) {
     const { xMin, xMax, yMin, yMax, step } = spec;
     const width = Math.round((xMax - xMin) / step),
         height = Math.round((yMax - yMin) / step);
-    const x = i => xMin + (i + .5) * step,
-        y = j => yMax - (j + .5) * step;
-    const col = px => clamp(Math.floor((px - xMin) / step), 0, width - 1);
-    const row = py => clamp(Math.floor((yMax - py) / step), 0, height - 1);
+    const x = (i: number) => xMin + (i + .5) * step,
+        y = (j: number) => yMax - (j + .5) * step;
+    const col = (px: number) => clamp(Math.floor((px - xMin) / step), 0, width - 1);
+    const row = (py: number) => clamp(Math.floor((yMax - py) / step), 0, height - 1);
     return {
         ...spec,
         width,
@@ -115,12 +132,12 @@ export function createGrid(spec) {
         y,
         col,
         row,
-        index: (px, py) => row(py) * width + col(px),
-        point: k => [x(k % width), y(Math.floor(k / width))]
+        index: (px: number, py: number) => row(py) * width + col(px),
+        point: (k: number): Point => [x(k % width), y(Math.floor(k / width))]
     };
 }
 
-export function sample(grid, field, px, py) {
+export function sample(grid: Grid, field: ArrayLike<number>, px: number, py: number) {
     const fx = clamp((px - grid.xMin) / grid.step - .5, 0, grid.width - 1);
     const fy = clamp((grid.yMax - py) / grid.step - .5, 0, grid.height - 1);
     const i = Math.min(grid.width - 2, Math.floor(fx)),
@@ -132,7 +149,7 @@ export function sample(grid, field, px, py) {
     (field[k + grid.width] * (1 - ax) + field[k + grid.width + 1] * ax) * ay;
 }
 
-export function eachCell(grid, box, margin, visit) {
+export function eachCell(grid: Grid, box: Box, margin: number, visit: (index: number, x: number, y: number) => void) {
     const left = grid.col(box[0] - margin),
         right = grid.col(box[2] + margin);
     const top = grid.row(box[3] + margin),
@@ -144,7 +161,7 @@ export function eachCell(grid, box, margin, visit) {
 }
 
 // Restrict exact segment-distance work to the band where the caller uses it.
-export function polygonField(grid, polygon, reach) {
+export function polygonField(grid: Grid, polygon: Point[], reach: number) {
     const dist = new Float32Array(grid.size).fill(reach);
     for (let i = 0; i < polygon.length; i++) {
         const a = polygon[i],

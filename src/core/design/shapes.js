@@ -1,5 +1,5 @@
-import { advance, bearing, bounds, mixPoint, nearest, radians, spline } from "../math/geometry.js";
-import { noise } from "../math/noise.js";
+import { advance, bearing, bounds, mixPoint, nearest, radians, spline } from "../math/geometry.ts";
+import { noise } from "../math/noise.ts";
 import { gateFraction, gatePose } from "../edit/yards.js";
 
 const designNoise = noise(99);

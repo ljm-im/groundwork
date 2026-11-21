@@ -1,4 +1,4 @@
-import { distance, nearest, pointAt, stations } from "../../math/geometry.js";
+import { distance, nearest, pointAt, stations } from "../../math/geometry.ts";
 
 // The version-one importer is the only reader of the old road collection.
 export function migrateDesign(d) {

@@ -1,4 +1,4 @@
-import { distance, nearest } from "../math/geometry.js";
+import { distance, nearest } from "../math/geometry.ts";
 import { areaBoundary, nodePose, throughPairs } from "../design/model.js";
 import { gateFraction } from "./yards.js";
 

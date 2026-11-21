@@ -26,7 +26,7 @@ function checkDirectory(directory: string) {
             if (!inCore && testImports.has(name)) return;
             if (!name.startsWith(".")) fail(node, "Unexpected dependency " + name);
             const target = resolve(entry.parentPath, name);
-            if (inCore && target.startsWith(core + sep) && extname(target) === ".js") return;
+            if (inCore && target.startsWith(core + sep) && [".js", ".ts"].includes(extname(target))) return;
             if (!inCore && (target === resolve(root, "configs/read-fixture.ts") ||
         (target.startsWith(tests + sep) && /\.[cm]?[jt]s$/.test(target)) ||
         (target.startsWith(resolve(root, "src") + sep) && /\.(?:js|ts|svelte)$/.test(target)))) return;

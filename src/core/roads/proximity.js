@@ -1,4 +1,4 @@
-import { angleDiff, bearing, bounds, clamp, distance, mixPoint, radians, stations } from "../math/geometry.js";
+import { angleDiff, bearing, bounds, clamp, distance, mixPoint, radians, stations } from "../math/geometry.ts";
 
 function disk(a, b, center, radius) {
     const dx = b[0] - a[0],

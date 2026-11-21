@@ -1,4 +1,4 @@
-import { sample } from "../core/math/geometry.js";
+import { sample } from "../core/math/geometry.ts";
 import { elevation } from "../core/design/model.js";
 
 export function labelReading(island, label) {

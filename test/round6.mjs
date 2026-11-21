@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFixture } from "../configs/read-fixture.ts";
-import { distance, mixPoint, nearest, sample } from "../src/core/math/geometry.js";
+import { distance, mixPoint, nearest, sample } from "../src/core/math/geometry.ts";
 import { History } from "../src/core/edit/history.js";
 import { Island } from "../src/core/island.js";
 import { addFeature, clickDrawing, drawingTarget, featureLine, finishExtension, insertVertex, newDrawing } from "../src/core/edit/landforms.js";
 import { parseDesign, serializeDesign } from "../src/core/design/model.js";
 import { inClearing, plantTrees } from "../src/core/vegetation/vegetation.js";
-import { insideYard, simpleBoundary } from "../src/core/edit/yards.js";
+import { insidePolygon, simpleBoundary } from "../src/core/math/polygon.ts";
 
 const raw = await readFixture("round6.json");
 const sha = data => createHash("sha256").update(data).digest("hex");
@@ -67,7 +67,7 @@ for (const name of ["nodes", "edges", "buildings", "peaks", "ridges"])
     assert.deepEqual(d[name], legacy[name]);
 // Recorded on the round-six fixture before the woodland migration.
 const counts = woods.map((area, i) => {
-    const old = [174, 87][i], current = island.trees.filter(t => insideYard(area, t.point)).length;
+    const old = [174, 87][i], current = island.trees.filter(t => insidePolygon(area, t.point)).length;
     assert(Math.abs(current - old) / old <= .15, area.name + " 的树木数量超出 15%");
     return { name: area.name, old, current };
 });
@@ -95,7 +95,7 @@ rowDesign.vegetation.plantings = [rowArea];
 for (let pass = 0; pass < 2; pass++) {
     const rows = plantTrees(rowDesign, terrain).filter(t => t.planting === rowArea.id && t.row);
     assert(rows.length > 0);
-    assert(rows.every(t => insideYard(rowArea, t.point) && nearest(...t.point, rowArea.points, true).distance > 0));
+    assert(rows.every(t => insidePolygon(rowArea, t.point) && nearest(...t.point, rowArea.points, true).distance > 0));
     rowArea.points.reverse();
 }
 for (const name of ["forest", "grove"]) {

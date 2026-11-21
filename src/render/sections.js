@@ -1,4 +1,4 @@
-import { clamp, distance, mixPoint, sample } from "../core/math/geometry.js";
+import { clamp, distance, mixPoint, sample } from "../core/math/geometry.ts";
 import { treeStyles } from "../core/vegetation/vegetation.js";
 
 // Section stations and building intersections only change when an endpoint or the terrain changes.

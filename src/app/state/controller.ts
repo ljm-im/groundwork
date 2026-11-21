@@ -1,10 +1,10 @@
 import { areaBoundary, clearingShape, nodePose } from "../../core/design/model.js";
-import { distance, nearest, sample } from "../../core/math/geometry.js";
+import { distance, nearest, sample } from "../../core/math/geometry.ts";
 import { moveHandle } from "../../core/edit/controls.js";
 import { drawingTarget, featureHit, featureOf, insertVertex } from "../../core/edit/landforms.js";
 import { addGate, addNode, connect, insertVia, splitRoad } from "../../core/edit/topology.js";
 import { canPlaceBuilding, doorRoads, nearbyWall, openDoorAt, placeBuilding } from "../../core/edit/buildings.js";
-import { insideYard } from "../../core/edit/yards.js";
+import { insidePolygon } from "../../core/math/polygon.ts";
 import { errorText, type Design, type Point, type RoadNode, type Selection, type Yard } from "../types";
 import * as session from "./session.svelte";
 
@@ -97,7 +97,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             editor.message("请在网格范围内放置节点");
             return false;
         }
-        if ((d.yards ?? []).some(y => insideYard(areaBoundary(d, y), p))) {
+        if ((d.yards ?? []).some(y => insidePolygon(areaBoundary(d, y), p))) {
             editor.message("请使用区域边界上的入口连接外部道路");
             return false;
         }
@@ -155,7 +155,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
     }
 
     function finishGate(d: Design, yard: Yard, other: RoadNode, gateFirst: boolean) {
-        if (other.yard === yard.id || insideYard(yard, nodePose(d, other).point)) {
+        if (other.yard === yard.id || insidePolygon(yard, nodePose(d, other).point)) {
             editor.message("请选择区域外的节点");
             return;
         }
@@ -246,7 +246,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             return;
         }
         if (editor.tool === "edge" || editor.tool === "gate") {
-            const yardAtPoint = () => (d.yards ?? []).map(y => areaBoundary(d, y)).find(y => insideYard(y, p) || nearest(...p, y.points, true).distance * map.scale < 8);
+            const yardAtPoint = () => (d.yards ?? []).map(y => areaBoundary(d, y)).find(y => insidePolygon(y, p) || nearest(...p, y.points, true).distance * map.scale < 8);
             if (editor.linkYard) {
                 if (h?.kind === "node") finishGate(d, editor.linkYard, d.nodes.find(n => n.id === h!.id)!, true);
                 else beginPan(ev, screen, () => editor.message("请单击区域外的终点节点"));

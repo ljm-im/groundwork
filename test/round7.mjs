@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { readFixture } from "../configs/read-fixture.ts";
 import { Island } from "../src/core/island.js";
 import { parseDesign, serializeDesign } from "../src/core/design/model.js";
-import { nearest } from "../src/core/math/geometry.js";
-import { insideYard } from "../src/core/edit/yards.js";
+import { nearest } from "../src/core/math/geometry.ts";
+import { insidePolygon } from "../src/core/math/polygon.ts";
 
 const input = await readFixture("round6.json");
 const design = parseDesign(input), island = new Island(design);
@@ -23,7 +23,7 @@ assert(Math.abs(fixed - previous) / previous <= .1);
 north.points[0][0] += 3;
 island.replant();
 const distant = trees => scatter(trees).filter(t => [oldBoundary, north].every(area =>
-    !insideYard(area, t.point) && nearest(...t.point, area.points, true).distance > 10));
+    !insidePolygon(area, t.point) && nearest(...t.point, area.points, true).distance > 10));
 assert(distant(before).length > 0);
 assert.deepEqual(distant(island.trees), distant(before));
 console.log("固定步长零散树", previous, "→", fixed, "；移动顶点 3 m 后远处相同", distant(before).length);
