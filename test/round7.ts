@@ -1,3 +1,4 @@
+import { type Tree } from "../src/core/design/results.ts";
 import { previewLevels } from "../src/app/state/levelPreview.ts";
 import assert from "node:assert/strict";
 import { readFixture } from "../configs/read-fixture.ts";
@@ -15,14 +16,14 @@ const withLegacyField = JSON.parse(exported);
 withLegacyField.vegetation.scatterPattern = "obsolete";
 assert.equal(serializeDesign(parseDesign(JSON.stringify(withLegacyField))), exported);
 
-const north = design.vegetation.plantings.find(a => a.name === "北部树林");
+const north = design.vegetation.plantings.find(a => a.name === "北部树林")!;
 const oldBoundary = structuredClone(north), before = island.trees;
-const scatter = trees => trees.filter(t => !t.planting);
+const scatter = (trees: Tree[]) => trees.filter(t => !t.planting);
 const fixed = scatter(before).length, previous = 507;
 assert(Math.abs(fixed - previous) / previous <= .1);
 north.points[0][0] += 3;
 island.replant();
-const distant = trees => scatter(trees).filter(t => [oldBoundary, north].every(area =>
+const distant = (trees: Tree[]) => scatter(trees).filter(t => [oldBoundary, north].every(area =>
     !insidePolygon(area, t.point) && nearest(...t.point, area.points, true).distance > 10));
 assert(distant(before).length > 0);
 assert.deepEqual(distant(island.trees), distant(before));

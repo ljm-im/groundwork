@@ -4,9 +4,9 @@ import { readFixture } from "../configs/read-fixture.ts";
 import { Island } from "../src/core/island.ts";
 import { parseDesign, serializeDesign } from "../src/core/design/model.ts";
 
-const digest = bytes => createHash("sha256").update(bytes).digest("hex");
-const values = value => digest(JSON.stringify(value));
-const bytes = field => digest(new Uint8Array(field.buffer, field.byteOffset, field.byteLength));
+const digest = (bytes: string | Uint8Array) => createHash("sha256").update(bytes).digest("hex");
+const values = (value: unknown) => digest(JSON.stringify(value));
+const bytes = (field: Float32Array) => digest(new Uint8Array(field.buffer, field.byteOffset, field.byteLength));
 
 export async function snapshots() {
     const inputs = {

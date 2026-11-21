@@ -1,3 +1,6 @@
+import { type Point } from "../src/core/design/types.ts";
+import { type Issue, type Tree } from "../src/core/design/results.ts";
+import * as session from "../src/app/state/session.svelte.ts";
 import assert from "node:assert/strict";
 import { readFixture } from "../configs/read-fixture.ts";
 import { nearbyWall, openDoorAt, removeBuildingPart } from "../src/core/edit/buildings.ts";
@@ -19,7 +22,7 @@ const original = await readFixture("round5.json");
 const author = parseDesign(original), baseline = new Island(author);
 const current = await readFixture("round5-default.json");
 const design = parseDesign(current), island = new Island(design);
-const counts = {};
+const counts: Record<string, number> = {};
 for (const issue of baseline.issues)
     counts[issue.kind] = (counts[issue.kind] ?? 0) + 1;
 assert.deepEqual(counts, { "ramp-grade": 12, "turn-radius": 9, "stair-grade": 1, "no-route": 1, "sharp-bend": 2, wall: 3, "zone-height": 5 });
@@ -44,22 +47,22 @@ for (const route of baseline.routes) {
             }
         }
         const issues = baseline.issues.filter(i => i.kind === kind && i.road === route.id);
-        assert.deepEqual(issues.map(i => [i.spans[0].from, i.spans[0].to]), expected);
+        assert.deepEqual(issues.map(i => [i.spans![0].from, i.spans![0].to]), expected);
         for (const issue of issues) {
-            const [span] = issue.spans, [shape] = issueShapes(baseline, issue);
+            const [span] = issue.spans!, [shape] = issueShapes(baseline, issue);
             assert.deepEqual(shape.points[0], pointAt(route.points, route.s, span.from));
-            assert.deepEqual(shape.points.at(-1), pointAt(route.points, route.s, span.to));
+            assert.deepEqual(shape.points.at(-1)!, pointAt(route.points, route.s, span.to));
             assert(nearest(...issue.point, shape.points).distance < 1e-6);
         }
     }
 }
-const selected = baseline.issues.find(i => i.kind === "ramp-grade" && i.road === "street-4");
-const view = Object.assign(Object.create(IslandMap.prototype), {
+const selected = baseline.issues.find(i => i.kind === "ramp-grade" && i.road === "street-4")!;
+const view = Object.assign(Object.create(IslandMap.prototype) as IslandMap, {
     island: baseline, width: 1000, height: 700, zoom: 1, layers: { issues: true }, draw() { }, clearIssue() {
-        this.activeIssue = null;
+        view.activeIssue = null;
     }
 });
-const previousFrame = globalThis.requestAnimationFrame;
+const previousFrame: typeof requestAnimationFrame | undefined = Reflect.get(globalThis, "requestAnimationFrame");
 try {
     globalThis.requestAnimationFrame = () => 1;
     view.focusIssue(selected);
@@ -73,22 +76,23 @@ finally {
     if (previousFrame)
         globalThis.requestAnimationFrame = previousFrame;
     else
-        delete globalThis.requestAnimationFrame;
+        Reflect.deleteProperty(globalThis, "requestAnimationFrame");
 }
-const ui = { island: baseline, tab: "network", selection: { kind: "edge", id: selected.road }, issue: selected };
+const ui = new session.Editor();
+Object.assign(ui, { island: baseline, tab: "network", selection: { kind: "edge", id: selected.road }, issue: selected });
 const { body: markup } = render(Network, { props: { editor: ui } });
 assert(markup.indexOf("对象校验") >= 0 && markup.indexOf("对象校验") < markup.indexOf("路线长度"));
-assert(markup.match(/<button[^>]*>/g).some(tag => tag.includes("issue-row is-selected") && tag.includes("data-issue=\"" + baseline.issues.indexOf(selected) + "\"")));
-const a = { id: "a", points: [[0, 0], [30, 0]], edge: { width: 2 } }, b = { id: "b", points: [[8, 2], [20, 2]], edge: { width: 2 } };
+assert(markup.match(/<button[^>]*>/g)!.some(tag => tag.includes("issue-row is-selected") && tag.includes("data-issue=\"" + baseline.issues.indexOf(selected) + "\"")));
+const a = { id: "a", points: [[0, 0], [30, 0]] as Point[], s: new Float64Array(), edge: { ...author.edges[0], width: 2 } }, b = { id: "b", points: [[8, 2], [20, 2]] as Point[], s: new Float64Array(), edge: { ...author.edges[0], width: 2 } };
 for (const line of [a, b])
     line.s = stations(line.points);
-const [overlap] = overlappingLocations(a, b, [], { clearance: 1, junctionRadius: 4, overlapLength: 5 }, true);
+const [overlap] = overlappingLocations(a, b, [], { ...author.routing, clearance: 1, junctionRadius: 4, overlapLength: 5 }, true);
 assert.deepEqual(overlap.spans.map(s => s.road), ["a", "b"]);
 assert(Math.abs(overlap.spans[0].from - (8 - Math.sqrt(5))) < 1e-8);
 assert(Math.abs(overlap.spans[0].to - (20 + Math.sqrt(5))) < 1e-8);
 assert.deepEqual(overlap.spans[1], { road: "b", from: 0, to: 12 });
-const structure = author.buildings.find(b => b.id === "studio");
-const footprintIssue = { building: structure.id, point: structure.center, kind: "building" };
+const structure = author.buildings.find(b => b.id === "studio")!;
+const footprintIssue: Issue = { message: "", severity: "error", building: structure.id, point: structure.center, kind: "building" };
 assert.deepEqual(issueShapes(baseline, footprintIssue)[0], { points: buildingShape(structure).polygon, closed: true });
 assert(objectIssues({ ...baseline, issues: [footprintIssue] }, { kind: "building", id: structure.id }).includes(footprintIssue));
 // Rebuild through the production Island constructor including erosion at each history step.
@@ -107,10 +111,10 @@ deleteFeature(sculpt, handle);
 history.record(sculpt);
 const withoutVertex = new Island(sculpt).terrain.heights;
 assert.notDeepEqual(withoutVertex, initial);
-assert.deepEqual(new Island(history.step(false)).terrain.heights, initial);
-assert.deepEqual(new Island(history.step(true)).terrain.heights, withoutVertex);
-let restored = history.step(false);
-const originalRidge = restored.ridges.at(-1), samplePoint = featureLine(restored, "ridge", originalRidge)[4];
+assert.deepEqual(new Island(history.step(false)!).terrain.heights, initial);
+assert.deepEqual(new Island(history.step(true)!).terrain.heights, withoutVertex);
+let restored = history.step(false)!;
+const originalRidge = restored.ridges.at(-1)!, samplePoint = featureLine(restored, "ridge", originalRidge)[4];
 const hit = featureHit(restored, "ridge", originalRidge, samplePoint);
 const inserted = insertVertex(restored, handle, hit);
 assert.equal(inserted, 1);
@@ -122,45 +126,45 @@ assert.deepEqual(new Island(restored).terrain.heights, withPeak);
 deleteFeature(restored, { kind: "peak", id: peak.id });
 assert.deepEqual(new Island(restored).terrain.heights, baseline.terrain.heights);
 // Physical doors share the snapped wall pose with the routing node.
-const town = parseDesign(original), junction = town.nodes.find(n => n.id === "east-west-路口");
-const wall = nearbyWall(town, [33, -45.2]);
+const town = parseDesign(original), junction = town.nodes.find(n => n.id === "east-west-路口")!;
+const wall = nearbyWall(town, [33, -45.2])!;
 assert.equal(wall.building.id, "studio");
 const entry = openDoorAt(town, wall), edge = connect(town, junction, entry);
 const pose = nodePose(town, entry);
 assert.deepEqual(pose.point, [33, -46]);
-assert(Math.abs(pose.normal - Math.PI / 2) < 1e-8);
-assert(buildingShape(wall.building).signedDistance(...advance(pose.point, pose.normal, .2)) > 0);
+assert(Math.abs(pose.normal! - Math.PI / 2) < 1e-8);
+assert(buildingShape(wall.building).signedDistance(...advance(pose.point, pose.normal!, .2)) > 0);
 assert.equal(nodePose(town, edge.to).angle, pose.normal);
 assert.equal(openDoorAt(town, wall).id, entry.id);
 const free = addNode(town, [31, -42.5]);
 connect(town, junction, free);
 connect(town, free, entry);
 const edges = structuredClone(town.edges);
-const drop = [38.7, -50];
+const drop: Point = [38.7, -50];
 moveHandle(town, { kind: "node", id: free.id }, drop);
-openDoorAt(town, nearbyWall(town, drop), free);
+openDoorAt(town, nearbyWall(town, drop)!, free);
 assert.equal(free.type, "door");
 assert.deepEqual(town.edges, edges);
-assert(Math.abs(nodePose(town, free).normal) < 1e-8);
-const townIsland = new Island(town), route = townIsland.routes.find(r => r.id === edge.id);
-assert(distance(route.points.at(-1), pose.point) < 1e-8);
-removeBuildingPart(town, wall.building, wall.building.doors.find(door => door.id === free.door));
+assert(Math.abs(nodePose(town, free).normal!) < 1e-8);
+const townIsland = new Island(town), route = townIsland.routes.find(r => r.id === edge.id)!;
+assert(distance(route.points.at(-1)!, pose.point) < 1e-8);
+removeBuildingPart(town, wall.building, wall.building.doors.find(door => door.id === free.door)!);
 assert.equal(free.type, "endpoint");
 assert.deepEqual(town.edges, edges);
-const round = nearbyWall(town, [-80, 14.9]), roundDoor = openDoorAt(town, round), radial = nodePose(town, roundDoor);
-assert(Math.abs(distance(radial.point, round.building.center) - round.building.radius) < 1e-8);
-assert(Math.abs(radial.normal - 90 * radians) < 1e-8);
+const round = nearbyWall(town, [-80, 14.9])!, roundDoor = openDoorAt(town, round), radial = nodePose(town, roundDoor);
+assert(Math.abs(distance(radial.point, round.building.center) - round.building.radius!) < 1e-8);
+assert(Math.abs(radial.normal! - 90 * radians) < 1e-8);
 assert.deepEqual(parseDesign(serializeDesign(town)), town);
-const clearing = author.vegetation.clearings.find(c => c.id === "grove-opening");
+const clearing = author.vegetation.clearings.find(c => c.id === "grove-opening")!;
 assert(clearing && !("view" in author.vegetation));
 assert(!author.labels.some(label => label.name === "家的视线"));
 const garden = new Island(parseDesign(original));
 deleteFeature(garden.design, { kind: "clearing", id: clearing.id });
 garden.replant();
-const openingTrees = trees => trees.filter(t => inClearing(clearingShape(author, clearing), t.point) && t.wooded);
+const openingTrees = (trees: Tree[]) => trees.filter(t => inClearing(clearingShape(author, clearing), t.point) && t.wooded);
 assert(openingTrees(garden.trees).length > openingTrees(baseline.trees).length);
-const inner = design.vegetation.plantings.find(a => a.id === "inner-garden");
-const avenue = design.vegetation.plantings.find(a => a.id === "ring-avenue");
+const inner = design.vegetation.plantings.find(a => a.id === "inner-garden")!;
+const avenue = design.vegetation.plantings.find(a => a.id === "ring-avenue")!;
 assert.equal(inner.density, .35);
 assert.equal(avenue.spacing, 6);
 const small = island.trees.filter(t => t.planting === inner.id);
@@ -168,7 +172,7 @@ assert(small.every(t => inClearing({ type: "polygon", points: inner.points }, t.
 assert.deepEqual(new Set(small.map(t => t.species)), new Set(["small", "shrub"]));
 const rows = island.trees.filter(t => t.planting === avenue.id && t.row);
 assert(rows.length >= 3 && rows.every(t => t.species === "avenue"));
-const boundary = [...avenue.points, avenue.points[0]], chain = stations(boundary), length = chain.at(-1);
+const boundary = [...avenue.points, avenue.points[0]], chain = stations(boundary), length = chain.at(-1)!;
 const spacing = length / Math.round(length / avenue.spacing);
 assert(Math.abs(spacing - 6) < .3);
 for (const t of rows) {

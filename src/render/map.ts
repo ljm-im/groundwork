@@ -538,7 +538,7 @@ export class IslandMap {
     }
 }
 
-export function labelReading(island: Island, label: Label): { point: Point; text: string; actual?: number; difference?: string } {
+export function labelReading(island: Pick<Island, "design" | "terrain" | "graded">, label: Label): { point: Point; text: string; actual?: number; difference?: string } {
     const d = island.design, b = label.building && d.buildings.find(b => b.id === label.building);
     const anchor = b ? b.center : label.point!;
     const point = b && label.offset ? anchor.map((v, i) => v + label.offset![i]) as Point : anchor;

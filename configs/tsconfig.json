@@ -8,8 +8,6 @@
             "DOM",
             "DOM.Iterable"
         ],
-        "allowJs": true,
-        "checkJs": false,
         "strict": true,
         "erasableSyntaxOnly": true,
         "allowImportingTsExtensions": true,
@@ -25,6 +23,7 @@
     },
     "include": [
         "../src/**/*",
+        "../test/**/*.ts",
         "./*.ts"
     ]
 }

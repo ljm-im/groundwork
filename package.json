@@ -7,7 +7,7 @@
     "packageManager": "pnpm@12.5.1",
     "scripts": {
         "dev": "vite --config configs/vite.config.ts",
-        "test": "node configs/boundaries.ts && node --import ./configs/register-svelte.ts test/run.mjs",
+        "test": "node configs/boundaries.ts && node --import ./configs/register-svelte.ts test/run.ts",
         "check": "svelte-check --tsconfig configs/tsconfig.json --config configs/svelte.config.js && eslint --max-warnings 0 --config configs/eslint.config.js .",
         "build": "vite build --config configs/vite.config.ts"
     },
