@@ -30,30 +30,34 @@
     {@render back()}<h2>{item.name}</h2>{#if editor.tool in featureNames}{@render tools()}{/if}
     <label class="field">名称<input class="wide" data-feature-field="name" value={item.name} /></label>
     {#if kind === "peak"}
-        <Part title="山头">{@render height(item.height, "peak")}{@render field("半径 / m", "radius", item.radius, .1)}{@render field("噪声幅度 / m", "noise", item.noise, 0)}
-            {@render field("保护半径 / m", "protect", item.protect ?? 10, 0)}{@render field("最小崖坡系数", "cliffMin", item.cliffMin ?? 1.4, 0)}</Part>
+        {@const peak = item as Peak}
+        <Part title="山头">{@render height(peak.height, "peak")}{@render field("半径 / m", "radius", peak.radius, .1)}{@render field("噪声幅度 / m", "noise", peak.noise, 0)}
+            {@render field("保护半径 / m", "protect", peak.protect ?? 10, 0)}{@render field("最小崖坡系数", "cliffMin", peak.cliffMin ?? 1.4, 0)}</Part>
     {:else if kind === "ridge"}
-        <Part title="山脊宽度">{@render field("左侧 / m", "left", item.widths[0], .1)}{@render field("右侧 / m", "right", item.widths[1], .1)}</Part>
-        <Part title="折点高度" count={item.points.length}>
-            {#each item.points as p, i (i)}<div class="ridge-point" class:chosen={h.role === "vertex" && h.index === i}>
+        {@const ridge = item as Ridge}
+        <Part title="山脊宽度">{@render field("左侧 / m", "left", ridge.widths[0], .1)}{@render field("右侧 / m", "right", ridge.widths[1], .1)}</Part>
+        <Part title="折点高度" count={ridge.points.length}>
+            {#each ridge.points as p, i (i)}<div class="ridge-point" class:chosen={h.role === "vertex" && h.index === i}>
                 <button class="flat" data-vertex={i} onclick={() => editor.vertex(i)}>折点 {i + 1}</button>{@render height(p.height, i)}</div>{/each}
         </Part>
     {:else if kind === "planting"}
-        <Part title="种植">{@render field("密度", "density", item.density, 0, 1)}{@render field("成丛程度", "clump", item.clump, 0, 1)}
-            <label class="field">树种<select data-feature-field="species" value={item.species}>{#each Object.entries(species) as [k, name] (k)}<option value={k}>{name}</option>{/each}</select></label>
-            {@render field("最小冠幅半径 / m", "minSize", item.size[0], .1, item.size[1])}{@render field("最大冠幅半径 / m", "maxSize", item.size[1], item.size[0])}
-            <label class="toggle">沿边成排<input type="checkbox" data-feature-field="rows" checked={item.rows} /></label>{#if item.rows}{@render field("株距 / m", "spacing", item.spacing, .5)}{/if}
+        {@const planting = item as Planting}
+        <Part title="种植">{@render field("密度", "density", planting.density, 0, 1)}{@render field("成丛程度", "clump", planting.clump, 0, 1)}
+            <label class="field">树种<select data-feature-field="species" value={planting.species}>{#each Object.entries(species) as [k, name] (k)}<option value={k}>{name}</option>{/each}</select></label>
+            {@render field("最小冠幅半径 / m", "minSize", planting.size[0], .1, planting.size[1])}{@render field("最大冠幅半径 / m", "maxSize", planting.size[1], planting.size[0])}
+            <label class="toggle">沿边成排<input type="checkbox" data-feature-field="rows" checked={planting.rows} /></label>{#if planting.rows}{@render field("株距 / m", "spacing", planting.spacing, .5)}{/if}
         </Part>
         <Part title="地形与区域">
-            <label class="toggle">顺应地形<input type="checkbox" data-feature-field="natural" checked={item.natural} /></label>
-            {@render field("边缘过渡宽度 / m", "feather", item.feather, 0)}
-            <label class="toggle">限制种植区域<input type="checkbox" data-feature-field="limitZones" checked={!!item.zones} /></label>
-            {#if item.zones}<div class="sub">在所选区域和区外的自然地面种植。</div>{#each d.zones as z (z.id)}
-                <label class="toggle">{z.name}<input type="checkbox" data-plant-zone={z.id} checked={item.zones.includes(z.id)} /></label>{/each}{/if}
+            <label class="toggle">顺应地形<input type="checkbox" data-feature-field="natural" checked={planting.natural} /></label>
+            {@render field("边缘过渡宽度 / m", "feather", planting.feather, 0)}
+            <label class="toggle">限制种植区域<input type="checkbox" data-feature-field="limitZones" checked={!!planting.zones} /></label>
+            {#if planting.zones}<div class="sub">在所选区域和区外的自然地面种植。</div>{#each d.zones as z (z.id)}
+                <label class="toggle">{z.name}<input type="checkbox" data-plant-zone={z.id} checked={planting.zones.includes(z.id)} /></label>{/each}{/if}
         </Part>
     {:else if kind === "clearing"}
-        <Part title="空地"><label class="toggle">只挖掉绿化区里的树，保留零散树<input type="checkbox" data-feature-field="ambient" checked={item.cover === "ambient"} /></label>
-            {@const shape = clearingShape(d, item)}{#if shape.type === "sector"}{@render field("半径 / m", "outer", shape.outer, .1)}{/if}</Part>
+        {@const clearing = item as Clearing}
+        <Part title="空地"><label class="toggle">只挖掉绿化区里的树，保留零散树<input type="checkbox" data-feature-field="ambient" checked={clearing.cover === "ambient"} /></label>
+            {@const shape = clearingShape(d, clearing)}{#if shape.type === "sector"}{@render field("半径 / m", "outer", shape.outer, .1)}{/if}</Part>
     {/if}
     {#if kind === "ridge" || kind === "planting" || kind === "clearing" && clearingShape(d, item).type === "polygon"}
         <div class="sub">{editor.tool === "select" ? "Alt 单击或双击边线插入折点。选中折点后可拖动或删除。" : "切换到选择工具可拖动折点。"}</div>
@@ -130,8 +134,9 @@
 <script lang="ts">
     import * as session from "../state/session.svelte";
     import { type FeatureKind, type Height, type Named } from "../types";
+    import { type Peak, type Ridge, type Planting, type Clearing } from "../../core/design/types.ts";
     import { clearingShape } from "../../core/design/model.ts";
-    import { featureNames, featureOf, features } from "../../core/edit/landforms.js";
+    import { featureNames, featureOf, features } from "../../core/edit/landforms.ts";
     import Part from "./Part.svelte";
     import Search from "./Search.svelte";
 

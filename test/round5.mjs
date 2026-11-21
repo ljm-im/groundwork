@@ -1,18 +1,18 @@
 import assert from "node:assert/strict";
 import { readFixture } from "../configs/read-fixture.ts";
-import { nearbyWall, openDoorAt, removeBuildingPart } from "../src/core/edit/buildings.js";
-import { moveHandle } from "../src/core/edit/controls.js";
+import { nearbyWall, openDoorAt, removeBuildingPart } from "../src/core/edit/buildings.ts";
+import { moveHandle } from "../src/core/edit/controls.ts";
 import { advance, distance, nearest, pointAt, radians, stations } from "../src/core/math/geometry.ts";
-import { History } from "../src/core/edit/history.js";
+import { History } from "../src/core/edit/history.ts";
 import { Island } from "../src/core/island.js";
 import { issueShapes, objectIssues } from "../src/core/checks/issues.ts";
-import { addFeature, deleteFeature, featureHit, featureLine, insertVertex } from "../src/core/edit/landforms.js";
+import { addFeature, deleteFeature, featureHit, featureLine, insertVertex } from "../src/core/edit/landforms.ts";
 import { IslandMap } from "../src/render/map.js";
 import { buildingShape, clearingShape, nodePose, parseDesign, serializeDesign } from "../src/core/design/model.ts";
 import { render } from "svelte/server";
 import Network from "../src/app/components/Network.svelte";
 import { overlappingLocations } from "../src/core/roads/proximity.ts";
-import { addNode, connect } from "../src/core/edit/topology.js";
+import { addNode, connect } from "../src/core/edit/topology.ts";
 import { inClearing } from "../src/core/vegetation/vegetation.ts";
 
 const original = await readFixture("round5.json");

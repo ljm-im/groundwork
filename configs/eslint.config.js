@@ -84,7 +84,7 @@ export default defineConfig(
         rules: { "@typescript-eslint/no-unused-vars": "error", "@typescript-eslint/no-explicit-any": "error" }
     },
     // Preserve the four original getters that form part of the JavaScript engine's public API.
-    ...Object.entries({ "src/core/edit/history.js": "dirty|canUndo|canRedo", "src/render/map.js": "scale" }).map(([file, names]) => ({
+    ...Object.entries({ "src/core/edit/history.ts": "dirty|canUndo|canRedo", "src/render/map.js": "scale" }).map(([file, names]) => ({
         files: [file],
         rules: { "no-restricted-syntax": ["error", typeImport, {
             ...accessor,

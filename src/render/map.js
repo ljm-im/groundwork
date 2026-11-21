@@ -1,13 +1,13 @@
 import { advance, bearing, clamp, distance, mixPoint, nearest } from "../core/math/geometry.ts";
 import { areaBoundary, buildingShape, nodePose, zonePolygon } from "../core/design/model.ts";
-import { titlePoint } from "../core/edit/buildings.js";
+import { titlePoint } from "../core/edit/buildings.ts";
 import { issueShapes, issueView, objectIssues } from "../core/checks/issues.ts";
-import { featureLine, featureNames, features } from "../core/edit/landforms.js";
+import { featureLine, featureNames, features } from "../core/edit/landforms.ts";
 import { treeStyles } from "../core/vegetation/vegetation.ts";
-import { handles } from "../core/edit/controls.js";
+import { handles } from "../core/edit/controls.ts";
 import { relief } from "./relief.js";
 import { labelReading } from "./cartography.js";
-import { hedgeLines } from "../core/edit/yards.js";
+import { hedgeLines } from "../core/edit/yards.ts";
 
 const ink = "#214e4c",
     paper = "#fffdf2",

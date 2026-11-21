@@ -1,11 +1,13 @@
+import { type Building, type Clearing, type Peak, type Planting, type Ridge, type Sector, type Species } from "../../core/design/types.ts";
+import { type Feature } from "../../core/edit/types.ts";
 import { elevation } from "../../core/design/model.ts";
-import { featureOf } from "../../core/edit/landforms.js";
-import { doorRoads, resizeRadius, rotateBuilding, setShape } from "../../core/edit/buildings.js";
-import { setSegment } from "../../core/edit/topology.js";
+import { featureOf } from "../../core/edit/landforms.ts";
+import { doorRoads, resizeRadius, rotateBuilding, setShape } from "../../core/edit/buildings.ts";
+import { setSegment } from "../../core/edit/topology.ts";
 import * as session from "./session.svelte";
 import { checked, numeric, type Editable, type Layer, type Selection } from "../types";
 
-function changeFeature(editor: session.Editor, input: Editable, h: Selection, item: ReturnType<typeof featureOf>) {
+function changeFeature(editor: session.Editor, input: Editable, h: Selection, item: Feature) {
     const d = editor.island.design, key = input.dataset.featureField;
     const at = input.dataset.heightMode ?? input.dataset.heightValue;
     if (!input.validity.valid) {
@@ -14,8 +16,8 @@ function changeFeature(editor: session.Editor, input: Editable, h: Selection, it
     }
     const v = numeric(input);
     if (at != null) {
-        const target = at === "peak" ? item : item.points[Number(at)];
-        const mode = input.dataset.heightMode != null ? input.value : target.height?.level;
+        const target = at === "peak" ? item as Peak : (item as Ridge).points[Number(at)];
+        const mode = input.dataset.heightMode != null ? input.value : typeof target.height === "number" ? undefined : target.height.level;
         const absolute = elevation(target.height, d.levels);
         if (input.dataset.heightMode != null)
             target.height = mode ? { level: mode, offset: absolute - d.levels[mode] } : absolute;
@@ -29,31 +31,31 @@ function changeFeature(editor: session.Editor, input: Editable, h: Selection, it
     else if (key === "name")
         item.name = input.value.trim() || item.name;
     else if (key === "species")
-        item.species = input.value;
+        (item as Planting).species = input.value as Species;
     else if (key === "ambient") {
         if (checked(input))
-            item.cover = "ambient";
+            (item as Clearing).cover = "ambient";
         else
-            delete item.cover;
+            delete (item as Clearing).cover;
     }
     else if (key === "rows" || key === "natural")
-        item[key] = checked(input);
+        (item as Planting)[key] = checked(input);
     else if (key === "limitZones") {
-        if (checked(input)) item.zones = [];
-        else delete item.zones;
+        if (checked(input)) (item as Planting).zones = [];
+        else delete (item as Planting).zones;
     }
     else if (!Number.isFinite(v)) {
         editor.revision++;
         return;
     }
     else if (key === "minSize" || key === "maxSize")
-        item.size[key === "minSize" ? 0 : 1] = v;
+        (item as Planting).size[key === "minSize" ? 0 : 1] = v;
     else if (key === "left" || key === "right")
-        item.widths[key === "left" ? 0 : 1] = v;
+        (item as Ridge).widths[key === "left" ? 0 : 1] = v;
     else if (key === "outer")
-        item.shape.outer = v;
+        ((item as Clearing).shape as Sector).outer = v;
     else
-        item[key!] = v;
+        Object.assign(item, { [key!]: v });
     editor.finishFeature(h.kind);
 }
 
@@ -108,7 +110,7 @@ export function changeField(editor: session.Editor, input: Editable) {
     }
     const item = featureOf(d, h);
     if (input.dataset.plantZone && h?.kind === "planting") {
-        item.zones = d.zones.filter(z => z.id === input.dataset.plantZone ? checked(input) : item.zones.includes(z.id)).map(z => z.id);
+        (item as Planting).zones = d.zones.filter(z => z.id === input.dataset.plantZone ? checked(input) : (item as Planting).zones!.includes(z.id)).map(z => z.id);
         editor.finishFeature("planting");
         return;
     }
@@ -136,7 +138,7 @@ export function changeField(editor: session.Editor, input: Editable) {
                 editor.map.draw();
                 return;
             }
-            if (key === "shape") setShape(d, b, input.value);
+            if (key === "shape") setShape(d, b, input.value as Building["shape"]);
             else {
                 const v = numeric(input);
                 if (!Number.isFinite(v)) {
@@ -159,8 +161,8 @@ export function changeField(editor: session.Editor, input: Editable) {
             return;
         }
         if (input.dataset.mode === "edge") edge.mode = input.value as typeof edge.mode;
-        else if (input.dataset.mode === "segment") setSegment(edge, h.index ?? 0, "mode", input.value);
-        else setSegment(edge, h.index, "exactEnd", checked(input));
+        else if (input.dataset.mode === "segment") setSegment(edge, h.index ?? 0, "mode", input.value as typeof edge.mode);
+        else setSegment(edge, h.index!, "exactEnd", checked(input));
         editor.reroute(new Set([edge.id]));
         return;
     }

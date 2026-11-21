@@ -1,5 +1,5 @@
 import { flushSync, tick } from "svelte";
-import { History } from "../../core/edit/history.js";
+import { History } from "../../core/edit/history.ts";
 import { parseDesign, serializeDesign } from "../../core/design/model.ts";
 import * as session from "./session.svelte";
 import { errorText } from "../types";

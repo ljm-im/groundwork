@@ -4,7 +4,7 @@
 {/each}
 
 <script lang="ts">
-    import { layerNames } from "../../core/edit/controls.js";
+    import { layerNames } from "../state/layers.ts";
     import * as session from "../state/session.svelte";
     import Part from "./Part.svelte";
     let { editor }: { editor: session.Editor } = $props();

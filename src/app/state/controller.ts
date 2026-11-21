@@ -1,9 +1,9 @@
 import { areaBoundary, clearingShape, nodePose } from "../../core/design/model.ts";
 import { distance, nearest, sample } from "../../core/math/geometry.ts";
-import { moveHandle } from "../../core/edit/controls.js";
-import { drawingTarget, featureHit, featureOf, insertVertex } from "../../core/edit/landforms.js";
-import { addGate, addNode, connect, insertVia, splitRoad } from "../../core/edit/topology.js";
-import { canPlaceBuilding, doorRoads, nearbyWall, openDoorAt, placeBuilding } from "../../core/edit/buildings.js";
+import { moveHandle } from "../../core/edit/controls.ts";
+import { drawingTarget, featureHit, featureOf, insertVertex } from "../../core/edit/landforms.ts";
+import { addGate, addNode, connect, insertVia, splitRoad } from "../../core/edit/topology.ts";
+import { canPlaceBuilding, doorRoads, nearbyWall, openDoorAt, placeBuilding } from "../../core/edit/buildings.ts";
 import { insidePolygon } from "../../core/math/polygon.ts";
 import { errorText, type Design, type Point, type RoadNode, type Selection, type Yard } from "../types";
 import * as session from "./session.svelte";
@@ -139,7 +139,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             editor.message("请选择另一个节点");
             return;
         }
-        const edge = connect(d, from, to);
+        const edge = connect(d, from!, to);
         editor.setTool("select");
         editor.select({ kind: "edge", id: edge.id });
         editor.reroute(new Set([edge.id, ...dirty]));
@@ -223,7 +223,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
                     editor.message("请在空地上放置建筑", screen);
                     return;
                 }
-                const b = placeBuilding(d, p.map(v => +v.toFixed(2)), editor.island.terrain.zones[editor.island.terrain.zoneAt[editor.island.terrain.grid.index(...p)]]?.id);
+                const b = placeBuilding(d, p.map(v => +v.toFixed(2)) as Point, editor.island.terrain.zones[editor.island.terrain.zoneAt[editor.island.terrain.grid.index(...p)]]?.id);
                 editor.setTool("select");
                 editor.select({ kind: "building", id: b.id });
                 editor.rebuild();
@@ -238,7 +238,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
                     return;
                 }
                 if (!wall && !canPlace(d, p)) return;
-                const n = wall ? openDoorAt(d, wall, undefined) : addNode(d, p.map(v => +v.toFixed(2)));
+                const n = wall ? openDoorAt(d, wall, undefined) : addNode(d, p.map(v => +v.toFixed(2)) as Point);
                 editor.setTool("select");
                 editor.select({ kind: "node", id: n.id });
                 editor.reroute(new Set());
@@ -394,7 +394,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             const node = h.kind === "node" ? d.nodes.find(n => n.id === h.id) : d.nodes.find(n => n.building === h.id && n.door === h.role);
             if (node?.type === "door") {
                 const b = d.buildings.find(b => b.id === node.building);
-                for (const e of doorRoads(d, b, b!.doors.find(door => door.id === node.door))) editor.pendingEdges.add(e.id);
+                for (const e of doorRoads(d, b!, b!.doors.find(door => door.id === node.door))) editor.pendingEdges.add(e.id);
             }
             else if (node) {
                 for (const e of d.edges) if (e.from === node.id || e.to === node.id) editor.pendingEdges.add(e.id);

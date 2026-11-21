@@ -1,37 +1,39 @@
+import { type Design, type RoadNode, type Edge, type Yard, type Point, type Segment, type RoadPair } from "../design/types.ts";
+import { type Route } from "../design/results.ts";
 import { distance, nearest } from "../math/geometry.ts";
 import { areaBoundary, nodePose, throughPairs } from "../design/model.ts";
 import { gateFraction } from "../design/gates.ts";
 
-export function newId(list, prefix) {
+export function newId(list: { id: string }[], prefix: string) {
     let i = 1;
     while (list.some(o => o.id === prefix + "-" + i)) i++;
     return prefix + "-" + i;
 }
 
-export function addNode(d, point) {
+export function addNode(d: Design, point: Point): RoadNode {
     const id = newId(d.nodes, "node");
-    const node = { id, name: "新节点 " + id.split("-").at(-1), type: "junction", point: [...point] };
+    const node: RoadNode = { id, name: "新节点 " + id.split("-").at(-1)!, type: "junction", point: [...point] };
     d.nodes.push(node);
     return node;
 }
 
-export function connect(d, from, to) {
+export function connect(d: Design, from: RoadNode, to: RoadNode): Edge {
     const { width, comfort, maxGrade, corridor } = d.roadClasses.path;
-    const edge = { id: newId(d.edges, "edge"), name: from.name + " → " + to.name, from: from.id, to: to.id,
+    const edge: Edge = { id: newId(d.edges, "edge"), name: from.name + " → " + to.name, from: from.id, to: to.id,
         via: [], grade: "path", width, comfort, maxGrade, corridor };
     d.edges.push(edge);
     return edge;
 }
 
-export function addGate(d, yard, other, gateFirst = false) {
+export function addGate(d: Design, yard: Yard, other: RoadNode, gateFirst = false) {
     const id = newId(d.nodes, "gate");
-    const gate = { id, name: yard.name + (yard.kind === "plaza" ? "·入口 " : "·院门 ") + id.split("-").at(-1), type: "gate", yard: yard.id,
+    const gate: RoadNode = { id, name: yard.name + (yard.kind === "plaza" ? "·入口 " : "·院门 ") + id.split("-").at(-1)!, type: "gate", yard: yard.id,
         at: gateFraction(areaBoundary(d, yard), nodePose(d, other).point) };
     d.nodes.push(gate);
     return { gate, edge: gateFirst ? connect(d, gate, other) : connect(d, other, gate) };
 }
 
-export function setSegment(edge, index, key, value) {
+export function setSegment<K extends keyof Segment>(edge: Edge, index: number, key: K, value: Segment[K] | false | "" | null) {
     const segments = edge.segments ?? Array.from({ length: edge.via.length + 1 }, () => ({}));
     const option = { ...segments[index] };
     if (value == null || value === false || value === "") delete option[key]; else option[key] = value;
@@ -40,15 +42,15 @@ export function setSegment(edge, index, key, value) {
     else delete edge.segments;
 }
 
-export function insertVia(edge, index, p) {
+export function insertVia(edge: Edge, index: number, p: Point) {
     if (edge.segments) {
         const option = edge.segments[index];
         edge.segments.splice(index, 0, option?.mode ? { mode: option.mode } : {});
     }
-    edge.via.splice(index, 0, p.slice());
+    edge.via.splice(index, 0, p.slice() as Point);
 }
 
-export function removeVia(edge, index) {
+export function removeVia(edge: Edge, index: number) {
     if (edge.segments) {
         const [before, after] = edge.segments.slice(index, index + 2), merged = { ...before };
         delete merged.exactEnd;
@@ -58,11 +60,11 @@ export function removeVia(edge, index) {
     edge.via.splice(index, 1);
 }
 
-export function splitRoad(d, route, point, index) {
-    const e = route.edge, oldEnd = d.nodes.find(n => n.id === e.to);
-    if (distance(route.points[0], point) < .02 || distance(route.points.at(-1), point) < .02) return null;
+export function splitRoad(d: Design, route: Route, point: Point, index: number) {
+    const e = route.edge, oldEnd = d.nodes.find(n => n.id === e.to)!;
+    if (distance(route.points[0], point) < .02 || distance(route.points.at(-1)!, point) < .02) return null;
     const node = addNode(d, point);
-    node.name = "分岔路口 " + node.id.split("-").at(-1);
+    node.name = "分岔路口 " + node.id.split("-").at(-1)!;
     const after = { ...e, id: newId(d.edges, "edge"), name: node.name + " → " + oldEnd.name, from: node.id, via: e.via.slice(index) };
     if (e.stairUntil != null) {
         const hit = nearest(...point, route.points);
@@ -73,12 +75,12 @@ export function splitRoad(d, route, point, index) {
     if (e.segments) {
         after.segments = e.segments.slice(index).map(s => ({ ...s }));
         e.segments = e.segments.slice(0, index + 1).map(s => ({ ...s }));
-        delete e.segments.at(-1).exactEnd;
+        delete e.segments.at(-1)!.exactEnd;
     }
     e.to = node.id;
     e.via = e.via.slice(0, index);
     // An existing waypoint at the cut is now the junction itself.
-    if (e.via.length && distance(e.via.at(-1), point) < .02) removeVia(e, e.via.length - 1);
+    if (e.via.length && distance(e.via.at(-1)!, point) < .02) removeVia(e, e.via.length - 1);
     if (after.via.length && distance(after.via[0], point) < .02) {
         after.via.shift(); after.segments?.shift();
     }
@@ -88,11 +90,11 @@ export function splitRoad(d, route, point, index) {
     return node;
 }
 
-export function removeLinks(d, removed) {
-    const dirty = new Set();
+export function removeLinks(d: Design, removed: ReadonlySet<string>) {
+    const dirty = new Set<string>();
     d.edges = d.edges.filter(e => !removed.has(e.id));
     for (const n of d.nodes) {
-        const keep = [];
+        const keep: RoadPair[] = [];
         for (const pair of throughPairs(n)) {
             if (pair.some(id => removed.has(id))) pair.filter(id => !removed.has(id)).forEach(id => dirty.add(id));
             else keep.push(pair);

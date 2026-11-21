@@ -1,12 +1,12 @@
 import { tick } from "svelte";
 import { Island } from "../../core/island.js";
-import { History } from "../../core/edit/history.js";
-import { layerDefaults } from "../../core/edit/controls.js";
+import { History } from "../../core/edit/history.ts";
+import { layerDefaults } from "./layers.ts";
 import { areaBoundary, nodePose, zonePolygon } from "../../core/design/model.ts";
 import { bounds, sample } from "../../core/math/geometry.ts";
-import { addDoor, doorNode, doorRoads, openDoorAt, removeBuildingPart } from "../../core/edit/buildings.js";
-import { removeVia, removeLinks } from "../../core/edit/topology.js";
-import { addFeature, clickDrawing, deleteFeature, featureBounds, featureNames, featureOf, finishExtension, newDrawing } from "../../core/edit/landforms.js";
+import { addDoor, doorNode, doorRoads, openDoorAt, removeBuildingPart } from "../../core/edit/buildings.ts";
+import { removeVia, removeLinks } from "../../core/edit/topology.ts";
+import { addFeature, clickDrawing, deleteFeature, featureBounds, featureNames, featureOf, finishExtension, newDrawing } from "../../core/edit/landforms.ts";
 import { objectIssues } from "../../core/checks/issues.ts";
 import { drawSections } from "../../render/sections.js";
 import { IslandMap } from "../../render/map.js";
@@ -124,7 +124,7 @@ export class Editor {
         this.tool = mode;
         this.linkFrom = this.linkYard = null;
         this.forkFromDoor = false;
-        this.map.drawing = ["ridge", "planting", "clearing"].includes(mode) ? newDrawing(mode) as Drawing : null;
+        this.map.drawing = ["ridge", "planting", "clearing"].includes(mode) ? newDrawing(mode as FeatureKind) as Drawing : null;
         if (mode === "ridge" || mode === "peak") this.layers.ridges = true;
         if (mode === "planting" || mode === "clearing") this.layers.plantingAreas = true;
         if (["node", "edge", "fork", "gate", "door", "via"].includes(mode)) this.layers.network = true;
@@ -284,10 +284,10 @@ export class Editor {
         else if (kind === "node") this.map.focus(nodePose(d, id).point, 2.3);
         else if (kind === "building") this.map.focus(d.buildings.find(b => b.id === id)!.center, 3);
         else if (kind === "zone") this.map.focusBounds(bounds(zonePolygon(d.zones.find(z => z.id === id)!.shape)));
-        else this.map.focusBounds(featureBounds(d, kind, featureOf(d, h)));
+        else this.map.focusBounds(featureBounds(d, kind as FeatureKind, featureOf(d, h)!));
     }
     vertex(index: number) {
-        const h = this.selection!, item = featureOf(this.island.design, h);
+        const h = this.selection!, item = this.island.design.ridges.find(r => r.id === h.id)!;
         this.select({ kind: h.kind, id: h.id, role: "vertex", index });
         this.map.focus(item.points[index].point, 2.5);
     }
@@ -341,7 +341,7 @@ export class Editor {
         }
         this.removal = { title: "删除" + (door ? door.name ?? door.id : b.name) + "？", roads: edges.map(e => e.name), perform };
     }
-    offerConversion(node: RoadNode, wall: NonNullable<ReturnType<typeof import("../../core/edit/buildings.js").nearbyWall>>, edges: EdgeLike[]) {
+    offerConversion(node: RoadNode, wall: NonNullable<ReturnType<typeof import("../../core/edit/buildings.ts").nearbyWall>>, edges: EdgeLike[]) {
         this.conversion = {
             text: "将“" + node.name + "”吸附到“" + wall.building.name + "”外墙。连接此节点的 " + edges.length + " 条道路会保留。",
             finish: (convert) => {
@@ -389,7 +389,7 @@ export class Editor {
             ids = removeLinks(d, new Set(d.edges.filter(e => e.from === h.id || e.to === h.id).map(e => e.id)));
         }
         else if (h.kind === "via") {
-            removeVia(d.edges.find(e => e.id === h.id), h.index);
+            removeVia(d.edges.find(e => e.id === h.id)!, h.index!);
             ids.add(h.id);
         }
         else if (h.kind === "edge") ids = removeLinks(d, new Set([h.id]));
