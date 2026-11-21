@@ -1,9 +1,11 @@
+import { type Design, type Point, type ClearingShape } from "../design/types.ts";
+import { type Terrain } from "../design/results.ts";
 import { angleDiff, bearing, distance, radians, smooth } from "../math/geometry.ts";
 import { fbm, noise, randomAt } from "../math/noise.ts";
 import { clearingShape } from "../design/shapes.ts";
 import { insidePolygon } from "../math/polygon.ts";
 
-export function inClearing(shape, p) {
+export function inClearing(shape: ClearingShape, p: Point) {
     if (shape.type === "polygon")
         return insidePolygon(shape, p);
     const [x, y] = shape.center;
@@ -13,7 +15,7 @@ export function inClearing(shape, p) {
     return radius <= shape.outer && radius >= (shape.inner ?? 0) && angleDiff(bearing(shape.center, p), shape.start * radians + half) <= half;
 }
 
-export function treeEnvironment(design, terrain) {
+export function treeEnvironment(design: Design, terrain: Terrain) {
     const { grid, flow, heights } = terrain, rules = design.vegetation, n = noise(design.seed + 404);
     const clearings = rules.clearings.map(c => ({ ambient: c.cover === "ambient", shape: clearingShape(design, c) }));
     const buffers = terrain.buildings.map(b => ({ center: b.data.center, radius: b.data.treeRadius ??
@@ -22,7 +24,7 @@ export function treeEnvironment(design, terrain) {
     for (const v of flow)
         peakFlow = Math.max(peakFlow, v);
     const flowScale = Math.log1p(peakFlow) || 1;
-    function terrainFactors([x, y], k) {
+    function terrainFactors([x, y]: Point, k: number) {
         const dx = heights[grid.index(x + grid.step, y)] - heights[grid.index(x - grid.step, y)];
         const dy = heights[grid.index(x, y + grid.step)] - heights[grid.index(x, y - grid.step)];
         const slope = Math.hypot(dx, dy) / (2 * grid.step);
@@ -32,21 +34,21 @@ export function treeEnvironment(design, terrain) {
     }
     return {
         terrainFactors,
-        clearingAt: (p, ambient) => clearings.some(c => c.ambient === ambient && inClearing(c.shape, p)),
-        freeGround: p => !terrain.yards.some(y => insidePolygon(y.yard, p)) && !rules.rooms.some(c => distance(p, c.center) < c.radius + 1.5),
-        outsideBuffers: p => buffers.every(b => distance(p, b.center) >= b.radius),
-        outsideBuildings: p => terrain.buildings.every(b => b.signedDistance(...p) >= 2)
+        clearingAt: (p: Point, ambient: boolean) => clearings.some(c => c.ambient === ambient && inClearing(c.shape, p)),
+        freeGround: (p: Point) => !terrain.yards.some(y => insidePolygon(y.yard, p)) && !rules.rooms.some(c => distance(p, c.center) < c.radius + 1.5),
+        outsideBuffers: (p: Point) => buffers.every(b => distance(p, b.center) >= b.radius),
+        outsideBuildings: (p: Point) => terrain.buildings.every(b => b.signedDistance(...p) >= 2)
     };
 }
 
 // Each cell owns four samples, regardless of planting decisions in earlier cells.
-export function walkScatter(design, visit) {
+export function walkScatter(design: Design, visit: (point: Point, roll: number, size: number) => void) {
     const { grid } = design, seed = design.seed + 55;
     let cell = 0;
     for (let y = grid.yMin + 2; y < grid.yMax; y += 3)
         for (let x = grid.xMin + 2; x < grid.xMax; x += 3, cell++) {
             const offset = cell * 4;
-            const point = [x + (randomAt(seed, offset) - .5) * 2.6, y + (randomAt(seed, offset + 1) - .5) * 2.6];
+            const point: Point = [x + (randomAt(seed, offset) - .5) * 2.6, y + (randomAt(seed, offset + 1) - .5) * 2.6];
             visit(point, randomAt(seed, offset + 2), randomAt(seed, offset + 3));
         }
 }

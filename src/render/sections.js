@@ -1,5 +1,5 @@
 import { clamp, distance, mixPoint, sample } from "../core/math/geometry.ts";
-import { treeStyles } from "../core/vegetation/vegetation.js";
+import { treeStyles } from "../core/vegetation/vegetation.ts";
 
 // Section stations and building intersections only change when an endpoint or the terrain changes.
 const sectionCuts = new WeakMap();

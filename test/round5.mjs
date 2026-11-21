@@ -13,7 +13,7 @@ import { render } from "svelte/server";
 import Network from "../src/app/components/Network.svelte";
 import { overlappingLocations } from "../src/core/roads/proximity.ts";
 import { addNode, connect } from "../src/core/edit/topology.js";
-import { inClearing } from "../src/core/vegetation/vegetation.js";
+import { inClearing } from "../src/core/vegetation/vegetation.ts";
 
 const original = await readFixture("round5.json");
 const author = parseDesign(original), baseline = new Island(author);

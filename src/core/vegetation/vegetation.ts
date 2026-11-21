@@ -1,32 +1,34 @@
+import { type Design, type Planting, type Point } from "../design/types.ts";
+import { type Graded, type Terrain, type Tree, type Route } from "../design/results.ts";
 import { advance, bounds, distance, nearest, pointAt, smooth, stations } from "../math/geometry.ts";
-import { treeEnvironment, walkScatter } from "./scatter.js";
+import { treeEnvironment, walkScatter } from "./scatter.ts";
 import { fbm, noise, random } from "../math/noise.ts";
 import { gatePose } from "../design/gates.ts";
 import { insidePolygon } from "../math/polygon.ts";
 
-export const treeStyles = {
+export const treeStyles: Record<Tree["species"], [string, number]> = {
     forest: ["#537848", 2.1], small: ["#81a56d", 1.75], shrub: ["#9eaf74", .85], avenue: ["#467c67", 2.35]
 };
 
-export { inClearing } from "./scatter.js";
+export { inClearing } from "./scatter.ts";
 
-function covers(area, p, zone) {
+function covers(area: Planting, p: Point, zone?: string) {
     return (!zone || !area.zones || area.zones.includes(zone)) && insidePolygon(area, p);
 }
 
-function plantedTrees(design, terrain, areas, env) {
+function plantedTrees(design: Design, terrain: Terrain, areas: Planting[], env: ReturnType<typeof treeEnvironment>) {
     const result = [], n = noise(design.seed + 741);
     for (const [index, area] of areas.entries()) {
         let seed = design.seed;
         for (const letter of area.id)
             seed = Math.imul(seed, 31) + letter.charCodeAt(0) | 0;
-        const next = random(seed), box = bounds(area.points), later = areas.slice(index + 1), local = [];
-        function canPlant(p, k, zone) {
+        const next = random(seed), box = bounds(area.points), later = areas.slice(index + 1), local: Tree[] = [];
+        function canPlant(p: Point, k: number, zone?: string) {
             return terrain.dc[k] >= 2.5 && (!zone || !area.zones || area.zones.includes(zone)) &&
         !later.some(a => covers(a, p, zone)) && env.freeGround(p) && env.outsideBuildings(p) &&
         !env.clearingAt(p, true) && !env.clearingAt(p, false);
         }
-        function densityAt(p, k) {
+        function densityAt(p: Point, k: number) {
             let density = area.density;
             if (area.natural) {
                 const { slope, clump, factor } = env.terrainFactors(p, k);
@@ -42,14 +44,14 @@ function plantedTrees(design, terrain, areas, env) {
                 density *= smooth(nearest(...p, area.points, true).distance / area.feather);
             return density;
         }
-        function add(p, row) {
+        function add(p: Point, row: boolean) {
             const species = area.species === "mixed" ? (next() < .55 ? "small" : "shrub") : area.species;
             const t = next();
             const size = area.size[0] + (area.size[1] - area.size[0]) * (area.species === "mixed" ? (species === "shrub" ? t * .44 : .44 + .56 * t) : t);
             local.push({ point: p, radius: size, wooded: species === "forest", species, planting: area.id, row });
         }
         if (area.rows && area.density > 0) {
-            const ring = [...area.points, area.points[0]], s = stations(ring), length = s.at(-1);
+            const ring = [...area.points, area.points[0]], s = stations(ring), length = s.at(-1)!;
             const count = Math.max(1, Math.round(length / area.spacing));
             for (let i = 0; i < count; i++) {
                 const fraction = (i + .5) / count;
@@ -71,7 +73,7 @@ function plantedTrees(design, terrain, areas, env) {
         for (let row = Math.floor(box[1] / pitchY); row * pitchY <= box[3]; row++) {
             const shift = area.natural && row % 2 !== 0 ? 1.5 : 0;
             for (let x = Math.floor((box[0] - shift) / 3) * 3 + shift; x <= box[2]; x += 3) {
-                const p = [x + (next() - .5) * 2.6, row * pitchY + (next() - .5) * 2.6], pick = next(), k = terrain.grid.index(...p);
+                const p: Point = [x + (next() - .5) * 2.6, row * pitchY + (next() - .5) * 2.6], pick = next(), k = terrain.grid.index(...p);
                 const zone = terrain.zones[terrain.zoneAt[k]]?.id;
                 if (!insidePolygon(area, p) || pick >= densityAt(p, k) || !canPlant(p, k, zone))
                     continue;
@@ -87,8 +89,8 @@ function plantedTrees(design, terrain, areas, env) {
     return result;
 }
 
-export function plantTrees(design, terrain) {
-    const rules = design.vegetation, env = treeEnvironment(design, terrain), trees = [];
+export function plantTrees(design: Design, terrain: Terrain): Tree[] {
+    const rules = design.vegetation, env = treeEnvironment(design, terrain), trees: Tree[] = [];
     walkScatter(design, (p, roll, size) => {
         const k = terrain.grid.index(...p), zone = terrain.zones[terrain.zoneAt[k]]?.id;
         if (terrain.dc[k] >= 2.5 && (!rules.plantings.some(a => covers(a, p, zone)) || env.clearingAt(p, true))) {
@@ -104,8 +106,8 @@ export function plantTrees(design, terrain) {
 
 // Bucket the actual finished centreline segments so dragging a road only refilters
 // existing candidates. Distances are to the road edge, including on diagonal spans.
-export function visibleTrees(candidates, terrain, graded, routes) {
-    const buckets = new Map(), key = (i, j) => i + "," + j, size = 10;
+export function visibleTrees(candidates: Tree[], terrain: Terrain, graded: Graded, routes: Route[]) {
+    const buckets = new Map<string, { a: Point; dx: number; dy: number; length2: number; limit2: number }[]>(), key = (i: number, j: number) => i + "," + j, size = 10;
     for (const r of routes) {
         const limit = r.edge.width / 2 + 1.5;
         for (let i = 1; i < r.points.length; i++) {
@@ -116,7 +118,7 @@ export function visibleTrees(candidates, terrain, graded, routes) {
                     const id = key(k, j);
                     if (!buckets.has(id))
                         buckets.set(id, []);
-                    buckets.get(id).push(segment);
+                    buckets.get(id)!.push(segment);
                 }
         }
     }

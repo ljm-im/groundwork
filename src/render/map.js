@@ -3,7 +3,7 @@ import { areaBoundary, buildingShape, nodePose, zonePolygon } from "../core/desi
 import { titlePoint } from "../core/edit/buildings.js";
 import { issueShapes, issueView, objectIssues } from "../core/checks/issues.js";
 import { featureLine, featureNames, features } from "../core/edit/landforms.js";
-import { treeStyles } from "../core/vegetation/vegetation.js";
+import { treeStyles } from "../core/vegetation/vegetation.ts";
 import { handles } from "../core/edit/controls.js";
 import { relief } from "./relief.js";
 import { labelReading } from "./cartography.js";

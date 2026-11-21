@@ -6,7 +6,7 @@ import { History } from "../src/core/edit/history.js";
 import { Island } from "../src/core/island.js";
 import { addFeature, clickDrawing, drawingTarget, featureLine, finishExtension, insertVertex, newDrawing } from "../src/core/edit/landforms.js";
 import { parseDesign, serializeDesign } from "../src/core/design/model.ts";
-import { inClearing, plantTrees } from "../src/core/vegetation/vegetation.js";
+import { inClearing, plantTrees } from "../src/core/vegetation/vegetation.ts";
 import { insidePolygon, simpleBoundary } from "../src/core/math/polygon.ts";
 
 const raw = await readFixture("round6.json");
