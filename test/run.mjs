@@ -6,7 +6,7 @@ import { radiusAt, exemptRadius } from "../src/core/roads/alignment.js";
 import { addDoor, canPlaceBuilding, doorRoads, placeBuilding, removeBuildingPart, rotateBuilding, setShape, titlePoint } from "../src/core/edit/buildings.js";
 import { History } from "../src/core/edit/history.js";
 import { Island } from "../src/core/island.js";
-import { moveNode, nodePose, parseDesign, serializeDesign, zonePolygon } from "../src/core/design/model.js";
+import { moveNode, nodePose, parseDesign, serializeDesign, zonePolygon } from "../src/core/design/model.ts";
 import { labelReading } from "../src/render/cartography.js";
 import { moveHandle } from "../src/core/edit/controls.js";
 import { profile } from "../src/core/roads/profiles.js";
@@ -15,7 +15,8 @@ import { selfOverlaps, sharpBends } from "../src/core/roads/proximity.js";
 import { generateTerrain } from "../src/core/terrain/terrain.js";
 import { armBearing, summitHeights, validateDesign, validateRoads } from "../src/core/checks/validation.js";
 import { addGate, addNode, connect, removeLinks, splitRoad } from "../src/core/edit/topology.js";
-import { gateDistance, gateFraction, gatePose, hedgeLines } from "../src/core/edit/yards.js";
+import { hedgeLines } from "../src/core/edit/yards.js";
+import { gateDistance, gateFraction, gatePose } from "../src/core/design/gates.ts";
 import { insidePolygon, perimeter } from "../src/core/math/polygon.ts";
 
 const previousDefault = await readFixture("round4.json");

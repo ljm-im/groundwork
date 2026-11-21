@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFixture } from "../configs/read-fixture.ts";
 import { Island } from "../src/core/island.js";
-import { parseDesign, serializeDesign } from "../src/core/design/model.js";
+import { parseDesign, serializeDesign } from "../src/core/design/model.ts";
 
 const digest = bytes => createHash("sha256").update(bytes).digest("hex");
 const values = value => digest(JSON.stringify(value));

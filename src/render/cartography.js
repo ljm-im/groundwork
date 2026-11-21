@@ -1,5 +1,5 @@
 import { sample } from "../core/math/geometry.ts";
-import { elevation } from "../core/design/model.js";
+import { elevation } from "../core/design/model.ts";
 
 export function labelReading(island, label) {
     const d = island.design, b = label.building && d.buildings.find(b => b.id === label.building);

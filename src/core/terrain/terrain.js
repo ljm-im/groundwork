@@ -1,5 +1,5 @@
 import { bounds, clamp, createGrid, eachCell, nearest, polygonField, sample, smooth, spline, stations } from "../math/geometry.ts";
-import { areaBoundary, buildingShape, elevation, zoneNoise, zonePolygon } from "../design/shapes.js";
+import { areaBoundary, buildingShape, elevation, zoneNoise, zonePolygon } from "../design/shapes.ts";
 import { fbm, noise } from "../math/noise.ts";
 import { erode } from "./erosion.js";
 

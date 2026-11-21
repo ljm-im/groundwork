@@ -1,6 +1,6 @@
 import { distance, nearest } from "../math/geometry.ts";
-import { areaBoundary, nodePose, throughPairs } from "../design/model.js";
-import { gateFraction } from "./yards.js";
+import { areaBoundary, nodePose, throughPairs } from "../design/model.ts";
+import { gateFraction } from "../design/gates.ts";
 
 export function newId(list, prefix) {
     let i = 1;

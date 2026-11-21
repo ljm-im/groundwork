@@ -45,7 +45,7 @@
 {:else if node}
     {@const pose = nodePose(d, node) as { point: number[]; normal?: number }}
     {@const linked = m.routes.filter(r => r.edge.from === node.id || r.edge.to === node.id)}
-    {@const area = d.yards.find(y => y.id === node.yard)}
+    {@const area = d.yards?.find(y => y.id === node.yard)}
     {@render back()}<h2>{node.name}</h2><div class="sub">{nodeType(node)}</div><ObjectProblems {editor} />
     <dl class="stat-grid">{@render stat("东向 X", pose.point[0].toFixed(2) + " m")}{@render stat("北向 Y", pose.point[1].toFixed(2) + " m")}</dl>
     <Part title="节点属性">
@@ -90,7 +90,7 @@
 <script lang="ts">
     import * as session from "../state/session.svelte";
     import { type RoadNode, type Route } from "../types";
-    import { nodePose, segmentMode, throughPairs } from "../../core/design/model.js";
+    import { nodePose, segmentMode, throughPairs } from "../../core/design/model.ts";
     import { angleDiff, radians } from "../../core/math/geometry.ts";
     import { armBearing, summitHeights } from "../../core/checks/validation.js";
     import Part from "./Part.svelte";
@@ -107,5 +107,5 @@
     let q = $derived((editor.filter ?? "").trim().toLowerCase());
     let routes = $derived(m.routes.filter(r => r.edge.name.toLowerCase().includes(q)));
     let nodes = $derived(d.nodes.filter(n => n.name.toLowerCase().includes(q)));
-    const nodeType = (n: RoadNode) => n.type === "gate" && d.yards.find(y => y.id === n.yard)?.kind === "plaza" ? "广场入口" : types[n.type];
+    const nodeType = (n: RoadNode) => n.type === "gate" && d.yards?.find(y => y.id === n.yard)?.kind === "plaza" ? "广场入口" : types[n.type];
 </script>

@@ -1,4 +1,4 @@
-import { areaBoundary, clearingShape, nodePose } from "../../core/design/model.js";
+import { areaBoundary, clearingShape, nodePose } from "../../core/design/model.ts";
 import { distance, nearest, sample } from "../../core/math/geometry.ts";
 import { moveHandle } from "../../core/edit/controls.js";
 import { drawingTarget, featureHit, featureOf, insertVertex } from "../../core/edit/landforms.js";

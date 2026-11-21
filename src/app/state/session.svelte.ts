@@ -2,7 +2,7 @@ import { tick } from "svelte";
 import { Island } from "../../core/island.js";
 import { History } from "../../core/edit/history.js";
 import { layerDefaults } from "../../core/edit/controls.js";
-import { areaBoundary, nodePose, zonePolygon } from "../../core/design/model.js";
+import { areaBoundary, nodePose, zonePolygon } from "../../core/design/model.ts";
 import { bounds, sample } from "../../core/math/geometry.ts";
 import { addDoor, doorNode, doorRoads, openDoorAt, removeBuildingPart } from "../../core/edit/buildings.js";
 import { removeVia, removeLinks } from "../../core/edit/topology.js";
@@ -205,7 +205,7 @@ export class Editor {
     navigate(forward: boolean) {
         if (this.busy || this.gesture || !(forward ? this.canRedo : this.canUndo)) return;
         return this.working(forward ? "正在重做…" : "正在撤销…", () => {
-            this.replace(this.history.step(forward));
+            this.replace(this.history.step(forward)!);
             this.syncHistory();
         });
     }

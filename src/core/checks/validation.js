@@ -1,7 +1,7 @@
 import { angleDiff, bearing, bounds, distance, eachCell, mixPoint, nearest, pointAt, radians, resample, sample } from "../math/geometry.ts";
 import { exemptRadius, radiusAt } from "../roads/alignment.js";
-import { areaBoundary, elevation, nodePose, throughPairs } from "../design/model.js";
-import { gateDistance } from "../edit/yards.js";
+import { areaBoundary, elevation, nodePose, throughPairs } from "../design/model.ts";
+import { gateDistance } from "../design/gates.ts";
 import { insidePolygon, perimeter } from "../math/polygon.ts";
 import { overlappingLocations, selfOverlaps, sharpBends } from "../roads/proximity.js";
 

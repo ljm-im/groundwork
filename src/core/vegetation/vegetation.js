@@ -1,7 +1,7 @@
 import { advance, bounds, distance, nearest, pointAt, smooth, stations } from "../math/geometry.ts";
 import { treeEnvironment, walkScatter } from "./scatter.js";
 import { fbm, noise, random } from "../math/noise.ts";
-import { gatePose } from "../edit/yards.js";
+import { gatePose } from "../design/gates.ts";
 import { insidePolygon } from "../math/polygon.ts";
 
 export const treeStyles = {

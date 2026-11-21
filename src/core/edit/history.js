@@ -1,4 +1,4 @@
-import { parseDesign, serializeDesign } from "../design/model.js";
+import { parseDesign, serializeDesign } from "../design/model.ts";
 
 export class History {
     constructor(design, limit = 80) {

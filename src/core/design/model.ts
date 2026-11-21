@@ -1,58 +1,35 @@
-import { bearing, bounds, distance, radians } from "../math/geometry.ts";
-import { migrateDesign } from "./migrations/v1ToV2.js";
-import { upgradeWoodlands } from "./migrations/v3ToV4.js";
-import { areaBoundary, clearingShape, nodePose, zonePolygon } from "./shapes.js";
+import { type Design, type Edge, type Height, type Point, type RoadNode, type RoadMode, type RoadPair } from "./types.ts";
+import { type ImportDesign } from "./migrations/legacy.ts";
+
+import { distance } from "../math/geometry.ts";
+import { migrateDesign } from "./migrations/v1ToV2.ts";
+import { upgradeLandscape } from "./migrations/v2ToV3.ts";
+import { upgradeWoodlands } from "./migrations/v3ToV4.ts";
+import { areaBoundary, clearingShape, nodePose } from "./shapes.ts";
 import { simpleBoundary } from "../math/polygon.ts";
 
-export { zoneNoise, elevation, zonePolygon, corners, buildingShape, areaBoundary, nodePose, moveNode, clearingShape } from "./shapes.js";
+export { zoneNoise, elevation, zonePolygon, corners, buildingShape, areaBoundary, nodePose, moveNode, clearingShape } from "./shapes.ts";
 
-// Older terrain files kept the opening in the grove relative to a particular door.
-function upgradeLandscape(d) {
-    if (d?.version !== 2)
-        return d;
-    const rules = d.vegetation, view = rules.view;
-    for (const [i, peak] of d.peaks.entries()) {
-        peak.id ??= "peak-" + (i + 1);
-        peak.name ??= peak.id;
-    }
-    for (const ridge of d.ridges)
-        ridge.name ??= ridge.id;
-    for (const [i, clearing] of rules.clearings.entries()) {
-        clearing.id ??= "clearing-" + (i + 1);
-        clearing.name ??= (d.zones.find(z => z.id === clearing.zone)?.name ?? "") + "空地";
-    }
-    if (view) {
-        const origin = d.nodes.find(n => n.id === view.from) ??
-      (d.buildings.some(b => b.id === view.building && b.doors.some(door => door.id === view.door))
-          ? { type: "door", building: view.building, door: view.door } : null);
-        const target = d.zones.find(z => z.id === view.targetZone)?.shape;
-        if (origin && target && rules.grove) {
-            const center = nodePose(d, origin).point.slice(), box = bounds(zonePolygon(target));
-            const angle = bearing(center, target.center ?? [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2]) / radians;
-            const home = d.zones.find(z => z.id === rules.grove.zone).shape.center;
-            const radius = Math.max(view.length, distance(home, center) + rules.grove.radius[1]);
-            let id = "grove-opening";
-            while (rules.clearings.some(c => c.id === id))
-                id += "-1";
-            rules.clearings.push({ id, name: "家旁林间空地", cover: "ambient", shape: {
-                type: "sector", center, outer: radius, inner: 0, start: angle - view.halfAngle, end: angle + view.halfAngle, samples: 24
-            } });
-        }
-        d.labels = d.labels.filter(label => label.building || label.name !== "家的视线");
-        delete rules.view;
-    }
-    rules.plantings ??= [];
-    d.version = 3;
-    return d;
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export function parseDesign(text) {
-    const d = upgradeLandscape(migrateDesign(JSON.parse(text)));
-    const check = (ok, message) => {
+// Migrations consume the historical collections before the per-object checks below.
+function isDesignInput(value: unknown): value is ImportDesign {
+    return isRecord(value) && [1, 2, 3, 4].some(version => value.version === version) &&
+        ["zones", "buildings", "nodes", "edges", "ridges", "sections", "peaks"].every(key => Array.isArray(value[key])) &&
+        ["grid", "levels", "levelControls", "routing", "roadClasses", "coast", "erosion", "vegetation"].every(key => isRecord(value[key]));
+}
+
+export function parseDesign(text: unknown): Design {
+    const input: unknown = typeof text === "string" ? JSON.parse(text) : structuredClone(text);
+    if (!isDesignInput(input)) throw new Error("不支持的版本或设计参数无效");
+    const d = upgradeLandscape(migrateDesign(input));
+    const check = (ok: unknown, message: string) => {
         if (!ok) throw new Error(message);
     };
-    const point = p => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite);
-    const positive = n => Number.isFinite(n) && n > 0;
+    const point = (p: unknown): p is Point => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite);
+    const positive = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n) && n > 0;
     check(d?.version === 3 || d?.version === 4, "不支持的版本");
     const g = d.grid;
     check(g && [g.xMin, g.xMax, g.yMin, g.yMax, g.step].every(Number.isFinite) && g.step > 0, "网格参数无效");
@@ -61,9 +38,9 @@ export function parseDesign(text) {
     }
     check(Number.isSafeInteger(d.seed) && Object.values(d.levels).every(Number.isFinite), "种子或标高无效");
     const routing = d.routing;
-    check(routing && ["sampleStep", "gradeWindow", "overlapLength"].every(k => positive(routing[k])) &&
-    ["landing", "clearLead", "viaTolerance"].every(k => routing[k] == null || Number.isFinite(routing[k]) && routing[k] >= 0) &&
-    ["profilePasses", "profileRadius", "relaxPasses"].every(k => Number.isSafeInteger(routing[k]) && routing[k] >= 0), "道路采样、平滑或转角参数无效");
+    check(routing && (["sampleStep", "gradeWindow", "overlapLength"] as const).every(k => positive(routing[k])) &&
+    (["landing", "clearLead", "viaTolerance"] as const).every(k => routing[k] == null || Number.isFinite(routing[k]) && routing[k] >= 0) &&
+    (["profilePasses", "profileRadius", "relaxPasses"] as const).every(k => Number.isSafeInteger(routing[k]) && routing[k] >= 0), "道路采样、平滑或转角参数无效");
     for (const grade of ["street", "path", "stair"]) {
         const rule = d.roadClasses?.[grade];
         check(rule && positive(rule.minRadius) && positive(rule.cornerRadius), grade + " 的道路半径无效");
@@ -72,10 +49,10 @@ export function parseDesign(text) {
     for (const [key, control] of Object.entries(d.levelControls)) {
         check(Object.hasOwn(d.levels, key) && control.length === 4 && control[2] > control[1] && positive(control[3]), "标高控件无效");
     }
-    for (const key of ["zones", "buildings", "nodes", "edges", "ridges", "sections"]) {
+    for (const key of ["zones", "buildings", "nodes", "edges", "ridges", "sections"] as const) {
         check(Array.isArray(d[key]) && new Set(d[key].map(o => o.id)).size === d[key].length, key + " 缺失或含有重复 ID");
     }
-    const validPoints = (list, min = 2) => Array.isArray(list) && list.length >= min && list.every(point);
+    const validPoints = (list: unknown, min = 2) => Array.isArray(list) && list.length >= min && list.every(point);
     const yards = d.yards ?? [];
     check(Array.isArray(yards) && new Set(yards.map(y => y.id)).size === yards.length, "院落列表无效或含有重复 ID");
     for (const y of yards) {
@@ -85,7 +62,7 @@ export function parseDesign(text) {
         check(validPoints(boundary.points, 3) && simpleBoundary(boundary.points), y.name + " 的边界必须是简单多边形");
         if (y.kind !== "plaza") check(Array.isArray(y.buildings) && y.buildings.every(id => d.buildings.some(b => b.id === id)), y.name + " 的所属建筑无效");
     }
-    const validHeight = h => Number.isFinite(h) || h && Object.hasOwn(d.levels, h.level) && Number.isFinite(h.offset ?? 0);
+    const validHeight = (h: unknown): h is Height => typeof h === "number" && Number.isFinite(h) || isRecord(h) && typeof h.level === "string" && Object.hasOwn(d.levels, h.level) && Number.isFinite(h.offset ?? 0);
     check(Array.isArray(d.peaks) && new Set(d.peaks.map(p => p.id)).size === d.peaks.length, "山头 ID 重复或缺失");
     for (const p of d.peaks) {
         check(p.id && typeof p.name === "string" && validHeight(p.height) && Number.isFinite(p.noise) && p.noise >= 0 && positive(p.scale), "山头名称、高度或噪声无效");
@@ -97,8 +74,8 @@ export function parseDesign(text) {
         const s = z.shape, fade = z.height?.endRise?.fade;
         if (fade != null) check(point(fade) && fade[0] >= 0 && fade[1] > fade[0], z.name + " 的外半径必须大于内半径");
         check(["polygon", "circle", "ellipse", "band", "sector"].includes(s.type), z.name + " 的形状无效");
-        check(s.points ? validPoints(s.points, s.type === "polygon" ? 3 : 2) : point(s.center), z.name + " 的坐标无效");
-        if (!s.points) check(Number.isSafeInteger(s.samples) && s.samples >= 3, z.name + " 的采样数无效");
+        check("points" in s ? validPoints(s.points, s.type === "polygon" ? 3 : 2) : point(s.center), z.name + " 的坐标无效");
+        if (!("points" in s)) check(Number.isSafeInteger(s.samples) && s.samples >= 3, z.name + " 的采样数无效");
         if (s.type === "circle") check(positive(s.radius), z.name + " 的半径无效");
         if (s.type === "ellipse") check(point(s.radii) && s.radii.every(positive), z.name + " 的半轴无效");
         if (s.type === "sector") check(s.inner >= 0 && s.outer > s.inner, z.name + " 的扇环半径无效");
@@ -107,11 +84,11 @@ export function parseDesign(text) {
     for (const r of d.ridges) {
         check(typeof r.name === "string" && validPoints(r.points.map(p => p.point)) && r.points.every(p => validHeight(p.height)) && point(r.widths) && r.widths.every(positive), r.name + " 的山脊无效");
     }
-    const v = d.vegetation, fraction = n => Number.isFinite(n) && n >= 0 && n <= 1;
+    const v = d.vegetation, fraction = (n: number) => Number.isFinite(n) && n >= 0 && n <= 1;
     check(v && Object.values(v.density).every(fraction), "区域植树密度无效");
     delete v.scatterPattern;
     if (v.forest) check(point(v.forest.center) && point(v.forest.radii) && v.forest.radii.every(positive) && fraction(v.forest.density), "旧树林参数无效");
-    if (v.grove) check(d.zones.some(z => z.id === v.grove.zone && point(z.shape.center)) && point(v.grove.radius) && v.grove.radius[1] > v.grove.radius[0] && v.grove.radius[0] >= 0 &&
+    if (v.grove) check(d.zones.some(z => z.id === v.grove!.zone && "center" in z.shape && point(z.shape.center)) && point(v.grove.radius) && v.grove.radius[1] > v.grove.radius[0] && v.grove.radius[0] >= 0 &&
     point(v.grove.angles) && v.grove.angles[1] > v.grove.angles[0] && Array.isArray(v.grove.zones) && fraction(v.grove.density), "旧密林参数无效");
     for (const list of [v.plantings, v.clearings]) check(Array.isArray(list) && list.every(a => a.id && typeof a.name === "string") && new Set(list.map(a => a.id)).size === list.length, "植被区域 ID 或名称无效");
     for (const a of v.plantings) {
@@ -121,7 +98,7 @@ export function parseDesign(text) {
       ["mixed", "avenue", "small", "shrub", "forest"].includes(a.species) && typeof a.rows === "boolean" && positive(a.spacing), a.name + " 的绿化设置无效");
     }
     for (const c of v.clearings) {
-        check(c.shape || d.zones.some(z => z.id === c.zone && z.shape.center), "空地位置无效");
+        check(c.shape || d.zones.some(z => z.id === c.zone && "center" in z.shape && z.shape.center), "空地位置无效");
         const shape = clearingShape(d, c);
         if (shape.type !== "polygon") check(Number.isSafeInteger(shape.samples) && shape.samples >= 3, c.name + " 的边界采样数无效");
         check(shape.type === "polygon" ? validPoints(shape.points, 3) && simpleBoundary(shape.points) : point(shape.center) &&
@@ -133,14 +110,14 @@ export function parseDesign(text) {
         check(typeof b.name === "string" && positive(b.height) && (b.titleOffset == null || point(b.titleOffset)) &&
       (b.showTitle == null || typeof b.showTitle === "boolean") && (b.angle == null || Number.isFinite(b.angle)), b.name + " 的建筑属性无效");
         check(Array.isArray(b.doors) && new Set(b.doors.map(door => door.id)).size === b.doors.length, b.name + " 的门列表无效");
-        if (b.shape === "ring") check(b.inner > 0 && b.inner < b.radius, b.name + " 的回廊半径无效");
-        for (const door of b.doors) check(b.shape === "rect" ? Number.isInteger(door.wall) && door.wall >= 0 && door.wall < 4 &&
-      Number.isFinite(door.t) && door.t >= 0 && door.t <= 1 : Number.isFinite(door.angle), b.name + " 的门位无效");
+        if (b.shape === "ring") check(b.inner! > 0 && b.inner! < b.radius!, b.name + " 的回廊半径无效");
+        for (const door of b.doors) check(b.shape === "rect" ? Number.isInteger(door.wall) && door.wall! >= 0 && door.wall! < 4 &&
+      Number.isFinite(door.t) && door.t! >= 0 && door.t! <= 1 : Number.isFinite(door.angle), b.name + " 的门位无效");
     }
     for (const n of d.nodes) {
         check(["door", "gate", "junction", "endpoint", "viewpoint"].includes(n.type) && (n.direction == null || Number.isFinite(n.direction)), n.name + " 的节点类型或朝向无效");
-        if (n.type === "gate") check(yards.some(y => y.id === n.yard) && Number.isFinite(n.at) && n.at >= 0 && n.at < 1, n.name + " 的院落或周长位置无效");
-        for (const pair of [n.through, ...(n.otherThrough ?? [])].filter(Boolean)) {
+        if (n.type === "gate") check(yards.some(y => y.id === n.yard) && Number.isFinite(n.at) && n.at! >= 0 && n.at! < 1, n.name + " 的院落或周长位置无效");
+        for (const pair of [n.through, ...(n.otherThrough ?? [])].filter((pair): pair is RoadPair => !!pair)) {
             const [before, after] = pair;
             check(n.type === "junction" && Array.isArray(pair) && pair.length === 2 && before !== after &&
         d.edges.some(e => e.id === before && e.to === n.id) && d.edges.some(e => e.id === after && e.from === n.id), n.name + " 的直通记录无效");
@@ -160,7 +137,7 @@ export function parseDesign(text) {
     for (const s of d.sections) check(validPoints(s.points) && s.points.length === 2 && distance(...s.points) > 0, "剖面线长度无效");
     return upgradeWoodlands(d);
 }
-export const roadModes = ["route", "smooth", "straight"];
-export const segmentMode = (edge, i) => edge.segments?.[i]?.mode ?? edge.mode ?? "route";
-export const throughPairs = node => [node.through, ...(node.otherThrough ?? [])].filter(Boolean);
-export const serializeDesign = d => JSON.stringify(d, null, 2);
+export const roadModes: RoadMode[] = ["route", "smooth", "straight"];
+export const segmentMode = (edge: Edge, i: number) => edge.segments?.[i]?.mode ?? edge.mode ?? "route";
+export const throughPairs = (node: Pick<RoadNode, "through" | "otherThrough">) => [node.through, ...(node.otherThrough ?? [])].filter((pair): pair is RoadPair => !!pair);
+export const serializeDesign = (d: unknown) => JSON.stringify(d, null, 2);

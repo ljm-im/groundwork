@@ -1,4 +1,4 @@
-import { elevation } from "../../core/design/model.js";
+import { elevation } from "../../core/design/model.ts";
 import { featureOf } from "../../core/edit/landforms.js";
 import { doorRoads, resizeRadius, rotateBuilding, setShape } from "../../core/edit/buildings.js";
 import { setSegment } from "../../core/edit/topology.js";
@@ -143,7 +143,7 @@ export function changeField(editor: session.Editor, input: Editable) {
                     editor.revision++;
                     return;
                 }
-                if (key === "length" || key === "width") b.size[key === "length" ? 0 : 1] = v;
+                if (key === "length" || key === "width") b.size![key === "length" ? 0 : 1] = v;
                 else if (key === "angle") rotateBuilding(b, v);
                 else if (key === "radius") resizeRadius(b, v);
                 else b.height = v;
@@ -158,7 +158,7 @@ export function changeField(editor: session.Editor, input: Editable) {
             editor.select({ kind: "edge", id: edge.id, index: Number(input.value) });
             return;
         }
-        if (input.dataset.mode === "edge") edge.mode = input.value;
+        if (input.dataset.mode === "edge") edge.mode = input.value as typeof edge.mode;
         else if (input.dataset.mode === "segment") setSegment(edge, h.index ?? 0, "mode", input.value);
         else setSegment(edge, h.index, "exactEnd", checked(input));
         editor.reroute(new Set([edge.id]));
@@ -196,7 +196,7 @@ export function changeField(editor: session.Editor, input: Editable) {
             return;
         }
         if (k === "type") {
-            node.type = input.value;
+            node.type = input.value as typeof node.type;
             if (node.type !== "junction") {
                 delete node.through;
                 delete node.otherThrough;

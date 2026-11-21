@@ -1,5 +1,5 @@
 import { advance, bearing, clamp, distance, projection, radians } from "../math/geometry.ts";
-import { areaBoundary, clearingShape, corners, moveNode, nodePose } from "../design/model.js";
+import { areaBoundary, clearingShape, corners, moveNode, nodePose } from "../design/model.ts";
 import { resizeRadius, rotateBuilding } from "./buildings.js";
 import { featureOf } from "./landforms.js";
 import { insidePolygon, simpleBoundary } from "../math/polygon.ts";

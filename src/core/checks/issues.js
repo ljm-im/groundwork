@@ -1,5 +1,5 @@
 import { bounds, pointAt } from "../math/geometry.ts";
-import { buildingShape, nodePose, zonePolygon } from "../design/model.js";
+import { buildingShape, nodePose, zonePolygon } from "../design/model.ts";
 
 export function objectIssues(island, selection) {
     if (!selection)

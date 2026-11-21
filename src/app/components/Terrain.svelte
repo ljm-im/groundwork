@@ -53,7 +53,7 @@
         </Part>
     {:else if kind === "clearing"}
         <Part title="空地"><label class="toggle">只挖掉绿化区里的树，保留零散树<input type="checkbox" data-feature-field="ambient" checked={item.cover === "ambient"} /></label>
-            {#if clearingShape(d, item).type === "sector"}{@render field("半径 / m", "outer", clearingShape(d, item).outer, .1)}{/if}</Part>
+            {@const shape = clearingShape(d, item)}{#if shape.type === "sector"}{@render field("半径 / m", "outer", shape.outer, .1)}{/if}</Part>
     {/if}
     {#if kind === "ridge" || kind === "planting" || kind === "clearing" && clearingShape(d, item).type === "polygon"}
         <div class="sub">{editor.tool === "select" ? "Alt 单击或双击边线插入折点。选中折点后可拖动或删除。" : "切换到选择工具可拖动折点。"}</div>
@@ -130,7 +130,7 @@
 <script lang="ts">
     import * as session from "../state/session.svelte";
     import { type FeatureKind, type Height, type Named } from "../types";
-    import { clearingShape } from "../../core/design/model.js";
+    import { clearingShape } from "../../core/design/model.ts";
     import { featureNames, featureOf, features } from "../../core/edit/landforms.js";
     import Part from "./Part.svelte";
     import Search from "./Search.svelte";

@@ -9,8 +9,8 @@
     <Part title="建筑属性">
         <label class="field">名称<input class="wide" data-building-param="name" value={b.name} /></label>
         <label class="field">形状<select data-building-param="shape" value={b.shape}>{#if b.shape === "ring"}<option value="ring">环形</option>{/if}<option value="rect">矩形</option><option value="circle">圆形</option></select></label>
-        {#if b.shape === "rect"}{@render field("长 / m", "length", b.size[0], 1)}{@render field("宽 / m", "width", b.size[1], 1)}
-        {:else}{@render field("半径 / m", "radius", b.radius, (b.inner ?? 0) + .3)}{/if}
+        {#if b.shape === "rect"}{@render field("长 / m", "length", b.size![0], 1)}{@render field("宽 / m", "width", b.size![1], 1)}
+        {:else}{@render field("半径 / m", "radius", b.radius!, (b.inner ?? 0) + .3)}{/if}
         {@render field("转角 / °", "angle", +(b.angle ?? 0).toFixed(2))}{@render field("高度 / m", "height", b.height, .1)}
         <label class="toggle">显示标题<input type="checkbox" data-building-param="showTitle" checked={b.showTitle !== false} /></label>
     </Part>

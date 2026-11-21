@@ -1,5 +1,5 @@
 import { advance, bearing, distance, mixPoint, nearest, radians, sample } from "../math/geometry.ts";
-import { corners, moveNode, nodePose } from "../design/model.js";
+import { corners, moveNode, nodePose } from "../design/model.ts";
 import { newId } from "./topology.js";
 
 export function canPlaceBuilding(island, center) {

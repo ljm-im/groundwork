@@ -1,12 +1,19 @@
+import { type Building, type Clearing, type ClearingShape, type Design, type Height, type Point, type RoadNode, type Shape, type Yard, type ZoneHeight } from "./types.ts";
+import { type Box } from "../math/geometry.ts";
+import { type Boundary } from "./gates.ts";
+
+export type NodeAnchor = Pick<RoadNode, "type" | "point" | "yard" | "at" | "building" | "door" | "direction">;
+export interface Pose { point: Point; angle: number | null; normal?: number | null }
+
 import { advance, bearing, bounds, mixPoint, nearest, radians, spline } from "../math/geometry.ts";
 import { noise } from "../math/noise.ts";
-import { gateFraction, gatePose } from "../edit/yards.js";
+import { gateFraction, gatePose } from "./gates.ts";
 
 const designNoise = noise(99);
-export const zoneNoise = (x, y) => designNoise(x / 9 + 50, y / 9 - 20);
-export const elevation = (rule, levels) => typeof rule === "number" ? rule : (levels[rule.level] ?? 0) + (rule.offset ?? 0);
+export const zoneNoise = (x: number, y: number) => designNoise(x / 9 + 50, y / 9 - 20);
+export const elevation = (rule: Height | ZoneHeight, levels: Record<string, number>) => typeof rule === "number" ? rule : (levels[rule.level!] ?? 0) + (rule.offset ?? 0);
 
-export function zonePolygon(shape) {
+export function zonePolygon(shape: Shape): Point[] {
     if (shape.type === "polygon") return shape.smooth ? spline(shape.points, true, shape.smooth) : shape.points;
     if (shape.type === "band") {
         const left = [],
@@ -21,7 +28,7 @@ export function zonePolygon(shape) {
         }
         return left.concat(right.reverse());
     }
-    const [cx, cy] = shape.center, points = [];
+    const [cx, cy] = shape.center, points: Point[] = [];
     if (shape.type === "sector") {
         for (const outer of [true, false]) {
             for (let k = 0; k <= shape.samples; k++) {
@@ -48,8 +55,8 @@ export function zonePolygon(shape) {
     return points;
 }
 
-export function corners(b) {
-    const [w, h] = b.size, a = b.angle * radians, c = Math.cos(a), s = Math.sin(a);
+export function corners(b: Building): Point[] {
+    const [w, h] = b.size!, a = b.angle! * radians, c = Math.cos(a), s = Math.sin(a);
     return [
         [-w / 2, -h / 2],
         [w / 2, -h / 2],
@@ -58,67 +65,67 @@ export function corners(b) {
     ].map(([x, y]) => [b.center[0] + x * c - y * s, b.center[1] + x * s + y * c]);
 }
 
-export function buildingShape(b) {
+export function buildingShape(b: Building) {
     const polygon = b.shape === "rect" ? corners(b) : null;
-    const [x, y] = b.center, r = b.radius;
-    const box = polygon ? bounds(polygon) : [x - r, y - r, x + r, y + r];
+    const [x, y] = b.center, r = b.radius!;
+    const box: Box = polygon ? bounds(polygon) : [x - r, y - r, x + r, y + r];
     const angle = (b.angle ?? 0) * radians,
         c = Math.cos(angle),
         s = Math.sin(angle);
-    const signedDistance = (px, py) => {
+    const signedDistance = (px: number, py: number) => {
         const dx = px - x,
             dy = py - y;
         if (polygon) {
-            const u = Math.abs(dx * c + dy * s) - b.size[0] / 2;
-            const v = Math.abs(-dx * s + dy * c) - b.size[1] / 2;
+            const u = Math.abs(dx * c + dy * s) - b.size![0] / 2;
+            const v = Math.abs(-dx * s + dy * c) - b.size![1] / 2;
             return Math.sqrt(Math.max(0, u) ** 2 + Math.max(0, v) ** 2) + Math.min(Math.max(u, v), 0);
         }
         const radius = Math.sqrt(dx * dx + dy * dy);
-        return b.shape === "ring" ? Math.max(radius - r, b.inner - radius) : radius - r;
+        return b.shape === "ring" ? Math.max(radius - r, b.inner! - radius) : radius - r;
     };
     return { data: b, polygon, box, signedDistance };
 }
 
-export function areaBoundary(design, area) {
-    if (area.points) return area;
-    const shape = design.zones.find(z => z.id === area.zone).shape;
+export function areaBoundary(design: Pick<Design, "zones">, area: Yard): Yard & Boundary {
+    if (area.points) return area as Yard & Boundary;
+    const shape = design.zones.find(z => z.id === area.zone)!.shape;
     return { ...area, points: zonePolygon(shape), ellipse: shape.type === "ellipse" ? shape : null };
 }
 
-function attachedPose(design, node) {
+function attachedPose(design: Pick<Design, "zones" | "yards" | "buildings">, node: NodeAnchor): Pose {
     if (node.type === "gate") {
-        const area = design.yards.find(y => y.id === node.yard);
-        return gatePose(areaBoundary(design, area), node.at);
+        const area = design.yards!.find(y => y.id === node.yard)!;
+        return gatePose(areaBoundary(design, area), node.at!);
     }
-    if (node.type !== "door") return { point: node.point, angle: null };
-    const b = design.buildings.find(b => b.id === node.building),
-        door = b.doors.find(d => d.id === node.door);
-    if (b.shape !== "rect") return { point: advance(b.center, door.angle * radians, b.radius), angle: door.angle * radians };
+    if (node.type !== "door") return { point: node.point!, angle: null };
+    const b = design.buildings.find(b => b.id === node.building)!,
+        door = b.doors.find(d => d.id === node.door)!;
+    if (b.shape !== "rect") return { point: advance(b.center, door.angle! * radians, b.radius!), angle: door.angle! * radians };
     const walls = corners(b),
-        a = walls[door.wall],
-        end = walls[(door.wall + 1) % 4];
-    return { point: mixPoint(a, end, door.t), angle: bearing(a, end) - Math.PI / 2 };
+        a = walls[door.wall!],
+        end = walls[(door.wall! + 1) % 4];
+    return { point: mixPoint(a, end, door.t!), angle: bearing(a, end) - Math.PI / 2 };
 }
 
-export function nodePose(design, node) {
-    if (typeof node === "string") node = design.nodes.find(n => n.id === node);
+export function nodePose(design: Pick<Design, "zones" | "yards" | "buildings" | "nodes">, node: NodeAnchor | string): Pose {
+    if (typeof node === "string") node = design.nodes.find(n => n.id === node)!;
     const pose = attachedPose(design, node);
     if (node.type === "door" || node.type === "gate") pose.normal = pose.angle;
     if (node.direction != null) pose.angle = node.direction * radians;
     return pose;
 }
 
-export function moveNode(design, node, p) {
+export function moveNode(design: Design, node: NodeAnchor, p: Point) {
     if (node.type === "gate") {
-        node.at = gateFraction(areaBoundary(design, design.yards.find(y => y.id === node.yard)), p);
+        node.at = gateFraction(areaBoundary(design, design.yards!.find(y => y.id === node.yard)!), p);
         return;
     }
     if (node.type !== "door") {
         node.point = p;
         return;
     }
-    const b = design.buildings.find(b => b.id === node.building),
-        door = b.doors.find(d => d.id === node.door);
+    const b = design.buildings.find(b => b.id === node.building)!,
+        door = b.doors.find(d => d.id === node.door)!;
     if (b.shape !== "rect") door.angle = bearing(b.center, p) / radians;
     else {
         const hit = nearest(...p, corners(b), true);
@@ -127,6 +134,6 @@ export function moveNode(design, node, p) {
     }
 }
 
-export function clearingShape(d, area) {
-    return area.shape ?? { type: "ellipse", center: d.zones.find(z => z.id === area.zone).shape.center, radii: area.radii, samples: 48 };
+export function clearingShape(d: Pick<Design, "zones">, area: Clearing): ClearingShape {
+    return area.shape ?? { type: "ellipse", center: (d.zones.find(z => z.id === area.zone)!.shape as { center: Point }).center, radii: area.radii!, samples: 48 };
 }

@@ -5,7 +5,7 @@ import { distance, mixPoint, nearest, sample } from "../src/core/math/geometry.t
 import { History } from "../src/core/edit/history.js";
 import { Island } from "../src/core/island.js";
 import { addFeature, clickDrawing, drawingTarget, featureLine, finishExtension, insertVertex, newDrawing } from "../src/core/edit/landforms.js";
-import { parseDesign, serializeDesign } from "../src/core/design/model.js";
+import { parseDesign, serializeDesign } from "../src/core/design/model.ts";
 import { inClearing, plantTrees } from "../src/core/vegetation/vegetation.js";
 import { insidePolygon, simpleBoundary } from "../src/core/math/polygon.ts";
 

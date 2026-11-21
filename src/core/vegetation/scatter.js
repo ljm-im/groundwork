@@ -1,6 +1,6 @@
 import { angleDiff, bearing, distance, radians, smooth } from "../math/geometry.ts";
 import { fbm, noise, randomAt } from "../math/noise.ts";
-import { clearingShape } from "../design/shapes.js";
+import { clearingShape } from "../design/shapes.ts";
 import { insidePolygon } from "../math/polygon.ts";
 
 export function inClearing(shape, p) {
