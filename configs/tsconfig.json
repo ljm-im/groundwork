@@ -1,28 +1,28 @@
 {
-  "compilerOptions": {
-    "target": "ES2023",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "lib": [
-      "ES2023",
-      "DOM",
-      "DOM.Iterable"
-    ],
-    "allowJs": true,
-    "checkJs": false,
-    "strict": true,
-    "isolatedModules": true,
-    "verbatimModuleSyntax": true,
-    "noEmit": true,
-    "skipLibCheck": true,
-    "types": [
-      "svelte",
-      "vite/client",
-      "node"
+    "compilerOptions": {
+        "target": "ES2023",
+        "module": "ESNext",
+        "moduleResolution": "bundler",
+        "lib": [
+            "ES2023",
+            "DOM",
+            "DOM.Iterable"
+        ],
+        "allowJs": true,
+        "checkJs": false,
+        "strict": true,
+        "isolatedModules": true,
+        "verbatimModuleSyntax": true,
+        "noEmit": true,
+        "skipLibCheck": true,
+        "types": [
+            "svelte",
+            "vite/client",
+            "node"
+        ]
+    },
+    "include": [
+        "../src/**/*",
+        "./*.ts"
     ]
-  },
-  "include": [
-    "../src/**/*",
-    "./*.ts"
-  ]
 }
