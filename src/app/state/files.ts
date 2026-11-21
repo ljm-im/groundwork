@@ -35,16 +35,20 @@ export class DesignFiles {
             const design = parseDesign(await response.text());
             e.map.resize();
             session.timed("terrain-editor:first", () => {
-                e.history = new History(design) as session.Editor["history"];
+                e.history = new History(design);
                 e.replace(design, true);
                 flushSync();
             });
             try {
                 const stored = localStorage.getItem(draftKey);
                 if (stored) {
-                    const draft = JSON.parse(stored);
-                    parseDesign(draft.text);
-                    e.draft = draft;
+                    const draft: unknown = JSON.parse(stored);
+                    if (draft && typeof draft === "object" && "text" in draft && typeof draft.text === "string") {
+                        parseDesign(draft.text);
+                        // Recovery historically requires only a readable design. Keep the saved
+                        // display metadata as written, including older records with missing fields.
+                        e.draft = draft as NonNullable<session.Editor["draft"]>;
+                    }
                 }
             }
             catch {

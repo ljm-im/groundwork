@@ -56,7 +56,7 @@ export class Editor {
     dirty = $state(false);
     canUndo = $state(false);
     canRedo = $state(false);
-    history!: History & { states: string[]; index: number };
+    history!: History;
     readonly files = new DesignFiles(this);
     map!: MapView;
     panel!: HTMLElement;
