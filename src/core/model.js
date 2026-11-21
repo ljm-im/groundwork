@@ -107,7 +107,7 @@ export function parseDesign(text) {
   }
   const v=d.vegetation, fraction=n=>Number.isFinite(n) && n>=0 && n<=1;
   check(v && Object.values(v.density).every(fraction),'区域植树密度无效');
-  if (v.scatterPattern!=null) check(typeof v.scatterPattern==='string' && /^[0-9a-f]+$/.test(v.scatterPattern),'植被采样序列无效');
+  delete v.scatterPattern;
   if (v.forest) check(point(v.forest.center) && point(v.forest.radii) && v.forest.radii.every(positive) && fraction(v.forest.density),'旧树林参数无效');
   if (v.grove) check(d.zones.some(z=>z.id===v.grove.zone && point(z.shape.center)) && point(v.grove.radius) && v.grove.radius[1]>v.grove.radius[0] && v.grove.radius[0]>=0 &&
     point(v.grove.angles) && v.grove.angles[1]>v.grove.angles[0] && Array.isArray(v.grove.zones) && fraction(v.grove.density),'旧密林参数无效');

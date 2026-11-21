@@ -39,15 +39,14 @@ export function treeEnvironment(design, terrain) {
   };
 }
 
-// Legacy grids consumed a fourth random draw only at occupied sites. The callback
-// chooses the stride, so changing a local planting does not move distant samples.
+// Each cell owns four samples, regardless of planting decisions in earlier cells.
 export function walkScatter(design, visit) {
   const { grid } = design, seed = design.seed + 55;
-  let offset = 0, cell = 0;
+  let cell = 0;
   for (let y = grid.yMin + 2; y < grid.yMax; y += 3)
-    for (let x = grid.xMin + 2; x < grid.xMax; x += 3) {
+    for (let x = grid.xMin + 2; x < grid.xMax; x += 3, cell++) {
+      const offset = cell * 4;
       const point = [x + (randomAt(seed, offset) - .5) * 2.6, y + (randomAt(seed, offset + 1) - .5) * 2.6];
-      const fourth = visit(point, randomAt(seed, offset + 2), randomAt(seed, offset + 3), cell++);
-      offset += fourth ? 4 : 3;
+      visit(point, randomAt(seed, offset + 2), randomAt(seed, offset + 3));
     }
 }

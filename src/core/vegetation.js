@@ -87,7 +87,7 @@ function plantedTrees(design, terrain, areas, env) {
 
 export function plantTrees(design, terrain) {
   const rules = design.vegetation, env = treeEnvironment(design, terrain), trees = [];
-  walkScatter(design, (p, roll, size, cell) => {
+  walkScatter(design, (p, roll, size) => {
     const k = terrain.grid.index(...p), zone = terrain.zones[terrain.zoneAt[k]]?.id;
     if (terrain.dc[k] >= 2.5 && (!rules.plantings.some(a => covers(a, p, zone)) || env.clearingAt(p, true))) {
       const { slope, clump, factor } = env.terrainFactors(p, k);
@@ -96,7 +96,6 @@ export function plantTrees(design, terrain) {
       if (slope <= .85 && roll <= density && !env.clearingAt(p, false) && env.freeGround(p) && env.outsideBuffers(p) && env.outsideBuildings(p))
         trees.push({ point: p, wooded: false, radius: 1.3 + size * 1.1, species: 'small' });
     }
-    return rules.scatterPattern ? (parseInt(rules.scatterPattern[cell >> 2], 16) & (1 << (cell % 4))) !== 0 : true;
   });
   return trees.concat(plantedTrees(design, terrain, rules.plantings, env));
 }
