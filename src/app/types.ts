@@ -1,6 +1,6 @@
 import { type Island } from "../core/island.js";
 import { type IslandMap } from "../render/map.js";
-import { type layerDefaults } from "../core/controls.js";
+import { type layerDefaults } from "../core/edit/controls.js";
 
 export type Tab = "network" | "buildings" | "terrain" | "layers" | "issues";
 export type FeatureKind = "peak" | "ridge" | "planting" | "clearing";
@@ -48,7 +48,7 @@ export type IslandModel = Omit<Island, "design" | "routes" | "issues"> & { desig
     terrain: Island["terrain"] & { zoneAt: Int16Array }; graded: NonNullable<Island["graded"]> };
 export interface Drawing {
     kind: FeatureKind; points: Point[]; cursor: Point | null;
-    hover: ReturnType<typeof import("../core/landforms.js").drawingTarget>;
+    hover: ReturnType<typeof import("../core/edit/landforms.js").drawingTarget>;
     extension: { id: string; origin: Point; atStart: boolean } | null;
 }
 export type MapView = Omit<IslandMap, "screen" | "world" | "hitBuilding" | "hitHandle" | "issueHits" | "focusBounds"> & {

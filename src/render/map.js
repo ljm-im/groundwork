@@ -1,13 +1,13 @@
-import { advance, bearing, clamp, distance, mixPoint, nearest } from "../core/geometry.js";
-import { areaBoundary, buildingShape, nodePose, zonePolygon } from "../core/model.js";
-import { titlePoint } from "../core/buildings.js";
-import { issueShapes, issueView, objectIssues } from "../core/issues.js";
-import { featureLine, featureNames, features } from "../core/landforms.js";
-import { treeStyles } from "../core/vegetation.js";
-import { handles } from "../core/controls.js";
+import { advance, bearing, clamp, distance, mixPoint, nearest } from "../core/math/geometry.js";
+import { areaBoundary, buildingShape, nodePose, zonePolygon } from "../core/design/model.js";
+import { titlePoint } from "../core/edit/buildings.js";
+import { issueShapes, issueView, objectIssues } from "../core/checks/issues.js";
+import { featureLine, featureNames, features } from "../core/edit/landforms.js";
+import { treeStyles } from "../core/vegetation/vegetation.js";
+import { handles } from "../core/edit/controls.js";
 import { relief } from "./relief.js";
-import { labelReading } from "../core/cartography.js";
-import { hedgeLines } from "../core/yards.js";
+import { labelReading } from "./cartography.js";
+import { hedgeLines } from "../core/edit/yards.js";
 
 const ink = "#214e4c",
     paper = "#fffdf2",

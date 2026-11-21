@@ -1,21 +1,21 @@
 import assert from "node:assert/strict";
 import { readFixture } from "../configs/read-fixture.ts";
 import { performance } from "node:perf_hooks";
-import { advance, angleDiff, bearing, createGrid, distance, nearest, pointAt, radians, sample, stations } from "../src/core/geometry.js";
-import { radiusAt, exemptRadius } from "../src/core/alignment.js";
-import { addDoor, canPlaceBuilding, doorRoads, placeBuilding, removeBuildingPart, rotateBuilding, setShape, titlePoint } from "../src/core/buildings.js";
-import { History } from "../src/core/history.js";
+import { advance, angleDiff, bearing, createGrid, distance, nearest, pointAt, radians, sample, stations } from "../src/core/math/geometry.js";
+import { radiusAt, exemptRadius } from "../src/core/roads/alignment.js";
+import { addDoor, canPlaceBuilding, doorRoads, placeBuilding, removeBuildingPart, rotateBuilding, setShape, titlePoint } from "../src/core/edit/buildings.js";
+import { History } from "../src/core/edit/history.js";
 import { Island } from "../src/core/island.js";
-import { moveNode, nodePose, parseDesign, serializeDesign, zonePolygon } from "../src/core/model.js";
-import { labelReading } from "../src/core/cartography.js";
-import { moveHandle } from "../src/core/controls.js";
-import { profile } from "../src/core/profiles.js";
-import { clearLead, routeAll, routeEdge } from "../src/core/routing.js";
-import { selfOverlaps, sharpBends } from "../src/core/proximity.js";
-import { generateTerrain } from "../src/core/terrain.js";
-import { armBearing, summitHeights, validateDesign, validateRoads } from "../src/core/validation.js";
-import { addGate, addNode, connect, removeLinks, splitRoad } from "../src/core/topology.js";
-import { gateDistance, gateFraction, gatePose, hedgeLines, insideYard, perimeter } from "../src/core/yards.js";
+import { moveNode, nodePose, parseDesign, serializeDesign, zonePolygon } from "../src/core/design/model.js";
+import { labelReading } from "../src/render/cartography.js";
+import { moveHandle } from "../src/core/edit/controls.js";
+import { profile } from "../src/core/roads/profiles.js";
+import { clearLead, routeAll, routeEdge } from "../src/core/roads/routing.js";
+import { selfOverlaps, sharpBends } from "../src/core/roads/proximity.js";
+import { generateTerrain } from "../src/core/terrain/terrain.js";
+import { armBearing, summitHeights, validateDesign, validateRoads } from "../src/core/checks/validation.js";
+import { addGate, addNode, connect, removeLinks, splitRoad } from "../src/core/edit/topology.js";
+import { gateDistance, gateFraction, gatePose, hedgeLines, insideYard, perimeter } from "../src/core/edit/yards.js";
 
 const previousDefault = await readFixture("round4.json");
 const raw = serializeDesign(parseDesign(previousDefault)),

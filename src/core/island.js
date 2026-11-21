@@ -1,8 +1,8 @@
-import { generateTerrain, updateHeights } from "./terrain.js";
-import { plantTrees, visibleTrees } from "./vegetation.js";
-import { routeAll } from "./routing.js";
-import { gradeRoads, profile } from "./profiles.js";
-import { validateDesign, validateRoads } from "./validation.js";
+import { generateTerrain, updateHeights } from "./terrain/terrain.js";
+import { plantTrees, visibleTrees } from "./vegetation/vegetation.js";
+import { routeAll } from "./roads/routing.js";
+import { gradeRoads, profile } from "./roads/profiles.js";
+import { validateDesign, validateRoads } from "./checks/validation.js";
 
 export class Island {
     constructor(design) {

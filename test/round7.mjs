@@ -1,10 +1,10 @@
-import { previewLevels } from "../src/app/levelPreview.ts";
+import { previewLevels } from "../src/app/state/levelPreview.ts";
 import assert from "node:assert/strict";
 import { readFixture } from "../configs/read-fixture.ts";
 import { Island } from "../src/core/island.js";
-import { parseDesign, serializeDesign } from "../src/core/model.js";
-import { nearest } from "../src/core/geometry.js";
-import { insideYard } from "../src/core/yards.js";
+import { parseDesign, serializeDesign } from "../src/core/design/model.js";
+import { nearest } from "../src/core/math/geometry.js";
+import { insideYard } from "../src/core/edit/yards.js";
 
 const input = await readFixture("round6.json");
 const design = parseDesign(input), island = new Island(design);

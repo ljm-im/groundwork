@@ -84,7 +84,7 @@ export default defineConfig(
         rules: { "@typescript-eslint/no-unused-vars": "error" }
     },
     // Preserve the four original getters that form part of the JavaScript engine's public API.
-    ...Object.entries({ "src/core/history.js": "dirty|canUndo|canRedo", "src/render/map.js": "scale" }).map(([file, names]) => ({
+    ...Object.entries({ "src/core/edit/history.js": "dirty|canUndo|canRedo", "src/render/map.js": "scale" }).map(([file, names]) => ({
         files: [file],
         rules: { "no-restricted-syntax": ["error", typeImport, {
             ...accessor,
@@ -92,7 +92,7 @@ export default defineConfig(
         }] }
     })),
     // Road ID sets batch engine work; components do not observe their contents.
-    { files: ["src/app/session.svelte.ts"], rules: { "svelte/prefer-svelte-reactivity": "off" } },
+    { files: ["src/app/state/session.svelte.ts"], rules: { "svelte/prefer-svelte-reactivity": "off" } },
     {
         files: ["src/core/**/*.js"],
         rules: {

@@ -1,4 +1,4 @@
-import { clamp, smooth } from "../core/geometry.js";
+import { clamp, smooth } from "../core/math/geometry.js";
 
 const colors = [
     [0, 226, 231, 200],

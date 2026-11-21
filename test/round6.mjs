@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFixture } from "../configs/read-fixture.ts";
-import { distance, mixPoint, nearest, sample } from "../src/core/geometry.js";
-import { History } from "../src/core/history.js";
+import { distance, mixPoint, nearest, sample } from "../src/core/math/geometry.js";
+import { History } from "../src/core/edit/history.js";
 import { Island } from "../src/core/island.js";
-import { addFeature, clickDrawing, drawingTarget, featureLine, finishExtension, insertVertex, newDrawing } from "../src/core/landforms.js";
-import { parseDesign, serializeDesign } from "../src/core/model.js";
-import { inClearing, plantTrees } from "../src/core/vegetation.js";
-import { insideYard, simpleBoundary } from "../src/core/yards.js";
+import { addFeature, clickDrawing, drawingTarget, featureLine, finishExtension, insertVertex, newDrawing } from "../src/core/edit/landforms.js";
+import { parseDesign, serializeDesign } from "../src/core/design/model.js";
+import { inClearing, plantTrees } from "../src/core/vegetation/vegetation.js";
+import { insideYard, simpleBoundary } from "../src/core/edit/yards.js";
 
 const raw = await readFixture("round6.json");
 const sha = data => createHash("sha256").update(data).digest("hex");
