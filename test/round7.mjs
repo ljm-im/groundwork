@@ -1,7 +1,7 @@
 import { previewLevels } from "../src/app/state/levelPreview.ts";
 import assert from "node:assert/strict";
 import { readFixture } from "../configs/read-fixture.ts";
-import { Island } from "../src/core/island.js";
+import { Island } from "../src/core/island.ts";
 import { parseDesign, serializeDesign } from "../src/core/design/model.ts";
 import { nearest } from "../src/core/math/geometry.ts";
 import { insidePolygon } from "../src/core/math/polygon.ts";

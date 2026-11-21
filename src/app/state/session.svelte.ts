@@ -1,5 +1,5 @@
 import { tick } from "svelte";
-import { Island } from "../../core/island.js";
+import { Island } from "../../core/island.ts";
 import { History } from "../../core/edit/history.ts";
 import { layerDefaults } from "./layers.ts";
 import { areaBoundary, nodePose, zonePolygon } from "../../core/design/model.ts";

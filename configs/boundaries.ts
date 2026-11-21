@@ -10,12 +10,25 @@ const testImports = new Set(["node:assert/strict", "node:crypto", "node:perf_hoo
 const browserNames = new Set(["document", "window", "localStorage", "HTMLCanvasElement", "navigator", "Path2D", "requestAnimationFrame"]);
 const ioNames = new Set(["require", "process", "fetch", "XMLHttpRequest", "Worker"]);
 
+const allowed: Record<string, string[]> = {
+    math: [],
+    design: ["math"],
+    terrain: ["math", "design"],
+    roads: ["math", "design"],
+    vegetation: ["math", "design"],
+    checks: ["math", "design", "roads"],
+    edit: ["math", "design"],
+    "island.ts": ["math", "design", "terrain", "roads", "vegetation", "checks", "edit"]
+};
+const graph = new Map<string, Set<string>>();
+
 function checkDirectory(directory: string) {
     for (const entry of readdirSync(directory, { recursive: true, withFileTypes: true })) {
         if (!entry.isFile() || !/\.[cm]?[jt]s$/.test(entry.name)) continue;
         const path = resolve(entry.parentPath, entry.name);
         const file = ts.createSourceFile(path, readFileSync(path, "utf8"), ts.ScriptTarget.Latest, true);
         const inCore = directory === core;
+        if (inCore) graph.set(path, new Set());
         function fail(node: ts.Node, reason: string): never {
             const line = file.getLineAndCharacterOfPosition(node.getStart()).line + 1;
             assert.fail(`${relative(root, path)}:${line} ${reason}`);
@@ -26,7 +39,14 @@ function checkDirectory(directory: string) {
             if (!inCore && testImports.has(name)) return;
             if (!name.startsWith(".")) fail(node, "Unexpected dependency " + name);
             const target = resolve(entry.parentPath, name);
-            if (inCore && target.startsWith(core + sep) && [".js", ".ts"].includes(extname(target))) return;
+            if (inCore && target.startsWith(core + sep) && extname(target) === ".ts") {
+                const group = relative(core, path).split(sep)[0];
+                const dependencyGroup = relative(core, target).split(sep)[0];
+                if (!Object.hasOwn(allowed, group) || group !== dependencyGroup && !allowed[group].includes(dependencyGroup))
+                    fail(node, group + " cannot depend on " + dependencyGroup);
+                graph.get(path)!.add(target);
+                return;
+            }
             if (!inCore && (target === resolve(root, "configs/read-fixture.ts") ||
         (target.startsWith(tests + sep) && /\.[cm]?[jt]s$/.test(target)) ||
         (target.startsWith(resolve(root, "src") + sep) && /\.(?:js|ts|svelte)$/.test(target)))) return;
@@ -53,5 +73,16 @@ function checkDirectory(directory: string) {
     }
 }
 checkDirectory(core);
+const visited = new Set<string>(), active = new Set<string>();
+function checkCycles(path: string) {
+    assert(!active.has(path), "Circular dependency: " + [...active, path].map(p => relative(core, p)).join(" -> "));
+    if (visited.has(path)) return;
+    assert(graph.has(path), "Missing core module: " + relative(core, path));
+    active.add(path);
+    for (const target of graph.get(path)!) checkCycles(target);
+    active.delete(path);
+    visited.add(path);
+}
+for (const path of graph.keys()) checkCycles(path);
 checkDirectory(tests);
 console.log("Core isolation and fixture-only test inputs passed.");

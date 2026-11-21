@@ -5,7 +5,7 @@ import { advance, angleDiff, bearing, createGrid, distance, nearest, pointAt, ra
 import { radiusAt, exemptRadius } from "../src/core/roads/alignment.ts";
 import { addDoor, canPlaceBuilding, doorRoads, placeBuilding, removeBuildingPart, rotateBuilding, setShape, titlePoint } from "../src/core/edit/buildings.ts";
 import { History } from "../src/core/edit/history.ts";
-import { Island } from "../src/core/island.js";
+import { Island } from "../src/core/island.ts";
 import { moveNode, nodePose, parseDesign, serializeDesign, zonePolygon } from "../src/core/design/model.ts";
 import { labelReading } from "../src/render/cartography.js";
 import { moveHandle } from "../src/core/edit/controls.ts";

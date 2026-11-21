@@ -1,3 +1,5 @@
+import { type Design } from "./design/types.ts";
+import { type Terrain, type Tree, type Route, type Graded, type Issue } from "./design/results.ts";
 import { generateTerrain, updateHeights } from "./terrain/terrain.ts";
 import { plantTrees, visibleTrees } from "./vegetation/vegetation.ts";
 import { routeAll } from "./roads/routing.ts";
@@ -5,16 +7,24 @@ import { gradeRoads, profile } from "./roads/profiles.ts";
 import { validateDesign, validateRoads } from "./checks/validation.ts";
 
 export class Island {
-    constructor(design) {
+    declare design: Design;
+    declare terrain: Terrain;
+    declare treeCandidates: Tree[];
+    declare routes: Route[];
+    declare graded: Graded;
+    declare trees: Tree[];
+    declare issues: Issue[];
+
+    constructor(design: Design) {
         this.design = design;
         this.terrain = generateTerrain(design);
         this.treeCandidates = plantTrees(design, this.terrain);
         this.reroute();
     }
 
-    reroute(ids) {
+    reroute(ids?: ReadonlySet<string>) {
         const { design, terrain } = this;
-        this.routes = routeAll(design, terrain, ids ? this.routes : [], ids).map(r => r.h ? r : profile(design, terrain, r));
+        this.routes = routeAll(design, terrain, ids ? this.routes : [], ids).map(r => "h" in r && r.h ? r : profile(design, terrain, r));
         this.finish();
     }
 

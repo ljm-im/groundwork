@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { readFixture } from "../configs/read-fixture.ts";
 import { distance, mixPoint, nearest, sample } from "../src/core/math/geometry.ts";
 import { History } from "../src/core/edit/history.ts";
-import { Island } from "../src/core/island.js";
+import { Island } from "../src/core/island.ts";
 import { addFeature, clickDrawing, drawingTarget, featureLine, finishExtension, insertVertex, newDrawing } from "../src/core/edit/landforms.ts";
 import { parseDesign, serializeDesign } from "../src/core/design/model.ts";
 import { inClearing, plantTrees } from "../src/core/vegetation/vegetation.ts";

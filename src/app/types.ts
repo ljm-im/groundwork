@@ -1,9 +1,9 @@
 import { type Drawing, type FeatureKind, type Handle } from "../core/edit/types.ts";
 export { type Drawing, type FeatureKind, type Handle, type Selection } from "../core/edit/types.ts";
-import { type Route, type Issue } from "../core/design/results.ts";
-import { type Design, type Point } from "../core/design/types.ts";
+import { type Issue } from "../core/design/results.ts";
+import { type Point } from "../core/design/types.ts";
 export { type Design, type Edge, type Point, type Height, type Named, type Building, type Door, type Zone, type RoadClass, type RoadNode } from "../core/design/types.ts";
-import { type Island } from "../core/island.js";
+import { type Island } from "../core/island.ts";
 import { type IslandMap } from "../render/map.js";
 import { type layerDefaults } from "./state/layers.ts";
 
@@ -16,8 +16,7 @@ export { type Route } from "../core/design/results.ts";
 
 export { type Issue } from "../core/design/results.ts";
 
-export type IslandModel = Omit<Island, "design" | "routes" | "issues"> & { design: Design; routes: Route[]; issues: Issue[];
-    terrain: Island["terrain"] & { zoneAt: Int16Array }; graded: NonNullable<Island["graded"]> };
+export type IslandModel = Island;
 
 export type MapView = Omit<IslandMap, "screen" | "world" | "hitBuilding" | "hitHandle" | "issueHits" | "focusBounds"> & {
     focusBounds(box: number[]): void;
