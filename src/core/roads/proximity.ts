@@ -1,6 +1,13 @@
+import { type Route, type IssueSpan } from "../design/results.ts";
+import { type Routing, type Point } from "../design/types.ts";
+
+type RoadLine = Pick<Route, "id" | "edge" | "points" | "s">;
+interface LineSegment { a: Point; b: Point; length: number; station: number }
+interface RoadContact { point: Point; spans: IssueSpan[] }
+interface SelfContact { point: Point; ranges: [number, number][] }
 import { angleDiff, bearing, bounds, clamp, distance, mixPoint, radians, stations } from "../math/geometry.ts";
 
-function disk(a, b, center, radius) {
+function disk(a: Point, b: Point, center: Point, radius: number): [number, number] | null {
     const dx = b[0] - a[0],
         dy = b[1] - a[1],
         px = a[0] - center[0],
@@ -16,7 +23,7 @@ function disk(a, b, center, radius) {
     return hi > lo ? [lo, hi] : null;
 }
 
-function slab(offset, rate, low, high, open = false) {
+function slab(offset: number, rate: number, low: number, high: number, open = false): [number, number] | null {
     if (Math.abs(rate) < 1e-12) {
         const inside = open ? offset > low && offset < high : offset >= low && offset <= high;
         return inside ? [0, 1] : null;
@@ -29,13 +36,13 @@ function slab(offset, rate, low, high, open = false) {
 }
 
 // A road segment swept by the clearance radius is a rectangle with two round caps.
-function nearCapsule(segment, other, radius) {
+function nearCapsule(segment: LineSegment, other: LineSegment, radius: number): [number, number] | null {
     const { a, b } = segment, p = other.a, q = other.b, ux = (q[0] - p[0]) / other.length, uy = (q[1] - p[1]) / other.length;
     const x = a[0] - p[0],
         y = a[1] - p[1],
         dx = b[0] - a[0],
         dy = b[1] - a[1];
-    const intervals = [disk(a, b, p, radius), disk(a, b, q, radius)].filter(Boolean);
+    const intervals = [disk(a, b, p, radius), disk(a, b, q, radius)].filter(i => i !== null);
     const along = slab(x * ux + y * uy, dx * ux + dy * uy, 0, other.length);
     const across = slab(y * ux - x * uy, dy * ux - dx * uy, -radius, radius, true);
     if (along && across) {
@@ -49,7 +56,7 @@ function nearCapsule(segment, other, radius) {
     return [segment.station + lo * segment.length, segment.station + hi * segment.length];
 }
 
-function segments(route, shared, radius) {
+function segments(route: RoadLine, shared: Point[], radius: number) {
     const result = [];
     for (let i = 1; i < route.points.length; i++) {
         const a = route.points[i - 1],
@@ -76,9 +83,9 @@ function segments(route, shared, radius) {
     return result;
 }
 
-function sustained(intervals, minimum) {
+function sustained(intervals: [number, number][], minimum: number) {
     intervals.sort((a, b) => a[0] - b[0]);
-    const runs = [];
+    const runs: [number, number][] = [];
     for (const [lo, hi] of intervals) {
         const previous = runs.at(-1);
         if (previous && lo <= previous[1] + 1e-7) previous[1] = Math.max(previous[1], hi);
@@ -87,7 +94,9 @@ function sustained(intervals, minimum) {
     return runs.filter(([lo, hi]) => hi - lo >= minimum - 1e-7);
 }
 
-export function overlappingLocations(a, b, shared, rules, withRanges = false) {
+export function overlappingLocations(a: RoadLine, b: RoadLine, shared: Point[], rules: Routing, withRanges: true): RoadContact[];
+export function overlappingLocations(a: RoadLine, b: RoadLine, shared: Point[], rules: Routing, withRanges?: false): Point[];
+export function overlappingLocations(a: RoadLine, b: RoadLine, shared: Point[], rules: Routing, withRanges = false) {
     const threshold = (a.edge.width + b.edge.width) / 2 + rules.clearance;
     const left = segments(a, shared, rules.junctionRadius),
         right = segments(b, shared, rules.junctionRadius),
@@ -104,7 +113,7 @@ export function overlappingLocations(a, b, shared, rules, withRanges = false) {
         }
     const runsA = sustained(contacts.map(c => c.onA), rules.overlapLength);
     const runsB = sustained(contacts.map(c => c.onB), rules.overlapLength);
-    const points = [];
+    const points: (Point | RoadContact)[] = [];
     for (const ra of runsA)
         for (const rb of runsB) {
             const matches = contacts.filter(c => c.onA[1] > ra[0] && c.onA[0] < ra[1] && c.onB[1] > rb[0] && c.onB[0] < rb[1]);
@@ -114,19 +123,19 @@ export function overlappingLocations(a, b, shared, rules, withRanges = false) {
             const i = a.s.findIndex(s => s >= station);
             if (i > 0) {
                 const point = mixPoint(a.points[i - 1], a.points[i], (station - a.s[i - 1]) / (a.s[i] - a.s[i - 1]));
-                const spans = withRanges ? [[a, "onA"], [b, "onB"]].flatMap(([r, key]) =>
+                const spans = withRanges ? ([[a, "onA"], [b, "onB"]] as const).flatMap(([r, key]) =>
                     sustained(matches.map(c => c[key]), 0).map(([from, to]) => ({ road: r.id, from, to }))) : null;
-                points.push(withRanges ? { point, spans } : point);
+                points.push(withRanges ? { point, spans: spans! } : point);
             }
         }
     return points;
 }
 
 // Minimize centreline distance over pairs of segment parameters whose stations are far enough apart.
-function selfContact(a, b, p, q, startGap, la, lb, separation, radius) {
+function selfContact(a: Point, b: Point, p: Point, q: Point, startGap: number, la: number, lb: number, separation: number, radius: number) {
     const ax = b[0] - a[0], ay = b[1] - a[1], bx = q[0] - p[0], by = q[1] - p[1];
-    const gap = ([t, u]) => startGap + u * lb - t * la - separation;
-    const corners = [[0, 0], [1, 0], [1, 1], [0, 1]], feasible = [];
+    const gap = ([t, u]: Point) => startGap + u * lb - t * la - separation;
+    const corners: Point[] = [[0, 0], [1, 0], [1, 1], [0, 1]], feasible = [];
     for (let i = 0; i < 4; i++) {
         const c = corners[i], next = corners[(i + 1) % 4], g = gap(c), h = gap(next);
         if (g >= 0) feasible.push(c);
@@ -154,8 +163,10 @@ function selfContact(a, b, p, q, startGap, la, lb, separation, radius) {
     return hit;
 }
 
-export function selfOverlaps(points, width, s = stations(points), withRanges = false) {
-    const radius = width + 1, separation = 2 * width, contacts = [];
+export function selfOverlaps(points: Point[], width: number, s: Float64Array | undefined, withRanges: true): SelfContact[];
+export function selfOverlaps(points: Point[], width: number, s?: Float64Array, withRanges?: false): Point[];
+export function selfOverlaps(points: Point[], width: number, s: Float64Array = stations(points), withRanges = false) {
+    const radius = width + 1, separation = 2 * width, contacts: (Point | SelfContact)[] = [];
     const boxes = points.slice(1).map((p, i) => bounds([points[i], p]));
     for (let i = 0; i < boxes.length; i++) {
         const a = boxes[i], la = s[i + 1] - s[i];
@@ -166,9 +177,9 @@ export function selfOverlaps(points, width, s = stations(points), withRanges = f
         b[0] >= a[2] + radius || b[2] <= a[0] - radius || b[1] >= a[3] + radius || b[3] <= a[1] - radius) continue;
             const hit = selfContact(points[i], points[i + 1], points[j], points[j + 1], s[j] - s[i], la, lb, separation, radius);
             if (!hit) continue;
-            const previous = contacts.find(c => distance(withRanges ? c.point : c, hit) <= radius);
+            const previous = contacts.find(c => distance(withRanges ? (c as SelfContact).point : c as Point, hit) <= radius);
             if (withRanges) {
-                const record = previous ?? { point: hit, ranges: [] };
+                const record: SelfContact = previous as SelfContact ?? { point: hit, ranges: [] };
                 const partA = { a: points[i], b: points[i + 1], length: la, station: s[i] }, partB = { a: points[j], b: points[j + 1], length: lb, station: s[j] };
                 record.ranges.push(nearCapsule(partA, partB, radius) ?? [s[i], s[i + 1]], nearCapsule(partB, partA, radius) ?? [s[j], s[j + 1]]);
                 if (!previous) contacts.push(record);
@@ -176,17 +187,17 @@ export function selfOverlaps(points, width, s = stations(points), withRanges = f
             else if (!previous) contacts.push(hit);
         }
     }
-    if (withRanges) for (const record of contacts) record.ranges = sustained(record.ranges, 0);
+    if (withRanges) for (const record of contacts as SelfContact[]) record.ranges = sustained(record.ranges, 0);
     return contacts;
 }
 
 // A corner contributes both incident headings. Compare every such pair within a physical interval.
-export function sharpBends(points, s = stations(points), spanLength = 3, limit = 45 * radians) {
+export function sharpBends(points: Point[], s: Float64Array = stations(points), spanLength = 3, limit = 45 * radians) {
     const spans = [];
     for (let i = 1; i < points.length; i++) if (s[i] > s[i - 1] + 1e-8) {
         spans.push({ start: s[i - 1], end: s[i], angle: bearing(points[i - 1], points[i]), point: points[i - 1] });
     }
-    const bends = [];
+    const bends: { angle: number; point: Point; end: number; from: number; to: number }[] = [];
     for (let i = 1, first = 0; i < spans.length; i++) {
         const span = spans[i];
         while (spans[first].end < span.start - spanLength - 1e-8) first++;

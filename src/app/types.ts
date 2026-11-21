@@ -1,4 +1,5 @@
-import { type Design, type Edge, type Point } from "../core/design/types.ts";
+import { type Route } from "../core/design/results.ts";
+import { type Design, type Point } from "../core/design/types.ts";
 export { type Design, type Edge, type Point, type Height, type Named, type Building, type Door, type Zone, type RoadClass, type RoadNode } from "../core/design/types.ts";
 import { type Island } from "../core/island.js";
 import { type IslandMap } from "../render/map.js";
@@ -12,10 +13,7 @@ export type Layer = keyof typeof layerDefaults;
 export interface Selection { kind: string; id: string; role?: string; index?: number }
 export interface Handle extends Selection { point: Point; role: string }
 
-export interface Route {
-    id: string; edge: Edge; points: Point[]; length: number; drop: number; maxGrade: number;
-    detour: number; stairRuns: number; stairLength: number;
-}
+export { type Route } from "../core/design/results.ts";
 
 export interface Issue {
     severity: string; message: string; road?: string; other?: string; node?: string; building?: string;

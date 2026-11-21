@@ -11,7 +11,7 @@ import { IslandMap } from "../src/render/map.js";
 import { buildingShape, clearingShape, nodePose, parseDesign, serializeDesign } from "../src/core/design/model.ts";
 import { render } from "svelte/server";
 import Network from "../src/app/components/Network.svelte";
-import { overlappingLocations } from "../src/core/roads/proximity.js";
+import { overlappingLocations } from "../src/core/roads/proximity.ts";
 import { addNode, connect } from "../src/core/edit/topology.js";
 import { inClearing } from "../src/core/vegetation/vegetation.js";
 

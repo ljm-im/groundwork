@@ -1,5 +1,5 @@
 import { bounds } from "../../core/math/geometry.ts";
-import { profile } from "../../core/roads/profiles.js";
+import { profile } from "../../core/roads/profiles.ts";
 import { applyLevels, updateHeights } from "../../core/terrain/terrain.ts";
 import { type Height, type IslandModel, type Route } from "../types";
 

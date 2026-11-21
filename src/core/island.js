@@ -1,7 +1,7 @@
 import { generateTerrain, updateHeights } from "./terrain/terrain.ts";
 import { plantTrees, visibleTrees } from "./vegetation/vegetation.js";
-import { routeAll } from "./roads/routing.js";
-import { gradeRoads, profile } from "./roads/profiles.js";
+import { routeAll } from "./roads/routing.ts";
+import { gradeRoads, profile } from "./roads/profiles.ts";
 import { validateDesign, validateRoads } from "./checks/validation.js";
 
 export class Island {
