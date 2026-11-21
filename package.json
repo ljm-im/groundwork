@@ -1,0 +1,25 @@
+{
+  "name": "groundwork",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "packageManager": "pnpm@12.5.1",
+  "scripts": {
+    "dev": "vite --config configs/vite.config.ts",
+    "test": "node configs/boundaries.ts && node test/run.mjs",
+    "check": "svelte-check --tsconfig configs/tsconfig.json --config configs/svelte.config.js && eslint --config configs/eslint.config.js .",
+    "build": "vite build --config configs/vite.config.ts"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "7.3.1",
+    "@types/node": "22.20.2",
+    "eslint": "10.10.0",
+    "eslint-plugin-svelte": "3.23.0",
+    "svelte": "5.57.0",
+    "svelte-check": "4.7.6",
+    "typescript": "6.0.3",
+    "vite": "8.3.5",
+    "typescript-eslint": "8.70.0"
+  }
+}
