@@ -1,5 +1,5 @@
-<section class="map-wrap" class:create={editor.tool !== "select"}>
-    <canvas bind:this={canvas} id="map" tabindex="0"></canvas>
+<section class="map-wrap" aria-label="全岛平面图" class:create={editor.tool !== "select"}>
+    <canvas bind:this={canvas} id="map" tabindex="0" aria-label="可编辑的海岛地形与路网平面图"></canvas>
     <Toolbar {editor} />
     <div class="legend"><span><i class="key"></i>建筑门</span><span><i class="key gate"></i>院门</span><span><i class="key junction"></i>路口</span><span><i
         class="key via"></i>途经点</span><span><i class="key issue"></i>校验</span><span class="tree-key"><i class="forest"></i>林木</span><span class="tree-key"><i class="avenue"></i>行道树</span><span class="tree-key"><i class="small"></i>小乔木</span><span class="tree-key"><i class="shrub"></i>灌木</span></div>

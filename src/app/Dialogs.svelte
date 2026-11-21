@@ -19,7 +19,7 @@
     <section class="dialog">
         <h2 id="draft-title">恢复未保存的草稿？</h2>
         <div class="sub" id="draft-date">{editor.draft ? "上次编辑于 " + new Date(editor.draft.date).toLocaleString() + "。" : ""}</div>
-        <div><button id="discard" onclick={() => editor.files.discard()}>放弃草稿</button><button id="restore" class="primary" onclick={() => editor.files.restore()}>恢复草稿</button></div>
+        <div class="draft-actions"><button id="discard" onclick={() => editor.files.discard()}>放弃草稿</button><button id="restore" class="primary" onclick={() => editor.files.restore()}>恢复草稿</button></div>
     </section>
 </div>
 
@@ -64,7 +64,7 @@
         #affected-roads {
             padding-left: 22px;
         }
-        .dialog div {
+        .draft-actions {
             display: flex;
             justify-content: flex-end;
             gap: 8px;
