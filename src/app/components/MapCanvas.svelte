@@ -250,7 +250,7 @@
     import Icon from "./Icon.svelte";
     import Toolbar from "./Toolbar.svelte";
     import Messages from "./Messages.svelte";
-    import { drawSections } from "../../render/sections.js";
+    import { drawSections } from "../../render/sections.ts";
 
     let { editor }: { editor: session.Editor } = $props();
     let canvas: HTMLCanvasElement;

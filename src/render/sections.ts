@@ -1,10 +1,14 @@
+import { type Section, type Point } from "../core/design/types.ts";
+import { type Terrain } from "../core/design/results.ts";
+import { type Island } from "../core/island.ts";
 import { clamp, distance, mixPoint, sample } from "../core/math/geometry.ts";
 import { treeStyles } from "../core/vegetation/vegetation.ts";
 
 // Section stations and building intersections only change when an endpoint or the terrain changes.
-const sectionCuts = new WeakMap();
+const sectionCuts = new WeakMap<Section, { terrain: Terrain; footprints: string; x0: number; y0: number; x1: number; y1: number;
+    len: number; n: number; stations: Point[]; buildings: { building: Terrain["buildings"][number]; start: number; end: number }[] }>();
 
-function sectionCut(section, terrain, footprints) {
+function sectionCut(section: Section, terrain: Terrain, footprints: string) {
     const [a, b] = section.points;
     const last = sectionCuts.get(section);
     if (last && last.terrain === terrain && last.footprints === footprints && last.x0 === a[0] && last.y0 === a[1] && last.x1 === b[0] && last.y1 === b[1]) return last;
@@ -27,10 +31,10 @@ function sectionCut(section, terrain, footprints) {
     return cut;
 }
 
-export function drawSections(container, island) {
+export function drawSections(container: HTMLElement, island: Island) {
     const { design: d, terrain: t, graded } = island;
     const footprints = t.buildings.map(({ data: b }) => [b.shape, ...b.center, b.angle, b.radius, b.inner, ...(b.size ?? [])].join(",")).join(";");
-    while (container.children.length > d.sections.length) container.lastChild.remove();
+    while (container.children.length > d.sections.length) container.lastChild!.remove();
     for (const [index, section] of d.sections.entries()) {
         let figure = container.children[index];
         if (!figure) {
@@ -40,10 +44,10 @@ export function drawSections(container, island) {
             container.append(figure);
         }
         const id = section.id + "—" + section.id + "′";
-        const label = figure.querySelector("b"), name = figure.querySelector("span");
+        const label = figure.querySelector("b")!, name = figure.querySelector("span")!;
         if (label.textContent !== id) label.textContent = id;
         if (name.textContent !== section.name) name.textContent = section.name;
-        const canvas = figure.lastElementChild,
+        const canvas = figure.lastElementChild as HTMLCanvasElement,
             w = canvas.clientWidth,
             h = canvas.clientHeight;
         if (w < 20 || h < 20) continue;
@@ -52,7 +56,7 @@ export function drawSections(container, island) {
             canvas.width = Math.round(w * dpr);
             canvas.height = Math.round(h * dpr);
         }
-        const ctx = canvas.getContext("2d");
+        const ctx = canvas.getContext("2d")!;
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, w, h);
         const [a, b] = section.points, { len, n, stations, buildings } = sectionCut(section, t, footprints);
@@ -63,8 +67,8 @@ export function drawSections(container, island) {
             right = w - 5,
             base = h - 15,
             ys = Math.min((h - 27) / Math.max(28, ...ground), 3.4);
-        const sx = v => left + v / len * (right - left),
-            sy = v => base - v * ys;
+        const sx = (v: number) => left + v / len * (right - left),
+            sy = (v: number) => base - v * ys;
         ctx.font = "9px Consolas,monospace";
         ctx.textAlign = "right";
         ctx.textBaseline = "middle";
@@ -72,7 +76,7 @@ export function drawSections(container, island) {
             const y = sy(level);
             if (y < 4) continue;
             ctx.fillStyle = "#84938a";
-            ctx.fillText(level, left - 3, y);
+            ctx.fillText(String(level), left - 3, y);
             ctx.beginPath();
             ctx.moveTo(left, y);
             ctx.lineTo(right, y);

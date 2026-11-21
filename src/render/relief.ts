@@ -1,3 +1,6 @@
+import { type Grid } from "../core/math/geometry.ts";
+import { type Terrain, type Tree } from "../core/design/results.ts";
+import { type Island } from "../core/island.ts";
 import { clamp, smooth } from "../core/math/geometry.ts";
 
 const colors = [
@@ -18,7 +21,7 @@ const palette = Array.from({ length: 641 }, (_, i) => {
     return [1, 2, 3].map(k => a[k] + (b[k] - a[k]) * t);
 });
 
-function contours(h, grid, first, end) {
+function contours(h: Float32Array, grid: Grid, first: number, end: number) {
     const paths = Array.from({ length: 4 }, () => new Path2D()),
         { width, height, step } = grid;
     for (let y = first; y < Math.min(end, height - 1); y++)
@@ -37,7 +40,7 @@ function contours(h, grid, first, end) {
                 const px = grid.x(x),
                     py = grid.y(y);
                 let paired = false;
-                const cross = (u, v) => {
+                const cross = (u: number, v: number) => {
                     if (paired) path.lineTo(px + step * u, py - step * v);
                     else path.moveTo(px + step * u, py - step * v);
                     paired = !paired;
@@ -51,15 +54,19 @@ function contours(h, grid, first, end) {
     return paths;
 }
 
-const oceanBorder = new WeakMap();
+interface Chart {
+    raster: HTMLCanvasElement; ctx: CanvasRenderingContext2D; pad: number; pixels: ImageData;
+    bands: Path2D[][]; heights?: Float32Array; lines?: Path2D[]; trees?: Tree[]; woods?: Record<string, Path2D>;
+}
+const oceanBorder = new WeakMap<Terrain, Chart>();
 
-function chartPaper(t) {
-    if (oceanBorder.has(t)) return oceanBorder.get(t);
+function chartPaper(t: Terrain) {
+    if (oceanBorder.has(t)) return oceanBorder.get(t)!;
     const { grid: g } = t, pad = Math.ceil(56 / g.step);
     const raster = document.createElement("canvas");
     raster.width = g.width + 2 * pad;
     raster.height = g.height + 2 * pad;
-    const ctx = raster.getContext("2d"),
+    const ctx = raster.getContext("2d")!,
         pixels = ctx.createImageData(raster.width, raster.height);
     for (let j = 0; j < raster.height; j++)
         for (let i = 0; i < raster.width; i++) {
@@ -76,12 +83,12 @@ function chartPaper(t) {
             pixels.data[k + 3] = 255;
         }
     ctx.putImageData(pixels, 0, 0);
-    const chart = { raster, ctx, pad, pixels: ctx.createImageData(g.width, g.height), bands: [] };
+    const chart: Chart = { raster, ctx, pad, pixels: ctx.createImageData(g.width, g.height), bands: [] };
     oceanBorder.set(t, chart);
     return chart;
 }
 
-export function relief(island) {
+export function relief(island: Island) {
     const { terrain: t, graded } = island, { grid } = t, { width, height, step } = grid, h = graded.heights;
     const chart = chartPaper(t), { raster, ctx, pad, pixels } = chart, data = pixels.data;
     const previous = chart.heights, bandHeight = 16;
@@ -131,21 +138,21 @@ export function relief(island) {
         });
         chart.heights = h;
     }
-    if (!chart.trees || chart.trees.length !== island.trees.length || island.trees.some((tree, i) => tree !== chart.trees[i])) {
+    if (!chart.trees || chart.trees.length !== island.trees.length || island.trees.some((tree, i) => tree !== chart.trees![i])) {
         chart.woods = treePaths(island.trees);
         chart.trees = island.trees;
     }
-    return { raster, margin: pad * step, lines: chart.lines, woods: chart.woods };
+    return { raster, margin: pad * step, lines: chart.lines!, woods: chart.woods! };
 }
 
-function changedRows(current, previous, width, height, first, end) {
+function changedRows(current: Float32Array, previous: Float32Array, width: number, height: number, first: number, end: number) {
     const stop = Math.min(height, end + 1) * width;
     for (let k = Math.max(0, first - 1) * width; k < stop; k++)
         if (current[k] !== previous[k]) return true;
     return false;
 }
 
-function treePaths(trees) {
+function treePaths(trees: Tree[]) {
     const woods = Object.fromEntries(["forest", "small", "shrub", "avenue"].map(k => [k, new Path2D()]));
     for (const tree of trees) {
         const [x, y] = tree.point, path = woods[tree.species];

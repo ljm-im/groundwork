@@ -8,8 +8,8 @@ import { addDoor, doorNode, doorRoads, openDoorAt, removeBuildingPart } from "..
 import { removeVia, removeLinks } from "../../core/edit/topology.ts";
 import { addFeature, clickDrawing, deleteFeature, featureBounds, featureNames, featureOf, finishExtension, newDrawing } from "../../core/edit/landforms.ts";
 import { objectIssues } from "../../core/checks/issues.ts";
-import { drawSections } from "../../render/sections.js";
-import { IslandMap } from "../../render/map.js";
+import { drawSections } from "../../render/sections.ts";
+import { IslandMap } from "../../render/map.ts";
 import { previewLevels } from "./levelPreview";
 import { DesignFiles } from "./files";
 import { errorText, type Building, type Design, type Door, type Drawing, type FeatureKind, type Gesture, type IslandModel, type Issue, type Layer, type MapView, type Point, type RoadNode, type Selection, type Tab, type Tool } from "../types";

@@ -7,7 +7,7 @@ import { addDoor, canPlaceBuilding, doorRoads, placeBuilding, removeBuildingPart
 import { History } from "../src/core/edit/history.ts";
 import { Island } from "../src/core/island.ts";
 import { moveNode, nodePose, parseDesign, serializeDesign, zonePolygon } from "../src/core/design/model.ts";
-import { labelReading } from "../src/render/cartography.js";
+import { labelReading } from "../src/render/map.ts";
 import { moveHandle } from "../src/core/edit/controls.ts";
 import { profile } from "../src/core/roads/profiles.ts";
 import { clearLead, routeAll, routeEdge } from "../src/core/roads/routing.ts";

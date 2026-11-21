@@ -7,7 +7,7 @@ import { History } from "../src/core/edit/history.ts";
 import { Island } from "../src/core/island.ts";
 import { issueShapes, objectIssues } from "../src/core/checks/issues.ts";
 import { addFeature, deleteFeature, featureHit, featureLine, insertVertex } from "../src/core/edit/landforms.ts";
-import { IslandMap } from "../src/render/map.js";
+import { IslandMap } from "../src/render/map.ts";
 import { buildingShape, clearingShape, nodePose, parseDesign, serializeDesign } from "../src/core/design/model.ts";
 import { render } from "svelte/server";
 import Network from "../src/app/components/Network.svelte";

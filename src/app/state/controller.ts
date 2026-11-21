@@ -178,7 +178,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             editor.select({ kind: "via", id: e.id, index: existing });
             return;
         }
-        if ([hit.route.points[0], hit.route.points.at(-1)].some(p => distance(p, hit.point) < 1e-6)) {
+        if ([hit.route.points[0], hit.route.points.at(-1)!].some(p => distance(p, hit.point) < 1e-6)) {
             editor.message("请单击两个端点之间的路面", screen);
             return;
         }
