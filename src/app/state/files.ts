@@ -1,8 +1,8 @@
 import { flushSync, tick } from "svelte";
 import { History } from "../../core/edit/history.ts";
 import { parseDesign, serializeDesign } from "../../core/design/model.ts";
-import * as session from "./session.svelte";
-import { errorText } from "../types";
+import * as session from "./session.svelte.ts";
+import { errorText } from "../types.ts";
 
 const draftKey = "terrain-editor/unsaved-v1";
 const example = new URL("../../../examples/island.json", import.meta.url);

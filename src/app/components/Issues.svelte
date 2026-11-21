@@ -8,7 +8,7 @@
 {/if}
 
 <script lang="ts">
-    import * as session from "../state/session.svelte";
+    import * as session from "../state/session.svelte.ts";
     import IssueRows from "./IssueRows.svelte";
     import Part from "./Part.svelte";
     let { editor }: { editor: session.Editor } = $props();

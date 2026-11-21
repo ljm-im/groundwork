@@ -35,7 +35,7 @@
 </style>
 
 <script lang="ts">
-    import * as session from "../state/session.svelte";
+    import * as session from "../state/session.svelte.ts";
     let { editor }: { editor: session.Editor } = $props();
     let toast: HTMLDivElement;
     $effect(() => {

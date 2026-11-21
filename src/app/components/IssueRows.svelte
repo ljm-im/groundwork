@@ -5,7 +5,7 @@
 {/each}
 
 <script lang="ts">
-    import * as session from "../state/session.svelte";
-    import { type Issue } from "../types";
+    import * as session from "../state/session.svelte.ts";
+    import { type Issue } from "../types.ts";
     let { editor, issues }: { editor: session.Editor; issues: Issue[] } = $props();
 </script>

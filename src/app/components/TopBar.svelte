@@ -120,7 +120,7 @@
 
 <script lang="ts">
     import Icon from "./Icon.svelte";
-    import * as session from "../state/session.svelte";
+    import * as session from "../state/session.svelte.ts";
     let { editor }: { editor: session.Editor } = $props();
     let input: HTMLInputElement;
 </script>

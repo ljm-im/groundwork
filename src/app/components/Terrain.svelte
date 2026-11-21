@@ -132,8 +132,8 @@
 </style>
 
 <script lang="ts">
-    import * as session from "../state/session.svelte";
-    import { type FeatureKind, type Height, type Named } from "../types";
+    import * as session from "../state/session.svelte.ts";
+    import { type FeatureKind, type Height, type Named } from "../types.ts";
     import { type Peak, type Ridge, type Planting, type Clearing } from "../../core/design/types.ts";
     import { clearingShape } from "../../core/design/model.ts";
     import { featureNames, featureOf, features } from "../../core/edit/landforms.ts";

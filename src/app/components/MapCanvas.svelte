@@ -245,8 +245,8 @@
 
 <script lang="ts">
     import { onMount } from "svelte";
-    import { attachController } from "../state/controller";
-    import * as session from "../state/session.svelte";
+    import { attachController } from "../state/controller.ts";
+    import * as session from "../state/session.svelte.ts";
     import Icon from "./Icon.svelte";
     import Toolbar from "./Toolbar.svelte";
     import Messages from "./Messages.svelte";

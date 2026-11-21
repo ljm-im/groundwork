@@ -50,7 +50,7 @@
 </style>
 
 <script lang="ts">
-    import * as session from "../state/session.svelte";
+    import * as session from "../state/session.svelte.ts";
     import Part from "./Part.svelte";
     import ObjectProblems from "./ObjectProblems.svelte";
     import Search from "./Search.svelte";

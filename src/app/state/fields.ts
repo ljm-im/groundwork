@@ -4,8 +4,8 @@ import { elevation } from "../../core/design/model.ts";
 import { featureOf } from "../../core/edit/landforms.ts";
 import { doorRoads, resizeRadius, rotateBuilding, setShape } from "../../core/edit/buildings.ts";
 import { setSegment } from "../../core/edit/topology.ts";
-import * as session from "./session.svelte";
-import { checked, numeric, type Editable, type Layer, type Selection } from "../types";
+import * as session from "./session.svelte.ts";
+import { checked, numeric, type Editable, type Layer, type Selection } from "../types.ts";
 
 function changeFeature(editor: session.Editor, input: Editable, h: Selection, item: Feature) {
     const d = editor.island.design, key = input.dataset.featureField;

@@ -78,8 +78,8 @@
 </style>
 
 <script lang="ts">
-    import * as session from "../state/session.svelte";
-    import { changeField } from "../state/fields";
+    import * as session from "../state/session.svelte.ts";
+    import { changeField } from "../state/fields.ts";
     import Network from "./Network.svelte";
     import Buildings from "./Buildings.svelte";
     import Terrain from "./Terrain.svelte";

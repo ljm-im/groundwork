@@ -10,9 +10,9 @@ import { addFeature, clickDrawing, deleteFeature, featureBounds, featureNames, f
 import { objectIssues } from "../../core/checks/issues.ts";
 import { drawSections } from "../../render/sections.ts";
 import { IslandMap } from "../../render/map.ts";
-import { previewLevels } from "./levelPreview";
-import { DesignFiles } from "./files";
-import { errorText, type Building, type Design, type Door, type Drawing, type FeatureKind, type Gesture, type IslandModel, type Issue, type Layer, type MapView, type Point, type RoadNode, type Selection, type Tab, type Tool } from "../types";
+import { previewLevels } from "./levelPreview.ts";
+import { DesignFiles } from "./files.ts";
+import { errorText, type Building, type Design, type Door, type FeatureKind, type Gesture, type IslandModel, type Issue, type Layer, type MapView, type Point, type RoadNode, type Selection, type Tab, type Tool } from "../types.ts";
 
 export const hints: Record<Tool, string> = {
     peak: "单击地图放置山头", ridge: "依次点出山脊折点，双击或按 Enter 完成 · 单击已有山脊线加点，单击端点延长",
@@ -71,7 +71,7 @@ export class Editor {
     private toastTimer?: ReturnType<typeof setTimeout>;
 
     attach(canvas: HTMLCanvasElement) {
-        this.map = new IslandMap(canvas, this.layers) as MapView;
+        this.map = new IslandMap(canvas, this.layers);
     }
     dispose() {
         cancelAnimationFrame(this.frame);
@@ -124,7 +124,7 @@ export class Editor {
         this.tool = mode;
         this.linkFrom = this.linkYard = null;
         this.forkFromDoor = false;
-        this.map.drawing = ["ridge", "planting", "clearing"].includes(mode) ? newDrawing(mode as FeatureKind) as Drawing : null;
+        this.map.drawing = ["ridge", "planting", "clearing"].includes(mode) ? newDrawing(mode as FeatureKind) : null;
         if (mode === "ridge" || mode === "peak") this.layers.ridges = true;
         if (mode === "planting" || mode === "clearing") this.layers.plantingAreas = true;
         if (["node", "edge", "fork", "gate", "door", "via"].includes(mode)) this.layers.network = true;
@@ -189,7 +189,7 @@ export class Editor {
         }
     }
     replace(design: Design, reset = false) {
-        this.island = new Island(design) as IslandModel;
+        this.island = new Island(design);
         this.selection = this.issue = this.candidates = null;
         this.map.clearIssue();
         this.setTool("select");
@@ -197,7 +197,7 @@ export class Editor {
     }
     rebuild() {
         return this.working("正在重新生成地形与侵蚀…", () => {
-            this.island = new Island(this.island.design) as IslandModel;
+            this.island = new Island(this.island.design);
             this.refresh();
             this.record();
         });

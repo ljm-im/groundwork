@@ -1,4 +1,3 @@
-import { existsSync } from "node:fs";
 import { registerHooks } from "node:module";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
@@ -6,11 +5,6 @@ import { compile, compileModule } from "svelte/compiler";
 
 // Exercise the actual inspector and its rune modules in Node without a dev server.
 registerHooks({
-    resolve(specifier, context, nextResolve) {
-        if (specifier.startsWith(".") && context.parentURL && existsSync(new URL(specifier + ".ts", context.parentURL)))
-            return nextResolve(specifier + ".ts", context);
-        return nextResolve(specifier, context);
-    },
     load(url, context, nextLoad) {
         if (!url.endsWith(".svelte") && !url.endsWith(".svelte.ts")) return nextLoad(url, context);
         const { source } = nextLoad(url, { ...context, format: "module" });

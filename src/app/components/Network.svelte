@@ -88,8 +88,8 @@
 {/if}
 
 <script lang="ts">
-    import * as session from "../state/session.svelte";
-    import { type RoadNode, type Route } from "../types";
+    import * as session from "../state/session.svelte.ts";
+    import { type RoadNode, type Route } from "../types.ts";
     import { nodePose, segmentMode, throughPairs } from "../../core/design/model.ts";
     import { angleDiff, radians } from "../../core/math/geometry.ts";
     import { armBearing, summitHeights } from "../../core/checks/validation.ts";

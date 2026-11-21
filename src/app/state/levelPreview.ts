@@ -1,7 +1,7 @@
 import { bounds } from "../../core/math/geometry.ts";
 import { profile } from "../../core/roads/profiles.ts";
 import { applyLevels, updateHeights } from "../../core/terrain/terrain.ts";
-import { type Height, type IslandModel, type Route } from "../types";
+import { type Height, type IslandModel, type Route } from "../types.ts";
 
 // During a slider gesture the centerlines stay fixed. Sampling a profile only
 // reads heights along that line, including the four neighboring grid cells.

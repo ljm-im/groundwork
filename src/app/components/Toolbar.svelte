@@ -9,7 +9,7 @@
 
 <script lang="ts">
     import Icon from "./Icon.svelte";
-    import * as session from "../state/session.svelte";
+    import * as session from "../state/session.svelte.ts";
     let { editor }: { editor: session.Editor } = $props();
     const tools = [
         ["select", "cursor", "选择"], ["node", "node", "新建节点"], ["gate", "gate", "院门"], ["edge", "edge", "连线"],

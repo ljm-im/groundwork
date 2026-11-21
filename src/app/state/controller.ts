@@ -5,8 +5,8 @@ import { drawingTarget, featureHit, featureOf, insertVertex } from "../../core/e
 import { addGate, addNode, connect, insertVia, splitRoad } from "../../core/edit/topology.ts";
 import { canPlaceBuilding, doorRoads, nearbyWall, openDoorAt, placeBuilding } from "../../core/edit/buildings.ts";
 import { insidePolygon } from "../../core/math/polygon.ts";
-import { errorText, type Design, type Point, type RoadNode, type Selection, type Yard } from "../types";
-import * as session from "./session.svelte";
+import { errorText, type Design, type Point, type RoadNode, type Selection, type Yard } from "../types.ts";
+import * as session from "./session.svelte.ts";
 
 declare global {
     interface HTMLElementEventMap {

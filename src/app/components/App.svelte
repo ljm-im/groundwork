@@ -339,7 +339,7 @@
 </style>
 
 <script lang="ts">
-    import * as session from "../state/session.svelte";
+    import * as session from "../state/session.svelte.ts";
     import TopBar from "./TopBar.svelte";
     import MapCanvas from "./MapCanvas.svelte";
     import Sections from "./Sections.svelte";
