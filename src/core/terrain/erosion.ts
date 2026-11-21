@@ -1,6 +1,8 @@
+import { type Erosion } from "../design/types.ts";
+import { type Grid } from "../math/geometry.ts";
 import { random } from "../math/noise.ts";
 
-export function erode(grid, land, surface, config, seed) {
+export function erode(grid: Grid, land: Uint8Array, surface: Float32Array, config: Erosion, seed: number) {
     const { width, height, size, step } = grid;
     const scaled = Float32Array.from(surface, h => h / 30);
     const flow = new Float32Array(size),
@@ -16,7 +18,7 @@ export function erode(grid, land, surface, config, seed) {
             if (d <= radius) {
                 offsets.push(y * width + x);
                 weights.push(1 - d / (radius + .01));
-                sum += weights.at(-1);
+                sum += weights.at(-1)!;
             }
         }
     for (let i = 0; i < weights.length; i++) weights[i] /= sum;

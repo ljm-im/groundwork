@@ -1,9 +1,13 @@
+import { type Terrain, type TerrainZone } from "../design/results.ts";
+import { type Coast, type Design, type Point, type Band } from "../design/types.ts";
+import { type Grid } from "../math/geometry.ts";
+import { type Noise } from "../math/noise.ts";
 import { bounds, clamp, createGrid, eachCell, nearest, polygonField, sample, smooth, spline, stations } from "../math/geometry.ts";
 import { areaBoundary, buildingShape, elevation, zoneNoise, zonePolygon } from "../design/shapes.ts";
 import { fbm, noise } from "../math/noise.ts";
-import { erode } from "./erosion.js";
+import { erode } from "./erosion.ts";
 
-function shoreDistance(grid, mask) {
+function shoreDistance(grid: Grid, mask: Uint8Array) {
     const { size, width, height, step } = grid;
     const d = Float32Array.from(mask, v => v ? 1e6 : 0),
         diagonal = 1.4142 * step;
@@ -26,17 +30,17 @@ function shoreDistance(grid, mask) {
     return d;
 }
 
-function coastRockiness(rules, x, y) {
+function coastRockiness(rules: Coast["rockiness"], x: number, y: number) {
     let value = 0;
     for (const rule of rules) {
-        const t = rule.center ? 1 - Math.hypot(x - rule.center[0], y - rule.center[1]) / rule.radius :
+        const t = "center" in rule ? 1 - Math.hypot(x - rule.center[0], y - rule.center[1]) / rule.radius :
             ((rule.axis === 0 ? x : y) * rule.sign - rule.start) / rule.span;
         value = Math.max(value, smooth(t) * rule.strength);
     }
     return value;
 }
 
-function zoneTerms(zone, x, y) {
+function zoneTerms(zone: TerrainZone, x: number, y: number) {
     const h = zone.height,
         s = h.slope,
         scale = h.noiseScale ?? 1;
@@ -48,12 +52,12 @@ function zoneTerms(zone, x, y) {
         base += s.rise * (s.smooth ? smooth(t) : t);
     }
     else if (s ?.type === "radial") {
-        const [cx, cy] = zone.shape.center;
+        const [cx, cy] = (zone.shape as { center: Point }).center;
         base += s.rate * (Math.hypot(x - cx, y - cy) - s.baseline);
     }
     if (h.blendTo) {
-        const { segment, t } = nearest(x, y, zone.shape.points), lengths = zone.stations;
-        blend = smooth((lengths[segment] + t * (lengths[segment + 1] - lengths[segment])) / (lengths.at(-1) || 1));
+        const { segment, t } = nearest(x, y, (zone.shape as Band).points), lengths = zone.stations!;
+        blend = smooth((lengths[segment] + t * (lengths[segment + 1] - lengths[segment])) / (lengths.at(-1)! || 1));
     }
     if (h.endRise) {
         const r = h.endRise,
@@ -64,12 +68,12 @@ function zoneTerms(zone, x, y) {
     return [base, blend, rise];
 }
 
-function prepareZones(t, design, n2) {
+function prepareZones(t: Terrain, design: Design, n2: Noise) {
     const { grid, zones } = t, size = grid.size;
     const fields = zones.map(z => polygonField(grid, z.polygon, 16));
     zones.forEach((z, i) => {
         z.cells = [];
-        const center = z.shape.center ?? [(z.box[0] + z.box[2]) / 2, (z.box[1] + z.box[3]) / 2];
+        const center = ("center" in z.shape ? z.shape.center : undefined) ?? [(z.box[0] + z.box[2]) / 2, (z.box[1] + z.box[3]) / 2];
         let closest = Infinity;
         eachCell(grid, z.box, 0, (k, x, y) => {
             if (fields[i][k] >= 0 && !Object.is(fields[i][k], -0)) return;
@@ -129,15 +133,15 @@ function prepareZones(t, design, n2) {
     }
 }
 
-function prepareBuildings(t, design) {
+function prepareBuildings(t: Terrain, design: Design) {
     const { grid } = t;
     t.buildings = design.buildings.map(buildingShape);
     t.padMask = new Uint8Array(grid.size);
     t.clearance = new Float32Array(grid.size).fill(1e5);
     t.pads = t.buildings.map(b => {
         const data = b.data,
-            cells = [],
-            pad = data.pad ?? (b.polygon ? 1.3 : data.radius + 1.3);
+            cells: number[] = [],
+            pad = data.pad ?? (b.polygon ? 1.3 : data.radius! + 1.3);
         eachCell(grid, b.box, Math.max(16, pad), (k, x, y) => {
             const d = b.signedDistance(x, y);
             t.clearance[k] = Math.min(t.clearance[k], d - (data.blockMargin ?? 0));
@@ -150,14 +154,14 @@ function prepareBuildings(t, design) {
     });
     t.yards = (design.yards ?? []).map(area => {
         const yard = areaBoundary(design, area);
-        const box = bounds(yard.points), cells = [], shoulders = [];
+        const box = bounds(yard.points), cells: number[] = [], shoulders: [number, number][] = [];
         const apron = Math.SQRT2 * grid.step, blend = 9, reach = Math.max(16, apron + blend);
         const field = polygonField(grid, yard.points, reach);
         if (yard.kind === "plaza") {
             eachCell(grid, box, reach, k => {
                 t.clearance[k] = Math.min(t.clearance[k], field[k]);
             });
-            return { yard, box, cells, shoulders, height: design.zones.find(z => z.id === yard.zone).height };
+            return { yard, box, cells, shoulders, height: design.zones.find(z => z.id === yard.zone)!.height };
         }
         eachCell(grid, box, reach, k => {
             t.clearance[k] = Math.min(t.clearance[k], field[k]);
@@ -169,11 +173,11 @@ function prepareBuildings(t, design) {
                 shoulders.push([k, weight]);
             }
         });
-        return { yard, box, cells, shoulders, height: design.zones.find(z => z.id === yard.zone).height };
+        return { yard, box, cells, shoulders, height: design.zones.find(z => z.id === yard.zone)!.height };
     });
 }
 
-export function generateTerrain(design) {
+export function generateTerrain(design: Design): Terrain {
     const grid = createGrid(design.grid),
         { size, width } = grid,
         seed = design.seed;
@@ -249,14 +253,14 @@ export function generateTerrain(design) {
         outside = shoreDistance(grid, sea);
     for (let k = 0; k < size; k++)
         if (!land[k]) dc[k] = -outside[k];
-    const terrain = { grid, coast, zones, ridges, peaks, rock, detail, cliff, erosionWeight, land, islet, dc, natural: field(), heights: field() };
+    const terrain = { grid, coast, zones, ridges, peaks, rock, detail, cliff, erosionWeight, land, islet, dc, natural: field(), heights: field() } as Terrain;
     prepareZones(terrain, design, n2);
     prepareBuildings(terrain, design);
     updateHeights(terrain, design, true);
     return terrain;
 }
 
-export function updateHeights(t, design, refreshErosion = false) {
+export function updateHeights(t: Terrain, design: Design, refreshErosion = false) {
     const { grid, ridges, peaks, natural } = t;
     const ridgeLevels = ridges.map(r => r.points.map(p => elevation(p.height, design.levels)));
     const peakLevels = peaks.map(p => elevation(p.height, design.levels));
@@ -287,7 +291,7 @@ export function updateHeights(t, design, refreshErosion = false) {
 }
 
 // Apply the named platforms and pads to an already evaluated natural surface.
-export function applyLevels(t, design) {
+export function applyLevels(t: Terrain, design: Design) {
     const { grid, natural, heights } = t;
     for (let k = 0; k < grid.size; k++) heights[k] = (natural[k] + t.delta[k]) * t.naturalWeight[k] + t.base[k];
     for (const [level, values] of Object.entries(t.coefficients)) {

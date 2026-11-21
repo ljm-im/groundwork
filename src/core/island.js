@@ -1,4 +1,4 @@
-import { generateTerrain, updateHeights } from "./terrain/terrain.js";
+import { generateTerrain, updateHeights } from "./terrain/terrain.ts";
 import { plantTrees, visibleTrees } from "./vegetation/vegetation.js";
 import { routeAll } from "./roads/routing.js";
 import { gradeRoads, profile } from "./roads/profiles.js";

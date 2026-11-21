@@ -12,7 +12,7 @@ import { moveHandle } from "../src/core/edit/controls.js";
 import { profile } from "../src/core/roads/profiles.js";
 import { clearLead, routeAll, routeEdge } from "../src/core/roads/routing.js";
 import { selfOverlaps, sharpBends } from "../src/core/roads/proximity.js";
-import { generateTerrain } from "../src/core/terrain/terrain.js";
+import { generateTerrain } from "../src/core/terrain/terrain.ts";
 import { armBearing, summitHeights, validateDesign, validateRoads } from "../src/core/checks/validation.js";
 import { addGate, addNode, connect, removeLinks, splitRoad } from "../src/core/edit/topology.js";
 import { hedgeLines } from "../src/core/edit/yards.js";

@@ -1,6 +1,6 @@
 import { bounds } from "../../core/math/geometry.ts";
 import { profile } from "../../core/roads/profiles.js";
-import { applyLevels, updateHeights } from "../../core/terrain/terrain.js";
+import { applyLevels, updateHeights } from "../../core/terrain/terrain.ts";
 import { type Height, type IslandModel, type Route } from "../types";
 
 // During a slider gesture the centerlines stay fixed. Sampling a profile only
