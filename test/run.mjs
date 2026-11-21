@@ -601,3 +601,4 @@ console.log("通过：端点方向、途经点、急弯、自身重叠、楼梯�
 await import("./round5.mjs");
 await import("./round6.mjs");
 await import("./round7.mjs");
+await (await import("./golden.mjs")).checkSnapshots();
