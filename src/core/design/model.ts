@@ -14,20 +14,29 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-// Migrations consume the historical collections before the per-object checks below.
-function isDesignInput(value: unknown): value is ImportDesign {
-    return isRecord(value) && [1, 2, 3, 4].some(version => value.version === version) &&
-        ["zones", "buildings", "nodes", "edges", "ridges", "sections", "peaks"].every(key => Array.isArray(value[key])) &&
-        ["grid", "levels", "levelControls", "routing", "roadClasses", "coast", "erosion", "vegetation"].every(key => isRecord(value[key]));
+function check(ok: unknown, message: string): asserts ok {
+    if (!ok) throw new Error(message);
 }
 
 export function parseDesign(text: unknown): Design {
     const input: unknown = typeof text === "string" ? JSON.parse(text) : structuredClone(text);
-    if (!isDesignInput(input)) throw new Error("不支持的版本或设计参数无效");
-    const d = upgradeLandscape(migrateDesign(input));
-    const check = (ok: unknown, message: string) => {
-        if (!ok) throw new Error(message);
-    };
+    check(isRecord(input), "不支持的版本");
+    const draft: Partial<ImportDesign> = input;
+    // The v1/v2 importers operate on the old layout before the common checks.
+    const d = draft.version === 1 || draft.version === 2 ? upgradeLandscape(migrateDesign(draft as ImportDesign)) : draft;
+    validateInput(d);
+    return upgradeWoodlands(d);
+}
+
+const collections = ["zones", "buildings", "nodes", "edges", "ridges", "sections"] as const;
+
+function checkCollections(d: Partial<ImportDesign>): asserts d is Partial<ImportDesign> & Pick<ImportDesign, typeof collections[number]> {
+    for (const key of collections) {
+        check(Array.isArray(d[key]) && new Set(d[key].map(o => o.id)).size === d[key].length, key + " 缺失或含有重复 ID");
+    }
+}
+
+function validateInput(d: Partial<ImportDesign>): asserts d is ImportDesign {
     const point = (p: unknown): p is Point => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite);
     const positive = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n) && n > 0;
     check(d?.version === 3 || d?.version === 4, "不支持的版本");
@@ -36,7 +45,8 @@ export function parseDesign(text: unknown): Design {
     for (const span of [g.xMax - g.xMin, g.yMax - g.yMin]) {
         check(span / g.step >= 8 && Math.abs(span / g.step - Math.round(span / g.step)) < 1e-6, "范围必须由完整的网格单元组成");
     }
-    check(Number.isSafeInteger(d.seed) && Object.values(d.levels).every(Number.isFinite), "种子或标高无效");
+    const levels = d.levels!;
+    check(Number.isSafeInteger(d.seed) && Object.values(levels).every(Number.isFinite), "种子或标高无效");
     const routing = d.routing;
     check(routing && (["sampleStep", "gradeWindow", "overlapLength"] as const).every(k => positive(routing[k])) &&
     (["landing", "clearLead", "viaTolerance"] as const).every(k => routing[k] == null || Number.isFinite(routing[k]) && routing[k] >= 0) &&
@@ -46,12 +56,10 @@ export function parseDesign(text: unknown): Design {
         check(rule && positive(rule.minRadius) && positive(rule.cornerRadius), grade + " 的道路半径无效");
     }
     check(d.erosion && Number.isSafeInteger(d.erosion.droplets) && d.erosion.droplets >= 0 && positive(d.erosion.radius), "侵蚀参数无效");
-    for (const [key, control] of Object.entries(d.levelControls)) {
-        check(Object.hasOwn(d.levels, key) && control.length === 4 && control[2] > control[1] && positive(control[3]), "标高控件无效");
+    for (const [key, control] of Object.entries(d.levelControls!)) {
+        check(Object.hasOwn(levels, key) && control.length === 4 && control[2] > control[1] && positive(control[3]), "标高控件无效");
     }
-    for (const key of ["zones", "buildings", "nodes", "edges", "ridges", "sections"] as const) {
-        check(Array.isArray(d[key]) && new Set(d[key].map(o => o.id)).size === d[key].length, key + " 缺失或含有重复 ID");
-    }
+    checkCollections(d);
     const validPoints = (list: unknown, min = 2) => Array.isArray(list) && list.length >= min && list.every(point);
     const yards = d.yards ?? [];
     check(Array.isArray(yards) && new Set(yards.map(y => y.id)).size === yards.length, "院落列表无效或含有重复 ID");
@@ -62,14 +70,15 @@ export function parseDesign(text: unknown): Design {
         check(validPoints(boundary.points, 3) && simpleBoundary(boundary.points), y.name + " 的边界必须是简单多边形");
         if (y.kind !== "plaza") check(Array.isArray(y.buildings) && y.buildings.every(id => d.buildings.some(b => b.id === id)), y.name + " 的所属建筑无效");
     }
-    const validHeight = (h: unknown): h is Height => typeof h === "number" && Number.isFinite(h) || isRecord(h) && typeof h.level === "string" && Object.hasOwn(d.levels, h.level) && Number.isFinite(h.offset ?? 0);
+    const validHeight = (h: unknown): h is Height => typeof h === "number" && Number.isFinite(h) || isRecord(h) && typeof h.level === "string" && Object.hasOwn(levels, h.level) && Number.isFinite(h.offset ?? 0);
     check(Array.isArray(d.peaks) && new Set(d.peaks.map(p => p.id)).size === d.peaks.length, "山头 ID 重复或缺失");
     for (const p of d.peaks) {
         check(p.id && typeof p.name === "string" && validHeight(p.height) && Number.isFinite(p.noise) && p.noise >= 0 && positive(p.scale), "山头名称、高度或噪声无效");
         check(point(p.center) && positive(p.radius) && Number.isFinite(p.protect ?? 10) && (p.protect ?? 10) >= 0 && Number.isFinite(p.cliffMin ?? 1.4) && (p.cliffMin ?? 1.4) >= 0, p.name + " 的山头参数无效");
     }
-    check(validPoints(d.coast.points, 3), "海岸线控制点不足");
-    check(Number.isSafeInteger(d.coast.smooth) && d.coast.smooth > 0, "海岸线采样数无效");
+    const coast = d.coast!;
+    check(validPoints(coast.points, 3), "海岸线控制点不足");
+    check(Number.isSafeInteger(coast.smooth) && coast.smooth > 0, "海岸线采样数无效");
     for (const z of d.zones) {
         const s = z.shape, fade = z.height?.endRise?.fade;
         if (fade != null) check(point(fade) && fade[0] >= 0 && fade[1] > fade[0], z.name + " 的外半径必须大于内半径");
@@ -132,10 +141,9 @@ export function parseDesign(text: unknown): Design {
     for (const e of d.edges) {
         check((e.mode == null || roadModes.includes(e.mode)) && (e.segments == null || Array.isArray(e.segments) && e.segments.length === e.via.length + 1 && e.segments.every(seg => seg == null || typeof seg === "object" && (seg.mode == null || roadModes.includes(seg.mode)) && (seg.exactEnd == null || typeof seg.exactEnd === "boolean"))), e.name + " 的分段设置无效");
         check(e.from !== e.to && [e.from, e.to].every(id => d.nodes.some(n => n.id === id)), e.name + " 的端点无效");
-        check(d.roadClasses[e.grade] && [e.width, e.comfort, e.maxGrade, e.corridor].every(v => Number.isFinite(v) && v > 0) && validPoints(e.via, 0), e.name + " 的选线参数无效");
+        check(d.roadClasses![e.grade] && [e.width, e.comfort, e.maxGrade, e.corridor].every(v => Number.isFinite(v) && v > 0) && validPoints(e.via, 0), e.name + " 的选线参数无效");
     }
     for (const s of d.sections) check(validPoints(s.points) && s.points.length === 2 && distance(...s.points) > 0, "剖面线长度无效");
-    return upgradeWoodlands(d);
 }
 export const roadModes: RoadMode[] = ["route", "smooth", "straight"];
 export const segmentMode = (edge: Edge, i: number) => edge.segments?.[i]?.mode ?? edge.mode ?? "route";

@@ -1,13 +1,12 @@
-import { designFixtures } from "../configs/read-fixture.ts";
 import { undeclaredDesignField } from "../configs/fixtureSchema.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { type ImportDesign } from "../src/core/design/migrations/legacy.ts";
-import { readFixture } from "../configs/read-fixture.ts";
+import { designFixtures, readFixture } from "../configs/read-fixture.ts";
 import { distance, radians } from "../src/core/math/geometry.ts";
 import { nodePose, parseDesign, serializeDesign } from "../src/core/design/model.ts";
 import { simpleBoundary } from "../src/core/math/polygon.ts";
-import { referenceText, oldStreet } from "./scenarios.ts";
+import { referenceText, oldStreet, originalWoodland } from "./scenarios.ts";
 
 test("Validate references and remove legacy road fields", () => {
     const design = parseDesign(referenceText);
@@ -43,7 +42,7 @@ test("Import optional yards and migrate fixed v1 roads", async () => {
 test("Legacy woods become named planting regions", async () => {
     const raw = await readFixture("round6.json");
     const d = parseDesign(raw);
-    const legacy: ImportDesign = JSON.parse(raw);
+    const legacy = originalWoodland(raw);
     const woods = d.vegetation.plantings.filter(a => a.natural), [north, grove] = woods;
     assert.deepEqual(woods.map(a => [a.name, a.feather, a.density, a.species]), [["北部树林", 6, .95, "forest"], ["家旁密林", 3, .97, "forest"]]);
     assert.deepEqual(grove.zones, ["street", "saddle"]);
@@ -63,7 +62,7 @@ test("Legacy woods become named planting regions", async () => {
 
 test("Migrate a single remaining legacy woodland", async () => {
     const raw = await readFixture("round6.json");
-    const legacy: ImportDesign = JSON.parse(raw);
+    const legacy = originalWoodland(raw);
     for (const name of ["forest", "grove"] as const) {
         const partial = structuredClone(legacy);
         delete partial.vegetation[name];
@@ -88,4 +87,14 @@ test("Every migrated fixture field belongs to the v4 Design declaration", async 
     const design = parseDesign(referenceText);
     Object.assign(design.zones[0].shape, { extraCoordinate: 5 });
     assert.match(undeclaredDesignField(design, "negative") ?? "", /negative\.zones\[0\]\.shape\.extraCoordinate/);
+});
+
+test("Import preserves validation messages and compatible unrecognised fields", () => {
+    const base = parseDesign(referenceText);
+    assert.throws(() => parseDesign({ ...base, version: 9 }), { message: "不支持的版本" });
+    assert.throws(() => parseDesign({ ...base, grid: null }), { message: "网格参数无效" });
+    assert.throws(() => parseDesign({ ...base, ridges: {} }), { message: "ridges 缺失或含有重复 ID" });
+    const compatible = { ...base, levelControls: [], sourceNote: "archived" };
+    const bytes = JSON.stringify(compatible, null, 2);
+    assert.equal(serializeDesign(parseDesign(bytes)), bytes);
 });

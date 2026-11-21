@@ -437,9 +437,9 @@ export interface Erosion {
     evaporation: number;
     /** Acceleration coefficient used to update droplet speed. */
     gravity: number;
-    /** Maximum number of steps per droplet. */
+    /** Maximum droplet travel distance in metres. */
     lifetime: number;
-    /** Erosion brush radius in grid cells. */
+    /** Erosion brush radius in metres. */
     radius: number;
 }
 
@@ -493,8 +493,8 @@ export interface Vegetation {
 export interface Section extends Named {
     /** Start and end of the section in world metres. */
     points: [Point, Point];
-    /** Captions at stations in metres with world-space anchors. */
-    marks: [station: number, label: string, point: Point][];
+    /** Captions at stations in metres with optional world-space anchors. */
+    marks: [station: number, label: string, point?: Point][];
 }
 
 export interface Label {

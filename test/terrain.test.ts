@@ -1,7 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { type Point, type Design } from "../src/core/design/types.ts";
-import { type ImportDesign } from "../src/core/design/migrations/legacy.ts";
 import { readFixture } from "../configs/read-fixture.ts";
 import { distance, sample } from "../src/core/math/geometry.ts";
 import { Island } from "../src/core/island.ts";
@@ -9,7 +8,7 @@ import { parseDesign, serializeDesign } from "../src/core/design/model.ts";
 import { routeAll } from "../src/core/roads/routing.ts";
 import { generateTerrain } from "../src/core/terrain/terrain.ts";
 import { createHash } from "node:crypto";
-import { referenceText } from "./scenarios.ts";
+import { referenceText, originalWoodland } from "./scenarios.ts";
 
 test("A seed reproduces terrain and graded heights", () => {
     const design = parseDesign(referenceText);
@@ -46,7 +45,7 @@ test("Half-metre grid, routing and eastern shoreline", () => {
 test("Street end rise fades radially while distant heights stay fixed", async () => {
     const raw = await readFixture("round6.json");
     const sha = (data: string | Uint8Array) => createHash("sha256").update(data).digest("hex");
-    const legacy: ImportDesign = JSON.parse(raw);
+    const legacy = originalWoodland(raw);
     // Replay the historical engine input before the v3-to-v4 defaults are applied.
     const original = new Island(legacy as Design);
     const d = parseDesign(raw), island = new Island(d), terrain = island.terrain, grid = terrain.grid;

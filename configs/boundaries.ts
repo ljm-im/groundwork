@@ -26,6 +26,7 @@ function checkDirectory(directory: string, graph: Map<string, Set<string>>) {
     for (const entry of readdirSync(directory, { recursive: true, withFileTypes: true })) {
         if (!entry.isFile() || !/\.[cm]?[jt]s$/.test(entry.name)) continue;
         const path = resolve(entry.parentPath, entry.name);
+        assert.equal(extname(path), ".ts", relative(root, path) + " must be TypeScript");
         const file = ts.createSourceFile(path, readFileSync(path, "utf8"), ts.ScriptTarget.Latest, true);
         const inCore = directory === core;
         if (inCore) graph.set(path, new Set());

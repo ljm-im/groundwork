@@ -1,4 +1,4 @@
-import { type ImportDesign } from "../src/core/design/migrations/legacy.ts";
+import { originalWoodland } from "./scenarios.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { type Clearing, type Planting, type Polygon } from "../src/core/design/types.ts";
@@ -57,7 +57,7 @@ test("Grove openings, avenue spacing and clearance from roads and buildings", as
 test("Woodland density, clearing overlays and feathered rows", async () => {
     const raw = await readFixture("round6.json");
     const d = parseDesign(raw);
-    const legacy: ImportDesign = JSON.parse(raw);
+    const legacy = originalWoodland(raw);
     const island = new Island(d), terrain = island.terrain, grid = terrain.grid;
     const woods = d.vegetation.plantings.filter(a => a.natural), [north, grove] = woods;
     // Recorded on the round-six fixture before the woodland migration.

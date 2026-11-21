@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFixture } from "../configs/read-fixture.ts";
+import { type ImportDesign } from "../src/core/design/migrations/legacy.ts";
 import { type Edge, type Point } from "../src/core/design/types.ts";
 import { parseDesign, serializeDesign } from "../src/core/design/model.ts";
 import { createGrid } from "../src/core/math/geometry.ts";
@@ -11,6 +12,16 @@ export async function oldStreet() {
     const street: unknown = JSON.parse(await readFixture("street-v1.json"));
     assert(Array.isArray(street) && street.every((p: unknown): p is Point => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite)));
     return street;
+}
+
+// Validate a copy before replaying the v3 fixture with its original woodland fields.
+export function originalWoodland(text: string): ImportDesign {
+    const source: unknown = JSON.parse(text);
+    function isWoodland(value: unknown): value is ImportDesign {
+        return typeof value === "object" && value !== null && "version" in value && value.version === 3 && parseDesign(value).version === 4;
+    }
+    assert(isWoodland(source));
+    return source;
 }
 
 export function syntheticRoads() {
