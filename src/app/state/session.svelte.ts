@@ -7,7 +7,7 @@ import { bounds, sample } from "../../core/math/geometry.ts";
 import { addDoor, doorNode, doorRoads, openDoorAt, removeBuildingPart } from "../../core/edit/buildings.js";
 import { removeVia, removeLinks } from "../../core/edit/topology.js";
 import { addFeature, clickDrawing, deleteFeature, featureBounds, featureNames, featureOf, finishExtension, newDrawing } from "../../core/edit/landforms.js";
-import { objectIssues } from "../../core/checks/issues.js";
+import { objectIssues } from "../../core/checks/issues.ts";
 import { drawSections } from "../../render/sections.js";
 import { IslandMap } from "../../render/map.js";
 import { previewLevels } from "./levelPreview";

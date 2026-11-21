@@ -5,7 +5,7 @@ import { moveHandle } from "../src/core/edit/controls.js";
 import { advance, distance, nearest, pointAt, radians, stations } from "../src/core/math/geometry.ts";
 import { History } from "../src/core/edit/history.js";
 import { Island } from "../src/core/island.js";
-import { issueShapes, objectIssues } from "../src/core/checks/issues.js";
+import { issueShapes, objectIssues } from "../src/core/checks/issues.ts";
 import { addFeature, deleteFeature, featureHit, featureLine, insertVertex } from "../src/core/edit/landforms.js";
 import { IslandMap } from "../src/render/map.js";
 import { buildingShape, clearingShape, nodePose, parseDesign, serializeDesign } from "../src/core/design/model.ts";

@@ -13,7 +13,7 @@ import { profile } from "../src/core/roads/profiles.ts";
 import { clearLead, routeAll, routeEdge } from "../src/core/roads/routing.ts";
 import { selfOverlaps, sharpBends } from "../src/core/roads/proximity.ts";
 import { generateTerrain } from "../src/core/terrain/terrain.ts";
-import { armBearing, summitHeights, validateDesign, validateRoads } from "../src/core/checks/validation.js";
+import { armBearing, summitHeights, validateDesign, validateRoads } from "../src/core/checks/validation.ts";
 import { addGate, addNode, connect, removeLinks, splitRoad } from "../src/core/edit/topology.js";
 import { hedgeLines } from "../src/core/edit/yards.js";
 import { gateDistance, gateFraction, gatePose } from "../src/core/design/gates.ts";

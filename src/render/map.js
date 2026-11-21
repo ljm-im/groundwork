@@ -1,7 +1,7 @@
 import { advance, bearing, clamp, distance, mixPoint, nearest } from "../core/math/geometry.ts";
 import { areaBoundary, buildingShape, nodePose, zonePolygon } from "../core/design/model.ts";
 import { titlePoint } from "../core/edit/buildings.js";
-import { issueShapes, issueView, objectIssues } from "../core/checks/issues.js";
+import { issueShapes, issueView, objectIssues } from "../core/checks/issues.ts";
 import { featureLine, featureNames, features } from "../core/edit/landforms.js";
 import { treeStyles } from "../core/vegetation/vegetation.ts";
 import { handles } from "../core/edit/controls.js";

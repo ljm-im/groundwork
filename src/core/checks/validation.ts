@@ -1,3 +1,8 @@
+import { type Issue, type IssueSpan, type Route, type Terrain } from "../design/results.ts";
+import { type Design, type Point } from "../design/types.ts";
+import { type Grid, type Box } from "../math/geometry.ts";
+type Emit = (kind: string, message: string, point: Point, severity?: Issue["severity"], geometry?: Partial<Issue>) => Issue;
+
 import { angleDiff, bearing, bounds, distance, eachCell, mixPoint, nearest, pointAt, radians, resample, sample } from "../math/geometry.ts";
 import { exemptRadius, radiusAt } from "../roads/alignment.ts";
 import { areaBoundary, elevation, nodePose, throughPairs } from "../design/model.ts";
@@ -5,15 +10,15 @@ import { gateDistance } from "../design/gates.ts";
 import { insidePolygon, perimeter } from "../math/polygon.ts";
 import { overlappingLocations, selfOverlaps, sharpBends } from "../roads/proximity.ts";
 
-const percent = v => +(v * 100).toFixed(2) + "%";
+const percent = (v: number) => +(v * 100).toFixed(2) + "%";
 
-function gradeIssues(design, route, emit) {
+function gradeIssues(design: Design, route: Route, emit: Emit) {
     const rule = design.roadClasses[route.edge.grade];
     if (!rule) return;
-    const checks = [
+    const checks: [string, (i: number) => boolean, (g: number) => string][] = [
         ["street-stairs", i => route.stairs[i] && !rule.allowStairs, () => "街道出现台阶"],
         ["stair-grade", i => route.stairs[i] && route.peaks[i] > rule.stairLimit, g => "台阶坡度 " + percent(g) + " 超过 " + percent(rule.stairLimit)],
-        ["ramp-grade", i => !route.stairs[i] && rule.rampLimit != null && route.peaks[i] > rule.rampLimit, g => "坡道坡度 " + percent(g) + " 超过 " + percent(rule.rampLimit)]
+        ["ramp-grade", i => !route.stairs[i] && rule.rampLimit != null && route.peaks[i] > rule.rampLimit, g => "坡道坡度 " + percent(g) + " 超过 " + percent(rule.rampLimit!)]
     ];
     for (const [kind, violates, message] of checks) {
         let worst = -1, start = 0;
@@ -31,22 +36,22 @@ function gradeIssues(design, route, emit) {
     }
 }
 
-function surfaceIssues(route, terrain, emit) {
+function surfaceIssues(route: Route, terrain: Pick<Terrain, "buildings" | "zones"> & Partial<Pick<Terrain, "yards">>, emit: Emit) {
     const points = resample(route.points, .5),
         half = route.edge.width / 2,
         box = bounds(points);
-    const nearby = b => box[0] - half <= b[2] && box[2] + half >= b[0] && box[1] - half <= b[3] && box[3] + half >= b[1];
+    const nearby = (b: Box) => box[0] - half <= b[2] && box[2] + half >= b[0] && box[1] - half <= b[3] && box[3] + half >= b[1];
     const buildings = terrain.buildings.filter(b => nearby(b.box));
     const walls = terrain.zones.filter(z => z.retainingWall && nearby(z.box));
     const yards = (terrain.yards ?? []).filter(y => nearby(y.box) && y.yard.kind !== "plaza");
-    const active = new Map();
-    const finish = (key, at) => {
+    const active = new Map<string, Issue>();
+    const finish = (key: string, at: number) => {
         const issue = active.get(key);
         if (issue) {
-            issue.spans[0].to = at; active.delete(key);
+            issue.spans![0].to = at; active.delete(key);
         }
     };
-    const contact = (key, hit, i, kind, message, severity, extra = {}) => {
+    const contact = (key: string, hit: boolean, i: number, kind: string, message: string, severity: Issue["severity"], extra: Partial<Issue> = {}) => {
         const at = i === points.length - 1 ? route.length : i * .5;
         if (hit && !active.has(key)) {
             const entry = emit(kind, message, points[i], severity, { ...extra, spans: [{ road: route.id, from: Math.max(0, at - .25), to: Math.min(route.length, at + .25) }] });
@@ -81,7 +86,7 @@ function surfaceIssues(route, terrain, emit) {
         for (const { yard } of yards) {
             const key = "yard/" + yard.id;
             const hit = [0, -half, half].some(offset => {
-                const q = [p[0] + nx * offset, p[1] + ny * offset];
+                const q: Point = [p[0] + nx * offset, p[1] + ny * offset];
                 return insidePolygon(yard, q) && nearest(...q, yard.points, true).distance > .03;
             });
             contact(key, hit, i, "yard-interior", "路面进入" + yard.name + "内部", "error");
@@ -90,7 +95,7 @@ function surfaceIssues(route, terrain, emit) {
     for (const key of active.keys()) finish(key, route.length);
 }
 
-function overlapIssues(design, routes, issues) {
+function overlapIssues(design: Design, routes: Route[], issues: Issue[]) {
     const rules = design.routing;
     for (let i = 0; i < routes.length; i++)
         for (let j = i + 1; j < routes.length; j++) {
@@ -112,20 +117,20 @@ function overlapIssues(design, routes, issues) {
         }
 }
 
-export function validateRoads(design, terrain, routes) {
-    const issues = [];
+export function validateRoads(design: Design, terrain: Parameters<typeof surfaceIssues>[1], routes: Route[]): Issue[] {
+    const issues: Issue[] = [];
     for (const r of routes) {
-        const emit = (kind, message, point, severity = "error", geometry = {}) => {
+        const emit: Emit = (kind, message, point, severity = "error", geometry = {}) => {
             const issue = { kind, severity, road: r.id, point, message, ...geometry };
             issues.push(issue);
             return issue;
         };
-        const at = p => {
+        const at = (p: Point) => {
             const h = nearest(...p, r.points); return r.s[h.segment] + h.t * (r.s[h.segment + 1] - r.s[h.segment]);
         };
-        const span = (from, to) => ({ spans: [{ road: r.id, from, to }] });
+        const span = (from: number, to: number) => ({ spans: [{ road: r.id, from, to }] });
         for (const part of r.parts) {
-            if (part.failed) emit("no-route", "走廊内选线失败，已显示直线", part.points[Math.floor(part.points.length / 2)], "error", span(at(part.points[0]), at(part.points.at(-1))));
+            if (part.failed) emit("no-route", "走廊内选线失败，已显示直线", part.points[Math.floor(part.points.length / 2)], "error", span(at(part.points[0]), at(part.points.at(-1)!)));
             const chord = r.controls.slice(part.index, part.index + 2);
             const outside = chord.length === 2 && part.points.find(p => nearest(...p, chord).distance > r.edge.corridor + 1e-6);
             if (outside) emit("corridor", "路段中心线越出走廊", outside);
@@ -139,7 +144,7 @@ export function validateRoads(design, terrain, routes) {
                     return route.s[hit.segment] + hit.t * (route.s[hit.segment + 1] - route.s[hit.segment]);
                 });
                 return { road, from: Math.min(...positions), to: Math.max(...positions) };
-            }).filter(Boolean);
+            }).filter((span): span is IssueSpan => !!span);
             emit("corner-radius", "相邻直线过短，倒角半径 " + corner.radius.toFixed(2) + " m，设计 " + corner.requested + " m", corner.point, "error", { spans });
         }
         if (r.detour > design.routing.detourLimit) emit("detour", "绕路比 " + r.detour.toFixed(2) + " 超过 " + design.routing.detourLimit, r.points[Math.floor(r.points.length / 2)], "error", span(0, r.length));
@@ -170,13 +175,13 @@ export function validateRoads(design, terrain, routes) {
 }
 
 // Bearings point away from the junction and use the same three-metre interval on each arm.
-export function armBearing(route, nodeId) {
+export function armBearing(route: Route, nodeId: string) {
     const start = route.edge.from === nodeId;
-    const end = start ? route.points[0] : route.points.at(-1);
+    const end = start ? route.points[0] : route.points.at(-1)!;
     return bearing(end, pointAt(route.points, route.s, start ? 3 : route.length - 3));
 }
 
-export function summitHeights(grid, heights, point) {
+export function summitHeights(grid: Grid, heights: Float32Array, point: Point) {
     const [x, y] = point, ground = sample(grid, heights, x, y);
     let highest = ground, highestAt = point;
     eachCell(grid, [x, y, x, y], 25, (k, px, py) => {
@@ -188,8 +193,8 @@ export function summitHeights(grid, heights, point) {
     return { ground, highest, highestAt };
 }
 
-export function validateDesign(d, terrain, heights, routes) {
-    const issues = [];
+export function validateDesign(d: Design, terrain: Pick<Terrain, "grid" | "buildings" | "zones">, heights: Float32Array, routes: Route[]): Issue[] {
+    const issues: Issue[] = [];
     for (const y of d.yards ?? []) {
         const gates = d.nodes.filter(n => n.type === "gate" && n.yard === y.id);
         const { length } = perimeter(areaBoundary(d, y));
@@ -207,7 +212,7 @@ export function validateDesign(d, terrain, heights, routes) {
             }
         }
     }
-    for (const n of d.nodes.filter(n => n.detachedDoor)) issues.push({ kind: "detached-door", severity: "notice", node: n.id, point: n.point, label: n.name, message: "端点未接建筑（" + n.detachedDoor + "）" });
+    for (const n of d.nodes.filter(n => n.detachedDoor)) issues.push({ kind: "detached-door", severity: "notice", node: n.id, point: n.point!, label: n.name, message: "端点未接建筑（" + n.detachedDoor + "）" });
     for (const n of d.nodes.filter(n => n.through)) {
         const pairs = throughPairs(n), mains = new Set(pairs.flat());
         const branches = routes.filter(r => !mains.has(r.id) && (r.edge.from === n.id || r.edge.to === n.id));
@@ -215,7 +220,7 @@ export function validateDesign(d, terrain, heights, routes) {
             const main = pair.map(id => routes.find(r => r.id === id));
             if (!main.every(Boolean)) continue;
             for (const r of branches) {
-                const out = armBearing(r, n.id), angle = Math.min(...main.map(trunk => angleDiff(armBearing(trunk, n.id), out))) / radians;
+                const out = armBearing(r, n.id), angle = Math.min(...main.map(trunk => angleDiff(armBearing(trunk!, n.id), out))) / radians;
                 if (angle < 30 - 1e-7) issues.push({ kind: "branch-angle", severity: "notice", node: n.id, road: r.id, point: nodePose(d, n).point,
                     label: n.name, message: "支路与主路夹角 " + angle.toFixed(1) + "°，需至少 30°" });
             }
@@ -232,7 +237,7 @@ export function validateDesign(d, terrain, heights, routes) {
         for (const k of z.cells) sum += heights[k];
         const mean = sum / z.cells.length, target = elevation(z.height, d.levels);
         if (Math.abs(mean - target) > .5) {
-            issues.push({ kind: "zone-height", severity: "notice", zone: z.id, point: z.marker, label: z.name,
+            issues.push({ kind: "zone-height", severity: "notice", zone: z.id, point: z.marker!, label: z.name,
                 message: "区内平均 " + mean.toFixed(1) + " m，设计 " + target.toFixed(1) + " m" });
         }
     }

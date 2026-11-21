@@ -2,7 +2,7 @@
 
 <script lang="ts">
     import * as session from "../state/session.svelte";
-    import { objectIssues } from "../../core/checks/issues.js";
+    import { objectIssues } from "../../core/checks/issues.ts";
     import Part from "./Part.svelte";
     import IssueRows from "./IssueRows.svelte";
     let { editor }: { editor: session.Editor } = $props();

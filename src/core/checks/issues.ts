@@ -1,7 +1,13 @@
+import { type Route, type Issue } from "../design/results.ts";
+import { type Design, type Point } from "../design/types.ts";
+
+interface IssueContext { design: Design; routes: Route[]; issues: Issue[] }
+interface IssueShape { points: Point[]; closed?: boolean; width?: number; road?: string }
+
 import { bounds, pointAt } from "../math/geometry.ts";
 import { buildingShape, nodePose, zonePolygon } from "../design/model.ts";
 
-export function objectIssues(island, selection) {
+export function objectIssues(island: IssueContext, selection?: { kind: string; id: string } | null) {
     if (!selection)
         return [];
     const { kind, id } = selection;
@@ -9,7 +15,7 @@ export function objectIssues(island, selection) {
         return island.issues.filter(i => i.road === id || i.other === id || i.spans?.some(s => s.road === id));
     const nodes = kind === "building" ? island.design.nodes.filter(n => n.type === "door" && n.building === id).map(n => n.id) : kind === "node" ? [id] : [];
     return island.issues.filter(i => {
-        if (kind === "building" && i.building === id || kind === "zone" && i.zone === id || nodes.includes(i.node) || nodes.includes(i.otherNode))
+        if (kind === "building" && i.building === id || kind === "zone" && i.zone === id || nodes.includes(i.node!) || nodes.includes(i.otherNode!))
             return true;
         return (i.spans ?? []).some(s => {
             const r = island.routes.find(r => r.id === s.road);
@@ -20,8 +26,8 @@ export function objectIssues(island, selection) {
     });
 }
 
-export function issueShapes(island, issue) {
-    const shapes = [];
+export function issueShapes(island: IssueContext, issue: Issue) {
+    const shapes: IssueShape[] = [];
     for (const span of issue.spans ?? []) {
         const r = island.routes.find(r => r.id === span.road);
         if (!r)
@@ -32,9 +38,9 @@ export function issueShapes(island, issue) {
     const b = island.design.buildings.find(b => b.id === issue.building);
     if (b) {
         if (b.shape === "rect")
-            shapes.push({ points: buildingShape(b).polygon, closed: true });
+            shapes.push({ points: buildingShape(b).polygon!, closed: true });
         else
-            for (const radius of [b.radius, ...(b.shape === "ring" ? [b.inner] : [])]) {
+            for (const radius of [b.radius!, ...(b.shape === "ring" ? [b.inner!] : [])]) {
                 shapes.push({ points: Array.from({ length: 64 }, (_, i) => [b.center[0] + radius * Math.cos(i * Math.PI / 32), b.center[1] + radius * Math.sin(i * Math.PI / 32)]), closed: true });
             }
     }
@@ -48,8 +54,8 @@ export function issueShapes(island, issue) {
     return shapes;
 }
 
-export function issueView(island, issue, w, h, baseScale) {
+export function issueView(island: IssueContext, issue: Issue, w: number, h: number, baseScale: number) {
     const [x, y] = issue.point, box = bounds([issue.point, ...issueShapes(island, issue).flatMap(shape => shape.points)]);
     const dx = Math.max(12, x - box[0], box[2] - x), dy = Math.max(9, y - box[1], box[3] - y);
-    return { center: issue.point.slice(), zoom: Math.max(.5, Math.min(7, (w * .40) / (dx * baseScale), (h * .38) / (dy * baseScale))) };
+    return { center: issue.point.slice() as Point, zoom: Math.max(.5, Math.min(7, (w * .40) / (dx * baseScale), (h * .38) / (dy * baseScale))) };
 }

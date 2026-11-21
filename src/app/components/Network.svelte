@@ -92,7 +92,7 @@
     import { type RoadNode, type Route } from "../types";
     import { nodePose, segmentMode, throughPairs } from "../../core/design/model.ts";
     import { angleDiff, radians } from "../../core/math/geometry.ts";
-    import { armBearing, summitHeights } from "../../core/checks/validation.js";
+    import { armBearing, summitHeights } from "../../core/checks/validation.ts";
     import Part from "./Part.svelte";
     import Search from "./Search.svelte";
     import ObjectProblems from "./ObjectProblems.svelte";
