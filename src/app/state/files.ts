@@ -21,6 +21,7 @@ declare global {
 export class DesignFiles {
     private editor: session.Editor;
     private handle: DesignHandle | null = null;
+    private original: { text: string; canonical: string } | null = null;
     private writes: Promise<void> = Promise.resolve();
 
     constructor(editor: session.Editor) {
@@ -88,6 +89,7 @@ export class DesignFiles {
             e.replace(parseDesign(draft.text), true);
             e.filename = draft.filename ?? "island.json";
             this.handle = null;
+            this.original = null;
             e.record();
             e.message("已恢复未保存的草稿");
         });
@@ -108,7 +110,8 @@ export class DesignFiles {
     async save() {
         const e = this.editor;
         if (!e.history || e.busy) return;
-        const text = serializeDesign(e.island.design), island = e.island, handle = this.handle;
+        const canonical = serializeDesign(e.island.design), island = e.island, handle = this.handle;
+        const text = this.original?.canonical === canonical ? this.original.text : canonical;
         const write = async () => {
             try {
                 if (handle) {
@@ -118,7 +121,7 @@ export class DesignFiles {
                 }
                 else this.download(text);
                 if (island !== e.island || handle !== this.handle) return;
-                e.history.saved = text;
+                e.history.saved = canonical;
                 e.syncHistory();
                 e.message("已保存 " + e.filename);
             }
@@ -132,12 +135,19 @@ export class DesignFiles {
     async open(file: File, handle: DesignHandle | null = null) {
         const e = this.editor;
         try {
-            const design = parseDesign(await file.text());
+            const text = await file.text(), design = parseDesign(text);
+            const source: unknown = JSON.parse(text);
+            // Opening a legacy file upgrades the in-memory model. An unchanged Save
+            // can write the exact input bytes while history continues to use v4.
+            const original = serializeDesign(source) === JSON.stringify(source, null, 2) &&
+                (typeof source === "object" && source !== null && "version" in source && source.version !== 4 ||
+                    JSON.stringify(source) === JSON.stringify(design)) ? { text, canonical: serializeDesign(design) } : null;
             await e.working("正在导入海岛设计…", () => {
                 e.replace(design, true);
                 e.history.record(design);
                 e.history.saved = e.history.states[e.history.index];
                 this.handle = handle;
+                this.original = original;
                 e.filename = file.name;
                 e.syncHistory();
                 e.message("已导入 " + e.filename);

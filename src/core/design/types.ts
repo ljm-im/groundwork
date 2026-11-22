@@ -218,6 +218,8 @@ export interface ZoneHeight {
 }
 
 export interface Zone extends Named {
+    /** Author-written modelling description for this terrain area. */
+    prompt?: string;
     /** Ascending overlap priority, lower values win. */
     priority: number;
     /** Plan boundary of the terrain zone. */
@@ -246,6 +248,8 @@ export interface Door {
 }
 
 export interface Building extends Named {
+    /** Author-written modelling description for this building. */
+    prompt?: string;
     /** Identifier of the associated terrain zone. */
     zone?: string;
     /** Footprint geometry. */
@@ -292,6 +296,8 @@ export interface Yard extends Named {
 }
 
 export interface RoadNode extends Named {
+    /** Author-written modelling description for this node. */
+    prompt?: string;
     /** Road network node category. */
     type: "door" | "gate" | "endpoint" | "junction" | "viewpoint";
     /** Position of a free node in world metres. */
@@ -322,6 +328,8 @@ export interface Segment {
 }
 
 export interface Edge extends Named {
+    /** Author-written modelling description for this road. */
+    prompt?: string;
     /** Starting node identifier. */
     from: string;
     /** Ending node identifier. */
@@ -517,6 +525,8 @@ export interface Label {
 }
 
 export interface Design {
+    /** Author-written modelling description for the whole island. */
+    prompt?: string;
     /** On-disk island design format version. */
     version: 4;
     /** Integer seed for deterministic generation. */

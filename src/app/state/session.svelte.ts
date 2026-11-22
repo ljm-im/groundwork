@@ -1,6 +1,6 @@
 import { tick } from "svelte";
 import { Island } from "../../core/island.ts";
-import { History } from "../../core/edit/history.ts";
+import { History, promptOwner, type PromptTarget } from "../../core/edit/history.ts";
 import { layerDefaults } from "./layers.ts";
 import { areaBoundary, nodePose, zonePolygon } from "../../core/design/model.ts";
 import { bounds, sample } from "../../core/math/geometry.ts";
@@ -91,6 +91,14 @@ export class Editor {
     }
     record() {
         this.history.record(this.island.design);
+        this.syncHistory();
+    }
+    describe(target: PromptTarget, value: string) {
+        const owner = promptOwner(this.island.design, target);
+        if ((owner.prompt ?? "") === value) return;
+        if (value === "") delete owner.prompt;
+        else owner.prompt = value;
+        this.history.record(this.island.design, target);
         this.syncHistory();
     }
     select(h: Selection | null, open = true) {
@@ -204,6 +212,16 @@ export class Editor {
     }
     navigate(forward: boolean) {
         if (this.busy || this.gesture || !(forward ? this.canRedo : this.canUndo)) return;
+        const target = this.history.promptStep(forward);
+        if (target) {
+            const restored = this.history.step(forward)!;
+            const owner = promptOwner(this.island.design, target), value = promptOwner(restored, target).prompt;
+            if (value === undefined) delete owner.prompt;
+            else owner.prompt = value;
+            this.revision++;
+            this.syncHistory();
+            return;
+        }
         return this.working(forward ? "正在重做…" : "正在撤销…", () => {
             this.replace(this.history.step(forward)!);
             this.syncHistory();

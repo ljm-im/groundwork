@@ -3,6 +3,7 @@ import "../configs/register-svelte.ts";
 import assert from "node:assert/strict";
 import { readFixture } from "../configs/read-fixture.ts";
 import { distance } from "../src/core/math/geometry.ts";
+import { History } from "../src/core/edit/history.ts";
 import { Island } from "../src/core/island.ts";
 import { parseDesign } from "../src/core/design/model.ts";
 import { IslandMap } from "../src/render/map.ts";
@@ -60,4 +61,34 @@ test("Each extreme level preview matches a full regeneration", async () => {
             assert.deepEqual(preview.issues, reference.issues);
         }
     }
+});
+
+test("A committed prompt, undo and redo preserve the live island and all geometry", async t => {
+    const { Editor } = await import("../src/app/state/session.svelte.ts");
+    const editor = new Editor(), design = parseDesign(await readFixture("round6.json")), island = new Island(design);
+    editor.island = island;
+    editor.busy = null;
+    editor.history = new History(design);
+    t.mock.method(editor.files, "remember", () => {});
+    const generation = [t.mock.method(editor, "replace"), t.mock.method(editor, "rebuild"), t.mock.method(island, "reroute"), t.mock.method(island, "replant")];
+    const target = { group: "buildings" as const, id: design.buildings[0].id };
+    const heights = island.terrain.heights, routes = island.routes, trees = island.trees;
+    editor.describe(target, "第一行\n第二行");
+    editor.describe(target, "第一行\n第二行");
+    assert.equal(editor.history.states.length, 2);
+    assert.equal(design.buildings[0].prompt, "第一行\n第二行");
+    editor.navigate(false);
+    assert(!Object.hasOwn(design.buildings[0], "prompt"));
+    editor.navigate(true);
+    assert.equal(design.buildings[0].prompt, "第一行\n第二行");
+    editor.describe(target, "");
+    assert(!Object.hasOwn(design.buildings[0], "prompt"));
+    editor.navigate(false);
+    editor.describe(target, "覆盖分支");
+    assert.equal(editor.canRedo, false);
+    assert.deepEqual(generation.map(spy => spy.mock.callCount()), [0, 0, 0, 0]);
+    assert.equal(editor.island, island);
+    assert.equal(island.terrain.heights, heights);
+    assert.equal(island.routes, routes);
+    assert.equal(island.trees, trees);
 });

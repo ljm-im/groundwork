@@ -1,7 +1,14 @@
 import { type Design } from "../design/types.ts";
 import { parseDesign, serializeDesign } from "../design/model.ts";
 
+export type PromptTarget = { group: "design" } | { group: "buildings" | "edges" | "nodes" | "zones"; id: string };
+
+export function promptOwner(design: Design, target: PromptTarget): { prompt?: string } {
+    return target.group === "design" ? design : design[target.group].find(object => object.id === target.id)!;
+}
+
 export class History {
+    private promptSteps: (PromptTarget | undefined)[] = [];
     declare limit: number;
     declare states: string[];
     declare index: number;
@@ -13,6 +20,7 @@ export class History {
     }
     reset(design: Design) {
         this.states = [serializeDesign(design)];
+        this.promptSteps = [];
         this.index = 0;
         this.saved = this.states[0];
     }
@@ -25,12 +33,19 @@ export class History {
     get canRedo() {
         return this.index + 1 < this.states.length;
     }
-    record(design: Design) {
+    promptStep(forward: boolean) {
+        return this.promptSteps[forward ? this.index : this.index - 1];
+    }
+    record(design: Design, target?: PromptTarget) {
         const state = serializeDesign(design);
         if (state === this.states[this.index]) return false;
         this.states.splice(this.index + 1);
+        this.promptSteps.splice(this.index, this.promptSteps.length, target);
         this.states.push(state);
-        if (this.states.length > this.limit + 1) this.states.shift();
+        if (this.states.length > this.limit + 1) {
+            this.states.shift();
+            this.promptSteps.shift();
+        }
         this.index = this.states.length - 1;
         return true;
     }

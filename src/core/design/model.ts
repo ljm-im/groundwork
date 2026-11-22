@@ -60,6 +60,10 @@ function validateInput(d: Partial<ImportDesign>): asserts d is ImportDesign {
         check(Object.hasOwn(levels, key) && control.length === 4 && control[2] > control[1] && positive(control[3]), "标高控件无效");
     }
     checkCollections(d);
+    for (const object of [d, ...d.buildings, ...d.edges, ...d.nodes, ...d.zones]) {
+        check(!Object.hasOwn(object, "prompt") || typeof object.prompt === "string", "描述必须是字符串");
+        if (object.prompt === "") delete object.prompt;
+    }
     const validPoints = (list: unknown, min = 2) => Array.isArray(list) && list.length >= min && list.every(point);
     const yards = d.yards ?? [];
     check(Array.isArray(yards) && new Set(yards.map(y => y.id)).size === yards.length, "院落列表无效或含有重复 ID");
@@ -148,4 +152,4 @@ function validateInput(d: Partial<ImportDesign>): asserts d is ImportDesign {
 export const roadModes: RoadMode[] = ["route", "smooth", "straight"];
 export const segmentMode = (edge: Edge, i: number) => edge.segments?.[i]?.mode ?? edge.mode ?? "route";
 export const throughPairs = (node: Pick<RoadNode, "through" | "otherThrough">) => [node.through, ...(node.otherThrough ?? [])].filter((pair): pair is RoadPair => !!pair);
-export const serializeDesign = (d: unknown) => JSON.stringify(d, null, 2);
+export const serializeDesign = (d: unknown) => JSON.stringify(d, (key, value: unknown) => key === "prompt" && value === "" ? undefined : value, 2);

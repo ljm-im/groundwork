@@ -98,3 +98,18 @@ test("Import preserves validation messages and compatible unrecognised fields", 
     const bytes = JSON.stringify(compatible, null, 2);
     assert.equal(serializeDesign(parseDesign(bytes)), bytes);
 });
+
+test("Only supported prompt owners validate optional descriptions and omit empty text", () => {
+    const design = parseDesign(referenceText), text = "  木色\n保留空格  ";
+    const owners = [design, design.buildings[0], design.edges[0], design.nodes[0], design.zones[0]];
+    for (const owner of owners) {
+        Object.assign(owner, { prompt: null });
+        assert.throws(() => parseDesign(design), /描述必须是字符串/);
+        owner.prompt = text;
+    }
+    const saved = parseDesign(serializeDesign(design));
+    assert.deepEqual([saved, saved.buildings[0], saved.edges[0], saved.nodes[0], saved.zones[0]].map(o => o.prompt), owners.map(() => text));
+    for (const owner of owners) owner.prompt = "";
+    assert.equal(serializeDesign(design), referenceText);
+    assert.equal(serializeDesign(parseDesign(design)), referenceText);
+});

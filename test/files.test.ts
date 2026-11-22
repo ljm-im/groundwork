@@ -1,4 +1,6 @@
 import { test } from "node:test";
+import "../configs/register-svelte.ts";
+import { History } from "../src/core/edit/history.ts";
 import assert from "node:assert/strict";
 import { readFixture } from "../configs/read-fixture.ts";
 import { Island } from "../src/core/island.ts";
@@ -48,4 +50,38 @@ test("Object and text imports produce identical designs, routes and trees", asyn
     assert.deepEqual(island.routes, reference.routes);
     assert.deepEqual(island.trees, reference.trees);
     assert.equal(JSON.stringify(source), JSON.stringify(JSON.parse(text)));
+});
+
+test("Saving and reopening the unchanged v3 source preserves every byte", async t => {
+    const { Editor } = await import("../src/app/state/session.svelte.ts");
+    const raw = await readFixture("round6.json"), editor = new Editor();
+    editor.busy = null;
+    editor.history = new History(parseDesign(raw));
+    t.mock.method(editor, "working", async (_label: string, work: () => void) => work());
+    t.mock.method(editor, "replace", (design: ReturnType<typeof parseDesign>) => {
+        editor.island = new Island(design);
+    });
+    t.mock.method(editor, "message", () => {});
+    t.mock.method(editor.files, "remember", () => {});
+    let bytes = raw;
+    const handle = {
+        name: "round6.json",
+        async getFile() {
+            return new File([bytes], this.name);
+        },
+        async createWritable() {
+            return { async write(text: string) {
+                bytes = text;
+            }, async close() {} };
+        }
+    };
+    for (let i = 0; i < 2; i++) {
+        await editor.files.open(await handle.getFile(), handle);
+        await editor.files.save();
+        assert.equal(bytes, raw);
+    }
+    editor.describe({ group: "design" }, "新的全岛描述");
+    await editor.files.save();
+    assert.equal(JSON.parse(bytes).version, 4);
+    assert.equal(parseDesign(bytes).prompt, "新的全岛描述");
 });
