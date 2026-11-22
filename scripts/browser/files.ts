@@ -5,7 +5,8 @@ import { join } from "node:path";
 import { createServer } from "vite";
 import { serializeDesign } from "../../src/core/design/model.ts";
 import { startChromium } from "./chromium.ts";
-import { readFixture } from "../../configs/read-fixture.ts";
+import { test } from "node:test";
+import { fixtureOptions, readFixture } from "../../configs/read-fixture.ts";
 
 interface Probe {
     openName: string;
@@ -91,11 +92,21 @@ function installPickers() {
     };
 }
 
-const artifactDir = ".local/round10", fixture = await readFixture("round6.json");
-const sha = (text: string) => createHash("sha256").update(text).digest("hex");
-const server = await createServer({ configFile: "configs/vite.config.ts", server: { host: "127.0.0.1", port: 0 } });
-await server.listen();
-try {
+test("Editor file workflows in Chromium", fixtureOptions("round6.json"), async () => {
+    const fixture = await readFixture("round6.json");
+    const server = await createServer({ configFile: "configs/vite.config.ts", server: { host: "127.0.0.1", port: 0 } });
+    try {
+        await server.listen();
+        await checkFileWorkflows(server.resolvedUrls!.local[0], fixture);
+    }
+    finally {
+        await server.close();
+    }
+});
+
+async function checkFileWorkflows(baseUrl: string, fixture: string) {
+    const artifactDir = ".local/browser/files";
+    const sha = (text: string) => createHash("sha256").update(text).digest("hex");
     await mkdir(artifactDir, { recursive: true });
     const browser = await startChromium();
     const { cdp, evaluate, click, mouse, key, wait } = browser;
@@ -106,7 +117,7 @@ try {
         console.log(name);
     }
     async function navigate() {
-        const url = server.resolvedUrls!.local[0] + "?test=" + ++visit;
+        const url = baseUrl + "?test=" + ++visit;
         await cdp("Page.navigate", { url });
         await wait(url => location.href === url && !!document.querySelector(".empty-state"), url);
     }
@@ -236,11 +247,11 @@ try {
         report.checks.move = { building: expected.buildings[0].id, before, after, movedSha256: movedDigest.sha256, undoV4Sha256: undoDigest.sha256, redoSha256: redoDigest.sha256 };
 
         check("Persist a description on blur");
-        await prompt("海风中的灯塔。", false);
+        await prompt("描述 A 已更新。", false);
         assert.equal(await disk(a), moved);
         await key("Tab");
         await saved(4);
-        assert.equal(JSON.parse(await disk(a)).prompt, "海风中的灯塔。");
+        assert.equal(JSON.parse(await disk(a)).prompt, "描述 A 已更新。");
         report.checks.description = { beforeBlurUnchanged: true, afterBlur: JSON.parse(await disk(a)).prompt };
 
         check("New, cancellation and discard confirmation");
@@ -424,7 +435,4 @@ try {
     finally {
         await browser.close();
     }
-}
-finally {
-    await server.close();
 }
