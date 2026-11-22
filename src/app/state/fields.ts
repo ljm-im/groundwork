@@ -69,7 +69,7 @@ export function changeField(editor: session.Editor, input: Editable) {
     }
     if (input.dataset.level) {
         editor.flushPending();
-        editor.working("正在更新纵断面与全部路线…", () => {
+        editor.terrainWork(d, () => {
             session.timed("terrain-editor:level-release", () => {
                 editor.island.levels(true);
                 editor.refresh();

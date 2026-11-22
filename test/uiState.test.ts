@@ -93,3 +93,95 @@ test("A committed prompt, undo and redo preserve the live island and all geometr
     assert.equal(island.routes, routes);
     assert.equal(island.trees, trees);
 });
+
+test("Terrain work runs synchronously on a hit and defers cold history steps for two frames", async t => {
+    const { Editor } = await import("../src/app/state/session.svelte.ts");
+    const editor = new Editor(), design = syntheticDesign(), frames: FrameRequestCallback[] = [];
+    Object.assign(editor, { map: { clearIssue() {}, draw() {} } });
+    t.mock.method(editor, "refresh", () => {});
+    t.mock.method(editor.files, "remember", () => {});
+    const previous = globalThis.requestAnimationFrame;
+    globalThis.requestAnimationFrame = cb => frames.push(cb);
+    t.after(() => {
+        if (previous) globalThis.requestAnimationFrame = previous;
+        else Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+    });
+    async function finishCold(work: Promise<void> | void, label: string, index: number) {
+        assert.equal(editor.busy, label);
+        for (let i = 0; i < 2; i++) {
+            assert.equal(editor.history.index, index);
+            assert.equal(frames.length, 1);
+            frames.shift()!(i * 16);
+        }
+        await work;
+        assert.equal(editor.busy, null);
+        assert.equal(frames.length, 0);
+    }
+    editor.replace(design, true);
+    editor.history = new History(design);
+    const natural = editor.island.terrain.natural;
+    design.buildings[0].height++;
+    const hot = editor.rebuild();
+    assert.equal(editor.history.index, 1);
+    assert.equal(editor.island.terrain.natural, natural);
+    editor.navigate(false);
+    assert.equal(editor.history.index, 0);
+    editor.navigate(true);
+    assert.equal(editor.history.index, 1);
+    assert.equal(editor.busy, null);
+    assert.equal(frames.length, 0);
+    await hot;
+
+    for (let i = 1; i <= 4; i++) {
+        editor.island.design.erosion.droplets++;
+        await finishCold(editor.rebuild(), "正在重新计算侵蚀…", i);
+    }
+    for (let i = 4; i >= 2; i--) {
+        editor.navigate(false);
+        assert.equal(editor.history.index, i);
+        assert.equal(frames.length, 0);
+    }
+    await finishCold(editor.navigate(false), "正在重新计算侵蚀…", 2);
+    assert.equal(editor.history.index, 1);
+    editor.island.design.seed++;
+    await finishCold(editor.rebuild(), "正在重新生成地形与侵蚀…", 1);
+    assert.equal(editor.history.index, 2);
+    assert.equal(editor.canRedo, false);
+});
+
+test("Opening, creating and recovering a design each starts with empty terrain caches", async t => {
+    const { Editor } = await import("../src/app/state/session.svelte.ts");
+    const editor = new Editor(), design = syntheticDesign(), text = JSON.stringify(design);
+    Object.assign(editor, { map: { clearIssue() {}, draw() {} } });
+    Object.assign(editor.files, { supported: true });
+    t.mock.method(editor, "refresh", () => {});
+    t.mock.method(editor, "message", () => {});
+    t.mock.method(editor.files, "remember", () => {});
+    t.mock.method(editor, "working", async (_label: string, fn: () => void) => fn());
+    t.mock.method(globalThis, "fetch", async () => new Response(text));
+    const file = {
+        name: "A.json",
+        async requestPermission() {
+            return "granted" as const;
+        },
+        async getFile() {
+            return new File([text], this.name);
+        },
+        async createWritable() {
+            throw Error("Unexpected file write");
+        }
+    };
+    editor.replace(design, true);
+    const surfaces = [editor.island.terrain];
+    await editor.files.open(file);
+    surfaces.push(editor.island.terrain);
+    await editor.files.choose("new");
+    surfaces.push(editor.island.terrain);
+    editor.draft = { filename: file.name, text, date: "" };
+    await editor.files.restore();
+    surfaces.push(editor.island.terrain);
+    for (const field of ["dc", "natural", "zoneAt"] as const)
+        assert.equal(new Set(surfaces.map(s => s[field])).size, 4, field);
+    assert.equal(editor.draft, null);
+    assert.equal(editor.dirty, true);
+});

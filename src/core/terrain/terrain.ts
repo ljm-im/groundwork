@@ -311,11 +311,11 @@ export function prepareSite(base: BaseTerrain, ground: Ground, design: Design) {
     const { buildings, yards, ...pads } = prepareBuildings(base.grid, design);
     const heights = new Float32Array(base.grid.size);
     applyLevels({ grid: base.grid, ...ground, ...weights, ...pads, buildings, yards, heights }, design);
-    // Store only computed geometry. An unsmoothed polygon can alias the live control points.
+    // Unsmoothed outlines use the current design's control points when binding the site.
     return {
         ...weights, ...pads, heights,
         zones: zones.map(({ polygon, box, stations, cells, marker, shape }) => ({
-            polygon: shape.type === "polygon" && polygon === shape.points ? polygon.map(([x, y]): Point => [x, y]) : polygon,
+            polygon: shape.type === "polygon" && polygon === shape.points ? null : polygon,
             box, stations, cells, ...(marker && { marker })
         })),
         yards: yards.map(({ box, cells, shoulders }) => ({ box, cells, shoulders }))
@@ -328,7 +328,7 @@ export function bindTerrain(base: BaseTerrain, ground: Ground, site: ReturnType<
         ...base, ...ground, ...site,
         ridges: design.ridges.map((r, i) => ({ ...r, ...base.ridges[i] })),
         peaks: design.peaks.map((p, i) => ({ ...p, ...base.peaks[i] })),
-        zones: zones.map((z, i) => ({ ...z, ...site.zones[i] })),
+        zones: zones.map((z, i) => ({ ...z, ...site.zones[i], polygon: site.zones[i].polygon ?? zonePolygon(z.shape) })),
         buildings: design.buildings.map(buildingShape),
         yards: (design.yards ?? []).map((y, i) => ({ ...site.yards[i], yard: areaBoundary(design, y),
             height: design.zones.find(z => z.id === y.zone)!.height })),

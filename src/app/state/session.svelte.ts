@@ -1,5 +1,6 @@
 import { tick } from "svelte";
 import { Island } from "../../core/island.ts";
+import { TerrainCache } from "../../core/terrain/cache.ts";
 import { History, promptOwner, type PromptTarget } from "../../core/edit/history.ts";
 import { layerDefaults } from "./layers.ts";
 import { areaBoundary, nodePose, zonePolygon } from "../../core/design/model.ts";
@@ -69,6 +70,7 @@ export class Editor {
     gesture: Gesture | null = null;
     pendingLevels = new Set<string>();
     pendingEdges = new Set<string>();
+    private readonly terrainCache = new TerrainCache();
     private frame = 0;
     private toastTimer?: ReturnType<typeof setTimeout>;
 
@@ -180,11 +182,13 @@ export class Editor {
     flushPending() {
         if (this.frame) this.flush();
     }
-    async working(label: string, fn: () => void) {
+    async working(label: string | null, fn: () => void) {
         if (this.busy) return;
-        this.busy = label;
         try {
-            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            if (label) {
+                this.busy = label;
+                await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            }
             fn();
         }
         catch (e) {
@@ -195,16 +199,22 @@ export class Editor {
             this.busy = null;
         }
     }
+    terrainWork(design: Design, fn: () => void) {
+        const missing = this.terrainCache.missing(design);
+        return this.working(missing === "base" ? "正在重新生成地形与侵蚀…" : missing === "natural" ? "正在重新计算侵蚀…" : null, fn);
+    }
     replace(design: Design, reset = false) {
-        this.island = new Island(design);
+        if (reset) this.terrainCache.clear();
+        this.island = new Island(design, this.terrainCache);
         this.selection = this.issue = this.candidates = null;
         this.map.clearIssue();
         this.setTool("select");
         this.refresh(reset);
     }
     rebuild() {
-        return this.working("正在重新生成地形与侵蚀…", () => {
-            this.island = new Island(this.island.design);
+        const design = this.island.design;
+        return this.terrainWork(design, () => {
+            this.island = new Island(design, this.terrainCache);
             this.refresh();
             this.record();
         });
@@ -221,7 +231,7 @@ export class Editor {
             this.syncHistory(true);
             return;
         }
-        return this.working(forward ? "正在重做…" : "正在撤销…", () => {
+        return this.terrainWork(this.history.peek(forward)!, () => {
             this.replace(this.history.step(forward)!);
             this.syncHistory(true);
         });

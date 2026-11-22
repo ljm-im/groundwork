@@ -49,9 +49,13 @@ export class History {
         this.index = this.states.length - 1;
         return true;
     }
-    step(forward: boolean) {
+    peek(forward: boolean) {
         if (forward ? !this.canRedo : !this.canUndo) return null;
-        this.index += forward ? 1 : -1;
-        return parseDesign(this.states[this.index]);
+        return parseDesign(this.states[this.index + (forward ? 1 : -1)]);
+    }
+    step(forward: boolean) {
+        const restored = this.peek(forward);
+        if (restored) this.index += forward ? 1 : -1;
+        return restored;
     }
 }
