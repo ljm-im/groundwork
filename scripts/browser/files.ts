@@ -85,7 +85,7 @@ function installPickers() {
     window.fetch = (resource, options) => {
         if (new URL(resource instanceof Request ? resource.url : resource, location.href).pathname === "/examples/island.json") {
             state.exampleReads++;
-            return fetchFile("/test/fixtures/round6.json", options);
+            return fetchFile("/.local/fixtures/round6.json", options);
         }
         return fetchFile(resource, options);
     };
@@ -206,7 +206,7 @@ try {
 
         check("Drag a building, undo and redo");
         await click("[data-tab=buildings]");
-        await click("[data-building=street-1]");
+        await click("[data-building]");
         const [x, y] = await evaluate(() => {
             const box = document.querySelector("#map")!.getBoundingClientRect();
             return [box.x + box.width / 2, box.y + box.height / 2 + 24];

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFixture } from "../configs/read-fixture.ts";
+import { readFixture, writeGolden } from "../configs/read-fixture.ts";
 import { Island } from "../src/core/island.ts";
 import { parseDesign, serializeDesign } from "../src/core/design/model.ts";
 
@@ -33,6 +33,12 @@ export async function snapshots() {
         }];
     }));
 }
+
+export async function captureSnapshots() {
+    await writeGolden(await snapshots());
+}
+
+if (import.meta.main) await captureSnapshots();
 
 export async function checkSnapshots() {
     assert.deepEqual(await snapshots(), JSON.parse(await readFixture("golden.json")));

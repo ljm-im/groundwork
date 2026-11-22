@@ -64,7 +64,7 @@ function checkDirectory(directory: string, graph: Map<string, Set<string>>) {
                 if (!inCore && ts.isIdentifier(node.expression) && node.expression.text === "readFixture") {
                     const arg = node.arguments[0];
                     if (!arg || !ts.isStringLiteral(arg) || !/^[\w-]+\.json$/.test(arg.text))
-                        fail(node, "Use a JSON file in test/fixtures.");
+                        fail(node, "Use a JSON filename from .local/fixtures/.");
                 }
             }
             else if (ts.isIdentifier(node) && (ioNames.has(node.text) || inCore && browserNames.has(node.text))) {

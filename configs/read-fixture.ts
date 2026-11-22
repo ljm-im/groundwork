@@ -1,10 +1,14 @@
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 
-const fixtures = new URL("../test/fixtures/", import.meta.url);
+const fixtures = new URL("../.local/fixtures/", import.meta.url);
 
 export function readFixture(name: string): Promise<string> {
     if (!/^[\w-]+\.json$/.test(name)) throw new Error(`Invalid fixture name: ${name}`);
     return readFile(new URL(name, fixtures), "utf8");
+}
+
+export function writeGolden(snapshot: unknown) {
+    return writeFile(new URL("golden.json", fixtures), JSON.stringify(snapshot, null, 4), "utf8");
 }
 
 export async function designFixtures() {

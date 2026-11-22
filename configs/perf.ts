@@ -24,7 +24,7 @@ console.table(model.routes.map(r => ({
     校验: model.issues.filter(i => i.road === r.id || i.other === r.id).map(i => i.message).join(" / ") || "通过"
 })));
 time("全部重新选线", () => model.reroute());
-time("单条边重算（林间路）", () => model.reroute(new Set(["forest"])));
-design.levels.H += .5;
+time("单条边重算", () => model.reroute(new Set([model.routes[0].id])));
+design.levels[Object.keys(design.levelControls)[0]] += .5;
 time("标高预览（保持线形）", () => model.levels());
 console.table(timings);
