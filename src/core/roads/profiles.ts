@@ -216,11 +216,13 @@ export function gradeRoads(design: Design, terrain: Pick<Terrain, "grid" | "heig
         for (let i = route.points.length === 1 ? 0 : 1; i < route.points.length; i++) {
             const prev = Math.max(0, i - 1), a = route.points[prev], b = route.points[i];
             const dx = b[0] - a[0], dy = b[1] - a[1], length2 = dx * dx + dy * dy;
+            // Opposite bearings and different subdivisions of one centreline must tie at roundoff.
+            const tolerance = 16 * Number.EPSILON * Math.max(1, radius * radius, Math.sqrt(length2) * radius);
             eachCell(grid, bounds([a, b]), radius, (k, x, y) => {
-                const t = clamp(((x - a[0]) * dx + (y - a[1]) * dy) / (length2 || 1));
-                const px = t === 1 ? b[0] : a[0] + t * dx, py = t === 1 ? b[1] : a[1] + t * dy;
-                const squared = (x - px) ** 2 + (y - py) ** 2;
-                if (squared > radius * radius || squared >= nearestSquared[k]) return;
+                const u = x - a[0], v = y - a[1], t = clamp((u * dx + v * dy) / (length2 || 1));
+                const ex = t === 1 ? x - b[0] : u - t * dx, ey = t === 1 ? y - b[1] : v - t * dy;
+                const squared = ex * ex + ey * ey;
+                if (squared > radius * radius || nearestSquared[k] - squared <= tolerance) return;
                 const w = squared <= half * half ? 1 : 1 - smooth((Math.sqrt(squared) - half) / shoulder);
                 if (!w) return;
                 nearestSquared[k] = squared;

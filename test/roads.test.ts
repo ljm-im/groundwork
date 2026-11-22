@@ -136,6 +136,14 @@ test("Overlapping road beds use centreline distance, design order for ties and t
     assert.equal(result.heights[grid.index(4.5, .5)], 5);
     synthetic.edges.reverse();
     assert.equal(gradeRoads(synthetic, terrain, [a, b]).heights[grid.index(8.5, 1.5)], 20);
+
+    const points: Point[] = [[.17, .9], [18.82, 8.79]];
+    const first = road("C", "a", "b", points, { width: 5 });
+    const second = road("D", "c", "d", points.toReversed(), { width: 5 });
+    first.h = [2, 2];
+    second.h = [8, 8];
+    synthetic.edges = [first.edge, second.edge];
+    assert.deepEqual(gradeRoads(synthetic, terrain, [second, first]), gradeRoads(synthetic, terrain, [first]));
 });
 
 test("Selective rerouting and level previews retain unaffected geometry", () => {
