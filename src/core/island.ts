@@ -1,6 +1,7 @@
 import { type Design } from "./design/types.ts";
 import { type Terrain, type Tree, type Route, type Graded, type Issue } from "./design/results.ts";
-import { generateTerrain, updateHeights } from "./terrain/terrain.ts";
+import { TerrainCache } from "./terrain/cache.ts";
+import { updateHeights } from "./terrain/terrain.ts";
 import { plantTrees, visibleTrees } from "./vegetation/vegetation.ts";
 import { routeAll } from "./roads/routing.ts";
 import { gradeRoads, profile } from "./roads/profiles.ts";
@@ -15,9 +16,12 @@ export class Island {
     declare trees: Tree[];
     declare issues: Issue[];
 
-    constructor(design: Design) {
+    private readonly cache: TerrainCache;
+
+    constructor(design: Design, cache = new TerrainCache()) {
+        this.cache = cache;
         this.design = design;
-        this.terrain = generateTerrain(design);
+        this.terrain = cache.generate(design);
         this.treeCandidates = plantTrees(design, this.terrain);
         this.reroute();
     }
@@ -29,12 +33,13 @@ export class Island {
     }
 
     levels(release = false) {
-        updateHeights(this.terrain, this.design, release);
         if (release) {
+            this.terrain = this.cache.generate(this.design);
             this.treeCandidates = plantTrees(this.design, this.terrain);
             this.reroute();
         }
         else {
+            updateHeights(this.terrain, this.design);
             this.routes = this.routes.map(r => profile(this.design, this.terrain, r));
             this.finish();
         }
