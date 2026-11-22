@@ -109,7 +109,7 @@ export class Editor {
         this.map.clearIssue();
         this.panel.scrollTop = 0;
         if (open && h) {
-            if (h.kind in featureNames || h.kind === "zone" && this.island.design.zones.find(z => z.id === h.id)?.height.endRise) this.tab = "terrain";
+            if (h.kind in featureNames || h.kind === "zone") this.tab = "terrain";
             if (["edge", "node", "via"].includes(h.kind)) this.tab = "network";
             if (h.kind === "building") this.tab = "buildings";
         }

@@ -469,6 +469,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         const input = ev.target instanceof Element && ev.target.matches("input,select,textarea,[contenteditable=true]");
         if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "s") {
             ev.preventDefault();
+            if (ev.target instanceof HTMLTextAreaElement && ev.target.hasAttribute("data-prompt")) ev.target.blur();
             if (!editor.busy) editor.files.save();
             return;
         }

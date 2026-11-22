@@ -42,6 +42,7 @@
     {:else}
         <div class="sub">途经点 {e.via.length} 个</div><div class="part"><button class="danger" data-action="delete" onclick={() => editor.removeSelected()}>删除这条边</button></div>
     {/if}
+    <Prompt {editor} target={{ group: "edges", id: e.id }} />
 {:else if node}
     {@const pose = nodePose(d, node) as { point: number[]; normal?: number }}
     {@const linked = m.routes.filter(r => r.edge.from === node.id || r.edge.to === node.id)}
@@ -77,6 +78,7 @@
     </Part>
     <Part title="相连的边" count={linked.length}>{#each linked as r (r.id)}{@render roadRow(r)}{/each}</Part>
     <div class="part"><button class="danger" data-action="delete" onclick={() => editor.removeSelected()}>{node.type === "door" ? "删除门" : "删除节点"}</button><div class="sub">{node.type === "door" ? "相连道路保留在原门位。" : "相连的 " + linked.length + " 条边将一并移除，可撤销。"}</div></div>
+    <Prompt {editor} target={{ group: "nodes", id: node.id }} />
 {:else}
     {@const errors = m.issues.filter(i => i.severity === "error").length}
     <div class="row-between"><h2>路网总览</h2><button class="flat" data-action="reroute-all" onclick={() => editor.rerouteAll()}>重新选线</button></div>
@@ -94,6 +96,7 @@
     import { angleDiff, radians } from "../../core/math/geometry.ts";
     import { armBearing, summitHeights } from "../../core/checks/validation.ts";
     import Part from "./Part.svelte";
+    import Prompt from "./Prompt.svelte";
     import Search from "./Search.svelte";
     import ObjectProblems from "./ObjectProblems.svelte";
 

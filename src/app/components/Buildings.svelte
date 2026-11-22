@@ -26,6 +26,7 @@
             <button data-action="add-door" onclick={() => editor.addDoor(b, wall)}>加门</button></div>
     </Part>
     <div class="sub">拖动建筑移动，拖角点改尺寸，拖外侧手柄旋转。选中后可拖动标题和门。</div><div class="part"><button class="danger" data-action="delete" onclick={() => editor.removeSelected()}>删除建筑</button></div>
+    <Prompt {editor} target={{ group: "buildings", id: b.id }} />
 {:else}
     <div class="row-between"><h2>建筑</h2><button data-action="place" onclick={() => editor.setTool("building")}>放置建筑</button></div>
     <Search id="building-search" label="查找建筑" bind:value={editor.buildingFilter} />
@@ -52,6 +53,7 @@
 <script lang="ts">
     import * as session from "../state/session.svelte.ts";
     import Part from "./Part.svelte";
+    import Prompt from "./Prompt.svelte";
     import ObjectProblems from "./ObjectProblems.svelte";
     import Search from "./Search.svelte";
 

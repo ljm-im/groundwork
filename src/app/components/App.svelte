@@ -30,7 +30,7 @@
         body {
             margin: 0;
         }
-        button, input, select {
+        button, input, select, textarea {
             font: inherit;
             color: inherit;
         }
@@ -54,7 +54,7 @@
             opacity: .4;
             cursor: default;
         }
-        button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible {
+        button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible {
             outline: 2px solid #298b81;
             outline-offset: 2px;
         }

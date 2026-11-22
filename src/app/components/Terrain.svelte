@@ -22,10 +22,13 @@
 {/snippet}
 {#if zone}
     {@render back()}<h2>{zone.name}</h2>
-    <Part title="街尾抬升">
-        {#each ["内半径 / m", "外半径 / m"] as label, i (i)}<label class="field">{label}<input type="number" min="0" step="any" data-rise-radius={i} value={zone.height.endRise!.fade[i]} /></label>{/each}
-        <div class="sub">内半径以内保持原地面，外半径以外使用完整抬升。</div>
-    </Part>
+    {#if zone.height.endRise}
+        <Part title="街尾抬升">
+            {#each ["内半径 / m", "外半径 / m"] as label, i (i)}<label class="field">{label}<input type="number" min="0" step="any" data-rise-radius={i} value={zone.height.endRise.fade[i]} /></label>{/each}
+            <div class="sub">内半径以内保持原地面，外半径以外使用完整抬升。</div>
+        </Part>
+    {/if}
+    <Prompt {editor} target={{ group: "zones", id: zone.id }} />
 {:else if item && h}
     {@render back()}<h2>{item.name}</h2>{#if editor.tool in featureNames}{@render tools()}{/if}
     <label class="field">名称<input class="wide" data-feature-field="name" value={item.name} /></label>
@@ -66,9 +69,11 @@
         <button class="danger" data-action="delete" onclick={() => editor.removeSelected()}>删除折点 {h.index! + 1}</button></div>
     {:else}<div class="part"><button class="danger" data-action="delete" onclick={() => editor.removeSelected()}>删除{featureNames[kind]}</button></div>{/if}
 {:else}
-    <h2>地形</h2>{@render tools()}<Search id="terrain-search" label="查找地形对象" bind:value={editor.terrainFilter} />
+    <h2>地形</h2>
+    <Prompt {editor} title="全岛描述" target={{ group: "design" }} />
+    {@render tools()}<Search id="terrain-search" label="查找地形对象" bind:value={editor.terrainFilter} />
     {#if zones.length}<Part title="地形区域" count={zones.length}>{#each zones as z (z.id)}
-        <button class="object-row" data-rise-zone={z.id} onclick={() => editor.focus("zone", z.id)}>{z.name}<small>›</small></button>{/each}</Part>{/if}
+        <button class="object-row" data-zone={z.id} onclick={() => editor.focus("zone", z.id)}>{z.name}<small>›</small></button>{/each}</Part>{/if}
     {#each groups as group (group.key)}
         <Part title={group.name} count={group.items.length}>{#each group.items as obj (obj.id)}
             <button class="object-row" data-feature={group.key} data-id={obj.id} onclick={() => editor.focus(group.key, obj.id)}>{obj.name}<small>›</small></button>
@@ -138,17 +143,18 @@
     import { clearingShape } from "../../core/design/model.ts";
     import { featureNames, featureOf, features } from "../../core/edit/landforms.ts";
     import Part from "./Part.svelte";
+    import Prompt from "./Prompt.svelte";
     import Search from "./Search.svelte";
 
     let { editor }: { editor: session.Editor } = $props();
     let d = $derived(editor.island.design), h = $derived(editor.selection);
     let kind = $derived(h?.kind as FeatureKind), item = $derived(featureOf(d, h));
-    let zone = $derived(h?.kind === "zone" && d.zones.find(z => z.id === h!.id && z.height.endRise));
+    let zone = $derived(h?.kind === "zone" && d.zones.find(z => z.id === h!.id));
     let q = $derived(editor.terrainFilter.trim().toLowerCase());
     const kinds = Object.entries(featureNames) as [FeatureKind, string][];
     const species = { mixed: "小乔木与灌木", shrub: "灌木", small: "小乔木", avenue: "行道树", forest: "林木" };
     let groups = $derived(kinds.map(([key, name]) => ({ key, name, items: (features(d, key) as Named[]).filter(v => v.name.toLowerCase().includes(q)) })).filter(g => !q || g.items.length));
-    let zones = $derived(d.zones.filter(z => z.height.endRise && z.name.toLowerCase().includes(q)));
+    let zones = $derived(d.zones.filter(z => z.name.toLowerCase().includes(q)));
     function preview(e: Event & { currentTarget: HTMLInputElement }, key: string) {
         if (editor.busy) return;
         d.levels[key] = e.currentTarget.valueAsNumber;
