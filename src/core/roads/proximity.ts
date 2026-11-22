@@ -36,8 +36,13 @@ function slab(offset: number, rate: number, low: number, high: number, open = fa
 }
 
 // A road segment swept by the clearance radius is a rectangle with two round caps.
-function nearCapsule(segment: LineSegment, other: LineSegment, radius: number): [number, number] | null {
-    const { a, b } = segment, p = other.a, q = other.b, ux = (q[0] - p[0]) / other.length, uy = (q[1] - p[1]) / other.length;
+export function nearCapsule(segment: LineSegment, other: LineSegment, radius: number): [number, number] | null {
+    const { a, b } = segment, p = other.a, q = other.b;
+    if (!other.length) {
+        const interval = disk(a, b, p, radius);
+        return interval && [segment.station + interval[0] * segment.length, segment.station + interval[1] * segment.length];
+    }
+    const ux = (q[0] - p[0]) / other.length, uy = (q[1] - p[1]) / other.length;
     const x = a[0] - p[0],
         y = a[1] - p[1],
         dx = b[0] - a[0],

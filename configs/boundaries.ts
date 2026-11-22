@@ -18,6 +18,7 @@ const allowed: Record<string, string[]> = {
     vegetation: ["math", "design"],
     checks: ["math", "design", "roads"],
     edit: ["math", "design"],
+    "export.ts": ["math", "design", "terrain", "roads", "vegetation", "checks", "edit", "island.ts"],
     "island.ts": ["math", "design", "terrain", "roads", "vegetation", "checks", "edit"]
 };
 const testTools = new Set(["read-fixture", "fixtureSchema", "register-svelte", "boundaries"].map(name => resolve(root, "configs", name + ".ts")));

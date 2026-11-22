@@ -4,6 +4,10 @@ import { readFixture } from "../configs/read-fixture.ts";
 import { Island } from "../src/core/island.ts";
 import { parseDesign, serializeDesign } from "../src/core/design/model.ts";
 
+import { exportIsland, serializeExport } from "../src/core/export.ts";
+
+// A fixed provenance makes the export digest reproducible across later commits.
+const referenceCommit = "7b45484101d476454d884297d7799291a2ee65ad";
 const digest = (bytes: string | Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 const values = (value: unknown) => digest(JSON.stringify(value));
 const bytes = (field: Float32Array) => digest(new Uint8Array(field.buffer, field.byteOffset, field.byteLength));
@@ -24,7 +28,8 @@ export async function snapshots() {
             gradedHeights: bytes(island.graded.heights),
             trees: values(island.trees),
             issues: values(island.issues),
-            serialized
+            serialized,
+            exported: digest(serializeExport(exportIsland(island, { sha256: digest(raw), commit: referenceCommit })))
         }];
     }));
 }
