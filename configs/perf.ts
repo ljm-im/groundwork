@@ -1,9 +1,10 @@
 import { performance } from "node:perf_hooks";
-import { readFixture } from "./read-fixture.ts";
+import { readFixture, readRegressions } from "./read-fixture.ts";
 import { Island } from "../src/core/island.ts";
 import { parseDesign } from "../src/core/design/model.ts";
 
 const design = parseDesign(await readFixture("round4.json"));
+const { perfEdge, perfLevel } = (await readRegressions()).round4;
 const timings: Record<string, number> = {};
 
 function time<T>(name: string, fn: () => T) {
@@ -24,7 +25,9 @@ console.table(model.routes.map(r => ({
     校验: model.issues.filter(i => i.road === r.id || i.other === r.id).map(i => i.message).join(" / ") || "通过"
 })));
 time("全部重新选线", () => model.reroute());
-time("单条边重算", () => model.reroute(new Set([model.routes[0].id])));
-design.levels[Object.keys(design.levelControls)[0]] += .5;
+const edge = design.edges.find(e => e.id === perfEdge);
+if (!edge || !Object.hasOwn(design.levels, perfLevel)) throw Error("Unknown performance scenario in .local/fixtures/regressions.json");
+time(`单条边重算（${edge.name}）`, () => model.reroute(new Set([edge.id])));
+design.levels[perfLevel] += .5;
 time("标高预览（保持线形）", () => model.levels());
 console.table(timings);

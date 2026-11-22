@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
-import { readFixture } from "../configs/read-fixture.ts";
+import { fixtureOptions, readFixture } from "../configs/read-fixture.ts";
 import { parseDesign, serializeDesign } from "../src/core/design/model.ts";
 import { areaBoundary, corners, nodePose, zonePolygon } from "../src/core/design/shapes.ts";
 import { type Point } from "../src/core/design/types.ts";
@@ -9,22 +9,32 @@ import { distance, nearest } from "../src/core/math/geometry.ts";
 import { insidePolygon } from "../src/core/math/polygon.ts";
 import { hedgeLines } from "../src/core/edit/yards.ts";
 import { Island } from "../src/core/island.ts";
+import { syntheticDesign } from "./scenarios.ts";
 import { exportIsland, serializeExport } from "../src/core/export.ts";
 
-const raw = await readFixture("round6.json");
-const design = parseDesign(raw);
 const prompt = "  外观保留原样。\n[\n  1,\n  2\n]\t\"门\"  ";
-design.prompt = prompt;
-for (const key of ["buildings", "edges", "nodes", "zones"] as const) design[key][0].prompt = key + prompt;
-const input = serializeDesign(design);
-const source = { sha256: createHash("sha256").update(input).digest("hex"), commit: "a".repeat(40) };
-const island = new Island(design), result = exportIsland(island, source);
+const provenance = (input: string) => ({ sha256: createHash("sha256").update(input).digest("hex"), commit: "a".repeat(40) });
+
+async function loadExample() {
+    const design = parseDesign(await readFixture("round6.json"));
+    design.prompt = prompt;
+    for (const key of ["buildings", "edges", "nodes", "zones"] as const) design[key][0].prompt = key + prompt;
+    const input = serializeDesign(design), source = provenance(input);
+    const island = new Island(design), result = exportIsland(island, source);
+    return { design, input, source, island, result };
+}
+
+let example: ReturnType<typeof loadExample>;
+function exportTest(name: string, check: (data: Awaited<ReturnType<typeof loadExample>>) => void) {
+    test(name, fixtureOptions("round6.json"), async () => check(await (example ??= loadExample())));
+}
+
 const round = (n: number) => Number(n.toFixed(3)) || 0;
 const plan = (p: number[]): Point => [p[0], p[1]];
 const rounded = (p: number[]): Point => [round(p[0]), round(p[1])];
 
 // Reconstruct ground level using only the information available in the exported file.
-function ground(p: number[], terrain = result.terrain) {
+function ground(p: number[], terrain: ReturnType<typeof exportIsland>["terrain"]) {
     const { origin, step, width, height, heights } = terrain;
     const x = Math.max(0, Math.min(width - 1, (p[0] - origin[0]) / step));
     const y = Math.max(0, Math.min(height - 1, (origin[1] - p[1]) / step));
@@ -34,7 +44,7 @@ function ground(p: number[], terrain = result.terrain) {
     return north + (south - north) * (y - top);
 }
 
-test("independent exports have identical formatted bytes and preserve authored text", () => {
+exportTest("independent exports have identical formatted bytes and preserve authored text", ({ design, input, source, island, result }) => {
     const bytes = serializeExport(result);
     const again = exportIsland(new Island(parseDesign(input)), { commit: source.commit, sha256: source.sha256 });
     assert.equal(serializeExport(again), bytes);
@@ -56,7 +66,7 @@ test("independent exports have identical formatted bytes and preserve authored t
     assert.equal(serializeDesign(island.design), input);
 });
 
-test("the exported grid contains every graded sample and classifies surfaces in priority order", () => {
+exportTest("the exported grid contains every graded sample and classifies surfaces in priority order", ({ island, result }) => {
     const { terrain, graded } = island, { grid } = terrain, out = result.terrain;
     assert.deepEqual([out.origin, out.step, out.width, out.height, out.rowOrder], [grid.point(0), grid.step, grid.width, grid.height, "north-to-south"]);
     assert.deepEqual(out.surfaceRules.priority, [0, 4, 2, 1, 3]);
@@ -87,7 +97,7 @@ test("the exported grid contains every graded sample and classifies surfaces in 
     assert.deepEqual([...seen].sort(), [0, 1, 2, 3, 4]);
 });
 
-test("profiles, stair segments, trees and validation issues use resolved geometry", () => {
+exportTest("profiles, stair segments, trees and validation issues use resolved geometry", ({ design, island, result }) => {
     assert.equal(result.roads.length, design.edges.length);
     for (const road of result.roads) {
         const r = island.routes.find(r => r.id === road.id)!;
@@ -103,7 +113,7 @@ test("profiles, stair segments, trees and validation issues use resolved geometr
         const t = island.trees[i];
         assert.equal(tree.index, i + 1);
         assert.deepEqual(plan(tree.position), rounded(t.point));
-        assert(Math.abs(tree.position[2] - ground(tree.position)) <= .00050000001);
+        assert(Math.abs(tree.position[2] - ground(tree.position, result.terrain)) <= .00050000001);
         assert.deepEqual([tree.type, tree.radius, tree.wooded], ["tree." + t.species, round(t.radius), t.wooded]);
     }
     assert.equal(result.issues.length, island.issues.length);
@@ -114,7 +124,7 @@ test("profiles, stair segments, trees and validation issues use resolved geometr
     }
 });
 
-test("building foundations, outer and inner footprints, and authored door poses agree", () => {
+exportTest("building foundations, outer and inner footprints, and authored door poses agree", ({ design, island, result }) => {
     assert.equal(result.buildings.length, design.buildings.length);
     assert.deepEqual(new Set(result.buildings.map(b => b.shape)), new Set(["rect", "circle", "ring"]));
     for (const [i, b] of result.buildings.entries()) {
@@ -145,7 +155,7 @@ test("building foundations, outer and inner footprints, and authored door poses 
     }
 });
 
-test("areas, door and gate nodes, hedges and labels retain their authored locations", () => {
+exportTest("areas, door and gate nodes, hedges and labels retain their authored locations", ({ design, result }) => {
     assert.equal(result.areas.length, design.zones.length + design.yards!.length + design.vegetation.rooms.length);
     for (const z of design.zones) {
         const area = result.areas.find(a => a.type === "area.zone" && a.id === z.id)!;
@@ -166,7 +176,7 @@ test("areas, door and gate nodes, hedges and labels retain their authored locati
         const lines = yard.kind === "plaza" ? [] : hedgeLines(areaBoundary(design, yard), design.nodes.filter(n => n.type === "gate" && n.yard === yard.id), design.edges);
         const hedges = result.hedges.filter(h => h.yard === yard.id);
         assert.deepEqual(hedges.map(h => h.polyline.map(plan)), lines.map(line => line.map(rounded)));
-        for (const h of hedges) for (const p of h.polyline) assert(Math.abs(p[2] - ground(p)) <= .00050000001);
+        for (const h of hedges) for (const p of h.polyline) assert(Math.abs(p[2] - ground(p, result.terrain)) <= .00050000001);
     }
     assert.equal(result.nodes.length, design.nodes.length);
     for (const [i, node] of result.nodes.entries()) {
@@ -175,14 +185,14 @@ test("areas, door and gate nodes, hedges and labels retain their authored locati
         if (n.type === "door" || n.type === "gate") assert.deepEqual(node.normal, rounded([Math.cos(pose.normal!), Math.sin(pose.normal!)]));
         else assert.equal(node.normal, undefined);
         if (n.type === "door") assert.deepEqual(node.position, result.buildings.find(b => b.id === n.building)!.doors.find(d => d.id === n.door)!.position);
-        else assert(Math.abs(node.position[2] - ground(node.position)) <= .00050000001);
+        else assert(Math.abs(node.position[2] - ground(node.position, result.terrain)) <= .00050000001);
     }
     assert.equal(result.labels.length, design.labels.length);
     for (const [i, label] of result.labels.entries()) {
         const l = design.labels[i], b = design.buildings.find(b => b.id === l.building);
         assert.deepEqual(plan(label.position), rounded(b ? b.center.map((n, k) => n + (l.offset?.[k] ?? 0)) : l.point!));
         assert.equal(label.name, l.name);
-        assert(Math.abs(label.position[2] - ground(label.position)) <= .00050000001);
+        assert(Math.abs(label.position[2] - ground(label.position, result.terrain)) <= .00050000001);
     }
 });
 
@@ -193,7 +203,7 @@ function segmentDistance(a: Point, b: Point, c: Point, d: Point) {
         nearest(...c, [a, b]).distance, nearest(...d, [a, b]).distance);
 }
 
-test("retaining wall sections follow zone edges and keep the road corridor clear between all samples", () => {
+exportTest("retaining wall sections follow zone edges and keep the road corridor clear between all samples", ({ island, result }) => {
     assert(result.walls.length > 0);
     const roads = result.roads.flatMap(r => r.centerline.slice(1).map((p, i) => ({ a: plan(r.centerline[i]), b: plan(p), clearance: r.width / 2 + .3 })));
     let closest = Infinity;
@@ -222,7 +232,7 @@ test("retaining wall sections follow zone edges and keep the road corridor clear
 });
 
 test("wall openings have the specified width on both sides of a raised square, including road end caps", () => {
-    const model = new Island(parseDesign(raw)), { grid } = model.terrain;
+    const model = new Island(syntheticDesign()), { grid } = model.terrain, source = provenance(serializeDesign(model.design));
     const square: Point[] = [[-10, -10], [10, -10], [10, 10], [-10, 10]];
     const wallZone = { ...model.terrain.zones[0], polygon: square, retainingWall: true };
     model.terrain.zones = [wallZone];
@@ -256,9 +266,9 @@ test("wall openings have the specified width on both sides of a raised square, i
 });
 
 test("tree bases can be reconstructed from rounded grid spacing and origin", () => {
-    const d = parseDesign(raw), step = 1.00049, xMin = -140.0002, yMax = 110.0002;
-    d.grid = { xMin, xMax: xMin + 250 * step, yMin: yMax - 210 * step, yMax, step };
-    const out = exportIsland(new Island(d), source);
+    const d = syntheticDesign(), step = 1.00049, xMin = -48.0002, yMax = 48.0002;
+    d.grid = { xMin, xMax: xMin + 96 * step, yMin: yMax - 96 * step, yMax, step };
+    const out = exportIsland(new Island(d), provenance(serializeDesign(d)));
     assert.equal(out.terrain.step, 1);
     assert(out.trees.length > 0);
     for (const t of out.trees) assert(Math.abs(t.position[2] - ground(t.position, out.terrain)) <= .00050000001);

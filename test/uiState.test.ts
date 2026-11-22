@@ -1,21 +1,22 @@
 import { test } from "node:test";
 import "../configs/register-svelte.ts";
 import assert from "node:assert/strict";
-import { readFixture } from "../configs/read-fixture.ts";
+import { fixtureOptions, readFixture } from "../configs/read-fixture.ts";
 import { distance } from "../src/core/math/geometry.ts";
 import { History } from "../src/core/edit/history.ts";
 import { Island } from "../src/core/island.ts";
 import { parseDesign } from "../src/core/design/model.ts";
 import { IslandMap } from "../src/render/map.ts";
 import { render } from "svelte/server";
+import { syntheticDesign } from "./scenarios.ts";
 import { previewLevels } from "../src/app/state/levelPreview.ts";
 
-test("Map focus, hit radius and the selected inspector issue", async () => {
+test("Map focus, hit radius and the selected inspector issue", fixtureOptions("round5.json"), async () => {
     const original = await readFixture("round5.json");
     const author = parseDesign(original), baseline = new Island(author);
     const session = await import("../src/app/state/session.svelte.ts");
     const { default: Network } = await import("../src/app/components/Network.svelte");
-    const selected = baseline.issues.find(i => i.kind === "ramp-grade" && i.road === "street-4")!;
+    const selected = baseline.issues.find(i => i.kind === "ramp-grade" && i.road)!;
     const view = Object.assign(Object.create(IslandMap.prototype) as IslandMap, {
         island: baseline, width: 1000, height: 700, zoom: 1, layers: { issues: true }, draw() { }, clearIssue() {
             view.activeIssue = null;
@@ -44,7 +45,7 @@ test("Map focus, hit radius and the selected inspector issue", async () => {
     assert(markup.match(/<button[^>]*>/g)!.some(tag => tag.includes("issue-row is-selected") && tag.includes("data-issue=\"" + baseline.issues.indexOf(selected) + "\"")));
 });
 
-test("Each extreme level preview matches a full regeneration", async () => {
+test("Each extreme level preview matches a full regeneration", fixtureOptions("round6.json"), async () => {
     const input = await readFixture("round6.json");
     // The interactive shortcut must produce the full engine's values, including
     // stair landings, graded road beds, trees and issue locations at every level.
@@ -65,7 +66,7 @@ test("Each extreme level preview matches a full regeneration", async () => {
 
 test("A committed prompt, undo and redo preserve the live island and all geometry", async t => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
-    const editor = new Editor(), design = parseDesign(await readFixture("round6.json")), island = new Island(design);
+    const editor = new Editor(), design = syntheticDesign(), island = new Island(design);
     editor.island = island;
     editor.busy = null;
     editor.history = new History(design);

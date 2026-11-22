@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { type Point } from "../src/core/design/types.ts";
 import { type Issue } from "../src/core/design/results.ts";
-import { readFixture } from "../configs/read-fixture.ts";
+import { fixtureOptions, readFixture, readRegressions } from "../configs/read-fixture.ts";
 import { advance, distance, nearest, pointAt, radians, sample, stations } from "../src/core/math/geometry.ts";
 import { Island } from "../src/core/island.ts";
 import { parseDesign, buildingShape } from "../src/core/design/model.ts";
@@ -10,15 +10,16 @@ import { labelReading } from "../src/render/map.ts";
 import { selfOverlaps, sharpBends, overlappingLocations } from "../src/core/roads/proximity.ts";
 import { summitHeights, validateRoads } from "../src/core/checks/validation.ts";
 import { issueShapes, objectIssues } from "../src/core/checks/issues.ts";
-import { referenceText, syntheticRoads } from "./scenarios.ts";
+import { referenceDesign, syntheticDesign, syntheticRoads } from "./scenarios.ts";
 
-test("Default roads meet their hard constraints", () => {
-    const design = parseDesign(referenceText);
+test("Default roads meet their hard constraints", fixtureOptions("round4.json"), async () => {
+    const design = await referenceDesign();
     const model = new Island(design);
     assert(!model.issues.some(i => ["sharp-bend", "self-overlap"].includes(i.kind)), "默认路网出现急弯或自身重叠");
     assert.equal(model.issues.filter(i => i.kind === "no-route" || i.kind === "overlap").length, 0);
     assert(!model.issues.some(i => i.kind === "turn-radius"));
-    assert(!model.issues.some(i => i.severity === "error" && model.routes.slice(0, 8).some(r => r.id === i.road)), "原有八条选线路径应通过硬性校验");
+    const routed = model.routes.filter(r => (r.edge.mode ?? "route") === "route");
+    assert(routed.length > 0 && !model.issues.some(i => i.severity === "error" && routed.some(r => r.id === i.road)));
     assert(model.issues.every(i => i.point.every(Number.isFinite)));
 });
 
@@ -79,7 +80,7 @@ test("Overlap lengths, shared junctions, bends and self-crossings", () => {
 
 test("Grade windows and steps on streets", () => {
     const { synthetic, flat, road, grid } = syntheticRoads();
-    const steps = road("street", "a", "b", [
+    const steps = road("S", "a", "b", [
         [0, 0],
         [10, 0],
         [20, 0]
@@ -91,40 +92,43 @@ test("Grade windows and steps on streets", () => {
     assert(validateRoads(synthetic, flat, [steep]).some(i => i.kind === "stair-grade"));
 });
 
-test("Summit ground, zone heights and surveyed map labels", () => {
-    const again = new Island(parseDesign(referenceText));
+test("Summit ground, zone heights and surveyed map labels", fixtureOptions("round4.json"), async () => {
+    const again = new Island(await referenceDesign());
     const lighthouse = again.design.buildings.find(b => b.summit)!;
+    const lab = again.design.labels.find(l => l.building === lighthouse.id && l.level)!;
+    const target = again.design.levels[lab.level!];
     const summit = summitHeights(again.terrain.grid, again.graded.heights, lighthouse.center);
-    assert(Math.abs(summit.ground - again.design.levels.L) <= 1);
+    assert(Math.abs(summit.ground - target) <= 1);
     assert(summit.highest - summit.ground < 1e-6);
     assert(!again.issues.some(i => i.kind === "summit"));
     const peak = again.design.peaks.find(p => distance(p.center, lighthouse.center) < 1)!;
     const nearby = again.terrain.grid.index(...lighthouse.center);
     assert(again.terrain.cliff[nearby] >= peak.cliffMin! - 1e-6 && again.terrain.erosionWeight[nearby] < .03);
-    const lowered = parseDesign(referenceText);
-    lowered.buildings.find(b => b.summit)!.center = [-60, -37];
+    const lowered = structuredClone(again.design);
+    lowered.buildings.find(b => b.summit)!.center = [lighthouse.center[0], lighthouse.center[1] + 19];
     const low = new Island(lowered);
     assert(low.issues.some(i => i.kind === "summit" && i.severity === "error"));
-    const lab = lowered.labels.find(l => l.building === "light")!, label = labelReading(low, lab);
+    const label = labelReading(low, lab);
     assert.equal(label.actual, sample(low.terrain.grid, low.graded.heights, ...lowered.buildings.find(b => b.summit)!.center));
-    assert.equal(label.difference, "（设计 27m）");
-    const exact = { ...low, graded: { ...low.graded, heights: new Float32Array(low.terrain.grid.size).fill(26.5) } };
+    assert.equal(label.difference, "（设计 " + target + "m）");
+    const exact = { ...low, graded: { ...low.graded, heights: new Float32Array(low.terrain.grid.size).fill(target - .5) } };
     assert.equal(labelReading(exact, lab).difference, "");
-    assert(again.issues.some(i => i.kind === "zone-height" && i.zone === "garden" && i.severity === "notice"));
+    assert(again.issues.some(i => i.kind === "zone-height" && again.design.zones.some(z => z.id === i.zone && z.shape.type === "sector") && i.severity === "notice"));
 });
 
-test("Issue counts and topology of the authored design", async () => {
+test("Issue counts and topology of the authored design", fixtureOptions("round5.json", "regressions.json"), async () => {
     const original = await readFixture("round5.json");
     const author = parseDesign(original), baseline = new Island(author);
     const counts: Record<string, number> = {};
     for (const issue of baseline.issues)
         counts[issue.kind] = (counts[issue.kind] ?? 0) + 1;
-    assert.deepEqual(counts, { "ramp-grade": 12, "turn-radius": 9, "stair-grade": 1, "no-route": 1, "sharp-bend": 2, wall: 3, "zone-height": 5 });
-    assert.equal(author.nodes.length, 33);
-    assert.equal(author.edges.length, 27);
+    const expected = (await readRegressions()).round5;
+    assert.deepEqual(counts, expected.issues);
+    assert.equal(author.nodes.length, expected.nodes);
+    assert.equal(author.edges.length, expected.edges);
 });
 
-test("Issue station bounds cover each offending interval", async () => {
+test("Issue station bounds cover each offending interval", fixtureOptions("round5.json"), async () => {
     const original = await readFixture("round5.json");
     const author = parseDesign(original), baseline = new Island(author);
     // Validate station bounds independently against every contiguous run of offending intervals.
@@ -155,9 +159,8 @@ test("Issue station bounds cover each offending interval", async () => {
     }
 });
 
-test("Overlap spans and building issue footprints", async () => {
-    const original = await readFixture("round5.json");
-    const author = parseDesign(original), baseline = new Island(author);
+test("Overlap spans and building issue footprints", () => {
+    const author = syntheticDesign(), baseline = new Island(author);
     const a = { id: "a", points: [[0, 0], [30, 0]] as Point[], s: new Float64Array(), edge: { ...author.edges[0], width: 2 } }, b = { id: "b", points: [[8, 2], [20, 2]] as Point[], s: new Float64Array(), edge: { ...author.edges[0], width: 2 } };
     for (const line of [a, b])
         line.s = stations(line.points);
@@ -166,7 +169,7 @@ test("Overlap spans and building issue footprints", async () => {
     assert(Math.abs(overlap.spans[0].from - (8 - Math.sqrt(5))) < 1e-8);
     assert(Math.abs(overlap.spans[0].to - (20 + Math.sqrt(5))) < 1e-8);
     assert.deepEqual(overlap.spans[1], { road: "b", from: 0, to: 12 });
-    const structure = author.buildings.find(b => b.id === "studio")!;
+    const structure = author.buildings[0];
     const footprintIssue: Issue = { message: "", severity: "error", building: structure.id, point: structure.center, kind: "building" };
     assert.deepEqual(issueShapes(baseline, footprintIssue)[0], { points: buildingShape(structure).polygon, closed: true });
     assert(objectIssues({ ...baseline, issues: [footprintIssue] }, { kind: "building", id: structure.id }).includes(footprintIssue));

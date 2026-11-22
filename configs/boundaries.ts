@@ -61,9 +61,8 @@ function checkDirectory(directory: string, graph: Map<string, Set<string>>) {
             else if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument)) dependency(node.argument.literal);
             else if (ts.isCallExpression(node)) {
                 if (node.expression.kind === ts.SyntaxKind.ImportKeyword) dependency(node.arguments[0]);
-                if (!inCore && ts.isIdentifier(node.expression) && node.expression.text === "readFixture") {
-                    const arg = node.arguments[0];
-                    if (!arg || !ts.isStringLiteral(arg) || !/^[\w-]+\.json$/.test(arg.text))
+                if (!inCore && ts.isIdentifier(node.expression) && ["readFixture", "fixtureOptions"].includes(node.expression.text)) {
+                    if (!node.arguments.length || !node.arguments.every(arg => ts.isStringLiteral(arg) && /^[\w-]+\.json$/.test(arg.text)))
                         fail(node, "Use a JSON filename from .local/fixtures/.");
                 }
             }
