@@ -38,3 +38,14 @@ test("Export is byte-stable and drops the retired scatter pattern", async () => 
     Object.assign(withLegacyField.vegetation, { scatterPattern: "obsolete" });
     assert.equal(serializeDesign(parseDesign(JSON.stringify(withLegacyField))), exported);
 });
+
+test("Object and text imports produce identical designs, routes and trees", async () => {
+    const text = await readFixture("round6.json");
+    const source: unknown = JSON.parse(text);
+    const document = parseDesign(source), fromText = parseDesign(text);
+    assert.equal(serializeDesign(document), serializeDesign(fromText));
+    const island = new Island(document), reference = new Island(fromText);
+    assert.deepEqual(island.routes, reference.routes);
+    assert.deepEqual(island.trees, reference.trees);
+    assert.equal(JSON.stringify(source), JSON.stringify(JSON.parse(text)));
+});

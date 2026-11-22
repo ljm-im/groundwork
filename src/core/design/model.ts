@@ -19,7 +19,7 @@ function check(ok: unknown, message: string): asserts ok {
 }
 
 export function parseDesign(text: unknown): Design {
-    const input: unknown = typeof text === "string" ? JSON.parse(text) : structuredClone(text);
+    const input: unknown = typeof text === "string" ? JSON.parse(text) : JSON.parse(JSON.stringify(text));
     check(isRecord(input), "不支持的版本");
     const draft: Partial<ImportDesign> = input;
     // The v1/v2 importers operate on the old layout before the common checks.
