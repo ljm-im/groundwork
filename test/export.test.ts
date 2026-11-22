@@ -185,7 +185,12 @@ exportTest("areas, door and gate nodes, hedges and labels retain their authored 
         if (n.type === "door" || n.type === "gate") assert.deepEqual(node.normal, rounded([Math.cos(pose.normal!), Math.sin(pose.normal!)]));
         else assert.equal(node.normal, undefined);
         if (n.type === "door") assert.deepEqual(node.position, result.buildings.find(b => b.id === n.building)!.doors.find(d => d.id === n.door)!.position);
-        else assert(Math.abs(node.position[2] - ground(node.position, result.terrain)) <= .00050000001);
+        const ends = result.roads.flatMap((road, i) => {
+            const edge = design.edges[i];
+            return [...(edge.from === n.id ? [road.centerline[0]] : []), ...(edge.to === n.id ? [road.centerline.at(-1)!] : [])];
+        });
+        for (const p of ends) assert.equal(node.position[2], p[2]);
+        if (!ends.length && n.type !== "door") assert(Math.abs(node.position[2] - ground(node.position, result.terrain)) <= .00050000001);
     }
     assert.equal(result.labels.length, design.labels.length);
     for (const [i, label] of result.labels.entries()) {
@@ -263,6 +268,26 @@ test("wall openings have the specified width on both sides of a raised square, i
     assert.deepEqual(closed[0].polyline[0], closed[0].polyline.at(-1));
     model.graded.heights = raised.map(h => h / 10);
     assert.deepEqual(exportIsland(model, source).walls, []);
+});
+
+test("Both arms share the exported junction elevation across a one-metre terrain break", () => {
+    const design = syntheticDesign();
+    design.nodes = [
+        { id: "A", name: "A", type: "endpoint", point: [-12, 0] }, { id: "B", name: "B", type: "junction", point: [0, 0] },
+        { id: "C", name: "C", type: "endpoint", point: [12, 0] }, { id: "D", name: "D", type: "endpoint", point: [4, 4] }
+    ];
+    const edge = { ...design.edges[0], from: "A", to: "B", mode: "straight" as const };
+    design.edges = [edge, { ...edge, id: "F", from: "B", to: "C" }];
+    const island = new Island(design), { grid } = island.terrain;
+    island.terrain.heights = island.terrain.heights.map((_, k) => grid.point(k)[0] < 0 ? 4 : 5);
+    island.reroute();
+    const out = exportIsland(island, provenance(serializeDesign(design)));
+    const joint = out.nodes.find(n => n.id === "B")!, isolated = out.nodes.find(n => n.id === "D")!;
+    assert.equal(joint.position[2], 4.5);
+    assert.equal(island.routes[0].h.at(-1), island.routes[1].h[0]);
+    assert.equal(out.roads[0].centerline.at(-1)![2], joint.position[2]);
+    assert.equal(out.roads[1].centerline[0][2], joint.position[2]);
+    assert.equal(isolated.position[2], ground(isolated.position, out.terrain));
 });
 
 test("tree bases can be reconstructed from rounded grid spacing and origin", () => {

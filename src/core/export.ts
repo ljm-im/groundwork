@@ -1,6 +1,6 @@
 import { type Design, type Building, type Point, type Shape } from "./design/types.ts";
 import { type Issue, type Terrain } from "./design/results.ts";
-import { areaBoundary, corners, nodePose, zonePolygon } from "./design/shapes.ts";
+import { areaBoundary, corners, nodePose, padCell, zonePolygon } from "./design/shapes.ts";
 import { type Grid, advance, bounds, clamp, distance, eachCell, mixPoint, pointAt, radians, sample } from "./math/geometry.ts";
 import { insidePolygon, perimeter, signedArea } from "./math/polygon.ts";
 import { nearCapsule } from "./roads/proximity.ts";
@@ -118,10 +118,7 @@ function buildingRing(b: Building, radius: number, includeDoors: boolean) {
 }
 
 function exportBuilding(design: Design, b: Building, cells: number[], grid: Grid, heights: Float32Array): ExportBuilding {
-    const cell = grid.index(...b.center);
-    const at = cells.includes(cell) || cells.length === 0 ? cell : cells.reduce((best, k) =>
-        distance(grid.point(k), b.center) < distance(grid.point(best), b.center) ? k : best);
-    const padElevation = precision(heights[at]);
+    const padElevation = precision(heights[padCell(grid, cells, b.center)]);
     const angle = (b.angle ?? 0) * radians + (b.shape === "rect" && b.size![1] > b.size![0] ? Math.PI / 2 : 0);
     const doors: Door[] = b.doors.map(d => {
         const pose = nodePose(design, { type: "door", building: b.id, door: d.id });
@@ -254,10 +251,12 @@ export function exportIsland(island: Island, source: ExportSource): GroundworkEx
             hedges.push({ id: yard.id + "-hedge-" + (i + 1), name: yard.name + "绿篱 " + (i + 1), type: "hedge", yard: yard.id, polyline: line.map(p => position(p, ground)) });
     }
     for (const [i, room] of design.vegetation.rooms.entries()) areas.push({ id: "room-" + (i + 1), name: "林间空间 " + (i + 1), type: "area.room", polygon: circle(room.center, room.radius) });
+    const endpointHeights = new Map(island.routes.flatMap(r => [[r.edge.from, r.h[0]], [r.edge.to, r.h.at(-1)!]] as const));
     const nodes: ExportNode[] = design.nodes.map(n => {
         const pose = nodePose(design, n);
         const door = n.type === "door" ? buildings.find(b => b.id === n.building)!.doors.find(d => d.id === n.door) : undefined;
-        return { id: n.id, name: n.name ?? n.id, type: "node." + n.type, ...description(n), position: door?.position ?? position(pose.point, ground),
+        const [x, y, z] = door?.position ?? position(pose.point, ground);
+        return { id: n.id, name: n.name ?? n.id, type: "node." + n.type, ...description(n), position: [x, y, precision(endpointHeights.get(n.id) ?? z)],
             ...(pose.normal != null ? { normal: direction(pose.normal) } : {}), building: n.building, door: n.door, yard: n.yard };
     });
     const trees = island.trees.map((t, i) => ({ id: "tree-" + (i + 1), name: "树 " + (i + 1), type: "tree." + t.species, index: i + 1,

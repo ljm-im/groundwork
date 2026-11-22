@@ -2,11 +2,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { type Point, type Design, type Edge, type Ellipse, type Yard } from "../src/core/design/types.ts";
 import { type Alignment } from "../src/core/design/results.ts";
-import { advance, angleDiff, bearing, createGrid, distance, nearest, pointAt, radians, sample, stations } from "../src/core/math/geometry.ts";
+import { advance, angleDiff, bearing, createGrid, distance, nearest, pointAt, radians, resample, sample, stations } from "../src/core/math/geometry.ts";
 import { radiusAt, exemptRadius } from "../src/core/roads/alignment.ts";
 import { Island } from "../src/core/island.ts";
 import { nodePose, serializeDesign } from "../src/core/design/model.ts";
-import { profile } from "../src/core/roads/profiles.ts";
+import { gradeRoads, profile } from "../src/core/roads/profiles.ts";
 import { clearLead, routeAll, routeEdge } from "../src/core/roads/routing.ts";
 import { selfOverlaps } from "../src/core/roads/proximity.ts";
 import { armBearing, validateDesign, validateRoads } from "../src/core/checks/validation.ts";
@@ -95,6 +95,47 @@ test("Endpoints, radii, corridors and portal headings", fixtureOptions("round4.j
         const actual = bearing(r.points[0], pointAt(r.points, r.s, 2));
         assert(angleDiff(expected, actual) <= 5 * radians);
     }
+});
+
+test("Road beds follow a diagonal incline and a six-metre-radius curve between survey stations", () => {
+    const design = syntheticDesign(), grid = createGrid(design.grid);
+    design.routing.profilePasses = 0;
+    const diagonal: Point[] = [[-16.5, -8.5], [7.5, 9.5]];
+    const arc = Array.from({ length: 13 }, (_, i): Point => [2.5 + 6 * Math.cos(i * Math.PI / 24), 2.5 + 6 * Math.sin(i * Math.PI / 24)]);
+    for (const [index, line] of [resample(diagonal, 1), arc].entries()) {
+        const terrain = { grid, padMask: new Uint8Array(grid.size), heights: Float32Array.from({ length: grid.size }, (_, k) => {
+            const [x, y] = grid.point(k);
+            return index ? 12 + .4 * (y - x) : 12 + .4 * x + .3 * y;
+        }) };
+        const edge = { ...design.edges[0], grade: "street", width: 3 };
+        const route = profile(design, terrain, { id: edge.id, edge, points: line, controls: line, parts: [] });
+        const graded = gradeRoads(design, terrain, [route]);
+        if (!index) assert(Math.abs(route.drop / route.length - .5) < 1e-6);
+        for (let j = 0; j <= Math.ceil(route.length * 4); j++) {
+            const at = Math.min(j / 4, route.length), next = Math.max(1, route.s.findIndex(s => s >= at));
+            const t = (at - route.s[next - 1]) / (route.s[next] - route.s[next - 1]);
+            const h = route.h[next - 1] + (route.h[next] - route.h[next - 1]) * t;
+            assert(Math.abs(h - sample(grid, graded.heights, ...pointAt(line, route.s, at))) <= .05, "station " + at);
+        }
+    }
+});
+
+test("Overlapping road beds use centreline distance, design order for ties and the protected pad mask", () => {
+    const { synthetic, grid, flat, road } = syntheticRoads();
+    const a = road("A", "a", "b", [[0, .5], [18, .5]], { width: 2 });
+    const b = road("B", "c", "d", [[0, 2.5], [18, 2.5]], { width: 10 });
+    a.h = [2, 11];
+    b.h = [20, 20];
+    const terrain = { ...flat, padMask: new Uint8Array(grid.size) };
+    terrain.padMask[grid.index(4.5, .5)] = 1;
+    synthetic.edges = [a.edge, b.edge];
+    const result = gradeRoads(synthetic, terrain, [b, a]);
+    assert.equal(result.heights[grid.index(8.5, .5)], 6.25);
+    assert.equal(result.heights[grid.index(8.5, 1.5)], 6.25);
+    assert.equal(result.heights[grid.index(8.5, 2.5)], 20);
+    assert.equal(result.heights[grid.index(4.5, .5)], 5);
+    synthetic.edges.reverse();
+    assert.equal(gradeRoads(synthetic, terrain, [a, b]).heights[grid.index(8.5, 1.5)], 20);
 });
 
 test("Selective rerouting and level previews retain unaffected geometry", () => {

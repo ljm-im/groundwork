@@ -1,5 +1,5 @@
 import { bounds } from "../../core/math/geometry.ts";
-import { profile } from "../../core/roads/profiles.ts";
+import { networkProfiles } from "../../core/roads/networkProfiles.ts";
 import { applyLevels, updateHeights } from "../../core/terrain/terrain.ts";
 import { type Height, type IslandModel, type Route } from "../types.ts";
 
@@ -28,6 +28,6 @@ export function previewLevels(island: IslandModel, changed: ReadonlySet<string>)
         updateHeights(terrain, design);
     else
         applyLevels(terrain, design);
-    island.routes = island.routes.map(route => groundChanged(island, route, previous) ? profile(design, terrain, route) : route);
+    island.routes = networkProfiles(design, terrain, island.routes, route => groundChanged(island, route, previous));
     island.finish();
 }

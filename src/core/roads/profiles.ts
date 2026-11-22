@@ -1,6 +1,6 @@
 import { type Alignment, type Route, type Graded, type Terrain, type RoutingSurface } from "../design/results.ts";
 import { type RoadClass, type Design } from "../design/types.ts";
-import { clamp, eachCell, pointAt, sample, smooth, stations } from "../math/geometry.ts";
+import { bounds, clamp, eachCell, pointAt, sample, smooth, stations } from "../math/geometry.ts";
 
 function valueAt(s: Float64Array, h: number[], d: number) {
     let lo = 0,
@@ -118,9 +118,13 @@ function samplePlatformEdges(route: Alignment) {
     return result;
 }
 
-export function profile(design: Design, terrain: Pick<RoutingSurface, "grid" | "heights">, route: Alignment): Route {
+export function profile(design: Design, terrain: Pick<RoutingSurface, "grid" | "heights">, route: Alignment, elevations?: readonly [number, number]): Route {
     const { edge } = route, points = samplePlatformEdges(route), s = stations(points), length = s.at(-1)!;
     let h = points.map(p => sample(terrain.grid, terrain.heights, ...p));
+    if (elevations) {
+        h[0] = elevations[0];
+        h[h.length - 1] = elevations[1];
+    }
     if (edge.levelDeck) h.fill(h[0]);
     for (let pass = 0; pass < design.routing.profilePasses; pass++) {
         const prev = h;
@@ -189,26 +193,30 @@ export function profile(design: Design, terrain: Pick<RoutingSurface, "grid" | "
 }
 
 export function gradeRoads(design: Design, terrain: Pick<Terrain, "grid" | "heights" | "padMask">, routes: Route[]): Graded {
-    const { grid } = terrain, weight = new Float32Array(grid.size), target = new Float32Array(grid.size);
-    for (const route of routes) {
+    const { grid } = terrain, heights = terrain.heights.slice(), weight = new Float32Array(grid.size);
+    const nearestSquared = new Float64Array(grid.size).fill(Infinity);
+    const order = new Map(design.edges.map((edge, i) => [edge.id, i]));
+    const rank = (r: Route) => order.get(r.id) ?? order.size;
+    for (const route of routes.toSorted((a, b) => rank(a) - rank(b))) {
         const half = route.edge.width / 2 + design.routing.roadBedExtra;
         const shoulder = design.roadClasses[route.edge.grade].shoulder,
             radius = half + shoulder;
-        for (let i = 0; i < route.points.length; i++) {
-            const [px, py] = route.points[i];
-            eachCell(grid, [px, py, px, py], radius, (k, x, y) => {
-                const squared = (px - x) ** 2 + (py - y) ** 2;
-                if (squared > radius * radius) return;
+        for (let i = route.points.length === 1 ? 0 : 1; i < route.points.length; i++) {
+            const prev = Math.max(0, i - 1), a = route.points[prev], b = route.points[i];
+            const dx = b[0] - a[0], dy = b[1] - a[1], length2 = dx * dx + dy * dy;
+            eachCell(grid, bounds([a, b]), radius, (k, x, y) => {
+                const t = clamp(((x - a[0]) * dx + (y - a[1]) * dy) / (length2 || 1));
+                const px = t === 1 ? b[0] : a[0] + t * dx, py = t === 1 ? b[1] : a[1] + t * dy;
+                const squared = (x - px) ** 2 + (y - py) ** 2;
+                if (squared > radius * radius || squared >= nearestSquared[k]) return;
                 const w = squared <= half * half ? 1 : 1 - smooth((Math.sqrt(squared) - half) / shoulder);
-                if (w > weight[k]) {
-                    weight[k] = w;
-                    target[k] = route.h[i];
-                }
+                if (!w) return;
+                nearestSquared[k] = squared;
+                weight[k] = w;
+                const target = t === 1 ? route.h[i] : route.h[prev] + t * (route.h[i] - route.h[prev]);
+                if (!terrain.padMask[k]) heights[k] = terrain.heights[k] + (target - terrain.heights[k]) * w;
             });
         }
     }
-    const heights = terrain.heights.slice();
-    for (let k = 0; k < heights.length; k++)
-        if (weight[k] && !terrain.padMask[k]) heights[k] += (target[k] - heights[k]) * weight[k];
     return { heights, weight };
 }
