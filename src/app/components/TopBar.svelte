@@ -1,5 +1,5 @@
 <header>
-    <svg class="brand" viewBox="0 0 36 36" aria-hidden="true"><rect width="36" height="36" rx="7" fill="#285e50"/><path d="M3 24c7 3 9-1 10-8s5-10 11-10 7-1 9-3M3 28c9 3 13-2 14-10s5-8 10-8 5-1 6-2M5 32c10 3 15-3 16-12s6-5 12-8M12 33c9-2 11-6 13-12s5-3 8-5"/></svg>
+    <img class="brand" src="./groundwork.svg" alt="">
     <h1>Groundwork</h1>
     <div class="file-info">
         {#if editor.island}<i id="dirty-dot" class="dot" class:dirty={editor.saveState === "未保存"} class:saving={editor.saveState === "正在保存"} class:failed={editor.saveState === "保存失败"}></i>{/if}
@@ -31,11 +31,6 @@
             width: 34px;
             height: 34px;
             flex: none;
-        }
-        .brand path {
-            stroke: #eef2de;
-            fill: none;
-            stroke-width: 1.2;
         }
         h1 {
             font-size: 18px;
