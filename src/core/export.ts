@@ -1,8 +1,9 @@
 import { type Design, type Building, type Point, type Shape } from "./design/types.ts";
-import { type Issue, type Terrain } from "./design/results.ts";
+import { type Issue, type Route, type Terrain } from "./design/results.ts";
 import { areaBoundary, corners, nodePose, padCell, zonePolygon } from "./design/shapes.ts";
 import { type Grid, advance, bounds, clamp, distance, eachCell, mixPoint, pointAt, radians, sample } from "./math/geometry.ts";
 import { insidePolygon, perimeter, signedArea } from "./math/polygon.ts";
+import { stairSpans } from "./roads/profiles.ts";
 import { nearCapsule } from "./roads/proximity.ts";
 import { hedgeLines } from "./edit/yards.ts";
 import { type Island } from "./island.ts";
@@ -15,7 +16,8 @@ interface ExportBuilding extends Element {
     shape: Building["shape"]; center: Point; size?: Point; radius?: number; innerRadius?: number;
     longAxis: Point; height: number; color: string; padElevation: number; outline: Point[]; innerOutline?: Point[]; doors: Door[];
 }
-interface Road extends Element { width: number; color?: string; centerline: XYZ[]; stairs: boolean[] }
+interface Flight { from: number; to: number; rise: number; steps: number; riser: number; tread: number | null }
+interface Road extends Element { width: number; color?: string; centerline: XYZ[]; stairs: boolean[]; flights: Flight[] }
 interface Wall extends Element { zone: string; polyline: Point[]; top: number[]; bottom: number[] }
 interface Hedge extends Element { yard: string; polyline: XYZ[] }
 interface Area extends Element { polygon: Point[]; fill?: string; zone?: string }
@@ -28,18 +30,19 @@ interface ExportTerrain {
     heights: number[][]; surface: number[][]; surfaceTypes: Record<number, string>; surfaceRules: typeof surfaceRules;
 }
 export interface GroundworkExport {
-    format: "groundwork-export"; version: 1; source: ExportSource; instructions: string; prompt: string;
+    format: "groundwork-export"; version: 2; source: ExportSource; instructions: string; prompt: string;
     terrain: ExportTerrain; buildings: ExportBuilding[]; roads: Road[]; walls: Wall[]; hedges: Hedge[];
     areas: Area[]; nodes: ExportNode[]; trees: ExportTree[]; labels: ExportLabel[]; issues: ExportIssue[];
 }
 
+const maxRiser = .17, minTread = .28;
 const instructions = [
     "这是一份户外场地设计。Groundwork 已算好几何，描述由作者撰写。",
     "保持给定的位置、标高、尺寸、朝向和门位。描述决定外观。如与几何冲突，采用几何，并在交付时逐条列出冲突。",
     "先读全岛描述，再读各元素的描述，具体对象的描述优先。只制作设计中列出的内容，不添加描述以外的道具、装饰或额外建筑。",
     "按原样呈现 issues 中的校验问题。遇到描述不足、无法确定做法的地方，采用最简单的实现，并在交付时逐条列明。",
     "交付前实测并报告结果。建筑外墙轮廓与设计的偏差须小于 0.05 m，建筑底面与台基标高相差须小于 0.05 m，树干底部与地形相差须小于 0.05 m。",
-    "沿每条非栈桥道路每 1 m 采样，路面顶面应高出其下地形 0.03–0.15 m。台阶每级升高不超过 0.17 m，踏面不小于 0.28 m。无法同时满足时，按每级升高 0.17 m 制作并逐处报告。",
+    `沿每条非栈桥道路每 1 m 采样，路面顶面应高出其下地形 0.03–0.15 m。台阶按 flights 等分制作，同一段每级等高、等宽，级高不超过 ${maxRiser} m。tread 小于 ${minTread} m 的段照样等分，交付时逐段列出。steps 为 0 的段做成水平面。`,
     "单位为米。X 向东，Y 向北，Z 向上，海平面为 Z = 0。栅格原点是西北角第一个格点的中心，列向东、行向南，行列下标从 0 开始。第 r 行第 c 列的平面坐标为 [origin[0] + c × step, origin[1] − r × step]。格点之间按双线性插值读取地形。"
 ].join("\n\n");
 
@@ -99,6 +102,17 @@ function exportTerrain(terrain: Terrain, heights: Float32Array): ExportTerrain {
     }
     return { origin: xy([grid.x(0), grid.y(0)]), step: precision(step), width, height, rowOrder: "north-to-south",
         surfaceTypes: { 0: "海底", 1: "沙", 2: "岩石", 3: "草", 4: "铺装" }, surfaceRules, heights: heightsOut, surface };
+}
+
+function exportFlights(route: Route): Flight[] {
+    return stairSpans(route.stairs, route.s).map(({ start, end }) => {
+        const from = precision(route.s[start]), to = precision(route.s[end]);
+        // Count from the published endpoint elevations in whole millimetres.
+        const riseMm = Math.round(precision(route.h[end]) * 1000) - Math.round(precision(route.h[start]) * 1000);
+        const rise = riseMm / 1000, steps = Math.ceil(Math.abs(riseMm) / Math.round(maxRiser * 1000));
+        return { from, to, rise, steps, riser: steps ? precision(Math.abs(rise) / steps) : 0,
+            tread: steps ? precision((to - from) / steps) : null };
+    });
 }
 
 function circle(center: Point, radius: number): Point[] {
@@ -237,7 +251,7 @@ export function exportIsland(island: Island, source: ExportSource): GroundworkEx
     const buildings = design.buildings.map((b, i) => exportBuilding(design, b, island.terrain.pads[i], grid, heights));
     const roads: Road[] = island.routes.map(r => ({
         id: r.id, name: r.edge.name, type: r.edge.levelDeck ? "road.deck" : "road." + r.edge.grade, ...description(r.edge),
-        width: precision(r.edge.width), color: r.edge.color, centerline: r.points.map((p, i) => [...xy(p), precision(r.h[i])]), stairs: r.stairs
+        width: precision(r.edge.width), color: r.edge.color, centerline: r.points.map((p, i) => [...xy(p), precision(r.h[i])]), stairs: r.stairs, flights: exportFlights(r)
     }));
     const areas: Area[] = design.zones.map(z => ({ id: z.id, name: z.name, type: "area.zone", ...description(z), fill: z.fill, polygon: areaPolygon(z.shape) }));
     const hedges: Hedge[] = [];
@@ -268,7 +282,7 @@ export function exportIsland(island: Island, source: ExportSource): GroundworkEx
     });
     const issues = island.issues.map(({ point, spans, ...details }, i) => ({ id: "issue-" + (i + 1), name: details.message, type: "issue." + details.kind,
         ...details, position: position(point, ground), spans: spans?.map(s => ({ road: s.road, from: precision(s.from), to: precision(s.to) })) }));
-    return { format: "groundwork-export", version: 1, source: { sha256: source.sha256, commit: source.commit }, instructions, prompt: design.prompt ?? "",
+    return { format: "groundwork-export", version: 2, source: { sha256: source.sha256, commit: source.commit }, instructions, prompt: design.prompt ?? "",
         terrain, buildings, roads, walls: retainingWalls(island, roads), hedges, areas, nodes, trees, labels, issues };
 }
 

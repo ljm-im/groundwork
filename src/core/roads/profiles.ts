@@ -24,6 +24,10 @@ function runsOf(stairs: boolean[], s: Float64Array) {
     return runs;
 }
 
+export function stairSpans(stairs: boolean[], s: Float64Array) {
+    return runsOf(stairs, s).filter(run => run.stair);
+}
+
 function stairSegments(grades: number[], s: Float64Array, rule: RoadClass) {
     let active = false;
     const stairs = grades.map(grade => {
@@ -144,10 +148,18 @@ export function profile(design: Design, terrain: Pick<RoutingSurface, "grid" | "
         const start = clamp(at - gradeSpan / 2, 0, length - gradeSpan);
         return Math.abs(valueAt(s, h, start + gradeSpan) - valueAt(s, h, start)) / (gradeSpan || 1);
     };
-    const grades = points.slice(1).map((_, i) => gradeAt((s[i] + s[i + 1]) / 2));
-    const stairs = rule.allowStairs ? stairSegments(grades, s, rule) : grades.map(() => false);
+    const segmentGrades = () => points.slice(1).map((_, i) => gradeAt((s[i] + s[i + 1]) / 2));
+    const surveyedGrades = segmentGrades();
+    const stairs = rule.allowStairs ? stairSegments(surveyedGrades, s, rule) : surveyedGrades.map(() => false);
     for (let i = 0; i < stairs.length; i++) if (edge.stairs || s[i] < (edge.stairUntil ?? 0)) stairs[i] = true;
     for (let i = 0; i < flat.length; i++) if (flat[i]) stairs[i] = false;
+    const flights = stairSpans(stairs, s);
+    for (const { start, end, length: run } of flights) {
+        if (!run) continue;
+        const slope = (h[end] - h[start]) / run;
+        for (let i = start + 1; i < end; i++) h[i] = h[start] + (s[i] - s[start]) * slope;
+    }
+    const grades = flights.length ? segmentGrades() : surveyedGrades;
     // Window extrema of a piecewise-linear profile occur when either end meets a station.
     const breaks = Array.from(s, at => at - gradeSpan / 2).concat(Array.from(s, at => at + gradeSpan / 2)).sort((a, b) => a - b);
     const peaks = [],
@@ -172,7 +184,6 @@ export function profile(design: Design, terrain: Pick<RoutingSurface, "grid" | "
         locations.push(at);
         maxGrade = Math.max(maxGrade, peak);
     }
-    const stairRuns = runsOf(stairs, s).filter(r => r.stair);
     const direct = stations(route.controls).at(-1)!;
     return {
         ...route,
@@ -186,8 +197,8 @@ export function profile(design: Design, terrain: Pick<RoutingSurface, "grid" | "
         length,
         drop: Math.abs(h.at(-1)! - h[0]),
         maxGrade,
-        stairRuns: stairRuns.length,
-        stairLength: stairRuns.reduce((a, r) => a + r.length, 0),
+        stairRuns: flights.length,
+        stairLength: flights.reduce((a, r) => a + r.length, 0),
         detour: direct ? length / direct : 1
     };
 }

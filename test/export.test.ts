@@ -5,9 +5,10 @@ import { fixtureOptions, readFixture } from "../configs/read-fixture.ts";
 import { parseDesign, serializeDesign } from "../src/core/design/model.ts";
 import { areaBoundary, corners, nodePose, zonePolygon } from "../src/core/design/shapes.ts";
 import { type Point } from "../src/core/design/types.ts";
-import { distance, nearest } from "../src/core/math/geometry.ts";
+import { distance, nearest, resample, stations } from "../src/core/math/geometry.ts";
 import { insidePolygon } from "../src/core/math/polygon.ts";
 import { hedgeLines } from "../src/core/edit/yards.ts";
+import { profile } from "../src/core/roads/profiles.ts";
 import { Island } from "../src/core/island.ts";
 import { syntheticDesign } from "./scenarios.ts";
 import { exportIsland, serializeExport } from "../src/core/export.ts";
@@ -51,7 +52,7 @@ exportTest("independent exports have identical formatted bytes and preserve auth
     const json = JSON.parse(bytes);
     assert.deepEqual(json.source, source);
     assert.equal(json.format, "groundwork-export");
-    assert.equal(json.version, 1);
+    assert.equal(json.version, 2);
     assert.equal(json.prompt, prompt);
     for (const [parents, elements] of [[design.buildings, result.buildings], [design.edges, result.roads], [design.nodes, result.nodes], [design.zones, result.areas]] as const) {
         assert.equal(elements.find(e => e.id === parents[0].id)!.prompt, parents[0].prompt);
@@ -106,6 +107,7 @@ exportTest("profiles, stair segments, trees and validation issues use resolved g
         assert.equal(road.color, r.edge.color);
         assert.deepEqual(road.centerline, r.points.map((p, i) => [...rounded(p), round(r.h[i])]));
         assert.deepEqual(road.stairs, r.stairs);
+        assert.equal(road.flights.length, r.stairRuns);
         assert.equal(road.stairs.length, road.centerline.length - 1);
     }
     assert.equal(result.trees.length, island.trees.length);
@@ -323,6 +325,44 @@ test("A deck split across edges shares its shore elevation with a selectively re
     island.reroute(new Set(["A"]));
     assert.notEqual(island.routes[0].h[0], first);
     check(island.routes[0].h[0]);
+});
+
+test("Flights use equal rises and treads between landings in either direction", () => {
+    const design = syntheticDesign(), island = new Island(design), { grid } = island.terrain;
+    const edge = { ...design.edges[0], stairs: true };
+    design.routing.profilePasses = 0;
+    island.terrain.heights = island.terrain.heights.map((_, k) => {
+        const [x] = grid.point(k);
+        return 10 + .4 * x + .8 * Math.cos(.5 * x);
+    });
+    const line = resample([[-9.5, .5], [10.5, .5]], 1);
+    for (const points of [line, [...line].reverse()]) {
+        const route = profile(design, island.terrain, { id: edge.id, edge, points, controls: points, parts: [], platforms: [10] });
+        island.routes = [route];
+        const out = exportIsland(island, provenance(serializeDesign(design))), road = out.roads[0];
+        assert.deepEqual(road.flights.map(f => [f.from, f.to]), [[0, 9], [11, 20]]);
+        assert.equal(route.h[9], route.h[11]);
+        const chain = stations(points);
+        for (const f of road.flights) {
+            const start = chain.indexOf(f.from), end = chain.indexOf(f.to);
+            for (let i = start + 1; i < end; i++) assert(Math.abs(route.h[i + 1] - 2 * route.h[i] + route.h[i - 1]) < 1e-9);
+            const rise = round(road.centerline[end][2] - road.centerline[start][2]);
+            assert.equal(f.rise, rise);
+            assert.equal(f.steps, Math.ceil(Math.abs(rise) / .17));
+            assert.equal(f.riser, round(Math.abs(rise) / f.steps));
+            assert.equal(f.tread, round((f.to - f.from) / f.steps));
+            assert(f.riser <= .17);
+        }
+        const slope = Math.abs(route.h[9] - route.h[0]) / 9;
+        assert(Math.abs(route.grades[3] - slope) < 1e-9 && Math.abs(route.peaks[3] - slope) < 1e-9);
+        assert(Math.abs(route.maxGrade - Math.max(slope, Math.abs(route.h[20] - route.h[11]) / 9)) < 1e-9);
+    }
+    island.terrain.heights.fill(4);
+    const plain = { id: edge.id, edge, points: line, controls: line, parts: [] };
+    island.routes = [profile(design, island.terrain, plain), profile(design, island.terrain, { ...plain, edge: design.edges[0] })];
+    const [flat, ramp] = exportIsland(island, provenance(serializeDesign(design))).roads;
+    assert.deepEqual(flat.flights, [{ from: 0, to: 20, rise: 0, steps: 0, riser: 0, tread: null }]);
+    assert.deepEqual(ramp.flights, []);
 });
 
 test("tree bases can be reconstructed from rounded grid spacing and origin", () => {
