@@ -13,7 +13,7 @@
         undo: "M7 4L3 8l4 4M4 8h7c6 0 6 8 0 8",
         redo: "M11 4l4 4-4 4m3-4H7c-6 0-6 8 0 8",
         open: "M2 5h5l2 2h7v2M2 5v10h13l2-6H5l-2 6",
-        download: "M9 2v9m-4-4 4 4 4-4M3 12v4h12v-4",
+        new: "M3 2h8l4 4v10H3zM11 2v4h4M6 10h6m-3-3v6",
         save: "M3 3h10l3 3v10H3zM6 3v5h7V3M6 16v-5h7v5",
         minus: "M3 9h12",
         plus: "M3 9h12M9 3v12",

@@ -1,6 +1,15 @@
-<section class="map-wrap" aria-label="全岛平面图" class:create={editor.tool !== "select"}>
-    <canvas bind:this={canvas} id="map" tabindex="0" aria-label="可编辑的海岛地形与路网平面图"></canvas>
+<section class="map-wrap" aria-label="全岛平面图" class:create={editor.tool !== "select"} class:empty={!editor.island}>
+    <canvas bind:this={canvas} id="map" tabindex={editor.island ? 0 : -1} aria-label="可编辑的海岛地形与路网平面图"></canvas>
     <Toolbar {editor} />
+    {#if !editor.island}
+        <div class="empty-state">
+            <div>{editor.files.supported ? "新建可从示例开始，也可以打开已有的设计文件。" : "需要 Chrome 或 Edge"}</div>
+            <div class="empty-actions">
+                <button class="primary" disabled={!editor.files.supported || !!editor.busy || !!editor.draft} onclick={() => editor.files.choose("new")}><Icon name="new" />新建</button>
+                <button disabled={!editor.files.supported || !!editor.busy || !!editor.draft} onclick={() => editor.files.choose("open")}><Icon name="open" />打开</button>
+            </div>
+        </div>
+    {/if}
     <div class="legend"><span><i class="key"></i>建筑门</span><span><i class="key gate"></i>院门</span><span><i class="key junction"></i>路口</span><span><i
         class="key via"></i>途经点</span><span><i class="key issue"></i>校验</span><span class="tree-key"><i class="forest"></i>林木</span><span class="tree-key"><i class="avenue"></i>行道树</span><span class="tree-key"><i class="small"></i>小乔木</span><span class="tree-key"><i class="shrub"></i>灌木</span></div>
     <div class="north" aria-label="正北">
@@ -24,6 +33,28 @@
             background: #96c3d4;
             overflow: hidden;
             isolation: isolate;
+        }
+        .map-wrap.empty {
+            background: var(--light);
+        }
+        .map-wrap.empty :is(.legend, .north, .scale, .zoom-tools, .coords) {
+            display: none;
+        }
+        .empty-state {
+            position: absolute;
+            inset: 0;
+            display: grid;
+            align-content: center;
+            justify-items: center;
+            gap: 14px;
+            padding: 16px;
+            text-align: center;
+            color: var(--muted);
+        }
+        .empty-actions {
+            display: flex;
+            gap: 8px;
+            color: var(--ink);
         }
         #map {
             width: 100%;

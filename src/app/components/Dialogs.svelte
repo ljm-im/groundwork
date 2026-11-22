@@ -15,6 +15,15 @@
     <h2>转换为门？</h2><div id="convert-detail" class="sub">{editor.conversion?.text ?? ""}</div>
     <form method="dialog"><button value="keep">保持普通节点</button><button class="primary" value="convert">转换为门</button></form>
 </dialog>
+<dialog bind:this={discard} id="discard-changes" class="dialog" aria-labelledby="discard-title" onclose={() => editor.fileRequest = null}>
+    <h2 id="discard-title">放弃未保存的修改？</h2>
+    <form method="dialog">
+        <button value="cancel">取消</button>
+        <button class="danger" value="discard" onclick={() => {
+            if (editor.fileRequest) void editor.files.choose(editor.fileRequest, true);
+        }}>放弃修改</button>
+    </form>
+</dialog>
 <div class="draft" id="draft-dialog" role="dialog" aria-modal="true" aria-labelledby="draft-title" hidden={!editor.draft}>
     <section class="dialog">
         <h2 id="draft-title">恢复未保存的草稿？</h2>
@@ -76,7 +85,10 @@
 <script lang="ts">
     import * as session from "../state/session.svelte.ts";
     let { editor }: { editor: session.Editor } = $props();
-    let remove: HTMLDialogElement, convert: HTMLDialogElement;
+    let remove: HTMLDialogElement, convert: HTMLDialogElement, discard: HTMLDialogElement;
+    $effect(() => {
+        if (editor.fileRequest && !discard.open) discard.showModal();
+    });
     $effect(() => {
         if (editor.removal && !remove.open) {
             remove.returnValue = "cancel";

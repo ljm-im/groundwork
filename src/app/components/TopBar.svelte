@@ -2,23 +2,19 @@
     <svg class="brand" viewBox="0 0 36 36" aria-hidden="true"><rect width="36" height="36" rx="7" fill="#285e50"/><path d="M3 24c7 3 9-1 10-8s5-10 11-10 7-1 9-3M3 28c9 3 13-2 14-10s5-8 10-8 5-1 6-2M5 32c10 3 15-3 16-12s6-5 12-8M12 33c9-2 11-6 13-12s5-3 8-5"/></svg>
     <h1>Groundwork</h1>
     <div class="file-info">
-        <i id="dirty-dot" class="dot" class:dirty={editor.dirty}></i>
-        <span class="mono" id="filename">{editor.filename}</span>
-        <span class="saved-text" id="save-state">{editor.dirty ? "未保存" : "已保存"}</span>
+        {#if editor.island}<i id="dirty-dot" class="dot" class:dirty={editor.saveState === "未保存"} class:saving={editor.saveState === "正在保存"} class:failed={editor.saveState === "保存失败"}></i>{/if}
+        <span class="mono" id="filename" title={editor.filename}>{editor.filename}</span>
+        {#if editor.island}<span class="saved-text" id="save-state" aria-live="polite">{editor.saveState}</span>{/if}
     </div>
     <div class="header-actions">
-        <button class="icon flat" id="undo" title="撤销（Ctrl+Z）" aria-label="撤销" disabled={!editor.canUndo} onclick={() => editor.navigate(false)}><Icon name="undo" /></button>
-        <button class="icon flat" id="redo" title="重做（Ctrl+Shift+Z）" aria-label="重做" disabled={!editor.canRedo} onclick={() => editor.navigate(true)}><Icon name="redo" /></button>
+        <button class="icon flat" id="undo" title="撤销（Ctrl+Z）" aria-label="撤销" disabled={!editor.canUndo || !!editor.busy} onclick={() => editor.navigate(false)}><Icon name="undo" /></button>
+        <button class="icon flat" id="redo" title="重做（Ctrl+Shift+Z）" aria-label="重做" disabled={!editor.canRedo || !!editor.busy} onclick={() => editor.navigate(true)}><Icon name="redo" /></button>
         <i class="divider"></i>
-        <button id="import" class="flat" onclick={() => editor.files.pick(input)}><Icon name="open" />导入</button>
-        <button id="export" class="flat" onclick={() => editor.files.exportCopy()}><Icon name="download" />导出</button>
-        <button id="save" class="primary" onclick={() => editor.files.save()}><Icon name="save" />保存</button>
+        <button id="new" class="flat" disabled={unavailable} onclick={() => editor.files.choose("new")}><Icon name="new" />新建</button>
+        <button id="open" class="flat" disabled={unavailable} onclick={() => editor.files.choose("open")}><Icon name="open" />打开</button>
+        <button id="save" class="primary" disabled={unavailable || !editor.island} onclick={() => editor.files.save()}><Icon name="save" />保存</button>
     </div>
 </header>
-<input bind:this={input} type="file" id="file-input" accept=".json,application/json" hidden onchange={async () => {
-    if (input.files?.[0]) await editor.files.open(input.files[0]);
-    input.value = "";
-}} />
 
 <style>
     :global {
@@ -66,6 +62,18 @@
         .dot.dirty {
             background: #ba853b;
         }
+        .dot.saving {
+            background: var(--teal);
+        }
+        .dot.failed {
+            background: var(--red);
+        }
+        #filename {
+            max-width: 28vw;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
         .header-actions {
             margin-left: auto;
             display: flex;
@@ -73,9 +81,6 @@
             gap: 6px;
         }
         @media (max-width:900px) {
-            .file-info .saved-text {
-                display: none;
-            }
             header {
                 gap: 9px;
                 padding: 0 12px;
@@ -100,9 +105,6 @@
                 border: 0;
                 padding: 0;
             }
-            .file-info .mono {
-                display: none;
-            }
             .header-actions {
                 gap: 1px;
             }
@@ -122,5 +124,5 @@
     import Icon from "./Icon.svelte";
     import * as session from "../state/session.svelte.ts";
     let { editor }: { editor: session.Editor } = $props();
-    let input: HTMLInputElement;
+    let unavailable = $derived(!editor.files.supported || !!editor.busy || !!editor.draft);
 </script>

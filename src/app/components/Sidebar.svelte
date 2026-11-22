@@ -1,7 +1,7 @@
 <aside>
     <nav class="tabs" aria-label="检查器">
         {#each tabs as [tab, label] (tab)}
-            <button data-tab={tab} class:active={editor.tab === tab} aria-pressed={editor.tab === tab} onclick={() => editor.changeTab(tab)}>{label}{#if tab === "issues"} <i id="issue-dot" class="count-dot" hidden={!errors}></i>{/if}</button>
+            <button data-tab={tab} class:active={editor.tab === tab} aria-pressed={editor.tab === tab} onclick={() => editor.changeTab(tab)}>{label}{#if tab === "issues" && errors} <i id="issue-dot" class="count-dot"></i>{/if}</button>
         {/each}
     </nav>
     <div bind:this={editor.panel} id="panel" inert={!!editor.busy} onchange={ev => {
@@ -9,7 +9,7 @@
     }}>
         {#if editor.island}{#key editor.revision}<View {editor} />{/key}{/if}
     </div>
-    <div class="hint"><span>双击道路、山脊或边界加点，也可按住 <kbd>Alt</kbd> 单击</span><span>拖动空白处或双指滑动平移 · 滚轮或捏合缩放</span></div>
+    {#if editor.island}<div class="hint"><span>双击道路、山脊或边界加点，也可按住 <kbd>Alt</kbd> 单击</span><span>拖动空白处或双指滑动平移 · 滚轮或捏合缩放</span></div>{/if}
 </aside>
 
 <style>

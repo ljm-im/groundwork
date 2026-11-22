@@ -1,70 +1,67 @@
 import { flushSync, tick } from "svelte";
 import { History } from "../../core/edit/history.ts";
 import { parseDesign, serializeDesign } from "../../core/design/model.ts";
+import { type Design, errorText } from "../types.ts";
+import { FileWrites, type WriteHandle } from "./fileWrites.ts";
 import * as session from "./session.svelte.ts";
-import { errorText } from "../types.ts";
 
 const draftKey = "terrain-editor/unsaved-v1";
 const example = new URL("../../../examples/island.json", import.meta.url);
 const types = [{ description: "海岛设计 JSON", accept: { "application/json": [".json"] } }];
-interface DesignHandle {
+const permissionWarning = "未获得写入权限，修改不会写入文件";
+
+interface DesignHandle extends WriteHandle {
     name: string;
     getFile(): Promise<File>;
-    createWritable(): Promise<{ write(text: string): Promise<void>; close(): Promise<void> }>;
+    requestPermission(options: { mode: "readwrite" }): Promise<PermissionState>;
 }
 declare global {
     interface Window {
         showOpenFilePicker?: (options: { types: typeof types; multiple: boolean }) => Promise<DesignHandle[]>;
+        showSaveFilePicker?: (options: { types: typeof types; suggestedName: string }) => Promise<DesignHandle>;
     }
+}
+
+export type FileAction = "new" | "open";
+export type SaveState = "已保存" | "未保存" | "正在保存" | "保存失败";
+
+function cancelled(error: unknown) {
+    return typeof error === "object" && error !== null && "name" in error && error.name === "AbortError";
 }
 
 export class DesignFiles {
     private editor: session.Editor;
+    readonly supported = typeof window !== "undefined" && typeof window.showOpenFilePicker === "function" && typeof window.showSaveFilePicker === "function";
     private handle: DesignHandle | null = null;
-    private original: { text: string; canonical: string } | null = null;
-    private writes: Promise<void> = Promise.resolve();
+    private writable = false;
+    private original: string | null = null;
+    private suggestedName = "island.json";
+    private choosingSaveFor: History | null = null;
+    private writes = new FileWrites();
 
     constructor(editor: session.Editor) {
         this.editor = editor;
     }
-
     async start() {
         const e = this.editor;
+        e.map.resize();
+        if (!this.supported) return;
         try {
-            const response = await fetch(example, { cache: "no-cache" });
-            if (!response.ok) throw new Error("island.json 读取失败（" + response.status + "）");
-            const design = parseDesign(await response.text());
-            e.map.resize();
-            session.timed("terrain-editor:first", () => {
-                e.history = new History(design);
-                e.replace(design, true);
-                flushSync();
-            });
-            try {
-                const stored = localStorage.getItem(draftKey);
-                if (stored) {
-                    const draft: unknown = JSON.parse(stored);
-                    if (draft && typeof draft === "object" && "text" in draft && typeof draft.text === "string") {
-                        parseDesign(draft.text);
-                        // Recovery historically requires only a readable design. Keep the saved
-                        // display metadata as written, including older records with missing fields.
-                        e.draft = draft as NonNullable<session.Editor["draft"]>;
-                    }
+            const stored = localStorage.getItem(draftKey);
+            if (stored) {
+                const draft: unknown = JSON.parse(stored);
+                if (draft && typeof draft === "object" && "text" in draft && typeof draft.text === "string") {
+                    parseDesign(draft.text);
+                    e.draft = draft as NonNullable<session.Editor["draft"]>;
                 }
             }
-            catch {
-                e.draft = null;
-            }
-            e.busy = null;
-            if (e.draft) {
-                await tick();
-                document.getElementById("restore")?.focus();
-            }
-            else e.syncHistory();
         }
-        catch (error) {
-            e.busy = "无法打开编辑器 · " + errorText(error);
-            console.error(error);
+        catch {
+            e.draft = null;
+        }
+        if (e.draft) {
+            await tick();
+            document.getElementById("restore")?.focus();
         }
     }
     remember() {
@@ -77,98 +74,163 @@ export class DesignFiles {
             if (e.dirty) e.message("浏览器草稿空间不可用，请保存到文件");
         }
     }
+    private status(state: SaveState) {
+        const e = this.editor;
+        e.saveState = state;
+        e.dirty = e.history.dirty || state === "正在保存" || state === "保存失败";
+        this.remember();
+    }
+    syncHistory(changed: boolean) {
+        const e = this.editor;
+        if (changed) {
+            this.original = null;
+            if (this.handle && this.writable) {
+                void this.writeTo(this.handle);
+                return;
+            }
+        }
+        if (e.saveState === "正在保存" || !changed && e.saveState === "保存失败") this.status(e.saveState);
+        else this.status(e.history.dirty || this.handle && !this.writable ? "未保存" : "已保存");
+    }
     discard() {
         this.editor.draft = null;
-        this.editor.syncHistory();
+        this.remember();
     }
     restore() {
         const e = this.editor, draft = e.draft;
-        if (!draft) return;
-        e.draft = null;
+        if (!draft || !this.supported) return;
         return e.working("正在恢复草稿…", () => {
-            e.replace(parseDesign(draft.text), true);
-            e.filename = draft.filename ?? "island.json";
-            this.handle = null;
-            this.original = null;
-            e.record();
+            this.install(parseDesign(draft.text), draft.filename || "island.json", { recovered: true });
+            e.draft = null;
             e.message("已恢复未保存的草稿");
         });
     }
-    private download(text: string) {
-        const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = this.editor.filename;
-        link.click();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    private install(design: Design, filename: string, source: { handle?: DesignHandle; writable?: boolean; original?: string | null; recovered?: boolean } = {}) {
+        const e = this.editor, history = new History(design);
+        if (source.recovered) history.saved = "";
+        session.timed("terrain-editor:first", () => {
+            e.replace(design, true);
+            this.writes.reset();
+            this.handle = source.handle ?? null;
+            this.writable = source.writable ?? false;
+            this.original = source.original ?? null;
+            this.suggestedName = source.recovered ? filename : "island.json";
+            this.choosingSaveFor = null;
+            e.history = history;
+            e.filename = filename;
+            e.saveState = "已保存";
+            e.syncHistory();
+            flushSync();
+        });
     }
-    exportCopy() {
-        if (!this.editor.island) return;
-        this.download(serializeDesign(this.editor.island.design));
-        this.editor.message("已导出设计副本");
+    async choose(action: FileAction, confirmed = false) {
+        const e = this.editor;
+        if (!this.supported || e.busy || e.gesture || e.draft) return;
+        if (e.dirty && !confirmed) {
+            e.fileRequest = action;
+            return;
+        }
+        e.busy = action === "new" ? "正在新建设计…" : "正在打开海岛设计…";
+        try {
+            if (action === "new") {
+                const response = await fetch(example, { cache: "no-cache" });
+                if (!response.ok) throw new Error("island.json 读取失败（" + response.status + "）");
+                this.install(parseDesign(await response.text()), "未命名");
+                e.message("已新建设计");
+            }
+            else {
+                const [handle] = await window.showOpenFilePicker!({ types, multiple: false });
+                await this.open(handle);
+            }
+        }
+        catch (error) {
+            if (!cancelled(error)) e.message((action === "new" ? "新建失败 · " : "打开失败 · ") + errorText(error));
+        }
+        finally {
+            e.busy = null;
+        }
+    }
+    private async permission(handle: DesignHandle) {
+        try {
+            return await handle.requestPermission({ mode: "readwrite" }) === "granted";
+        }
+        catch {
+            return false;
+        }
+    }
+    async open(handle: DesignHandle) {
+        const writable = await this.permission(handle);
+        const file = await handle.getFile();
+        // Keep a UTF-8 BOM, original whitespace and line endings for an untouched legacy file.
+        const text = new TextDecoder("utf-8", { ignoreBOM: true }).decode(await file.arrayBuffer());
+        const json = text.replace(/^\uFEFF/, ""), design = parseDesign(json);
+        const source = JSON.parse(json) as { version: number };
+        const original = source.version !== 4 || serializeDesign(source) === JSON.stringify(source, null, 2) &&
+            JSON.stringify(source) === JSON.stringify(design) ? text : null;
+        this.install(design, file.name, { handle, writable, original });
+        this.editor.message(writable ? "已打开 " + file.name : permissionWarning);
+    }
+    private writeTo(target: DesignHandle, manual = false) {
+        const e = this.editor, handle = this.handle, history = e.history, island = e.island;
+        const canonical = history.states[history.index];
+        this.status("正在保存");
+        return this.writes.request(target, this.original ?? canonical, result => {
+            if (island !== e.island || handle !== this.handle) {
+                // Undo and terrain edits can rebuild the Island within the same file and history.
+                if (history !== e.history || handle !== this.handle) return;
+            }
+            if (!result.ok) {
+                this.status("保存失败");
+                e.message("保存失败 · " + errorText(result.error));
+                return;
+            }
+            if (!handle) {
+                this.handle = target;
+                this.writable = true;
+                e.filename = target.name;
+            }
+            history.saved = canonical;
+            // Edits during the first save only joined a draft until this close bound the file.
+            if (!this.writable) this.status("未保存");
+            else if (history.dirty) void this.writeTo(target, manual);
+            else {
+                this.status("已保存");
+                if (manual || e.toast?.text === permissionWarning || e.toast?.text.startsWith("保存失败 ·")) e.message("已保存 " + e.filename);
+            }
+        });
     }
     async save() {
         const e = this.editor;
-        if (!e.history || e.busy) return;
-        const canonical = serializeDesign(e.island.design), island = e.island, handle = this.handle;
-        const text = this.original?.canonical === canonical ? this.original.text : canonical;
-        const write = async () => {
-            try {
-                if (handle) {
-                    const writer = await handle.createWritable();
-                    await writer.write(text);
-                    await writer.close();
+        if (!e.island || e.busy || e.gesture || e.draft || e.fileRequest) return;
+        const history = e.history, handle = this.handle;
+        if (!handle && this.choosingSaveFor === history) return;
+        if (!handle) this.choosingSaveFor = history;
+        try {
+            if (handle) {
+                const writable = await this.permission(handle);
+                if (history !== e.history || handle !== this.handle) return;
+                this.writable = writable;
+                if (!writable) {
+                    if (e.saveState !== "正在保存") this.status("未保存");
+                    e.message(permissionWarning);
+                    return;
                 }
-                else this.download(text);
-                if (island !== e.island || handle !== this.handle) return;
-                e.history.saved = canonical;
-                e.syncHistory();
-                e.message("已保存 " + e.filename);
+                await this.writeTo(handle, true);
             }
-            catch (error) {
-                if (!(error instanceof DOMException && error.name === "AbortError")) e.message("保存失败 · " + errorText(error));
+            else {
+                if (!this.supported) return;
+                const target = await window.showSaveFilePicker!({ types, suggestedName: this.suggestedName });
+                if (history === e.history) await this.writeTo(target, true);
             }
-        };
-        this.writes = this.writes.then(write);
-        await this.writes;
-    }
-    async open(file: File, handle: DesignHandle | null = null) {
-        const e = this.editor;
-        try {
-            const text = await file.text(), design = parseDesign(text);
-            const source: unknown = JSON.parse(text);
-            // Opening a legacy file upgrades the in-memory model. An unchanged Save
-            // can write the exact input bytes while history continues to use v4.
-            const original = serializeDesign(source) === JSON.stringify(source, null, 2) &&
-                (typeof source === "object" && source !== null && "version" in source && source.version !== 4 ||
-                    JSON.stringify(source) === JSON.stringify(design)) ? { text, canonical: serializeDesign(design) } : null;
-            await e.working("正在导入海岛设计…", () => {
-                e.replace(design, true);
-                e.history.record(design);
-                e.history.saved = e.history.states[e.history.index];
-                this.handle = handle;
-                this.original = original;
-                e.filename = file.name;
-                e.syncHistory();
-                e.message("已导入 " + e.filename);
-            });
         }
         catch (error) {
-            e.message("导入失败 · " + errorText(error));
+            if (history === e.history && !cancelled(error)) {
+                this.status("保存失败");
+                e.message("保存失败 · " + errorText(error));
+            }
         }
-    }
-    async pick(input: HTMLInputElement) {
-        if (this.editor.busy) return;
-        if (!window.showOpenFilePicker) {
-            input.click();
-            return;
-        }
-        try {
-            const [handle] = await window.showOpenFilePicker({ types, multiple: false });
-            await this.open(await handle.getFile(), handle);
-        }
-        catch (error) {
-            if (!(error instanceof DOMException && error.name === "AbortError")) this.editor.message("导入失败 · " + errorText(error));
+        finally {
+            if (!handle && this.choosingSaveFor === history) this.choosingSaveFor = null;
         }
     }
 }

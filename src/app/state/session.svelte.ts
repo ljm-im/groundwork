@@ -11,7 +11,7 @@ import { objectIssues } from "../../core/checks/issues.ts";
 import { drawSections } from "../../render/sections.ts";
 import { IslandMap } from "../../render/map.ts";
 import { previewLevels } from "./levelPreview.ts";
-import { DesignFiles } from "./files.ts";
+import { DesignFiles, type FileAction, type SaveState } from "./files.ts";
 import { errorText, type Building, type Design, type Door, type FeatureKind, type Gesture, type IslandModel, type Issue, type Layer, type MapView, type Point, type RoadNode, type Selection, type Tab, type Tool } from "../types.ts";
 
 export const hints: Record<Tool, string> = {
@@ -47,12 +47,14 @@ export class Editor {
     revision = $state(0);
     hint = $state(hints.select);
     position = $state("");
-    busy = $state<string | null>("正在生成地形…");
+    busy = $state<string | null>(null);
     toast = $state.raw<{ text: string; point?: Point } | null>(null);
     removal = $state.raw<{ title: string; roads: string[]; perform: () => void } | null>(null);
     conversion = $state.raw<{ text: string; finish: (convert: boolean) => void } | null>(null);
     draft = $state.raw<{ text: string; filename?: string; date: string } | null>(null);
-    filename = $state("island.json");
+    fileRequest = $state<FileAction | null>(null);
+    filename = $state("未打开文件");
+    saveState = $state<SaveState>("已保存");
     dirty = $state(false);
     canUndo = $state(false);
     canRedo = $state(false);
@@ -83,23 +85,20 @@ export class Editor {
         clearTimeout(this.toastTimer);
         this.toastTimer = setTimeout(() => this.toast = null, point ? 2000 : 3600);
     }
-    syncHistory() {
+    syncHistory(changed = false) {
         this.canUndo = this.history.canUndo;
         this.canRedo = this.history.canRedo;
-        this.dirty = this.history.dirty;
-        this.files.remember();
+        this.files.syncHistory(changed);
     }
     record() {
-        this.history.record(this.island.design);
-        this.syncHistory();
+        this.syncHistory(this.history.record(this.island.design));
     }
     describe(target: PromptTarget, value: string) {
         const owner = promptOwner(this.island.design, target);
         if ((owner.prompt ?? "") === value) return;
         if (value === "") delete owner.prompt;
         else owner.prompt = value;
-        this.history.record(this.island.design, target);
-        this.syncHistory();
+        this.syncHistory(this.history.record(this.island.design, target));
     }
     select(h: Selection | null, open = true) {
         if (h && h.kind in featureNames) this.densityOpen = false;
@@ -219,12 +218,12 @@ export class Editor {
             if (value === undefined) delete owner.prompt;
             else owner.prompt = value;
             this.revision++;
-            this.syncHistory();
+            this.syncHistory(true);
             return;
         }
         return this.working(forward ? "正在重做…" : "正在撤销…", () => {
             this.replace(this.history.step(forward)!);
-            this.syncHistory();
+            this.syncHistory(true);
         });
     }
     reroute(ids: Set<string>) {

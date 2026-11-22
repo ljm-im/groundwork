@@ -64,20 +64,25 @@ test("Saving and reopening the unchanged v3 source preserves every byte", async 
     });
     t.mock.method(editor, "message", () => {});
     t.mock.method(editor.files, "remember", () => {});
-    let bytes = raw;
+    let bytes = raw, writes = 0;
     const handle = {
         name: "round6.json",
+        async requestPermission() {
+            return "granted" as const;
+        },
         async getFile() {
             return new File([bytes], this.name);
         },
         async createWritable() {
+            writes++;
             return { async write(text: string) {
                 bytes = text;
             }, async close() {} };
         }
     };
     for (let i = 0; i < 2; i++) {
-        await editor.files.open(await handle.getFile(), handle);
+        await editor.files.open(handle);
+        assert.equal(writes, i);
         await editor.files.save();
         assert.equal(bytes, raw);
     }
@@ -85,6 +90,11 @@ test("Saving and reopening the unchanged v3 source preserves every byte", async 
     await editor.files.save();
     assert.equal(JSON.parse(bytes).version, 4);
     assert.equal(parseDesign(bytes).prompt, "新的全岛描述");
+    const legacy = "\uFEFF" + raw.replaceAll("\n", "\r\n") + "\r\n";
+    bytes = legacy;
+    await editor.files.open(handle);
+    await editor.files.save();
+    assert.equal(bytes, legacy);
 });
 
 function gatedFile() {

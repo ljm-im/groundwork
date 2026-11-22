@@ -77,7 +77,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
     }, { signal });
     canvas.addEventListener("gesturechange", ev => {
         ev.preventDefault();
-        if (pinchScale && ev.scale > 0) map.zoomAt(ev.scale / pinchScale, ...localPoint(ev));
+        if (editor.island && pinchScale && ev.scale > 0) map.zoomAt(ev.scale / pinchScale, ...localPoint(ev));
         pinchScale = ev.scale;
     }, { signal });
     canvas.addEventListener("gestureend", ev => {
@@ -465,15 +465,15 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
     }, { signal });
     canvas.addEventListener("auxclick", ev => ev.preventDefault(), { signal });
     document.addEventListener("keydown", ev => {
-        if (editor.removal || editor.conversion) return;
+        const save = (ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "s";
+        if (save) ev.preventDefault();
+        if (!editor.island || editor.busy || editor.draft || editor.fileRequest || editor.removal || editor.conversion) return;
         const input = ev.target instanceof Element && ev.target.matches("input,select,textarea,[contenteditable=true]");
-        if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "s") {
-            ev.preventDefault();
+        if (save) {
             if (ev.target instanceof HTMLTextAreaElement && ev.target.hasAttribute("data-prompt")) ev.target.blur();
-            if (!editor.busy) editor.files.save();
+            void editor.files.save();
             return;
         }
-        if (editor.busy || editor.draft) return;
         if (ev.key === "Escape" && (!input || editor.tool !== "select")) {
             ev.preventDefault();
             canvas.focus({ preventScroll: true });
@@ -516,5 +516,13 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         if (ev.code === "Space") releaseSpace();
     }, { signal });
     window.addEventListener("blur", releaseSpace, { signal });
+    window.addEventListener("beforeunload", ev => {
+        const field = document.activeElement;
+        if (field instanceof HTMLTextAreaElement && field.hasAttribute("data-prompt")) field.blur();
+        if (editor.dirty) {
+            ev.preventDefault();
+            ev.returnValue = true;
+        }
+    }, { signal });
     return () => listeners.abort();
 }

@@ -1,9 +1,7 @@
 <div class="map-tools" aria-label="路网工具">
     {#each tools as [tool, icon, label] (tool)}
-        <button data-tool={tool} class:active={editor.tool === tool} aria-pressed={editor.tool === tool}
-            onclick={() => {
-                if (editor.island) editor.setTool(tool);
-            }}><Icon name={icon} />{label}</button>
+        <button data-tool={tool} class:active={!!editor.island && editor.tool === tool} aria-pressed={!!editor.island && editor.tool === tool}
+            disabled={!editor.island || !!editor.busy} onclick={() => editor.setTool(tool)}><Icon name={icon} />{label}</button>
     {/each}
 </div>
 
