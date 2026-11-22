@@ -290,6 +290,41 @@ test("Both arms share the exported junction elevation across a one-metre terrain
     assert.equal(isolated.position[2], ground(isolated.position, out.terrain));
 });
 
+test("Level decks preserve each submerged terrain and surface cell", () => {
+    const design = syntheticDesign();
+    design.nodes[0].point = [32.25, .25];
+    design.nodes[1].point = [46.25, .25];
+    Object.assign(design.edges[0], { mode: "straight", levelDeck: true });
+    const island = new Island(design), route = island.routes[0];
+    const ungraded = new Island({ ...design, edges: [] }), source = provenance(serializeDesign(design));
+    const out = exportIsland(island, source), before = exportIsland(ungraded, source);
+    assert(route.h.every(h => h === route.h[0]));
+    assert(out.nodes.every(n => n.position[2] === out.roads[0].centerline[0][2]));
+    assert(route.points.some(p => island.terrain.heights[island.terrain.grid.index(...p)] < -1));
+    assert(island.graded.weight.every(w => w === 0));
+    assert.deepEqual(island.graded.heights, island.terrain.heights);
+    assert.deepEqual(out.terrain.heights, before.terrain.heights);
+    assert.deepEqual(out.terrain.surface, before.terrain.surface);
+});
+
+test("A deck split across edges shares its shore elevation with a selectively rerouted path", () => {
+    const design = syntheticDesign();
+    design.nodes = Array.from({ length: 4 }, (_, i) => ({ id: String(i), name: String(i), type: "endpoint", point: [24 + 6 * i, .5] }));
+    const span = { ...design.edges[0], grade: "path", mode: "straight" as const, levelDeck: true };
+    design.edges = [{ ...span, id: "A", from: "0", to: "1" }, { ...span, id: "B", from: "2", to: "1" },
+        { ...span, id: "C", from: "2", to: "3", levelDeck: false }];
+    const island = new Island(design), first = island.routes[0].h[0];
+    const check = (level: number) => {
+        for (const r of island.routes.slice(0, 2)) assert(r.h.every(h => h === level));
+        assert.equal(island.routes[2].h[0], level);
+    };
+    check(first);
+    design.nodes[0].point = [33, 5];
+    island.reroute(new Set(["A"]));
+    assert.notEqual(island.routes[0].h[0], first);
+    check(island.routes[0].h[0]);
+});
+
 test("tree bases can be reconstructed from rounded grid spacing and origin", () => {
     const d = syntheticDesign(), step = 1.00049, xMin = -48.0002, yMax = 48.0002;
     d.grid = { xMin, xMax: xMin + 96 * step, yMin: yMax - 96 * step, yMax, step };

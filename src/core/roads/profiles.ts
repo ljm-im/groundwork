@@ -126,7 +126,7 @@ export function profile(design: Design, terrain: Pick<RoutingSurface, "grid" | "
         h[h.length - 1] = elevations[1];
     }
     if (edge.levelDeck) h.fill(h[0]);
-    for (let pass = 0; pass < design.routing.profilePasses; pass++) {
+    for (let pass = 0; !edge.levelDeck && pass < design.routing.profilePasses; pass++) {
         const prev = h;
         h = prev.map((v, i) => {
             if (!i || i === prev.length - 1) return v;
@@ -198,6 +198,7 @@ export function gradeRoads(design: Design, terrain: Pick<Terrain, "grid" | "heig
     const order = new Map(design.edges.map((edge, i) => [edge.id, i]));
     const rank = (r: Route) => order.get(r.id) ?? order.size;
     for (const route of routes.toSorted((a, b) => rank(a) - rank(b))) {
+        if (route.edge.levelDeck) continue;
         const half = route.edge.width / 2 + design.routing.roadBedExtra;
         const shoulder = design.roadClasses[route.edge.grade].shoulder,
             radius = half + shoulder;
