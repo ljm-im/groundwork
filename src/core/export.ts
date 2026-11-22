@@ -1,8 +1,9 @@
 import { type Design, type Building, type Point, type Shape } from "./design/types.ts";
 import { type Issue, type Route, type Terrain } from "./design/results.ts";
 import { areaBoundary, corners, nodePose, padCell, zonePolygon } from "./design/shapes.ts";
-import { type Grid, advance, bounds, clamp, distance, eachCell, mixPoint, pointAt, radians, sample } from "./math/geometry.ts";
-import { insidePolygon, perimeter, signedArea } from "./math/polygon.ts";
+import { type Grid, advance, bounds, clamp, distance, mixPoint, pointAt, radians, sample } from "./math/geometry.ts";
+import { perimeter, signedArea } from "./math/polygon.ts";
+import { surfaceRules, terrainSurface } from "./terrain/surface.ts";
 import { stairSpans } from "./roads/profiles.ts";
 import { nearCapsule } from "./roads/proximity.ts";
 import { hedgeLines } from "./edit/yards.ts";
@@ -46,14 +47,6 @@ const instructions = [
     "单位为米。X 向东，Y 向北，Z 向上，海平面为 Z = 0。栅格原点是西北角第一个格点的中心，列向东、行向南，行列下标从 0 开始。第 r 行第 c 列的平面坐标为 [origin[0] + c × step, origin[1] − r × step]。格点之间按双线性插值读取地形。"
 ].join("\n\n");
 
-const surfaceRules = {
-    priority: [0, 4, 2, 1, 3],
-    seabed: "非陆地且非礁岛",
-    paved: "带填色的地形区域、广场院落或建筑台基",
-    rock: { islet: true, slopeAbove: 0.75, coastalRockAtLeast: 0.45, coastDistanceAtMost: 8, coastalSlopeAbove: 0.3 },
-    sand: { coastDistanceAtMost: 5, rockBelow: 0.35, slopeBelow: 0.3, heightBelow: 2 },
-    grass: "其他陆地"
-};
 function precision(n: number) {
     if (!Number.isFinite(n)) throw new Error("几何包含非有限数值");
     return Number(n.toFixed(3)) || 0;
@@ -69,36 +62,12 @@ function position(point: Point, ground: Ground): XYZ {
 
 function exportTerrain(terrain: Terrain, heights: Float32Array): ExportTerrain {
     const { grid } = terrain, { width, height, step } = grid;
-    const paved = new Uint8Array(grid.size);
-    for (const zone of terrain.zones) if (zone.fill) for (const k of zone.cells) paved[k] = 1;
-    for (const cells of terrain.pads) for (const k of cells) paved[k] = 1;
-    for (const { yard, box } of terrain.yards) if (yard.kind === "plaza") {
-        eachCell(grid, box, 0, (k, x, y) => {
-            if (insidePolygon(yard, [x, y])) paved[k] = 1;
-        });
-    }
+    const cellAt = terrainSurface(terrain, heights);
     const heightsOut: number[][] = [], surface: number[][] = [];
-    const { rock, sand } = surfaceRules;
     for (let j = 0; j < height; j++) {
-        const row: number[] = [], cover: number[] = [];
-        const north = Math.max(0, j - 1), south = Math.min(height - 1, j + 1);
-        for (let i = 0; i < width; i++) {
-            const k = j * width + i, h = heights[k];
-            row.push(precision(h));
-            if (!terrain.land[k] && !terrain.islet[k]) cover.push(0);
-            else if (paved[k]) cover.push(4);
-            else {
-                const west = Math.max(0, i - 1), east = Math.min(width - 1, i + 1);
-                const dx = (heights[j * width + east] - heights[j * width + west]) / ((east - west) * step);
-                const dy = (heights[north * width + i] - heights[south * width + i]) / ((south - north) * step);
-                const slope = Math.hypot(dx, dy), shore = Math.abs(terrain.dc[k]), stone = terrain.rock[k];
-                if (terrain.islet[k] || slope > rock.slopeAbove || stone >= rock.coastalRockAtLeast && shore <= rock.coastDistanceAtMost && slope > rock.coastalSlopeAbove) cover.push(2);
-                else if (shore <= sand.coastDistanceAtMost && stone < sand.rockBelow && slope < sand.slopeBelow && h < sand.heightBelow) cover.push(1);
-                else cover.push(3);
-            }
-        }
-        heightsOut.push(row);
-        surface.push(cover);
+        const start = j * width;
+        heightsOut.push(Array.from(heights.subarray(start, start + width), precision));
+        surface.push(Array.from({ length: width }, (_, i) => cellAt(start + i).type));
     }
     return { origin: xy([grid.x(0), grid.y(0)]), step: precision(step), width, height, rowOrder: "north-to-south",
         surfaceTypes: { 0: "海底", 1: "沙", 2: "岩石", 3: "草", 4: "铺装" }, surfaceRules, heights: heightsOut, surface };

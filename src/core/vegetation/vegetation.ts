@@ -1,10 +1,12 @@
 import { type Design, type Planting, type Point } from "../design/types.ts";
-import { type Graded, type Terrain, type Tree, type Route } from "../design/results.ts";
+import { type Graded, type SurfaceCell, type Terrain, type Tree, type Route } from "../design/results.ts";
 import { advance, bounds, distance, nearest, pointAt, smooth, stations } from "../math/geometry.ts";
 import { treeEnvironment, walkScatter } from "./scatter.ts";
 import { fbm, noise, random } from "../math/noise.ts";
 import { gatePose } from "../design/gates.ts";
 import { insidePolygon } from "../math/polygon.ts";
+
+export const maxTreeSlope = .6;
 
 export const treeStyles: Record<Tree["species"], [string, number]> = {
     forest: ["#537848", 2.1], small: ["#81a56d", 1.75], shrub: ["#9eaf74", .85], avenue: ["#467c67", 2.35]
@@ -106,7 +108,7 @@ export function plantTrees(design: Design, terrain: Terrain): Tree[] {
 
 // Bucket the actual finished centreline segments so dragging a road only refilters
 // existing candidates. Distances are to the road edge, including on diagonal spans.
-export function visibleTrees(candidates: Tree[], terrain: Terrain, graded: Graded, routes: Route[]) {
+export function treesClearOfRoads(candidates: Tree[], terrain: Terrain, graded: Graded, routes: Route[]) {
     const buckets = new Map<string, { a: Point; dx: number; dy: number; length2: number; limit2: number }[]>(), key = (i: number, j: number) => i + "," + j, size = 10;
     for (const r of routes) {
         const limit = r.edge.width / 2 + 1.5;
@@ -123,12 +125,19 @@ export function visibleTrees(candidates: Tree[], terrain: Terrain, graded: Grade
         }
     }
     return candidates.filter(tree => {
-        const [x, y] = tree.point;
-        if (!tree.planting && graded.weight[terrain.grid.index(x, y)] > .35)
+        const [x, y] = tree.point, k = terrain.grid.index(x, y);
+        if (!tree.planting && graded.weight[k] > .35)
             return false;
         return !(buckets.get(key(Math.floor(x / size), Math.floor(y / size))) ?? []).some(({ a, dx, dy, length2, limit2 }) => {
             const u = x - a[0], v = y - a[1], f = Math.max(0, Math.min(1, (u * dx + v * dy) / (length2 || 1)));
             return (u - f * dx) ** 2 + (v - f * dy) ** 2 < limit2;
         });
+    });
+}
+
+export function visibleTrees(candidates: Tree[], terrain: Terrain, graded: Graded, routes: Route[], surfaceAt: (k: number) => SurfaceCell) {
+    return treesClearOfRoads(candidates, terrain, graded, routes).filter(tree => {
+        const { type, slope } = surfaceAt(terrain.grid.index(...tree.point));
+        return (tree.planting ? type !== 0 && type !== 2 : type === 3) && slope <= maxTreeSlope;
     });
 }

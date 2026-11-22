@@ -67,7 +67,7 @@ exportTest("independent exports have identical formatted bytes and preserve auth
     assert.equal(serializeDesign(island.design), input);
 });
 
-exportTest("the exported grid contains every graded sample and classifies surfaces in priority order", ({ island, result }) => {
+function checkSurfaceGrid(island: Island, result: ReturnType<typeof exportIsland>) {
     const { terrain, graded } = island, { grid } = terrain, out = result.terrain;
     assert.deepEqual([out.origin, out.step, out.width, out.height, out.rowOrder], [grid.point(0), grid.step, grid.width, grid.height, "north-to-south"]);
     assert.deepEqual(out.surfaceRules.priority, [0, 4, 2, 1, 3]);
@@ -96,6 +96,13 @@ exportTest("the exported grid contains every graded sample and classifies surfac
         }
     }
     assert.deepEqual([...seen].sort(), [0, 1, 2, 3, 4]);
+}
+
+exportTest("the exported grid contains every graded sample and classifies surfaces in priority order", ({ island, result }) => checkSurfaceGrid(island, result));
+
+test("The shared surface classifier matches the original per-cell rules on a synthetic island", () => {
+    const design = syntheticDesign(), island = new Island(design);
+    checkSurfaceGrid(island, exportIsland(island, provenance(serializeDesign(design))));
 });
 
 exportTest("profiles, stair segments, trees and validation issues use resolved geometry", ({ design, island, result }) => {

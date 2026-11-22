@@ -1,6 +1,7 @@
 import { type Design } from "./design/types.ts";
 import { type Terrain, type Tree, type Route, type Graded, type Issue } from "./design/results.ts";
 import { TerrainCache } from "./terrain/cache.ts";
+import { terrainSurface } from "./terrain/surface.ts";
 import { updateHeights } from "./terrain/terrain.ts";
 import { plantTrees, visibleTrees } from "./vegetation/vegetation.ts";
 import { routeAll } from "./roads/routing.ts";
@@ -48,12 +49,17 @@ export class Island {
 
     replant() {
         this.treeCandidates = plantTrees(this.design, this.terrain);
-        this.trees = visibleTrees(this.treeCandidates, this.terrain, this.graded, this.routes);
+        this.filterTrees();
+    }
+
+    private filterTrees() {
+        const surfaceAt = terrainSurface(this.terrain, this.graded.heights);
+        this.trees = visibleTrees(this.treeCandidates, this.terrain, this.graded, this.routes, surfaceAt);
     }
 
     finish() {
         this.graded = gradeRoads(this.design, this.terrain, this.routes);
-        this.trees = visibleTrees(this.treeCandidates, this.terrain, this.graded, this.routes);
+        this.filterTrees();
         this.issues = validateRoads(this.design, this.terrain, this.routes);
         this.issues.push(...validateDesign(this.design, this.terrain, this.graded.heights, this.routes));
     }
