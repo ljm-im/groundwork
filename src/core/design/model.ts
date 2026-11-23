@@ -12,7 +12,7 @@ export function nodePose(design: Pick<ResolvedDesign, "nodes" | "buildings">, no
     if (typeof node === "string") node = design.nodes.find(n => n.id === node)!;
     const pose = doorPose(design, node);
     if (node.type === "door") pose.normal = pose.angle;
-    if (node.directionMode !== "auto" && node.direction != null) pose.angle = Number(node.direction) * radians;
+    if (node.directionMode === "manual" || node.directionMode !== "auto" && node.direction != null) pose.angle = Number(node.direction ?? 0) * radians;
     return pose;
 }
 
@@ -25,6 +25,7 @@ export function parseDesign(text: unknown, allowBrokenReferences = false): Desig
         for (const name of names) check(!Object.hasOwn(value, name), path + name + " 已从 v5 移除");
     }
     rejectRetired(d, "", ["levels", "levelControls", "coast", "ridges", "peaks", "zones", "erosion", "yards", "seed"]);
+    if (d.grid && d.grid.step === undefined) d.grid.step = 1;
     check(positive(d.grid?.step), "网格参数无效");
     rejectRetired(d.grid, "grid.", ["xMin", "xMax", "yMin", "yMax"]);
 
@@ -42,12 +43,18 @@ export function parseDesign(text: unknown, allowBrokenReferences = false): Desig
         const pos = "labels[" + i + "]";
         check(label && typeof label === "object", pos + " 无效");
         rejectRetired(label, pos + ".", ["level"]);
+        check(label.minZoom === undefined || Number.isFinite(label.minZoom), pos + ".minZoom 无效");
         for (const key of ["point", "offset"] as const) check(label[key] === undefined || point(label[key]), pos + "." + key + " 只能填写数字坐标");
     }
     for (const [i, b] of d.buildings.entries()) rejectRetired(b, "buildings[" + i + "].", ["zone"]);
     for (const [i, n] of d.nodes.entries()) rejectRetired(n, "nodes[" + i + "].", ["yard", "at"]);
     check(d.variables && typeof d.variables === "object" && !Array.isArray(d.variables), "variables 缺失");
     check(d.fields && typeof d.fields === "object" && !Array.isArray(d.fields), "fields 缺失");
+    for (const [i, node] of d.geoNodes.entries()) {
+        const f = node.function;
+        if (f?.type === "slope" && f.kind === "path" && f.line)
+            check(!Object.hasOwn(f.line, "heightStops"), "geoNodes[" + i + "].function.line.heightStops 是计算结果");
+    }
     const slots = parameters(d);
     for (const slot of slots.values()) {
         if (typeof slot.value === "string" && literalPattern.test(slot.value.trim())) {

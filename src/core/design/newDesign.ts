@@ -1,3 +1,4 @@
+import { routingDefaults, unrestrictedRampGrade } from "./defaults.ts";
 import { type Design, type Point, type RoadClass } from "./v5.ts";
 
 export function newDesign(): Design {
@@ -10,9 +11,7 @@ export function newDesign(): Design {
             construction: { type: "free", paths: [{ closed: true, nodes: points.map((p, i) => ({ id: String(i), mode: "corner", next: "line", p })) }] } }],
         sections: [], labels: [], buildings: [], nodes: [], edges: [],
         roadClasses: { path: rule, street: { ...rule, name: "街道", minRadius: 7, allowStairs: false, rampLimit: .09 },
-            stair: { ...rule, name: "台阶", minRadius: 2, maxGrade: .68, rampLimit: null } },
-        routing: { viaTolerance: 1, landing: 3, turnCost: 2, overGradePenalty: 32, minHeight: .5, relaxPasses: 32,
-            sampleStep: 1, profilePasses: 1, profileRadius: 1, gradeWindow: 3, roadBedExtra: .2, detourLimit: 2,
-            clearance: 1, overlapLength: 3, junctionRadius: 4 },
+            stair: { ...rule, name: "台阶", minRadius: 2, maxGrade: .68, rampLimit: unrestrictedRampGrade } },
+        routing: { ...routingDefaults },
         vegetation: { density: { natural: 0 }, rooms: [], yardTree: { center: [0, 0], radius: 0 }, plantings: [], clearings: [] } };
 }

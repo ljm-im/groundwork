@@ -288,10 +288,15 @@ test("Omitted mountain and erosion floors preserve cells at and below minus one 
     const m = layer("M", area, { type: "mountain", ridges: [], peaks: [{ at: { p: [0, 0], h: 5 }, radius: 3, noise: 0, scale: 12 }] });
     const e = layer("E", area, { ...erosion });
     for (const node of [m, e]) {
-        const d = design([layer("A", area, { type: "ground", value: -1000 }), node]);
+        const d = design([layer("A", area, { type: "ground", value: -1000 }),
+            layer("B", area, { type: "slope", kind: "path", line: { points: [{ p: [-8, 0], h: -1012 }, { p: [8, 0], h: -1000 }] } })]);
+        const before = evaluateStack(d).fields.height;
+        d.geoNodes.push(node);
         const initial = evaluateStack(d).fields.height;
-        assert(initial.every(h => h === -1000));
+        assert.deepEqual(initial, before); assert(initial.includes(-1000));
         Object.assign(node.function, { floor: -1000 });
         assert.deepEqual(evaluateStack(d).fields.height, initial);
+        Object.assign(node.function, { floor: -2000 });
+        assert.notDeepEqual(evaluateStack(d).fields.height, before);
     }
 });

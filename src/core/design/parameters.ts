@@ -1,13 +1,13 @@
-import { functionDefaults, ridgeNoiseDefaults, routingDefaults } from "./defaults.ts";
+import { functionDefaults, ridgeNoiseDefaults, routingDefaults, unrestrictedRampGrade } from "./defaults.ts";
 import { lineProfile } from "./polyline.ts";
 import { radians } from "../math/geometry.ts";
 import { evaluate, fieldValue, references, type Value } from "./expression.ts";
-import { type Design, type Expression, type GeoNode, type ResolvedDesign } from "./v5.ts";
+import { type Design, type Expression, type GeoNode, type Polyline, type ResolvedDesign } from "./v5.ts";
 
 export type Address = (string | number)[];
 export type Owner = "var" | "geo" | "edge" | "node" | "building" | "setting";
 interface DerivedDefault { keys: string[]; compute: (...values: number[]) => number }
-export type Slot = { key: string; owner: Owner; id: string; name: string; label: string; field: boolean; path: Address; location: string; value: Expression; derived?: DerivedDefault; interpolated?: boolean };
+export type Slot = { key: string; owner: Owner; id: string; name: string; label: string; field: boolean; path: Address; location: string; value: Expression; derived?: DerivedDefault };
 export const randomFunctions = ["coast", "mountain", "cliff", "erosion", "islets", "noise"];
 const keys: Record<string, string> = {
     value: "数值", amount: "增量", roughness: "海岸粗糙度", span: "过渡宽度", radius: "半径", floor: "作用下限",
@@ -62,13 +62,13 @@ export function parameterLabel(path: Address, node?: GeoNode): string {
 export function parameters(d: Design) {
     const slots = new Map<string, Slot>();
     function owner(kind: Owner, id: string, name: string, root: Address, node?: GeoNode) {
-        return (relative: Address, property = relative, field = false, fallback?: Expression | DerivedDefault, interpolated = false) => {
+        return (relative: Address, property = relative, field = false, fallback?: Expression | DerivedDefault) => {
             const path = [...root, ...relative], input = readAt(d, path);
             const derived = input === undefined && typeof fallback === "object" ? fallback : undefined;
             const value = input === undefined ? derived ? 0 : fallback : input;
             if (value === undefined) return;
             const key = kind + ":" + id + (property.length ? "." + property.join(".") : "");
-            slots.set(key, { key, owner: kind, id, name, label: parameterLabel(property, node), location: location(path), path, field, derived, interpolated, value: value as Expression });
+            slots.set(key, { key, owner: kind, id, name, label: parameterLabel(property, node), location: location(path), path, field, derived, value: value as Expression });
         };
     }
     for (const [id, v] of Object.entries(d.variables)) owner("var", id, v?.label ?? id, ["variables", id])(["value"], [], false, 0);
@@ -78,23 +78,26 @@ export function parameters(d: Design) {
     d.geoNodes.forEach((n, i) => {
         const add = owner("geo", n.id, n.name, ["geoNodes", i], n), f = n.function;
         if (!f) throw Error("geoNodes[" + i + "].function 缺失");
-        const fn = (p: Address, fallback?: Expression, field = false, interpolated = false) => add(["function", ...p], p, field, fallback, interpolated);
+        const fn = (p: Address, fallback?: Expression, field = false) => add(["function", ...p], p, field, fallback);
         if (f.type !== "slope" || f.kind === "radial")
             for (const [k, value] of Object.entries(functionDefaults[f.type] ?? {})) fn([k], value, fieldKeys.includes(k));
         if (randomFunctions.includes(f.type)) fn(["seed"], 0);
         if (f.type === "coast" && f.harbor) {
             fn(["harbor", "radius"], 4); fn(["harbor", "span"], 3);
         }
-        if (f.type === "slope" && f.kind === "path" && Array.isArray(f.line?.points)) {
-            const points = f.line.points;
-            const profile = points.some(v => v?.h === undefined) && points.every(v => Array.isArray(v?.p)) ? lineProfile(f.line) : undefined;
+        function lineHeights(line: Polyline, root: Address, ease = false) {
+            if (!Array.isArray(line?.points)) return;
+            const points = line.points;
+            const profile = points.some(v => v?.h === undefined) && points.every(v => Array.isArray(v?.p)) ? lineProfile(line) : undefined;
+            const ref = (i: number) => "{geo:" + n.id + "." + root.join(".") + "." + i + ".h}";
             points.forEach((v, j) => {
-                const span = profile?.span(profile.vertexStation(j), f.ease);
-                const ref = (i: number) => "{geo:" + n.id + ".line.points." + i + ".h}";
-                const fallback = span ? ref(span.a.index) + " * " + (1 - span.t) + " + " + ref(span.b.index) + " * " + span.t : 0;
-                fn(["line", "points", j, "h"], fallback, false, v?.h === undefined && !!span);
+                const span = v?.h === undefined ? profile?.span(profile.vertexStation(j), ease) : undefined;
+                let fallback: Expression = 0;
+                if (span) fallback = span.a === span.b ? ref(span.a.index) : ref(span.a.index) + " * " + (1 - span.t) + " + " + ref(span.b.index) + " * " + span.t;
+                fn([...root, j, "h"], fallback);
             });
         }
+        if (f.type === "slope" && f.kind === "path") lineHeights(f.line, ["line", "points"], f.ease);
         if (f.type === "mountain") {
             if (Array.isArray(f.ridges)) f.ridges.forEach((ridge, j) => {
                 if (!ridge) throw Error("geoNodes[" + i + "].function.ridges[" + j + "] 无效");
@@ -105,19 +108,29 @@ export function parameters(d: Design) {
                         throw Error("geoNodes[" + i + "].function.ridges[" + j + "]." + key + " 需要 { amount, wavelength }");
                     for (const [k, value] of Object.entries(ridgeNoiseDefaults)) fn(["ridges", j, key, k], value);
                 }
-                if (Array.isArray(ridge.line?.points)) ridge.line.points.forEach((_, t) => fn(["ridges", j, "line", "points", t, "h"], 0));
+                lineHeights(ridge.line, ["ridges", j, "line", "points"]);
             });
             if (Array.isArray(f.peaks)) f.peaks.forEach((_, j) => {
                 for (const [k, value] of Object.entries({ radius: 5, noise: 0, scale: 12 })) fn(["peaks", j, k], value);
                 fn(["peaks", j, "at", "h"], 0);
             });
         }
-        if (n.construction?.type === "strip" && Array.isArray(n.construction.widths)) n.construction.widths.forEach((_, j) => add(["construction", "widths", j]));
+        if (n.construction?.type === "strip") {
+            const widths = n.construction.of?.length === 1 ? [0, 6] : [1, 1];
+            widths.forEach((v, j) => add(["construction", "widths", j], ["construction", "widths", j], false, v));
+        }
     });
     d.buildings.forEach((b, i) => {
         const add = owner("building", b.id, b.name, ["buildings", i]);
-        for (const k of ["height", "radius", "inner"]) add([k]);
         const prefix = "building:" + b.id + ".", rect = b.shape === "rect";
+        add(["height"], ["height"], false, 4);
+        if (rect) {
+            for (const [j, fallback] of [8, 6].entries()) add(["size", j], ["size", j], false, fallback);
+        }
+        else {
+            add(["radius"], ["radius"], false, 4);
+            if (b.shape === "ring") add(["inner"], ["inner"], false, "{" + prefix + "radius} / 2");
+        }
         add(["angle"], ["angle"], false, 0);
         add(["blockMargin"], ["blockMargin"], false, 0);
         add(["pad"], ["pad"], false, rect ? 1.3 : "{" + prefix + "radius} + 1.3");
@@ -129,9 +142,9 @@ export function parameters(d: Design) {
                 return Math.hypot(w * c + h * s, w * s + h * c) / 2 + 1.5;
             }
         });
-        if (Array.isArray(b.size)) b.size.forEach((_, j) => add(["size", j]));
         if (Array.isArray(b.doors)) b.doors.forEach((_, j) => {
-            for (const k of ["angle", "wall", "t"]) add(["doors", j, k]);
+            const defaults = rect ? { wall: 0, t: .5 } : { angle: 0 };
+            for (const [k, fallback] of Object.entries(defaults)) add(["doors", j, k], ["doors", j, k], false, fallback);
         });
     });
     d.nodes.forEach((n, i) => owner("node", n.id, n.name, ["nodes", i])(["direction"], ["direction"], false, 0));
@@ -198,7 +211,7 @@ export function expressionGraph(d: Design, slots = parameters(d)) {
 export function resolveDesign(source: Design, slots = parameters(source)): ResolvedDesign {
     const { get } = expressionGraph(source, slots), design = { ...source };
     // Unchanged branches retain identity for geometry caches and direct map edits.
-    function replace(path: Address, value: Expression) {
+    function replace(path: Address, value: unknown) {
         let original: object | undefined = source, target: object = design;
         for (const [i, part] of path.slice(0, -1).entries()) {
             original = original && Reflect.get(original, part);
@@ -217,22 +230,30 @@ export function resolveDesign(source: Design, slots = parameters(source)): Resol
             const value = get(s.key);
             // Keep field references for the layer's input grid. All scalar references are now constants.
             const result = typeof value === "number" ? value : String(s.value).replace(/\{([^{}]+)\}/g, (text, key: string) => key.startsWith("field:") ? text : "(" + get(key) + ")");
-            // Slope profiles interpolate across authored height stops, including smoothstep over the whole span.
             const authored = readAt(source, s.path);
             // Building footprints share the editable object when their existing geometry defaults apply.
             const footprintDefault = s.owner === "building" && authored === undefined &&
-                (s.path.at(-1) !== "angle" || source.buildings[Number(s.path[1])].shape !== "rect");
-            if (!s.interpolated && !footprintDefault && result !== authored) replace(s.path, result);
+                (["pad", "blockMargin", "treeRadius"].includes(String(s.path.at(-1))) ||
+                    s.path.length === 3 && s.path[2] === "angle" && source.buildings[Number(s.path[1])].shape !== "rect");
+            if (!footprintDefault && result !== authored) replace(s.path, result);
         }
         catch (error) {
             errors.add(s.location + " " + (error as Error).message);
         }
     }
+    source.geoNodes.forEach(({ function: f }, i) => {
+        if (f.type !== "slope" || f.kind !== "path" || !f.ease || !Array.isArray(f.line?.points)) return;
+        const stops = f.line.points.flatMap((v, j) => v.h === undefined ? [] : [j]);
+        if (stops.length && stops.length < f.line.points.length) replace(["geoNodes", i, "function", "line", "heightStops"], stops);
+    });
     source.nodes.forEach((n, i) => {
         if (n.direction === undefined && n.directionMode === undefined) replace(["nodes", i, "directionMode"], "auto");
     });
+    source.vegetation?.plantings?.forEach((p, i) => {
+        if (p.feather === undefined) replace(["vegetation", "plantings", i, "feather"], 0);
+    });
     for (const [id, rule] of Object.entries(source.roadClasses ?? {}))
-        if (rule.rampLimit == null) replace(["roadClasses", id, "rampLimit"], 1000);
+        if (rule.rampLimit == null) replace(["roadClasses", id, "rampLimit"], unrestrictedRampGrade);
     source.labels.forEach((l, i) => {
         if (l.var !== undefined && !Object.hasOwn(source.variables, l.var)) errors.add("labels[" + i + "].var 找不到变量“" + l.var + "”");
     });

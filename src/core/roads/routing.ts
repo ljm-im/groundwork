@@ -1,3 +1,4 @@
+import { routingDefaults } from "../design/defaults.ts";
 import { type Alignment, type Route, type RoutePart, type RoutingSurface, type SmallCorner } from "../design/results.ts";
 import { type NetworkDesign as Design, type Edge, type RoadNode, type RoadClass, type Routing, type Point } from "../design/v5.ts";
 import { advance, angleDiff, bearing, canvasSegment, clamp, onCanvas, distance, eachCell, nearest, pointAt, radians, resample, sampleDefined, stations } from "../math/geometry.ts";
@@ -325,8 +326,8 @@ function routedSpan(a: Point, b: Point, entry: Heading, exit: Heading, edge: Edg
     return best ? { points: best, failed: false } : fail();
 }
 
-export function clearLead(node: RoadNode, edge: Edge, rules: Routing) {
-    return node.type === "door" ? (rules.clearLead ?? edge.width / 2 + .5) : 0;
+export function clearLead(node: RoadNode, _edge: Edge, rules: Routing) {
+    return node.type === "door" ? (rules.clearLead ?? routingDefaults.clearLead) : 0;
 }
 
 function routeOnce(design: Design, t: RoutingSurface, edge: Edge, entry?: EndConstraint, exit?: EndConstraint, penalty?: Float32Array): Alignment {

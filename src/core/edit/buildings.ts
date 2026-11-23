@@ -160,7 +160,7 @@ export function openDoorAt(design: Design, hit: NonNullable<ReturnType<typeof ne
     if (!node)
         return doorNode(design, b, door);
     Object.assign(node, { type: "door", building: b.id, door: door.id });
-    for (const key of ["point", "direction", "through", "otherThrough", "detachedDoor"] as const)
+    for (const key of ["point", "direction", "directionMode", "through", "otherThrough", "detachedDoor"] as const)
         delete node[key];
     return node;
 }
@@ -184,6 +184,7 @@ export function removeBuildingPart(d: Design, b: Building<Expression>, door?: Do
             delete n.building;
             delete n.door;
             delete n.direction;
+            delete n.directionMode;
         }
         else
             d.nodes = d.nodes.filter(other => other !== n);

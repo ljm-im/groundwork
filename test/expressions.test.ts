@@ -119,3 +119,36 @@ test("Omitted parameters can be referenced and old ridge tuples fail at their or
     Object.assign(mountain.ridges[0].widthNoise, { wavelength: 0 });
     assert.throws(() => parseDesign(d), /widthNoise.wavelength/);
 });
+
+test("Geometry, road and building inputs expose concrete defaults without changing authored height stops", () => {
+    const d: Design = syntheticDesign(), n = d.geoNodes[1];
+    n.function = { type: "slope", kind: "path", ease: true, line: { points: [
+        { p: [0, 0], h: 2 }, { p: [2, 0] }, { p: [8, 0], h: 10 }
+    ] } };
+    d.variables.b = { value: "{geo:T.line.points.1.h} + {building:A.pad} + {edge:E.stairUntil}" };
+    const g = expressionGraph(d), resolved = resolveDesign(parseDesign(d)), t = resolved.geoNodes[1].function;
+    assert(t.type === "slope" && t.kind === "path");
+    assert.equal(g.get("geo:T.line.points.1.h"), 3.25);
+    assert.equal(resolved.variables.b.value, 4.55);
+    assert.equal(g.get("building:A.treeRadius"), Math.hypot(6, 4) / 2 + 1.5);
+    assert.equal(resolved.routing.clearLead, 1.5);
+    assert.equal(resolved.nodes[1].direction, 0); assert.equal(resolved.nodes[1].directionMode, "auto");
+    assert.equal(t.line.points[1].h, 3.25);
+    const unchanged = generateTerrain(d).heights;
+    const noMidpoint = structuredClone(d);
+    const slope = noMidpoint.geoNodes[1].function;
+    assert(slope.type === "slope" && slope.kind === "path");
+    noMidpoint.variables.b.value = resolved.variables.b.value;
+    slope.line.points.splice(1, 1);
+    assert.deepEqual(generateTerrain(noMidpoint).heights, unchanged);
+    assert.equal(n.function.line.points[1].h, undefined, "The source retains its two authored height stops");
+    Object.assign(d.roadClasses.stair, { rampLimit: null });
+    assert.equal(resolveDesign(parseDesign(d)).roadClasses.stair.rampLimit, 1000);
+    const ridge = { line: n.function.line, widths: [4, 4] };
+    Object.assign(n, { function: { type: "mountain", ridges: [ridge], peaks: [] } });
+    d.variables.b.value = "{geo:T.ridges.0.line.points.1.h}";
+    const parsed = parseDesign(d), m = resolveDesign(parsed).geoNodes[1].function;
+    assert(m.type === "mountain"); assert.equal(m.floor, -1000);
+    assert.deepEqual(m.ridges[0].widthNoise, { amount: 0, wavelength: 20 });
+    assert.equal(resolveDesign(parsed).variables.b.value, 4);
+});
