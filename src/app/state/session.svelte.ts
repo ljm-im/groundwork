@@ -7,7 +7,8 @@ import { nodePose } from "../../core/design/model.ts";
 import { bounds } from "../../core/math/geometry.ts";
 import { addDoor, doorNode, doorRoads, openDoorAt, removeBuildingPart } from "../../core/edit/buildings.ts";
 import { removeVia, removeLinks } from "../../core/edit/topology.ts";
-import { type GeoNode, type GeoFunction } from "../../core/design/v5.ts";
+import { type Expression, type GeoNode, type GeoFunction } from "../../core/design/v5.ts";
+import { randomFunctions, referenceUses, type Owner } from "../../core/design/parameters.ts";
 import { parseDesign } from "../../core/design/model.ts";
 import { type GeoControl, geometryPath, removeParameterPoint } from "../../core/edit/geoControls.ts";
 import { addVariable, addField, copyGeo, defaultFunction, deleteGeo, dependentStrips, enableGeo, pathCenter, declarationUses, rangeUsers, removeDeclaration, sampleField, tenth } from "../../core/edit/geoNodes.ts";
@@ -56,7 +57,7 @@ export class Editor {
     bottomTab = $state<"sections" | "profile">("sections");
     pathIndex = $state(0);
     erosionOpen = $state(false);
-    menu = $state.raw<{ x: number; y: number; segment?: GeoControl } | null>(null);
+    menu = $state.raw<{ x: number; y: number; map?: boolean; segment?: GeoControl } | null>(null);
     revision = $state(0);
     hint = $state(hints.select);
     position = $state("");
@@ -149,7 +150,7 @@ export class Editor {
         if (this.displayField !== "height" && !Object.hasOwn(this.island.design.fields, this.displayField)) this.displayField = "height";
         this.map.displayField = this.displayField;
         this.map.geoSelection = this.geoSelection;
-        this.map.setIsland(this.viewport ? this.island.viewThrough(this.viewport) : this.island, reset, this.island.terrain.grid);
+        this.map.setIsland(this.viewport ? this.island.viewBelow(this.viewport) : this.island.view(), reset, this.island.terrain);
         this.map.draw();
         this.sections();
         if (sidebar) this.revision++;
@@ -252,6 +253,16 @@ export class Editor {
         this.setTool("select");
         this.refresh(reset);
     }
+    previewNumber(design: Design) {
+        this.island.design = design;
+        this.pendingLevels.add("number"); this.schedule();
+    }
+    commitNumber(design: Design) {
+        if (this.frame) cancelAnimationFrame(this.frame);
+        this.frame = 0; this.pendingLevels.clear();
+        this.island.design = design;
+        this.island.variables(true); this.refresh(); this.record();
+    }
     rebuild() {
         const design = this.island.design;
         return this.terrainWork(design, () => {
@@ -295,6 +306,8 @@ export class Editor {
         if (this.busy) return;
         try {
             const d = structuredClone(this.island.design), selected = fn(d);
+            if (!d.variables.seed && d.geoNodes.some(n => randomFunctions.includes(n.function.type) && n.function.seed === "{var:seed}"))
+                d.variables.seed = { label: "种子", value: 1 };
             parseDesign(d, true);
             return this.terrainWork(d, () => {
                 const next = new Island(d, this.terrainCache);
@@ -368,6 +381,25 @@ export class Editor {
     addDeclaration(kind: "variable" | "field") {
         this.edit(d => ({ kind, id: kind === "variable" ? addVariable(d) : addField(d) }));
     }
+    blockRemoval(targets: [Owner, string][], name: string) {
+        const items = [...new Set(targets.flatMap(([kind, id]) => referenceUses(this.island.design, kind, id)))];
+        if (!items.length) return false;
+        this.removal = { title: "无法删除“" + name + "”", detail: "请先修改以下表达式引用。", items };
+        return true;
+    }
+    removePath(id: string, index: number) {
+        const d = this.island.design, c = geoAt(d, id).construction;
+        if (c.type !== "free" || c.paths.length < 2 || !c.paths[index]) return;
+        const affected = rangeUsers(d, id, c.paths[index].nodes.map(v => v.id));
+        const perform = () => {
+            this.pathIndex = 0; this.map.vertex = undefined;
+            this.editNode(id, v => {
+                if (v.construction.type === "free") v.construction.paths.splice(index, 1);
+            });
+        };
+        if (affected.length) this.removal = { title: "删除这条路径？", detail: "以下条带将找不到范围节点。", items: affected.map(v => v.name), action: "删除路径", perform };
+        else perform();
+    }
     removeGeo(id: string, vertex?: GeoControl) {
         const d = this.island.design, n = geoAt(d, id);
         if (vertex?.role === "parameter") {
@@ -389,12 +421,13 @@ export class Editor {
             return;
         }
         const refs = dependentStrips(d, id);
+        if (this.blockRemoval([["geo", id], ...refs.map((r): [Owner, string] => ["geo", r.id])], n.name)) return;
         const perform = () => {
             this.edit(d => {
                 deleteGeo(d, id, true); return null;
             });
         };
-        if (refs.length) this.removal = { title: "删除「" + n.name + "」？", detail: "以下条带引用了这个地件。", action: "一并删除这些条带", items: refs.map(r => r.name), perform };
+        if (refs.length) this.removal = { title: "删除“" + n.name + "”？", detail: "以下条带引用了这个地件。", action: "一并删除这些条带", items: refs.map(r => r.name), perform };
         else perform();
     }
     segment(type: "line" | "curve" | "arc" | "tangent") {
@@ -406,7 +439,7 @@ export class Editor {
         if (kind === "geoNode") this.setTool("select");
         this.select(h);
         if (kind === "edge") this.map.focusBounds(bounds(this.island.routes.find(r => r.id === id)!.points));
-        else if (kind === "node") this.map.focus(nodePose(d, id).point, 2.3);
+        else if (kind === "node") this.map.focus(nodePose(this.island.resolved, id).point, 2.3);
         else if (kind === "building") this.map.focus(d.buildings.find(b => b.id === id)!.center, 3);
         else if (kind === "geoNode") {
             const box = this.island.terrain.regions.get(id)!.shape.box;
@@ -439,14 +472,14 @@ export class Editor {
         if (hits.length === 1) this.issueAt(hits[0]);
         else this.map.draw();
     }
-    addDoor(building: Building, wall: number) {
+    addDoor(building: Building<Expression>, wall: number) {
         addDoor(this.island.design, building, wall);
         this.select({ kind: "building", id: building.id });
         this.island.reroute(new Set());
         this.refresh();
         this.record();
     }
-    connectDoor(building: Building, door: Door) {
+    connectDoor(building: Building<Expression>, door: Door<Expression>) {
         const node = doorNode(this.island.design, building, door);
         this.record();
         this.setTool("edge");
@@ -454,21 +487,25 @@ export class Editor {
         this.select({ kind: "node", id: node.id });
         this.hint = "单击要连接的终点节点，Esc 取消";
     }
-    removePart(b: Building, door?: Door) {
+    removePart(b: Building<Expression>, door?: Door<Expression>) {
         const d = this.island.design, edges: EdgeLike[] = doorRoads(d, b, door);
-        const perform = () => {
-            removeBuildingPart(d, b, door);
-            this.selection = door ? { kind: "building", id: b.id } : null;
-            this.tab = "buildings";
-            this.rebuild();
-        };
+        const affected: [Owner, string][] = door ? [] : [["building", b.id]];
+        for (const n of d.nodes.filter(n => n.building === b.id && (!door || n.door === door.id))) {
+            if (!d.edges.some(edge => edge.from === n.id || edge.to === n.id)) affected.push(["node", n.id]);
+        }
+        if (this.blockRemoval(affected, door?.name ?? b.name)) return;
+        const perform = () => this.edit(draft => {
+            const target = draft.buildings.find(item => item.id === b.id)!;
+            removeBuildingPart(draft, target, door && target.doors.find(v => v.id === door.id));
+            return door ? { kind: "building", id: b.id } : null;
+        });
         if (!edges.length) {
             perform();
             return;
         }
-        this.removal = { title: "删除" + (door ? door.name ?? door.id : b.name) + "？", items: edges.map(e => e.name), perform };
+        this.removal = { title: "删除“" + (door ? door.name ?? door.id : b.name) + "”？", items: edges.map(e => e.name), perform };
     }
-    offerConversion(node: RoadNode, wall: NonNullable<ReturnType<typeof import("../../core/edit/buildings.ts").nearbyWall>>, edges: EdgeLike[]) {
+    offerConversion(node: RoadNode<Expression>, wall: NonNullable<ReturnType<typeof import("../../core/edit/buildings.ts").nearbyWall>>, edges: EdgeLike[]) {
         this.conversion = {
             text: "将“" + node.name + "”吸附到“" + wall.building.name + "”外墙。连接此节点的 " + edges.length + " 条道路会保留。",
             finish: (convert) => {
@@ -493,7 +530,7 @@ export class Editor {
         if (h.kind === "variable" || h.kind === "field") {
             const kind = h.kind, uses = declarationUses(d, kind, h.id);
             if (uses.length) {
-                this.removal = { title: "仍有引用，无法删除", detail: "请先修改以下引用。", items: uses }; return;
+                this.removal = { title: "无法删除“" + ((kind === "variable" ? d.variables : d.fields)[h.id]?.label ?? h.id) + "”", detail: "请先修改以下引用。", items: uses }; return;
             }
             this.edit(d => {
                 removeDeclaration(d, kind, h.id); return null;
@@ -504,6 +541,8 @@ export class Editor {
             return;
         }
         const node = h.kind === "node" && d.nodes.find(n => n.id === h.id);
+        if (node && this.blockRemoval([["node", node.id], ...d.edges.filter(e => node.type !== "door" && (e.from === node.id || e.to === node.id)).map((e): [Owner, string] => ["edge", e.id])], node.name)) return;
+        if (h.kind === "edge" && this.blockRemoval([["edge", h.id]], d.edges.find(e => e.id === h.id)!.name)) return;
         if (node && node.type === "door") {
             const b = d.buildings.find(b => b.id === node.building)!;
             this.removePart(b, b.doors.find(door => door.id === node.door));

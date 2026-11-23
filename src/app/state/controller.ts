@@ -133,7 +133,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             editor.message("请单击要添加途经点的道路", screen);
             return;
         }
-        const e = hit.route.edge;
+        const e = editor.island.design.edges.find(e => e.id === hit.route.id)!;
         const existing = e.via.findIndex((p: Point) => distance(p, hit.point) * map.scale < 3);
         if (existing >= 0) {
             editor.select({ kind: "via", id: e.id, index: existing });
@@ -183,7 +183,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         if (h.kind === "section") return;
         editor.setTool("select");
         editor.select(h.kind === "door" ? { ...h, kind: "building", role: "door:" + h.role } : h);
-        editor.menu = { x: ev.clientX, y: ev.clientY, segment: hit.kind === "geo" && hit.control.role === "segment" ? hit.control : undefined };
+        editor.menu = { x: ev.clientX, y: ev.clientY, map: true, segment: hit.kind === "geo" && hit.control.role === "segment" ? hit.control : undefined };
     }, { signal });
     canvas.addEventListener("pointerdown", ev => {
         if (!editor.island || editor.busy || editor.gesture) return;
@@ -354,7 +354,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             return;
         }
         if (editor.linkFrom && ["edge", "fork"].includes(editor.tool) && !(editor.gesture && "pan" in editor.gesture)) {
-            map.linkPreview = [nodePose(d, editor.linkFrom).point, p];
+            map.linkPreview = [nodePose(editor.island.resolved, editor.linkFrom).point, p];
             map.draw();
         }
         if (!editor.gesture) {

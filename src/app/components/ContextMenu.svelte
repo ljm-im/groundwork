@@ -6,13 +6,20 @@
 {#if editor.menu && editor.selection}
     {@const h = editor.selection}
     <div class="context-menu" role="group" aria-label="对象菜单" bind:this={menu} style:left={Math.min(editor.menu.x, innerWidth - 148) + "px"}
-        style:top={Math.min(editor.menu.y, innerHeight - (editor.menu.segment ? 255 : h.kind === "geoNode" ? 117 : 50)) + "px"}>
+        style:top={Math.min(editor.menu.y, innerHeight - (editor.menu.segment ? 308 : h.kind === "geoNode" ? 148 : 50)) + "px"}>
         {#if h.kind === "geoNode"}
+            {@const node = editor.island.design.geoNodes.find(n => n.id === h.id)!}
+            {#if editor.menu.map && node.construction.type === "free"}
+                <button onclick={() => run(() => editor.setTool("addPath", h.id))}>添加路径</button>
+                {#if editor.menu.segment && editor.menu.segment.path >= 0 && node.construction.paths.length >= 2}
+                    <button onclick={() => run(() => editor.removePath(h.id, editor.menu!.segment!.path))}>删除这条路径</button>
+                {/if}
+            {/if}
             {#if editor.menu.segment}
                 {#each modes as [type, name] (type)}<button onclick={() => run(() => editor.segment(type))}>{name}</button>{/each}<hr />
             {/if}
             <button onclick={() => run(() => editor.duplicate(h.id))}>复制</button>
-            <button onclick={() => run(() => editor.toggle(h.id))}>{editor.island.design.geoNodes.find(n => n.id === h.id)?.disabled ? "启用" : "关闭"}</button>
+            <button onclick={() => run(() => editor.toggle(h.id))}>{node.disabled ? "启用" : "禁用"}</button>
         {/if}
         <button class="danger" onclick={() => run(() => {
             if (h.kind === "geoNode") editor.removeGeo(h.id); else if (h.kind === "building" && h.role?.startsWith("door:")) {

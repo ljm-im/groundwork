@@ -1,16 +1,13 @@
 <Part title="选线参数">
     {#each settings as [key, label, unit] (key)}
-        <label class="field">{label}{unit}<input type="number" step="any" value={editor.island.design.routing[key] ?? ""} onchange={e => {
-            const value = e.currentTarget.valueAsNumber;
-            if (Number.isFinite(value) && (key === "minHeight" || value >= 0)) editor.edit(d => {
-                d.routing[key] = value;
-            });
-        }} /></label>
+        <NumberInput {editor} {label} unit={unit.replace(" / ", "")} address={["routing", key]} optional={key === "landing" || key === "clearLead" || key === "viaTolerance"}
+            step={["relaxPasses", "profilePasses", "profileRadius"].includes(key) ? 1 : .1} />
     {/each}
 </Part>
 
 <script lang="ts">
     import * as session from "../state/session.svelte.ts";
+    import NumberInput from "./NumberInput.svelte";
     import Part from "./Part.svelte";
     let { editor }: { editor: session.Editor } = $props();
     const settings = [["turnCost", "转弯代价", ""], ["overGradePenalty", "超坡惩罚", ""], ["minHeight", "最低通行高度", " / m"],

@@ -248,7 +248,7 @@
             font-size: 15px;
             color: #29483c;
         }
-        .field, .toggle, .slider {
+        .field, .toggle {
             display: flex;
             align-items: center;
             gap: 8px;
@@ -268,18 +268,6 @@
         }
         .field input.wide {
             width: 150px;
-        }
-        .slider {
-            display: grid;
-            grid-template-columns: minmax(100px, 1fr) minmax(65px, 1fr) 38px;
-        }
-        .slider input {
-            width: 100%;
-            accent-color: var(--teal);
-        }
-        .slider output {
-            text-align: right;
-            font-size: 11px;
         }
         .toggle input {
             accent-color: var(--teal);

@@ -2,6 +2,13 @@
 
 <script lang="ts">
     const icons = {
+        up: "M9 15V3m-5 5 5-5 5 5",
+        field: "M2 3h14v12H2z M2 7h14M2 11h14M7 3v12m4-12v12",
+        function: "M3 13h3l3-9h4M5 8h7m0 2 4 5m0-5-4 5",
+        property: "M3 13 8 4l5 9z M3 15h12",
+        disabled: "M2 2l14 14M2 8l-1 1s3 5 8 5l3-1m-6-8 3-1c5 0 8 5 8 5l-2 2",
+        copy: "M6 6h9v10H6z M3 12H2V2h9v1",
+        delete: "M2 5h14M6 5V3h6v2M4 5l1 11h8l1-11M7 8v5m4-5v5",
         terrain: "m2 6 7-4 7 4-7 4z M2 9l7 4 7-4 M2 12l7 4 7-4",
         variables: "M2 9h5m4 0h5M7 5h4v8H7z",
         issues: "m9 2 7.5 13H1.5z M9 6v4m0 2.5v.2",

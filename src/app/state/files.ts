@@ -166,7 +166,7 @@ export class DesignFiles {
         const original = serializeDesign(source) === JSON.stringify(source, null, 2) &&
             JSON.stringify(source) === JSON.stringify(design) ? text : null;
         this.install(design, file.name, { handle, writable, original });
-        this.editor.message(writable ? "已打开 " + file.name : permissionWarning);
+        this.editor.message(writable ? "已打开“" + file.name + "”" : permissionWarning);
     }
     private writeTo(target: DesignHandle, manual = false) {
         const e = this.editor, handle = this.handle, history = e.history, island = e.island;
@@ -193,7 +193,7 @@ export class DesignFiles {
             else if (history.dirty) void this.writeTo(target, manual);
             else {
                 this.status("已保存");
-                if (manual || e.toast?.text === permissionWarning || e.toast?.text.startsWith("保存失败 ·")) e.message("已保存 " + e.filename);
+                if (manual || e.toast?.text === permissionWarning || e.toast?.text.startsWith("保存失败 ·")) e.message("已保存“" + e.filename + "”");
             }
         });
     }

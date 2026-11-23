@@ -1,7 +1,7 @@
 import { type GeoNode, type Label, type Point } from "../core/design/v5.ts";
-import { type Issue, type Tree } from "../core/design/results.ts";
+import { type Issue, type Terrain, type Tree } from "../core/design/results.ts";
 import { type Handle, type Selection } from "../core/edit/types.ts";
-import { type Island, type IslandView } from "../core/island.ts";
+import { type IslandView } from "../core/island.ts";
 import { type layerDefaults } from "../app/state/layers.ts";
 import { type Box } from "../core/math/geometry.ts";
 import { advance, bearing, clamp, distance, mixPoint, nearest, onCanvas, sampleDefined } from "../core/math/geometry.ts";
@@ -67,6 +67,11 @@ function regionPaths(region: Region, g: Grid) {
         }
         outline.addPath(area);
     }
+    else if (!region.cells.length) {
+        for (const path of region.shape.boundary()) for (const { a, b } of path) {
+            outline.moveTo(...a); outline.lineTo(...b);
+        }
+    }
     else {
         for (const k of region.cells) {
             const i = k % g.width, j = Math.floor(k / g.width), x = g.xMin + i * g.step, y = g.yMax - j * g.step;
@@ -119,10 +124,12 @@ export class IslandMap {
     declare canvas: HTMLCanvasElement;
     declare ctx: Context;
     declare layers: typeof layerDefaults;
-    declare zoom: number;
+    scale = 1;
+    referenceScale = 1;
     declare selection: Selection | null;
     declare island: IslandView;
-    declare frameGrid: Grid;
+    declare frameTerrain: Terrain;
+    emptyCanvas = false;
     displayField = "height";
     geoSelection: string[] = [];
     highlights: string[] = [];
@@ -148,13 +155,16 @@ export class IslandMap {
         this.canvas = canvas;
         this.ctx = canvas.getContext("2d")!;
         this.layers = layers;
-        this.zoom = 1;
         this.selection = null;
     }
-    setIsland(island: IslandView, reset = false, frameGrid = island.terrain.grid) {
+    setIsland(island: IslandView, reset = false, frameTerrain = island.terrain) {
         this.island = island;
-        this.frameGrid = frameGrid;
         this.cache = relief(island);
+        this.emptyCanvas = !island.terrain.defined.some(Boolean);
+        this.frame(frameTerrain, reset);
+    }
+    frame(terrain: Terrain, reset = false) {
+        this.frameTerrain = terrain;
         if (reset || !this.center) this.fit(false);
     }
     resize() {
@@ -168,14 +178,20 @@ export class IslandMap {
         if (this.island) this.draw();
     }
     fit(draw = true) {
-        const g = this.frameGrid ?? this.island.terrain.grid;
-        this.center = [(g.xMin + g.xMax) / 2, (g.yMin + g.yMax) / 2];
-        this.zoom = 1;
+        const terrain = this.frameTerrain ?? this.island.terrain, g = terrain.grid;
+        let box: Box = [g.xMin, g.yMin, g.xMax, g.yMax];
+        if (!terrain.defined.some(Boolean)) {
+            const boxes = [...terrain.regions.values()].map(r => r.shape.box).filter(b => b.every(Number.isFinite));
+            if (boxes.length) box = [Math.min(...boxes.map(b => b[0])), Math.min(...boxes.map(b => b[1])),
+                Math.max(...boxes.map(b => b[2])), Math.max(...boxes.map(b => b[3]))];
+        }
+        this.center = [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2];
+        this.referenceScale = this.scale = Math.min(Math.max(1, this.width - 65) / Math.max(g.step, box[2] - box[0]),
+            Math.max(1, this.height - 84) / Math.max(g.step, box[3] - box[1]));
         if (draw) this.draw();
     }
-    get scale() {
-        const g = this.frameGrid ?? this.island.terrain.grid;
-        return this.zoom * Math.min((this.width - 65) / (g.xMax - g.xMin), (this.height - 84) / (g.yMax - g.yMin));
+    zoomFactor() {
+        return this.scale / this.referenceScale;
     }
     screen(p: Point): Point {
         return [(p[0] - this.center[0]) * this.scale + this.width / 2, (this.center[1] - p[1]) * this.scale + this.height / 2 + 9];
@@ -185,7 +201,7 @@ export class IslandMap {
     }
     zoomAt(factor: number, x = this.width / 2, y = this.height / 2) {
         const before = this.world(x, y);
-        this.zoom = clamp(this.zoom * factor, .5, 14);
+        this.scale = this.referenceScale * clamp(this.zoomFactor() * factor, .5, 14);
         const after = this.world(x, y);
         this.center[0] += before[0] - after[0];
         this.center[1] += before[1] - after[1];
@@ -193,22 +209,22 @@ export class IslandMap {
     }
     focus(point: Point, zoom = 3) {
         this.center = point.slice() as Point;
-        this.zoom = Math.max(this.zoom, zoom);
+        this.scale = Math.max(this.scale, zoom * this.referenceScale);
         this.draw();
     }
     focusBounds([left, bottom, right, top]: Box) {
-        const base = this.scale / this.zoom;
+        const base = this.referenceScale;
         this.center = [(left + right) / 2, (bottom + top) / 2];
-        this.zoom = clamp(Math.min(this.width * .80 / (base * Math.max(1, right - left)),
+        this.scale = base * clamp(Math.min(this.width * .80 / (base * Math.max(1, right - left)),
             this.height * .72 / (base * Math.max(1, top - bottom))), .5, 5);
         this.draw();
     }
     focusIssue(issue: Issue) {
         this.clearIssue();
         this.activeIssue = issue;
-        const view = issueView(this.island, issue, this.width, this.height, this.scale / this.zoom);
+        const view = issueView(this.island, issue, this.width, this.height, this.referenceScale);
         this.center = view.center;
-        this.zoom = view.zoom;
+        this.scale = view.zoom * this.referenceScale;
         this.pulseStart = performance.now();
         const animate = () => {
             this.draw();
@@ -244,7 +260,7 @@ export class IslandMap {
         }
     }
     geoHits(p: Point) {
-        return this.island.design.geoNodes.filter(n => !n.disabled && this.island.terrain.regions.get(n.id)?.shape.contains(p)).reverse();
+        return this.island.design.geoNodes.filter(n => (!n.disabled || this.emptyCanvas) && this.island.terrain.regions.get(n.id)?.shape.contains(p)).reverse();
     }
     draw() {
         if (!this.island || !this.width) return;
@@ -303,13 +319,13 @@ export class IslandMap {
             ctx.stroke(p);
         });
         for (const n of d.geoNodes) {
-            if (n.disabled) continue;
-            if (!n.fill && !n.outline && !this.layers.geoNodes) continue;
+            if (n.disabled && !this.emptyCanvas) continue;
+            if (!this.emptyCanvas && !n.fill && !n.outline && !this.layers.geoNodes) continue;
             const paths = regionPaths(t.regions.get(n.id)!, g);
-            if (n.fill) {
+            if (n.fill && !this.emptyCanvas) {
                 ctx.fillStyle = n.fill; ctx.fill(paths.area, "evenodd");
             }
-            if (n.outline || this.layers.geoNodes) {
+            if (this.emptyCanvas || n.outline || this.layers.geoNodes) {
                 ctx.strokeStyle = "#806d50";
                 ctx.lineWidth = .6 / scale;
                 ctx.stroke(paths.outline);
@@ -389,9 +405,9 @@ export class IslandMap {
                 const pos = titlePoint(d, b);
                 return { ...old, name: b.name, building: b.id, point: pos, offset: [pos[0] - b.center[0], pos[1] - b.center[1]] as Point, titleOnly: !old };
             })]) {
-                if (lab.minZoom && this.zoom < lab.minZoom) continue;
+                if (lab.minZoom && this.zoomFactor() < lab.minZoom) continue;
                 const { point, text, difference, actual } = labelReading(this.island, lab);
-                const [x, y] = this.screen(point), size = actual == null ? 12 : (this.zoom >= 2.1 ? 12 : 10);
+                const [x, y] = this.screen(point), size = actual == null ? 12 : (this.zoomFactor() >= 2.1 ? 12 : 10);
                 ctx.save();
                 if (lab.building) {
                     ctx.font = size + "px \"Microsoft YaHei UI\",sans-serif";
@@ -425,7 +441,7 @@ export class IslandMap {
         const unit = [1, 2, 5, 10, 20, 50, 100].filter(n => n * scale <= 86).at(-1) ?? 1;
         document.getElementById("scale-bar")!.style.width = (unit * scale) + "px";
         document.getElementById("scale-text")!.textContent = unit + " m";
-        document.getElementById("zoom-value")!.textContent = Math.round(this.zoom * 100) + "%";
+        document.getElementById("zoom-value")!.textContent = Math.round(this.zoomFactor() * 100) + "%";
     }
     drawOverlays() {
         const ctx = this.ctx,
@@ -491,7 +507,7 @@ export class IslandMap {
                     ctx.restore();
                 }
                 else circle(ctx, x, y, n.type === "junction" ? 5 : 3.8, n.type === "junction" ? ink : paper, ink, 1.6);
-                if (this.zoom >= 2.1 || selected || active ?.kind === "edge" && [this.island.routes.find(r => r.id === active.id) ?.edge.from, this.island.routes.find(r => r.id === active.id) ?.edge.to].includes(h.id)) {
+                if (this.zoomFactor() >= 2.1 || selected || active ?.kind === "edge" && [this.island.routes.find(r => r.id === active.id) ?.edge.from, this.island.routes.find(r => r.id === active.id) ?.edge.to].includes(h.id)) {
                     ctx.font = "600 11px \"Microsoft YaHei UI\", sans-serif";
                     const w = ctx.measureText(n.name).width + 12;
                     let top = y - 23;
@@ -565,7 +581,7 @@ export class IslandMap {
     }
 }
 
-export function labelReading(island: Pick<Island, "design" | "terrain" | "graded">, label: Label): { point: Point; text: string; actual?: number; difference?: string } {
+export function labelReading(island: Pick<IslandView, "design" | "terrain" | "graded">, label: Label): { point: Point; text: string; actual?: number; difference?: string } {
     const d = island.design, b = label.building && d.buildings.find(b => b.id === label.building);
     const anchor = b ? b.center : label.point!;
     const point = b && label.offset ? anchor.map((v, i) => v + label.offset![i]) as Point : anchor;

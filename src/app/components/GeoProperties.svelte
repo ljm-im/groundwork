@@ -1,53 +1,51 @@
 {#snippet param(address: (string | number)[], label: string, kind: "height" | "field" | "number" = "number", optional = false)}
-    <Parameter {editor} node={n} {address} {label} {kind} {optional} />
+    <Parameter {editor} node={n} {address} {label} field={kind === "field"} {optional} />
 {/snippet}
 {#snippet draw(label: string, tool: DrawTool)}
     <button disabled={editor.tool === tool} onclick={() => editor.setTool(tool, n.id)}>{label}</button>
 {/snippet}
-{#snippet vertices(points: { p: Point; h?: Height }[], root: (string | number)[], optional = false)}
-    {#each points as v, i (i)}
-        <div class="vertex-coords">顶点 {i + 1} · {v.p.map(x => +x.toFixed(2)).join(", ")} m</div>
+{#snippet vertices(points: { p: Point; h?: Expression }[], root: (string | number)[], optional = false)}
+    {#each points.keys() as i (i)}
+        {@render param([...root, i, "p", 0], "顶点 " + (i + 1) + " X / m")}
+        {@render param([...root, i, "p", 1], "顶点 " + (i + 1) + " Y / m")}
         {@render param([...root, i, "h"], "顶点 " + (i + 1) + " 高度 / m", "height", optional)}
     {/each}
 {/snippet}
-<label class="field"><strong>名称</strong><input class="wide" aria-label="地件名称" value={n.name} onchange={e => {
-    const value = e.currentTarget.value.trim(); if (value) editor.editNode(n.id, v => v.name = value);
-}} /></label>
+<PropertyTitle name={n.name} label="地件名称" rename={name => editor.editNode(n.id, item => item.name = name)} disabled={!!n.disabled}
+    toggle={() => editor.toggle(n.id)} copy={() => editor.duplicate(n.id)} remove={() => editor.removeGeo(n.id)} />
 <Prompt {editor} target={{ group: "geoNodes", id: n.id }} />
-<label class="field">写入的场<select value={n.field ?? "height"} onchange={e => {
-    const field = e.currentTarget.value; editor.editNode(n.id, v => v.field = field);
-}}>
-    <option value="height">高度</option>
-    {#if fieldFunctions.includes(f.type)}{#each Object.entries(d.fields) as [id, field] (id)}<option value={id}>{field.label ?? id}</option>{/each}{/if}
-</select></label>
-<label class="toggle">启用<input type="checkbox" checked={!n.disabled} onchange={() => editor.toggle(n.id)} /></label>
-<Part title={c.type === "free" ? "自由构造" : "条带构造"}>
-    {#if c.type === "free"}
-        <label class="field">路径<select aria-label="路径" bind:value={editor.pathIndex}>{#each c.paths as path, i (i)}<option value={i}>路径 {i + 1} · {path.nodes.length} 个节点</option>{/each}</select></label>
-        <div class="geo-actions">{@render draw("添加路径", "addPath")}<button disabled={c.paths.length < 2} onclick={removePath}>删除路径</button></div>
-    {:else}
+{#if c.type === "free" && editor.map?.vertex?.role === "vertex" && editor.map.vertex.path >= 0}
+    {@const v = editor.map.vertex}
+    <Part title={"路径节点 " + (v.index + 1)}>
+        {#each ["X", "Y"] as axis, i (axis)}<Parameter {editor} node={n} construction address={["paths", v.path, "nodes", v.index, "p", i]} label={axis + " / m"} />{/each}
+    </Part>
+{/if}
+{#if c.type === "strip"}
+    <Part title="条带构造">
         <div class="geo-actions">沿 {#each c.of as id (id)}<button class="flat" onclick={() => editor.locateGeo(id)}>{nameOf(id)}</button>{/each}</div>
-        {#each c.widths as width, i (i)}
-            <label class="field">{c.of.length === 1 ? ["向内", "向外"][i] : nameOf(c.of[i]!)} / m<input type="number" step="any" min="0" value={width} onchange={e => {
-                const value = e.currentTarget.valueAsNumber; editor.editNode(n.id, v => {
-                    if (v.construction.type === "strip") v.construction.widths[i] = value;
-                });
-            }} /></label>
+        {#each [0, 1] as i (i)}
+            <Parameter {editor} node={n} address={["widths", i]} label={(c.of.length === 1 ? ["向内宽度", "向外宽度"][i] : "“" + nameOf(c.of[i]!) + "”侧宽度") + " / m"} construction />
         {/each}
         <div class="sub">{drawnRange(c)}</div><div class="geo-actions">{@render draw("重新点选", "strip")}
             <button onclick={() => editor.editNode(n.id, v => {
                 if (v.construction.type === "strip") delete v.construction.range;
             })}>取整圈</button></div>
-    {/if}
-</Part>
+    </Part>
+{/if}
 <Part title="函数">
-    <label class="field">类型<select aria-label="函数" value={f.type} onchange={e => editor.switchFunction(n, e.currentTarget.value as GeoFunction["type"])}>
-        {#each allowedFunctions(n) as type (type)}<option value={type}>{type}</option>{/each}
-    </select></label>
+    <PropertySelect label="函数" group="内置函数" icon="function" value={f.type} options={allowedFunctions(n).map(id => ({ id, name: id }))}
+        newLabel="新建函数" choose={id => editor.switchFunction(n, id as GeoFunction["type"])} create={() => editor.message("自定义函数还没有实现")} />
+    <PropertySelect label="输出到" group="场" icon="field" value={n.field ?? "height"} options={[{ id: "height", name: "高度" },
+        ...(fieldFunctions.includes(f.type) ? Object.entries(d.fields).map(([id, field]) => ({ id, name: field.label ?? id })) : [])]}
+        newLabel="新建场" choose={id => editor.editNode(n.id, v => v.field = id)} create={() => editor.edit(d => {
+            const id = addField(d); if (fieldFunctions.includes(f.type)) geoAt(d, n.id).field = id;
+        })} />
     {#if f.type === "flat" || f.type === "ground"}{@render param(["value"], "数值" + (height ? " / m" : ""), "height")}
     {:else if f.type === "coast"}
         {@render param(["roughness"], "海岸粗糙度 / m", "field")}{@render draw("画海岸线", "shore")}
-        {#each f.shore.nodes as v, i (v.id)}<div class="vertex-coords">顶点 {i + 1} · {v.p.map(x => +x.toFixed(2)).join(", ")} m</div>{/each}
+        {#each f.shore.nodes as v, i (v.id)}
+            {@render param(["shore", "nodes", i, "p", 0], "顶点 " + (i + 1) + " X / m")}{@render param(["shore", "nodes", i, "p", 1], "顶点 " + (i + 1) + " Y / m")}
+        {/each}
         {#if f.harbor}
             {@render param(["harbor", "center", 0], "港湾 X / m")}{@render param(["harbor", "center", 1], "港湾 Y / m")}
             {@render param(["harbor", "radius"], "港湾半径 / m")}{@render param(["harbor", "span"], "过渡宽度 / m")}
@@ -62,7 +60,7 @@
         <div class="geo-actions">{@render draw("添加山脊", "ridge")}{@render draw("添加山峰", "peak")}</div>
         {#each f.ridges as ridge, j (j)}
             <Part title={"山脊 " + (j + 1)}>
-                {@render vertices(ridge.line.points, ["ridges", j, "line", "points"])}
+                {@render vertices(ridge.line.points, ["ridges", j, "line", "points"], true)}
                 <label class="toggle">平滑折线<input type="checkbox" checked={!!ridge.line.smooth} onchange={e => {
                     const smooth = e.currentTarget.checked; editor.editNode(n.id, v => {
                         if (v.function.type === "mountain") v.function.ridges[j].line.smooth = smooth;
@@ -78,9 +76,9 @@
                 })}>删除山脊</button>
             </Part>
         {/each}
-        {#each f.peaks as peak, j (j)}
+        {#each f.peaks.keys() as j (j)}
             <Part title={"山峰 " + (j + 1)}>
-                <div class="vertex-coords">{peak.at.p.map(x => +x.toFixed(2)).join(", ")} m</div>
+                {@render param(["peaks", j, "at", "p", 0], "峰顶 X / m")}{@render param(["peaks", j, "at", "p", 1], "峰顶 Y / m")}
                 {@render param(["peaks", j, "at", "h"], "峰顶高度 / m", "height")}{@render param(["peaks", j, "radius"], "半径 / m")}
                 {@render param(["peaks", j, "noise"], "半径起伏")}{@render param(["peaks", j, "scale"], "噪声尺度 / m")}
                 <button class="danger" onclick={() => editor.editNode(n.id, v => {
@@ -126,24 +124,25 @@
         {@render param(["amplitude"], "振幅", "field")}{@render param(["scale"], "噪声尺度 / m")}
         {@render param(["octaves"], "倍频数", "number", true)}{@render param(["feather"], "羽化宽度 / m", "number", true)}
     {:else if f.type === "batter"}{@render param(["grade"], "放坡坡度 / m/m")}{/if}
-    {#if ["coast", "mountain", "cliff", "islets", "erosion", "noise"].includes(f.type)}{@render param(["seed"], "随机种子偏移", "number", true)}{/if}
+    {#if ["coast", "mountain", "cliff", "islets", "erosion", "noise"].includes(f.type)}{@render param(["seed"], "种子", "number", true)}{/if}
 </Part>
 <ObjectProblems {editor} />
-<div class="part"><button class="danger" onclick={() => editor.removeGeo(n.id)}>删除地件</button></div>
+
 
 <style>
     .geo-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; margin: 5px 0; }
-    .vertex-coords { font-size: 11px; color: var(--muted); margin: 8px 0 0; }
 </style>
 
 <script lang="ts">
     import * as session from "../state/session.svelte.ts";
-    import { allowedFunctions, fieldFunctions, rangeUsers } from "../../core/edit/geoNodes.ts";
-    import { type GeoFunction, type Height, type Point } from "../../core/design/v5.ts";
+    import { allowedFunctions, fieldFunctions, addField } from "../../core/edit/geoNodes.ts";
+    import { type GeoFunction, type Expression, type Point } from "../../core/design/v5.ts";
     import { drawnRange, geoAt, type DrawTool } from "../state/geoTools.ts";
     import Part from "./Part.svelte";
     import Prompt from "./Prompt.svelte";
     import ObjectProblems from "./ObjectProblems.svelte";
+    import PropertyTitle from "./PropertyTitle.svelte";
+    import PropertySelect from "./PropertySelect.svelte";
     import Parameter from "./Parameter.svelte";
     let { editor }: { editor: session.Editor } = $props();
     let d = $derived(editor.island.design), n = $derived(geoAt(d, editor.selection!.id)), c = $derived(n.construction), f = $derived(n.function);
@@ -153,16 +152,4 @@
     }
     const erosion = [["droplets", "水滴数"], ["inertia", "惯性"], ["capacity", "携沙能力"], ["minCapacity", "最小携沙量"], ["deposition", "沉积率"],
         ["erosion", "侵蚀率"], ["evaporation", "蒸发率"], ["gravity", "重力"], ["lifetime", "寿命 / 步"], ["radius", "笔刷半径 / 格"]];
-    function removePath() {
-        const i = editor.pathIndex;
-        if (c.type !== "free" || c.paths.length < 2) return;
-        const affected = rangeUsers(d, n.id, c.paths[i].nodes.map(v => v.id));
-        const perform = () => {
-            editor.pathIndex = 0; editor.map.vertex = undefined; editor.editNode(n.id, v => {
-                if (v.construction.type === "free") v.construction.paths.splice(i, 1);
-            });
-        };
-        if (affected.length) editor.removal = { title: "删除路径？", detail: "以下条带将找不到范围节点。", items: affected.map(v => v.name), action: "删除路径", perform };
-        else perform();
-    }
 </script>

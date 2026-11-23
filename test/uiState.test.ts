@@ -17,13 +17,14 @@ test("Map focus, hit radius and the selected inspector issue", fixtureOptions("r
     const { default: Network } = await import("../src/app/components/Network.svelte");
     const selected = baseline.issues.find(i => !!i.road)!;
     const view = Object.assign(Object.create(IslandMap.prototype) as IslandMap, {
-        island: baseline, width: 1000, height: 700, zoom: 1, layers: { issues: true }, draw() { }, clearIssue() {
+        island: baseline.view(), width: 1000, height: 700, layers: { issues: true }, draw() { }, clearIssue() {
             view.activeIssue = null;
         }
     });
     const previousFrame: typeof requestAnimationFrame | undefined = Reflect.get(globalThis, "requestAnimationFrame");
     try {
         globalThis.requestAnimationFrame = () => 1;
+        view.fit(false);
         view.focusIssue(selected);
         assert(distance(view.center, selected.point) < 5);
         const screen = view.screen(selected.point);
@@ -125,11 +126,11 @@ test("Terrain work runs synchronously on a hit and defers cold history steps for
     assert.equal(frames.length, 0);
     await hot;
 
-    editor.island.design.variables.A.value++;
+    editor.island.design.variables.A.value = Number(editor.island.design.variables.A.value) + 1;
     await finishCold(editor.rebuild(), "正在更新地件…", 1);
     await finishCold(editor.navigate(false), "正在更新地件…", 2);
     assert.equal(editor.history.index, 1);
-    editor.island.design.seed++;
+    editor.island.design.variables.seed.value = Number(editor.island.design.variables.seed.value) + 1;
     await finishCold(editor.rebuild(), "正在更新地件…", 1);
     assert.equal(editor.history.index, 2);
     assert.equal(editor.canRedo, false);

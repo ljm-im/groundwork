@@ -89,7 +89,7 @@
         }
         return path;
     }
-    let reading = $derived(station !== undefined && route ? profileReading(route, station, editor.island.terrain, editor.island.graded.heights, editor.island.design.routing.gradeWindow) : undefined);
+    let reading = $derived(station !== undefined && route ? profileReading(route, station, editor.island.terrain, editor.island.graded.heights, editor.island.resolved.routing.gradeWindow) : undefined);
     function hover(e: PointerEvent) {
         station = (e.clientX - (e.currentTarget as HTMLElement).getBoundingClientRect().left - left) / sx;
         editor.map.profilePoint = reading?.point; editor.map.draw();

@@ -5,8 +5,8 @@
         {#if !row.node}
             <div class="viewport-row" class:insert-before={mark === row.key + "-before"} class:insert-after={mark === row.key + "-after"} role="group" aria-label="视口"
                 draggable="true" ondragstart={e => start(e, null)} ondragend={clear} ondragover={e => over(e, row.key)} ondrop={e => drop(e, row.key)}>
-                <Icon name="eye" /><span>{anchor ? "视口：显示到「" + anchor.name + "」，上方 " + hiddenCount + " 个地件未显示" : "视口"}</span>
-                {#if anchor}<button class="flat" onclick={() => editor.showThrough(null)}>回到顶部</button>{/if}
+                <Icon name="eye" /><span>{anchor ? "视口 · 上方 " + hiddenCount + " 个未显示" : "视口"}</span>
+                {#if anchor}<button class="flat" title="视口回到顶部" aria-label="视口回到顶部" onclick={() => editor.showThrough(null)}><Icon name="up" /></button>{/if}
             </div>
         {:else}
             {@const n = row.node}
@@ -23,11 +23,11 @@
                     }}>
                     <span class="geo-name">{n.name}</span>
                     {#if problems.includes(n.id)}<span class="danger" title="结构错误"><Icon name="issues" /></span>{/if}
-                    <small>{n.function.type}{#if n.function.type === "flat"} = {typeof n.function.value === "number" ? n.function.value : d.variables[n.function.value.var]?.label ?? n.function.value.var}{/if}</small>
-                    {#if c.type === "strip"}<span class="along">沿 {c.of.map(id => d.geoNodes.find(n => n.id === id)?.name ?? id).join("·")}</span>{/if}
-                    {#if n.field && n.field !== "height"}<span class="badge">{d.fields[n.field]?.label ?? n.field}</span>{/if}
+                    <small>{n.function.type}{#if n.function.type === "flat"} = {displayExpression(n.function.value, d)}{/if}</small>
+                    {#if c.type === "strip"}<span class="along">沿 {c.of.map(id => "“" + (d.geoNodes.find(n => n.id === id)?.name ?? id) + "”").join("、")}</span>{/if}
+                    {#if n.field && n.field !== "height"}<span class="badge"><Icon name="field" />{d.fields[n.field]?.label ?? n.field}</span>{/if}
                 </button>
-                <input type="checkbox" aria-label={"启用" + n.name} title={"启用" + n.name} checked={!n.disabled} onchange={() => editor.toggle(n.id)} />
+                <input type="checkbox" aria-label={(n.disabled ? "启用“" : "禁用“") + n.name + "”"} title={(n.disabled ? "启用“" : "禁用“") + n.name + "”"} checked={!n.disabled} onchange={() => editor.toggle(n.id)} />
             </div>
         {/if}
     {/each}
@@ -57,17 +57,18 @@
 <script lang="ts">
     import { onDestroy } from "svelte";
     import * as session from "../state/session.svelte.ts";
+    import { displayExpression } from "../state/numbers.ts";
     import { reorderGeo } from "../../core/edit/geoNodes.ts";
     import { type GeoNode } from "../../core/design/v5.ts";
     import Icon from "./Icon.svelte";
     import Search from "./Search.svelte";
     let { editor }: { editor: session.Editor } = $props();
     let d = $derived(editor.island.design), stack = $derived(d.geoNodes.toReversed());
-    let anchor = $derived(stack.find(n => n.id === editor.viewport)), hiddenCount = $derived(anchor ? stack.indexOf(anchor) : 0);
+    let anchor = $derived(stack.find(n => n.id === editor.viewport)), hiddenCount = $derived(anchor ? stack.indexOf(anchor) + 1 : 0);
     let problems = $derived(editor.island.issues.filter(i => i.kind === "geo-reference").map(i => i.geoNode));
     let order = $derived.by(() => {
         const result: { key: string; node?: GeoNode }[] = stack.map(n => ({ key: "n:" + n.id, node: n }));
-        result.splice(anchor ? hiddenCount + 1 : 0, 0, { key: "viewport" });
+        result.splice(hiddenCount, 0, { key: "viewport" });
         return result;
     });
     let rows = $derived(order.filter(r => !r.node || [r.node.name, r.node.function.type, r.node.id, d.fields[r.node.field ?? ""]?.label].some(x => x?.toLowerCase().includes(editor.terrainFilter.trim().toLowerCase()))));

@@ -20,7 +20,7 @@
         <output id="zoom-value">100%</output>
         <button id="plus" aria-label="放大" title="放大" onclick={() => editor.island && editor.map.zoomAt(1.4)}><Icon name="plus" /></button>
         <i class="divider"></i>
-        <button id="fit" aria-label="全岛视图" title="全岛视图" onclick={() => editor.island && editor.map.fit()}><Icon name="fit" /></button>
+        <button id="fit" aria-label="全图视图" title="全图视图" onclick={() => editor.island && editor.map.fit()}><Icon name="fit" /></button>
     </div>
     <div class="coords"><span id="mode-hint">{editor.hint}</span><span id="position" class="mono">{editor.position}</span></div>
     {#if editor.hint === "先选中一个或两个地件"}<div class="tool-help">{editor.hint}</div>{/if}
