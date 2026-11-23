@@ -140,13 +140,35 @@ export function createGrid(spec: GridSpec) {
 export function sample(grid: Grid, field: ArrayLike<number>, px: number, py: number) {
     const fx = clamp((px - grid.xMin) / grid.step - .5, 0, grid.width - 1);
     const fy = clamp((grid.yMax - py) / grid.step - .5, 0, grid.height - 1);
-    const i = Math.min(grid.width - 2, Math.floor(fx)),
-        j = Math.min(grid.height - 2, Math.floor(fy));
-    const ax = fx - i,
-        ay = fy - j,
-        k = j * grid.width + i;
-    return (field[k] * (1 - ax) + field[k + 1] * ax) * (1 - ay) +
-    (field[k + grid.width] * (1 - ax) + field[k + grid.width + 1] * ax) * ay;
+    const i = Math.floor(fx), j = Math.floor(fy), k = j * grid.width + i;
+    const right = i + 1 < grid.width ? 1 : 0, down = j + 1 < grid.height ? grid.width : 0;
+    const ax = fx - i, ay = fy - j;
+    return (field[k] * (1 - ax) + field[k + right] * ax) * (1 - ay) +
+        (field[k + down] * (1 - ax) + field[k + down + right] * ax) * ay;
+}
+
+export function onCanvas(grid: Grid, mask: Uint8Array, x: number, y: number) {
+    return x >= grid.xMin && x < grid.xMax && y > grid.yMin && y <= grid.yMax && !!mask[grid.index(x, y)];
+}
+
+// Exclude missing neighbours from interpolation. At a zero-width strip edge only
+// centres on the requested side contribute, so a hard step retains its authored value.
+export function sampleDefined(grid: Grid, field: Float32Array, mask: Uint8Array, x: number, y: number,
+    side?: (p: Point) => boolean): number | undefined {
+    if (!onCanvas(grid, mask, x, y)) return undefined;
+    const fx = clamp((x - grid.xMin) / grid.step - .5, 0, grid.width - 1);
+    const fy = clamp((grid.yMax - y) / grid.step - .5, 0, grid.height - 1);
+    const i = Math.floor(fx), j = Math.floor(fy);
+    let sum = 0, weight = 0;
+    for (let row = j; row <= Math.min(j + 1, grid.height - 1); row++) {
+        for (let col = i; col <= Math.min(i + 1, grid.width - 1); col++) {
+            const k = row * grid.width + col, w = (1 - Math.abs(fx - col)) * (1 - Math.abs(fy - row));
+            if (w > 0 && mask[k] && (!side || side([grid.x(col), grid.y(row)]))) {
+                sum += w * field[k]; weight += w;
+            }
+        }
+    }
+    return weight ? sum / weight : undefined;
 }
 
 export function eachCell(grid: Grid, box: Box, margin: number, visit: (index: number, x: number, y: number) => void) {

@@ -3,14 +3,8 @@ import { bounds, clamp, createGrid, distance, eachCell, mixPoint, projection, ty
 import { insidePolygon } from "../math/polygon.ts";
 import { flattenPath, type Segment } from "./path.ts";
 
-export interface CrossSection { s: number; first: boolean; at: Point; normal: Point }
-export interface RegionShape {
-    box: Box;
-    contains: (p: Point) => boolean;
-    boundary: () => Segment[][];
-    cross?: (p: Point) => CrossSection | undefined;
-}
-export interface Region { shape: RegionShape; cells: number[]; mask: Uint8Array }
+import { type CrossSection, type Region, type RegionShape } from "../design/regions.ts";
+
 export const intersects = (a: Box, b: Box) => a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1];
 const expand = (b: Box, w: number): Box => [b[0] - w, b[1] - w, b[2] + w, b[3] + w];
 

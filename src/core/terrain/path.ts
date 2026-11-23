@@ -1,7 +1,8 @@
 import { type Path, type Point } from "../design/v5.ts";
 import { distance, mixPoint, projection } from "../math/geometry.ts";
 
-export interface Segment { a: Point; b: Point; from?: string }
+import { type Segment } from "../design/regions.ts";
+export { type Segment } from "../design/regions.ts";
 
 function flattenCurve(a: Point, b: Point, c: Point, d: Point, tolerance: number, out: Point[]) {
     const gap = (p: Point) => distance(p, mixPoint(a, d, projection(...p, a, d)));

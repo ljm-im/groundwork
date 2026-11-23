@@ -2,11 +2,10 @@ import { type Erosion } from "../design/types.ts";
 import { type Grid } from "../math/geometry.ts";
 import { random } from "../math/noise.ts";
 
-export function erode(grid: Grid, land: Uint8Array, surface: Float32Array, config: Erosion, seed: number) {
+export function erode(grid: Grid, eligible: Uint8Array, surface: Float32Array, config: Erosion, seed: number) {
     const { width, height, size, step } = grid;
     const scaled = Float32Array.from(surface, h => h / 30);
-    const flow = new Float32Array(size),
-        delta = new Float32Array(size);
+    const delta = new Float32Array(size);
     const radius = config.radius / step,
         rim = Math.ceil(radius) + 1,
         offsets = [],
@@ -22,6 +21,8 @@ export function erode(grid: Grid, land: Uint8Array, surface: Float32Array, confi
             }
         }
     for (let i = 0; i < weights.length; i++) weights[i] /= sum;
+    if (width <= 2 * rim || height <= 2 * rim) return delta;
+    const supported = (k: number) => eligible[k] && eligible[k + 1] && eligible[k + width] && eligible[k + width + 1];
     const next = random(seed + 7),
         lifetime = Math.ceil(config.lifetime / step);
     const { inertia, capacity, minCapacity, deposition, erosion, evaporation, gravity } = config;
@@ -43,7 +44,7 @@ export function erode(grid: Grid, land: Uint8Array, surface: Float32Array, confi
                 b = scaled[k + 1],
                 c = scaled[k + width],
                 d = scaled[k + width + 1];
-            if (a < .012 || !land[k]) break;
+            if (!supported(k)) break;
             const gx = (b - a) * (1 - fy) + (d - c) * fy,
                 gy = (c - a) * (1 - fx) + (d - b) * fx;
             const old = a * (1 - fx) * (1 - fy) + b * fx * (1 - fy) + c * (1 - fx) * fy + d * fx * fy;
@@ -56,10 +57,10 @@ export function erode(grid: Grid, land: Uint8Array, surface: Float32Array, confi
             x += dx;
             y += dy;
             if (x < rim || y < rim || x >= width - rim || y >= height - rim) break;
-            flow[k] += water;
             const j = Math.floor(y) * width + Math.floor(x),
                 ax = x % 1,
                 ay = y % 1;
+            if (!supported(j)) break;
             const dh = scaled[j] * (1 - ax) * (1 - ay) + scaled[j + 1] * ax * (1 - ay) +
         scaled[j + width] * (1 - ax) * ay + scaled[j + width + 1] * ax * ay - old;
             const cap = Math.max(-dh * speed * water * capacity, minCapacity);
@@ -74,8 +75,9 @@ export function erode(grid: Grid, land: Uint8Array, surface: Float32Array, confi
             else {
                 const amount = Math.min((cap - sediment) * erosion, -dh);
                 for (let i = 0; i < offsets.length; i++) {
-                    const cell = k + offsets[i],
-                        taken = Math.min(scaled[cell], amount * weights[i]);
+                    const cell = k + offsets[i];
+                    if (!eligible[cell]) continue;
+                    const taken = amount * weights[i];
                     scaled[cell] -= taken;
                     sediment += taken;
                 }
@@ -85,6 +87,6 @@ export function erode(grid: Grid, land: Uint8Array, surface: Float32Array, confi
         }
     }
     for (let k = 0; k < size; k++)
-        if (land[k] && surface[k] > 0) delta[k] = Math.max(-7, Math.min(3, scaled[k] * 30 - surface[k]));
-    return { flow, delta };
+        if (eligible[k]) delta[k] = Math.max(-7, Math.min(3, scaled[k] * 30 - surface[k]));
+    return delta;
 }
