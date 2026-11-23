@@ -65,7 +65,7 @@ export function corners(b: Building): Point[] {
     ].map(([x, y]) => [b.center[0] + x * c - y * s, b.center[1] + x * s + y * c]);
 }
 
-export function buildingShape(b: Building) {
+export function buildingShape<B extends Building>(b: B) {
     const polygon = b.shape === "rect" ? corners(b) : null;
     const [x, y] = b.center, r = b.radius!;
     const box: Box = polygon ? bounds(polygon) : [x - r, y - r, x + r, y + r];
@@ -97,6 +97,10 @@ function attachedPose(design: Pick<Design, "zones" | "yards" | "buildings">, nod
         const area = design.yards!.find(y => y.id === node.yard)!;
         return gatePose(areaBoundary(design, area), node.at!);
     }
+    return doorPose(design, node);
+}
+
+export function doorPose(design: Pick<Design, "buildings">, node: Pick<NodeAnchor, "type" | "point" | "building" | "door">): Pose {
     if (node.type !== "door") return { point: node.point!, angle: null };
     const b = design.buildings.find(b => b.id === node.building)!,
         door = b.doors.find(d => d.id === node.door)!;
@@ -120,6 +124,10 @@ export function moveNode(design: Design, node: NodeAnchor, p: Point) {
         node.at = gateFraction(areaBoundary(design, design.yards!.find(y => y.id === node.yard)!), p);
         return;
     }
+    moveDoorOrPoint(design, node, p);
+}
+
+export function moveDoorOrPoint(design: Pick<Design, "buildings">, node: Pick<NodeAnchor, "type" | "point" | "building" | "door">, p: Point) {
     if (node.type !== "door") {
         node.point = p;
         return;

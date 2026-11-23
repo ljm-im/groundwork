@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
-const source = fileURLToPath(new URL("../src/core/design/types.ts", import.meta.url));
+const source = fileURLToPath(new URL("../src/core/design/v5.ts", import.meta.url));
 const program = ts.createProgram([source], { strict: true, noEmit: true, skipLibCheck: true });
 const checker = program.getTypeChecker();
 const schema = program.getSourceFile(source)!;
@@ -39,7 +39,7 @@ function check(value: unknown, type: ts.Type, path: string): string | undefined 
         }
         return;
     }
-    if (value && typeof value === "object" && !Array.isArray(value) && type.flags & ts.TypeFlags.Object) {
+    if (value && typeof value === "object" && !Array.isArray(value) && (type.flags & ts.TypeFlags.Object || type.isIntersection())) {
         const index = checker.getIndexTypeOfType(type, ts.IndexKind.String);
         for (const [name, item] of Object.entries(value)) {
             const child = path + "." + name, property = checker.getPropertyOfType(type, name);
