@@ -3,15 +3,9 @@ import { type Terrain, type Tree } from "../core/design/results.ts";
 import { type IslandView } from "../core/island.ts";
 import { clamp, gradient, smooth } from "../core/math/geometry.ts";
 
-const colors = [
-    [0, 226, 231, 200],
-    [4, 204, 221, 168],
-    [8, 182, 209, 146],
-    [13, 160, 192, 124],
-    [18, 190, 183, 138],
-    [24, 176, 158, 122],
-    [32, 154, 134, 104]
-];
+import { baseMap } from "./palette.ts";
+
+const colors = baseMap.elevation;
 const palette = Array.from({ length: 641 }, (_, i) => {
     const h = i / 20,
         j = colors.findIndex(row => row[0] >= h);
@@ -95,9 +89,8 @@ export function relief(island: IslandView) {
                 }
                 if (v < 0) {
                     const depth = clamp(-t.shore[k] * .09 / 5);
-                    data[at] = 186 - 36 * depth;
-                    data[at + 1] = 221 - 26 * depth;
-                    data[at + 2] = 230 - 18 * depth;
+                    for (let channel = 0; channel < 3; channel++)
+                        data[at + channel] = baseMap.waterShallow[channel] - baseMap.waterDepthDelta[channel] * depth;
                 }
                 else {
                     const [dx, dy] = gradient(grid, h, t.defined, k), slope = Math.hypot(dx, dy);
@@ -107,9 +100,8 @@ export function relief(island: IslandView) {
                         ny = -dy * 1.7;
                     const light = clamp(.45 + .6 * (-nx * .5 + ny * .5 + .7) / Math.sqrt((nx * nx + ny * ny + 1) * .99), .6, 1.13);
                     const base = palette[clamp(Math.round(v * 20), 0, 640)];
-                    data[at] = ((base[0] * (1 - rockMix) + 163 * rockMix) * (1 - sand) + 232 * sand) * light;
-                    data[at + 1] = ((base[1] * (1 - rockMix) + 157 * rockMix) * (1 - sand) + 222 * sand) * light;
-                    data[at + 2] = ((base[2] * (1 - rockMix) + 143 * rockMix) * (1 - sand) + 190 * sand) * light;
+                    for (let channel = 0; channel < 3; channel++)
+                        data[at + channel] = ((base[channel] * (1 - rockMix) + baseMap.rock[channel] * rockMix) * (1 - sand) + baseMap.sand[channel] * sand) * light;
                 }
                 data[at + 3] = 255;
             }

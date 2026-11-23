@@ -1,117 +1,35 @@
-<header>
+<header class="topbar">
     <img class="brand" src="./groundwork.svg" alt="">
     <h1>Groundwork</h1>
     <div class="file-info">
         {#if editor.island}<i id="dirty-dot" class="dot" class:dirty={editor.saveState === "未保存"} class:saving={editor.saveState === "正在保存"} class:failed={editor.saveState === "保存失败"}></i>{/if}
-        <span class="mono" id="filename" data-tip={editor.filename}>{editor.filename}</span>
+        <span id="filename" data-tip={editor.filename}>{editor.filename}</span>
         {#if editor.island}<span class="saved-text" id="save-state" aria-live="polite">{editor.saveState}</span>{/if}
     </div>
     <div class="header-actions">
-        <button class="icon flat" id="undo" data-tip="撤销" aria-label="撤销" disabled={!editor.canUndo} onclick={() => editor.navigate(false)}><Icon name="undo" /></button>
-        <button class="icon flat" id="redo" data-tip="重做" aria-label="重做" disabled={!editor.canRedo} onclick={() => editor.navigate(true)}><Icon name="redo" /></button>
-        <i class="divider"></i>
-        <button id="new" class="flat" disabled={unavailable} onclick={() => editor.files.choose("new")}><Icon name="new" />新建</button>
-        <button id="open" class="flat" disabled={unavailable} onclick={() => editor.files.choose("open")}><Icon name="open" />打开</button>
+        <button class="icon-button" id="undo" data-tip="撤销" aria-label="撤销" disabled={!editor.canUndo} onclick={() => editor.navigate(false)}><Icon name="undo" /></button>
+        <button class="icon-button" id="redo" data-tip="重做" aria-label="重做" disabled={!editor.canRedo} onclick={() => editor.navigate(true)}><Icon name="redo" /></button>
+        <button id="new" disabled={unavailable} onclick={() => editor.files.choose("new")}><Icon name="new" />新建</button>
+        <button id="open" disabled={unavailable} onclick={() => editor.files.choose("open")}><Icon name="open" />打开</button>
         <button id="save" class="primary" disabled={unavailable || !editor.island} onclick={() => editor.files.save()}><Icon name="save" />保存</button>
     </div>
 </header>
 
 <style>
-    :global {
-        header {
-            height: 63px;
-            display: flex;
-            align-items: center;
-            gap: 15px;
-            padding: 0 21px;
-            border-bottom: 1px solid var(--line);
-            background: var(--paper);
-        }
-        .brand {
-            width: 34px;
-            height: 34px;
-            flex: none;
-        }
-        h1 {
-            font-size: 18px;
-            letter-spacing: .035em;
-            font-weight: 650;
-            margin: 0;
-        }
-        .file-info {
-            border-left: 1px solid var(--line);
-            padding-left: 16px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            color: var(--muted);
-            font-size: 12px;
-        }
-        .dot {
-            width: 7px;
-            height: 7px;
-            background: #6a9074;
-            border-radius: 50%;
-            display: inline-block;
-        }
-        .dot.dirty {
-            background: #ba853b;
-        }
-        .dot.saving {
-            background: var(--teal);
-        }
-        .dot.failed {
-            background: var(--red);
-        }
-        #filename {
-            max-width: 28vw;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-        .header-actions {
-            margin-left: auto;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-        @media (max-width:900px) {
-            header {
-                gap: 9px;
-                padding: 0 12px;
-            }
-        }
-        @media (max-width:680px) {
-            header {
-                height: auto;
-                min-height: 57px;
-                flex-wrap: wrap;
-                padding: 8px;
-                gap: 6px;
-            }
-            h1 {
-                font-size: 15px;
-            }
-            .brand {
-                width: 27px;
-                height: 27px;
-            }
-            .file-info {
-                border: 0;
-                padding: 0;
-            }
-            .header-actions {
-                gap: 1px;
-            }
-            .header-actions button {
-                min-height: 28px;
-                padding: 3px 5px;
-                font-size: 12px;
-            }
-            .header-actions .divider {
-                display: none;
-            }
-        }
+    .topbar { height: var(--topbar-h); display: flex; align-items: center; gap: var(--space-3); padding: 0 var(--space-4); background: var(--bg-sunken); }
+    .brand { width: var(--icon-button); height: var(--icon-button); flex: none; }
+    .file-info { min-width: 0; display: flex; align-items: center; gap: var(--space-2); color: var(--text-secondary); font-size: var(--text-sm); }
+    .dot { width: 6px; height: 6px; background: var(--accent); border-radius: var(--radius-round); display: inline-block; flex: none; }
+    .dot.dirty { background: var(--warning); }
+    .dot.saving { background: var(--text-secondary); }
+    .dot.failed { background: var(--danger); }
+    #filename { max-width: 28vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .saved-text { white-space: nowrap; }
+    .header-actions { margin-left: auto; display: flex; align-items: center; gap: var(--space-1); }
+    @media (max-width: 680px) {
+        .topbar { gap: var(--space-1); padding-inline: var(--space-2); }
+        .file-info { gap: var(--space-1); }
+        #filename { max-width: 15vw; }
     }
 </style>
 

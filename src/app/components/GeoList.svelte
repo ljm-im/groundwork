@@ -1,18 +1,17 @@
-<h2>地件</h2>
 <Search id="terrain-search" label="查找地件" bind:value={editor.terrainFilter} />
 <div class="geo-stack">
     {#each rows as row (row.key)}
         {#if !row.node}
-            <div class="viewport-row" class:insert-before={mark === row.key + "-before"} class:insert-after={mark === row.key + "-after"} role="group" data-stack-row={row.key} aria-label="视口"
+            <div class="viewport-row list-row" class:insert-before={mark === row.key + "-before"} class:insert-after={mark === row.key + "-after"} role="group" data-stack-row={row.key} aria-label="视口"
                 draggable="true" ondragstart={e => start(e, null)} ondragend={clear}>
                 <Icon name="eye" /><span>{anchor ? "视口：上方 " + hiddenCount + " 个未显示" : "视口"}</span>
-                {#if anchor}<button class="flat icon" data-tip="回到顶部" aria-label="回到顶部" onclick={() => editor.showThrough(null)}><Icon name="up" /></button>{/if}
+                {#if anchor}<button class="icon-button" data-tip="回到顶部" aria-label="回到顶部" onclick={() => editor.showThrough(null)}><Icon name="up" /></button>{/if}
             </div>
         {:else}
             {@const n = row.node}
             {@const c = n.construction}
             <div class="geo-row" role="group" data-stack-row={row.key} aria-label={n.label} draggable="true" class:disabled={n.disabled} class:outside={anchor && stack.indexOf(n) < hiddenCount}
-                class:referenced={editor.hoverRefs.includes(n.id)} class:selected={editor.geoSelection.includes(n.id)} class:strip={c.type === "strip"}
+                class:referenced={editor.hoverRefs.includes(n.id)} class:selected={editor.geoSelection.includes(n.id)}
                 class:insert-before={mark === row.key + "-before"} class:insert-after={mark === row.key + "-after"}
                 ondragstart={e => start(e, n.id)} ondragend={clear}
                 onmouseenter={() => editor.hover(c.type === "strip" ? [...c.of] : [])} onmouseleave={() => editor.hover([])}>
@@ -21,11 +20,11 @@
                     oncontextmenu={e => {
                         e.preventDefault(); editor.select({ kind: "geoNode", id: n.id }); editor.menu = { x: e.clientX, y: e.clientY };
                     }}>
-                    <span class="geo-name">{n.label}</span>
-                    {#if problems.includes(n.id)}<span class="danger" data-tip="结构错误"><Icon name="issues" /></span>{/if}
-                    <small>{n.function.type}{#if n.function.type === "flat"}<span class="flat-amount" use:flagOverflow>{flatAmount(n.function.amount ?? functionDefaults.flat.amount)}</span>{/if}</small>
-                    {#if c.type === "strip"}<span class="along">沿 {c.of.map(id => "“" + (d.geoNodes.find(n => n.id === id)?.label ?? id) + "”").join("、")}</span>{/if}
-                    {#if n.field && n.field !== "height"}<span class="badge"><Icon name="field" />{d.fields[n.field]?.label ?? n.field}</span>{/if}
+                    <Icon name="terrain" /><span class="geo-name">{n.label}</span>
+                    {#if problems.includes(n.id)}<span class="issue-error" data-tip="结构错误"><Icon name="issues" /></span>{/if}
+                    <small class="list-detail"><Icon name="function" />{n.function.type}{#if n.function.type === "flat"}<span class="flat-amount" use:flagOverflow>{flatAmount(n.function.amount ?? functionDefaults.flat.amount)}</span>{/if}</small>
+                    {#if c.type === "strip"}<small class="along">沿 {c.of.map(id => "“" + (d.geoNodes.find(n => n.id === id)?.label ?? id) + "”").join("、")}</small>{/if}
+                    {#if n.field && n.field !== "height"}<small class="field-detail"><Icon name="field" />{d.fields[n.field]?.label ?? n.field}</small>{/if}
                 </button>
             </div>
         {/if}
@@ -33,24 +32,22 @@
 </div>
 
 <style>
-    .geo-stack { margin-top: 5px; }
-    .viewport-row, .geo-row { position: relative; display: flex; align-items: center; gap: 5px; min-height: 32px; background: var(--panel); }
-    .viewport-row { font-size: 12px; color: var(--teal); cursor: grab; }
-    .viewport-row button { margin-left: auto; width: 32px; height: 32px; }
-    .geo-row .object-row { min-height: 32px; flex: 1; min-width: 0; border: 0; gap: 5px; flex-wrap: wrap; padding-block: 5px; font-size: 12px; }
-    .geo-row .object-row small { display: flex; gap: 3px; font-size: 10px; flex: 1 0 45px; min-width: 0; }
-    .flat-amount { overflow: hidden; }
+    .geo-stack { margin-top: var(--space-1); }
+    .viewport-row, .geo-row { position: relative; min-height: var(--row-h); }
+    .viewport-row { cursor: grab; }
+    .viewport-row button { margin-left: auto; }
+    .geo-row .object-row { min-width: 0; padding-block: var(--space-1); background: transparent; }
+    .geo-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .geo-row .list-detail { display: flex; justify-content: flex-end; gap: var(--space-1); overflow: hidden; }
+    .field-detail { display: flex; align-items: center; gap: var(--space-1); white-space: nowrap; }
+    .flat-amount, .along { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .flat-amount:global([data-overflow]) { visibility: hidden; }
-    .viewport-row:hover, .geo-row:hover { background: #edf2eb; }
-    .geo-row.strip::before { content: ""; position: absolute; inset: 5px auto 5px 1px; border-left: 2px dashed #7e927e; }
-    .along { font-size: 10px; color: var(--muted); }
-    .selected { background: var(--light); }
-    .referenced { outline: 1px solid #bc752e; outline-offset: -1px; }
-    .disabled { opacity: .5; }
-    .disabled .geo-name, .disabled small { text-decoration: line-through; }
-    .outside { background: repeating-linear-gradient(-45deg, #e8e0bf66 0 2px, transparent 2px 7px); color: #7c7356; }
-    .geo-row.outside .object-row { background: transparent; }
-    .insert-before::after, .insert-after::after { content: ""; position: absolute; left: 0; right: 0; height: 2px; background: var(--teal); pointer-events: none; z-index: 1; }
+    .geo-row:hover, .geo-row.outside:hover { background-color: var(--bg-hover); }
+    .geo-row.selected, .geo-row.outside.selected { background-color: var(--bg-selected); }
+    .referenced { box-shadow: inset 0 0 0 1px var(--warning); }
+    .disabled :is(.geo-name, small) { color: var(--text-disabled); text-decoration: line-through; }
+    .outside { background: repeating-linear-gradient(45deg, var(--border) 0 1px, transparent 1px var(--stripe-step)) var(--bg-sunken); }
+    .insert-before::after, .insert-after::after { content: ""; position: absolute; inset: auto 0; height: 2px; background: var(--accent); pointer-events: none; }
     .insert-before::after { top: 0; }
     .insert-after::after { bottom: 0; }
 </style>
@@ -58,7 +55,7 @@
 <script lang="ts">
     import { onDestroy, onMount } from "svelte";
     import * as session from "../state/session.svelte.ts";
-    import { displayExpression, flagOverflow } from "../state/numbers.ts";
+    import { displayExpression, displayNumber, flagOverflow } from "../state/numbers.ts";
     import { functionDefaults } from "../../core/design/defaults.ts";
     import { reorderGeo } from "../../core/edit/geoNodes.ts";
     import { type Expression, type GeoNode } from "../../core/design/v5.ts";
@@ -78,7 +75,8 @@
     let dragged: string | null | undefined;
     let insertion: { index: number; viewport: string | null; at: number } | undefined;
     function flatAmount(value: Expression) {
-        return typeof value === "number" && value < 0 ? "−" + Math.abs(value) : "+" + displayExpression(value, d);
+        if (typeof value === "number") return (value < 0 ? "" : "+") + displayNumber(value, .1);
+        return "+" + displayExpression(value, d);
     }
     const mime = "application/x-groundwork-stack";
     function start(e: DragEvent, id: string | null) {

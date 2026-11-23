@@ -1,4 +1,4 @@
-<Part title="选线参数">
+<Part title="选线">
     {#each settings as [key, label, unit] (key)}
         <NumberInput {editor} {label} unit={unit.replace(" / ", "")} address={["routing", key]}
             step={["relaxPasses", "profilePasses", "profileRadius"].includes(key) ? 1 : .1} />

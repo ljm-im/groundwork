@@ -1,11 +1,13 @@
 {#each issues as issue (issue)}
     <button class="issue-row" class:is-selected={editor.issue === issue} data-issue={editor.island.issues.indexOf(issue)} onclick={() => editor.issueAt(issue)}>
-        <i class={"diamond " + issue.severity}></i><span><b>{issue.label ?? editor.island.routes.find(r => r.id === issue.road)?.edge.label ?? issue.road}</b><small>{issue.message}</small></span>
+        <span class={issue.severity === "error" ? "issue-error" : "issue-notice"}><Icon name="issues" /></span>
+        <span><b>{issue.label ?? editor.island.routes.find(r => r.id === issue.road)?.edge.label ?? issue.road}</b><small>{issue.message}</small></span>
     </button>
 {/each}
 
 <script lang="ts">
     import * as session from "../state/session.svelte.ts";
     import { type Issue } from "../types.ts";
+    import Icon from "./Icon.svelte";
     let { editor, issues }: { editor: session.Editor; issues: Issue[] } = $props();
 </script>

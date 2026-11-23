@@ -5,235 +5,109 @@
         <div class="empty-state">
             <div>{editor.files.supported ? "新建可从示例开始，也可以打开已有的设计文件。" : "需要 Chrome 或 Edge"}</div>
             <div class="empty-actions">
-                <button class="primary" disabled={!editor.files.supported || !!editor.busy || !!editor.draft} onclick={() => editor.files.choose("new")}><Icon name="new" />新建</button>
+                <button disabled={!editor.files.supported || !!editor.busy || !!editor.draft} onclick={() => editor.files.choose("new")}><Icon name="new" />新建</button>
                 <button disabled={!editor.files.supported || !!editor.busy || !!editor.draft} onclick={() => editor.files.choose("open")}><Icon name="open" />打开</button>
             </div>
         </div>
     {/if}
-    <div class="legend"><span><i class="key"></i>建筑门</span><span><i class="key junction"></i>路口</span><span><i
-        class="key via"></i>途经点</span><span><i class="key issue"></i>校验</span><span class="tree-key"><i class="forest"></i>林木</span><span class="tree-key"><i class="avenue"></i>行道树</span><span class="tree-key"><i class="small"></i>小乔木</span><span class="tree-key"><i class="shrub"></i>灌木</span></div>
-    <div class="zoom-tools">
-        <button id="minus" aria-label="缩小" data-tip="缩小" onclick={() => editor.island && editor.map.zoomAt(1 / 1.4)}><Icon name="minus" /></button>
-        <output id="zoom-value">100%</output>
-        <button id="plus" aria-label="放大" data-tip="放大" onclick={() => editor.island && editor.map.zoomAt(1.4)}><Icon name="plus" /></button>
-        <i class="divider"></i>
-        <button id="fit" aria-label="全图视图" data-tip="全图视图" onclick={() => editor.island && editor.map.fit()}><Icon name="fit" /></button>
+    <div class="legend">
+        <span><Icon name="door" />建筑门</span><span><Icon name="node" />路口</span>
+        <span><Icon name="via" />途经点</span><span class="issue-error"><Icon name="issues" />校验</span>
+        {#each treeLegend as [species, label] (species)}
+            <span class={"tree-key " + species}><i></i>{label}</span>
+        {/each}
     </div>
-    <div class="coords"><span id="busy" role="status" hidden={!editor.busy}>{editor.busy ?? ""}</span><span id="mode-hint" hidden={!!editor.busy}>{editor.hint}</span><span id="position" class="mono">{editor.position}</span></div>
+    <div class="zoom-tools">
+        <button class="icon-button" id="minus" aria-label="缩小" data-tip="缩小" onclick={() => editor.island && editor.map.zoomAt(1 / 1.4)}><Icon name="minus" /></button>
+        <output id="zoom-value">100%</output>
+        <button class="icon-button" id="plus" aria-label="放大" data-tip="放大" onclick={() => editor.island && editor.map.zoomAt(1.4)}><Icon name="plus" /></button>
+        <button class="icon-button" id="fit" aria-label="全图视图" data-tip="全图视图" onclick={() => editor.island && editor.map.fit()}><Icon name="fit" /></button>
+    </div>
+    <div class="coords"><span id="busy" role="status" hidden={!editor.busy}>{busyText}</span><span id="mode-hint">{editor.hint}</span><span id="position">{editor.position}</span></div>
     {#if editor.hint === "先选中一个或两个地件"}<div class="tool-help">{editor.hint}</div>{/if}
     <Messages {editor} />
 </section>
 
 <style>
     :global {
-        .tool-help { position: absolute; top: 228px; left: 12px; background: var(--panel); color: var(--ink); padding: 4px 8px; border-radius: 4px; font-size: 12px; }
-        .map-wrap {
-            position: relative;
-            background: #96c3d4;
-            overflow: hidden;
-            isolation: isolate;
+        .tool-help {
+            position: absolute;
+            top: var(--space-3);
+            left: calc(var(--icon-button) + var(--space-6));
+            padding: var(--space-1) var(--space-2);
+            border-radius: var(--radius);
+            background: var(--bg-panel);
+            font-size: var(--text-sm);
         }
-        .map-wrap.empty {
-            background: var(--light);
-        }
-        .map-wrap.empty :is(.legend, .zoom-tools), .map-wrap.empty .coords:has(#busy[hidden]) {
-            display: none;
-        }
+        .map-wrap { position: relative; background: var(--bg-app); overflow: hidden; isolation: isolate; }
+        .map-wrap.empty :is(.legend, .zoom-tools), .map-wrap.empty .coords:has(#busy[hidden]) { display: none; }
         .empty-state {
             position: absolute;
             inset: 0;
             display: grid;
             align-content: center;
             justify-items: center;
-            gap: 14px;
-            padding: 16px;
+            gap: var(--space-4);
+            padding: var(--space-6);
             text-align: center;
-            color: var(--muted);
+            color: var(--text-secondary);
         }
-        .empty-actions {
+        .empty-state > :first-child { font-size: var(--text-lg); line-height: var(--leading-lg); color: var(--text); }
+        .empty-actions { display: flex; gap: var(--space-2); color: var(--text); }
+        #map { width: 100%; height: 100%; display: block; touch-action: none; outline: none; }
+        .map-wrap.pan #map { cursor: grab; }
+        .map-wrap.drag #map { cursor: grabbing; }
+        .map-wrap.create #map { cursor: crosshair; }
+        .map-tools, .zoom-tools, .legend, .coords { position: absolute; }
+        .map-tools, .zoom-tools, .legend {
             display: flex;
-            gap: 8px;
-            color: var(--ink);
+            gap: var(--space-1);
+            padding: var(--space-1);
+            border-radius: var(--radius);
+            background: var(--bg-panel);
         }
-        #map {
-            width: 100%;
-            height: 100%;
-            display: block;
-            touch-action: none;
-            outline: none;
-        }
-        .map-wrap.pan #map {
-            cursor: grab;
-        }
-        .map-wrap.drag #map {
-            cursor: grabbing;
-        }
-        .map-wrap.create #map {
-            cursor: crosshair;
-        }
-        .map-tools, .zoom-tools, .legend, .coords {
-            position: absolute;
-            z-index: 1;
-        }
-        .map-tools, .zoom-tools {
-            display: flex;
-            gap: 2px;
-            padding: 4px;
-            border: 1px solid #b2c4b9;
-            border-radius: 7px;
-            background: rgba(253, 254, 247, .97);
-            box-shadow: 0 2px 7px #264f5220;
-        }
-        .map-tools {
-            left: 12px;
-            top: 12px;
-            flex-direction: column;
-        }
-        .map-tools button, .zoom-tools button {
-            border: 0;
-            background: transparent;
-            min-height: 29px;
-            padding: 3px 9px;
-            font-size: 12px;
-        }
-        .map-tools button.active {
-            background: #244f46;
-            color: #fff;
-        }
-        .map-tools button:hover, .zoom-tools button:hover {
-            background: #e0eae1;
-        }
-        .map-tools button.active:hover {
-            background: #244f46;
-        }
-        .zoom-tools {
-            right: 15px;
-            bottom: 36px;
-            align-items: center;
-        }
-        .zoom-tools button {
-            padding: 3px 5px;
-        }
-        .zoom-tools output {
-            min-width: 32px;
-            font-size: 11px;
-            text-align: center;
-        }
-        .zoom-tools .divider {
-            margin: 0 2px;
-        }
+        .map-tools { left: var(--space-3); top: var(--space-3); flex-direction: column; }
+        .map-tools .icon, .zoom-tools .icon { width: var(--icon-toolbar); height: var(--icon-toolbar); }
+        .zoom-tools { right: var(--space-3); bottom: calc(var(--status-h) + var(--space-3)); align-items: center; }
+        .zoom-tools output { min-width: var(--row-h); font-size: var(--text-xs); text-align: center; }
         .coords {
-            bottom: 0;
-            left: 0;
-            right: 0;
-            min-height: 23px;
-            padding: 2px 16px;
-            display: flex;
+            inset: auto 0 0;
+            height: var(--status-h);
+            padding: 0 var(--space-3);
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
             align-items: center;
-            gap: 14px;
-            font-size: 10px;
-            border-top: 1px solid #73988c55;
-            background: #f8faf0eb;
-            color: #4d6962;
+            gap: var(--space-2);
+            font-size: var(--text-xs);
+            line-height: var(--leading-xs);
+            background: var(--bg-panel);
+            color: var(--text-secondary);
         }
-        .coords .mono {
-            margin-left: auto;
-        }
+        .coords > span { overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+        #busy { grid-column: 2; grid-row: 1; }
+        #mode-hint { grid-column: 1; grid-row: 1; }
+        #position { grid-column: 3; grid-row: 1; font-family: var(--font-coords); text-align: right; }
         .legend {
-            left: 60px;
-            top: 13px;
-            display: flex;
+            left: calc(var(--space-6) + var(--icon-button) + 2 * var(--space-1));
+            top: var(--space-3);
             align-items: center;
-            gap: 10px;
-            background: #fbfcf0e8;
-            padding: 3px 8px;
-            border-radius: 3px;
-            font-size: 10px;
-            color: #36574d;
+            gap: var(--space-2);
+            padding-inline: var(--space-2);
+            font-size: var(--text-xs);
+            color: var(--text-secondary);
             pointer-events: none;
         }
-        .key {
-            display: inline-block;
-            margin-right: 4px;
-            vertical-align: 0;
-            width: 7px;
-            height: 7px;
-            border: 1.5px solid #27524c;
-            background: #fffced;
-        }
-        .key.junction {
-            border-radius: 50%;
-            background: #27524c;
-        }
-        .key.via {
-            transform: rotate(45deg);
-            width: 6px;
-            height: 6px;
-        }
-        .key.issue {
-            background: #b7493f;
-            border: 0;
-            transform: rotate(45deg);
-            width: 6px;
-            height: 6px;
-        }
-        @media (max-width:900px) {
-            .map-tools {
-                left: 9px;
-            }
-            .legend {
-                left: 9px;
-            }
-        }
-        @media (max-width:680px) {
-            .map-tools {
-                top: 8px;
-            }
-            .map-tools button {
-                min-width: 0;
-                padding: 3px 4px;
-                gap: 3px;
-            }
-            .legend {
-                top: 49px;
-            }
-            .coords {
-                gap: 5px;
-                padding: 2px 6px;
-            }
-        }
-        .legend .tree-key {
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-        }
-        .tree-key i {
-            display: inline-block;
-            border-radius: 50%;
-            border: 1px solid #506d46;
-        }
-        .legend:not(.show-trees) .tree-key, .legend.show-trees > span:not(.tree-key) {
-            display: none;
-        }
-        .tree-key .forest {
-            width: 10px;
-            height: 10px;
-            background: #537848;
-        }
-        .tree-key .avenue {
-            width: 9px;
-            height: 9px;
-            background: #467c67;
-        }
-        .tree-key .small {
-            width: 7px;
-            height: 7px;
-            background: #81a56d;
-        }
-        .tree-key .shrub {
-            width: 5px;
-            height: 5px;
-            background: #9eaf74;
+        .legend span { display: inline-flex; align-items: center; gap: var(--space-1); }
+        .legend .icon { color: var(--text); }
+        .tree-key i { width: var(--space-2); height: var(--space-2); border-radius: var(--radius-round); }
+        .tree-key.forest i { background: var(--map-tree-forest); }
+        .tree-key.avenue i { background: var(--map-tree-avenue); }
+        .tree-key.small i { background: var(--map-tree-small); }
+        .tree-key.shrub i { background: var(--map-tree-shrub); }
+        .legend .issue-error .icon { color: var(--danger); }
+        .legend:not(.show-trees) .tree-key, .legend.show-trees > span:not(.tree-key) { display: none; }
+        @media (max-width: 680px) {
+            .coords { gap: var(--space-1); padding-inline: var(--space-1); }
         }
     }
 </style>
@@ -247,6 +121,8 @@
     import Messages from "./Messages.svelte";
 
     let { editor }: { editor: session.Editor } = $props();
+    let busyText = $derived(editor.busy === "正在生成地形…" || editor.busy === "正在更新地件…" ? "计算中" : editor.busy ?? "");
+    const treeLegend = [["forest", "林木"], ["avenue", "行道树"], ["small", "小乔木"], ["shrub", "灌木"]] as const;
     let canvas: HTMLCanvasElement;
     onMount(() => {
         editor.attach(canvas);

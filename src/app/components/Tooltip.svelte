@@ -1,7 +1,22 @@
 <div bind:this={tip} class="tooltip" role="tooltip" popover="manual">{message}</div>
 
 <style>
-    .tooltip { position: fixed; inset: auto; margin: 0; max-width: calc(100vw - 8px); padding: 4px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--ink); box-shadow: 0 3px 12px #244b4226; font-size: 12px; pointer-events: none; }
+    .tooltip {
+        position: fixed;
+        z-index: var(--z-tip);
+        inset: auto;
+        margin: 0;
+        max-width: min(240px, calc(100vw - var(--space-2)));
+        padding: var(--space-1) var(--space-2);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        background: var(--bg-panel);
+        color: var(--text);
+        box-shadow: var(--shadow-pop);
+        font-size: var(--text-sm);
+        line-height: var(--leading-sm);
+        pointer-events: none;
+    }
 </style>
 
 <script lang="ts">

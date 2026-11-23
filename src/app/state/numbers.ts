@@ -9,9 +9,12 @@ export function numericText(text: string, literal: boolean) {
     if (literal) throw Error("这里只能输入一个数");
     return trimmed;
 }
-export function displayNumber(n: number, step: number) {
-    const [mantissa, exponent] = String(step).split("e");
-    return n.toFixed(Math.min(100, Math.max(0, (mantissa.split(".")[1]?.length ?? 0) - Number(exponent ?? 0))));
+export function displayNumber(n: number, step: number, unit = "") {
+    if (!Number.isFinite(n)) return "—";
+    const [mantissa, exponent] = String(Math.abs(step)).split("e");
+    const digits = Math.min(100, Math.max(0, (mantissa.split(".")[1]?.length ?? 0) - Number(exponent ?? 0)));
+    const rounded = n.toFixed(digits);
+    return (Number(rounded) === 0 ? rounded.replace(/^-/, "") : rounded) + (unit && unit !== "%" ? " " + unit : unit);
 }
 const sumSteps = (v: number, delta: number) => Number((v + delta).toPrecision(15));
 export function adjustNumber(value: Expression, steps: number, step: number, range?: Range): Expression {
@@ -141,11 +144,12 @@ export function numericCaret(input: HTMLElement) {
         const [start, end] = selectionOffsets(input);
         for (const chip of chipSpans(input)) if (chip.node instanceof HTMLElement)
             chip.node.toggleAttribute("data-selected", chip.start >= start && chip.end <= end);
+        const lineHeight = parseFloat(getComputedStyle(input).lineHeight);
         let x: number | undefined, y = input.getBoundingClientRect().top;
         if (selection?.isCollapsed && selection.rangeCount && document.activeElement === input && input.contains(selection.anchorNode)) {
             const range = selection.getRangeAt(0).cloneRange(), rect = range.getBoundingClientRect();
             if (rect.height) {
-                x = rect.left; y = rect.top + (rect.height - 18) / 2;
+                x = rect.left; y = rect.top + (rect.height - lineHeight) / 2;
             }
             else {
                 // Chromium returns an empty rectangle at element boundaries beside noneditable chips.
@@ -155,7 +159,7 @@ export function numericCaret(input: HTMLElement) {
                     range.selectNode(next ?? previous);
                     const edge = range.getBoundingClientRect();
                     x = next ? edge.left : edge.right;
-                    y = edge.top + (edge.height - 18) / 2;
+                    y = edge.top + (edge.height - lineHeight) / 2;
                 }
                 else {
                     const box = input.getBoundingClientRect();

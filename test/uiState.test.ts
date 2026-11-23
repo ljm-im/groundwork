@@ -6,6 +6,7 @@ import { createGrid, distance } from "../src/core/math/geometry.ts";
 import { handles } from "../src/core/edit/controls.ts";
 import { resolveDesign } from "../src/core/design/parameters.ts";
 import { History } from "../src/core/edit/history.ts";
+import { propertyTabs } from "../src/app/state/inspector.ts";
 import { Island } from "../src/core/island.ts";
 import { parseDesign } from "../src/core/design/model.ts";
 import { pixelGridSpacing } from "../src/app/state/layers.ts";
@@ -44,10 +45,17 @@ test("Map focus, hit radius and the selected inspector issue", fixtureOptions("r
             Reflect.deleteProperty(globalThis, "requestAnimationFrame");
     }
     const ui = new session.Editor();
-    Object.assign(ui, { island: baseline, tab: "network", selection: { kind: "edge", id: selected.road }, issue: selected });
+    Object.assign(ui, { island: baseline, tab: "network", issue: selected });
+    ui.setSelection({ kind: "edge", id: selected.road! });
+    ui.changePropertyTab("issues");
     const { body: markup } = render(Network, { props: { editor: ui } });
-    assert(markup.indexOf("对象校验") >= 0 && markup.indexOf("对象校验") < markup.indexOf("路线长度"));
+    assert.match(markup, /data-property-tab="issues"[^>]*aria-pressed="true"/);
+    assert.doesNotMatch(markup, /路线长度/);
     assert(markup.match(/<button[^>]*>/g)!.some(tag => tag.includes("issue-row is-selected") && tag.includes("data-issue=\"" + baseline.issues.indexOf(selected) + "\"")));
+    ui.changePropertyTab("edge");
+    const { body: route } = render(Network, { props: { editor: ui } });
+    assert.match(route, /路线长度/);
+    assert.doesNotMatch(route, /data-issue=/);
 });
 
 test("Variable preview keeps the alignment and release matches a freshly opened design", () => {
@@ -278,4 +286,45 @@ test("Terrain labels use the even-odd centroid, the nearest cell in a hole and t
     const shape = makeShape({ id: "B", label: "B", function: { type: "blend" },
         construction: { type: "strip", of: ["A"], widths: [1, 2], range: { from: "0", to: "2" } } }, new Map([["A", make([outer])]]), .125);
     assert.deepEqual(geoLabelPoint(rasterRegion(grid, shape), grid), [6, -6]);
+});
+
+test("The inspector keeps compatible tabs, chooses the first available tab, and opens a waypoint on its road", async () => {
+    const { Editor } = await import("../src/app/state/session.svelte.ts");
+    const editor = new Editor();
+    editor.setSelection({ kind: "geoNode", id: "A" });
+    assert.equal(editor.propertyTab, "label");
+    editor.changePropertyTab("function");
+    editor.setSelection({ kind: "geoNode", id: "B" });
+    assert.equal(editor.propertyTab, "function");
+    editor.setSelection({ kind: "building", id: "C" });
+    assert.equal(editor.propertyTab, "label");
+    editor.changePropertyTab("issues");
+    editor.setSelection({ kind: "edge", id: "D" });
+    assert.equal(editor.propertyTab, "issues");
+    editor.setSelection({ kind: "via", id: "D", index: 0 });
+    assert.equal(editor.propertyTab, "edge");
+    for (const kind of ["mark", "input", "field", null]) {
+        const selection = kind ? { kind, id: "E" } : null;
+        editor.setSelection(selection);
+        assert.equal(editor.propertyTab, "general");
+        assert.equal(propertyTabs(selection).length, 1);
+    }
+});
+
+test("Expanding and collapsing inspector subitems leaves the authored design and undo history intact", async () => {
+    const { Editor } = await import("../src/app/state/session.svelte.ts");
+    const editor = new Editor(), design = syntheticDesign();
+    editor.island = new Island(design);
+    editor.history = new History(design);
+    const before = structuredClone(design), history = [...editor.history.states];
+    assert.equal(editor.subitemOpen("A", "ridges", 0), false);
+    editor.toggleSubitem("A", "ridges", 1, true);
+    assert.equal(editor.subitemOpen("A", "ridges", 1), true);
+    assert.equal(editor.subitemOpen("A", "ridges", 0), false);
+    assert.equal(editor.subitemOpen("B", "ridges", 1), false);
+    editor.toggleSubitem("A", "ridges", 1);
+    assert.equal(editor.subitemOpen("A", "ridges", 1), false);
+    assert.deepEqual(editor.island.design, before);
+    assert.deepEqual(editor.history.states, history);
+    assert.equal(editor.history.canUndo, false);
 });

@@ -1,3 +1,4 @@
+import { displayNumber } from "./numbers.ts";
 import { nodePose } from "../../core/design/model.ts";
 import { distance, onCanvas, sampleDefined } from "../../core/math/geometry.ts";
 import { moveHandle } from "../../core/edit/controls.ts";
@@ -5,7 +6,7 @@ import { editControl, geometryPath, hitControl, insertPathNode, type GeoControl 
 import { nodeIds } from "../../core/edit/geoNodes.ts";
 import { draftPointer, geoAt, snapPoint, updatePreview } from "./geoTools.ts";
 import { addNode, connect, insertVia, splitRoad } from "../../core/edit/topology.ts";
-import { canPlaceBuilding, doorRoads, nearbyWall, openDoorAt, placeBuilding } from "../../core/edit/buildings.ts";
+import { canPlaceBuilding, doorRoads, nearbyWall, placeBuilding } from "../../core/edit/buildings.ts";
 import { errorText, type Design, type Point, type RoadNode, type Selection } from "../types.ts";
 import * as session from "./session.svelte.ts";
 
@@ -24,6 +25,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         return [ev.clientX - box.left, ev.clientY - box.top];
     }
     let lastWheel = -Infinity, wheelMode = "pan", pinchScale = 0;
+    let hoverFrame = 0, hoverPoint: Point, hoverAlternate = false;
     canvas.addEventListener("wheel", ev => {
         ev.preventDefault();
         if (!editor.island || pinchScale) return;
@@ -80,7 +82,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
     function nodeAt(d: Design, h: Selection | null, p: Point) {
         const wall = nearbyWall(d, p);
         if (wall)
-            return openDoorAt(d, wall, undefined);
+            return editor.openWallDoor(d, wall);
         return h?.kind === "node" ? d.nodes.find(n => n.id === h.id) : null;
     }
 
@@ -119,7 +121,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
     }
 
     function beginWallLink(d: Design, wall: NonNullable<ReturnType<typeof nearbyWall>>, fork: boolean) {
-        const node = openDoorAt(d, wall, undefined);
+        const node = editor.openWallDoor(d, wall);
         editor.linkFrom = node.id;
         editor.forkFromDoor = fork;
         editor.select({ kind: "node", id: node.id });
@@ -144,7 +146,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             return;
         }
         insertVia(e, hit.index, hit.point);
-        editor.selection = { kind: "via", id: e.id, index: hit.index };
+        editor.setSelection({ kind: "via", id: e.id, index: hit.index });
         editor.tab = "network";
         editor.reroute(new Set([e.id]));
     }
@@ -170,6 +172,18 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         if (editor.tab === "network" && (h?.kind === "node" || h?.kind === "via" || edge)) return h?.kind === "node" || h?.kind === "via" ? handle : edge;
         if (editor.tab === "issues" && markers) return markers;
         return handle ?? body ?? markers ?? edge ?? geo;
+    }
+    function updateHover() {
+        hoverFrame = 0;
+        if (editor.tool !== "select" || editor.gesture || editor.busy) return;
+        const hit = pick(hoverPoint, hoverAlternate);
+        if (hit?.kind === "geo") map.hoverSelection({ kind: "geoNode", id: hit.id });
+        else if (hit?.kind === "road") map.hoverSelection({ kind: "edge", id: hit.road.route.id });
+        else if (hit?.kind === "handle") {
+            const { h } = hit;
+            map.hoverSelection(h.kind === "via" ? { kind: "edge", id: h.id } : h.kind === "door" ? { kind: "building", id: h.id } : h);
+        }
+        else map.hoverSelection();
     }
     function insertGeo(id: string, control: GeoControl) {
         editor.edit(d => {
@@ -239,7 +253,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
                     return;
                 }
                 if (!wall && !canPlace(p)) return;
-                const n = wall ? openDoorAt(d, wall, undefined) : addNode(d, p.map(v => +v.toFixed(2)) as Point);
+                const n = wall ? editor.openWallDoor(d, wall) : addNode(d, p.map(v => +v.toFixed(2)) as Point);
                 editor.setTool("select");
                 editor.select({ kind: "node", id: n.id });
                 editor.reroute(new Set());
@@ -282,7 +296,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
                     return;
                 }
                 editor.linkFrom = junction.id;
-                editor.selection = { kind: "node", id: junction.id };
+                editor.setSelection({ kind: "node", id: junction.id });
                 editor.tab = "network";
                 editor.reroute(new Set(junction.through));
                 editor.hint = "拖出或单击支路终点，单击空白新建终点，Esc 完成拆分";
@@ -351,7 +365,8 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         const screen = localPoint(ev),
             p = map.world(...screen),
             d = editor.island.design;
-        editor.position = "X " + p[0].toFixed(1) + "   Y " + p[1].toFixed(1) + "   H " + (sampleDefined(map.island.terrain.grid, map.island.graded.heights, map.island.terrain.defined, ...p)?.toFixed(1) ?? "—") + " m";
+        const height = sampleDefined(map.island.terrain.grid, map.island.graded.heights, map.island.terrain.defined, ...p);
+        editor.position = "X " + displayNumber(p[0], .1) + "   Y " + displayNumber(p[1], .1) + "   H " + displayNumber(height ?? NaN, .1, "m");
         if (map.draft && !editor.gesture) {
             try {
                 draftPointer(editor, "move", p, ev);
@@ -367,6 +382,10 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         }
         if (!editor.gesture) {
             canvas.style.cursor = editor.tool === "select" ? "default" : "crosshair";
+            if (editor.tool === "select") {
+                hoverPoint = screen; hoverAlternate = ev.altKey;
+                hoverFrame ||= requestAnimationFrame(updateHover);
+            }
             return;
         }
         if (editor.gesture.pointer !== ev.pointerId) return;
@@ -411,6 +430,11 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             }
         }
         editor.schedule();
+    }, { signal });
+
+    canvas.addEventListener("pointerleave", () => {
+        cancelAnimationFrame(hoverFrame); hoverFrame = 0;
+        map.hoverSelection();
     }, { signal });
 
     function offerDoorConversion(h: Selection, p: Point) {
@@ -542,5 +566,8 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             ev.returnValue = true;
         }
     }, { signal });
-    return () => listeners.abort();
+    return () => {
+        cancelAnimationFrame(hoverFrame);
+        listeners.abort();
+    };
 }

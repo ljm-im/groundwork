@@ -1,7 +1,7 @@
 {#snippet formatted(text: string, operators: boolean)}
     {#each text.split(/(\{(?:input|field|geo|edge|node|building):[^{}]+\})/g) as part, i (i)}
         {#if part.startsWith("{") && part.endsWith("}")}<ReferenceChip refKey={part.slice(1, -1)} design={catalog} {slots} />
-        {:else}{operators ? part.replaceAll("*", "×").replaceAll("/", "÷").replaceAll("-", "−") : part}{/if}
+        {:else}{operators ? part.replaceAll("*", "×").replaceAll("/", "÷") : part}{/if}
     {/each}
 {/snippet}
 {#snippet editControl()}
@@ -17,12 +17,12 @@
     {#if kind !== "literal"}<button class="reference-toggle" data-tip="插入变量" aria-label={"为" + label + "插入变量"} aria-expanded={opened}
         onpointerdown={e => e.preventDefault()} onclick={() => {
             if (opened) closeMenu(); else showMenu();
-        }}>▾</button>{/if}
+        }}><Icon name="collapse" /></button>{/if}
 {/snippet}
-<div class="number-row" data-parameter={address.join(".")} bind:this={root}>
-    <div class="number-line"><span class="number-label">{label}</span>
-        <div class="number-box" class:invalid={!!error} class:warning={outside} bind:this={box}>
-            <button class="step" aria-label={"减小" + label} data-tip="减小" onpointerdown={e => beginGesture(e, -1)} onclick={e => keyboardStep(e, -1)}>‹</button>
+<div class="number-row" class:compact data-parameter={address.join(".")} bind:this={root}>
+    <div class="number-line parameter-row">{#if !compact}<span class="number-label param-name">{label}</span>{/if}
+        <div class="number-box input-box" class:invalid={!!error} class:warning={outside} bind:this={box}>
+            <button class="step" aria-label={"减小" + label} data-tip="减小" onpointerdown={e => beginGesture(e, -1)} onclick={e => keyboardStep(e, -1)}><Icon name="chevronLeft" /></button>
             {#if editing && !expanded}
                 {@render editControl()}
             {:else}
@@ -34,30 +34,30 @@
                     {:else}{@render formatted(shown, true)}{/if}
                 </button>
             {/if}
-            <button class="step" aria-label={"增大" + label} data-tip="增大" onpointerdown={e => beginGesture(e, 1)} onclick={e => keyboardStep(e, 1)}>›</button>
+            <button class="step" aria-label={"增大" + label} data-tip="增大" onpointerdown={e => beginGesture(e, 1)} onclick={e => keyboardStep(e, 1)}><Icon name="chevronRight" /></button>
             {#if !expanded}{@render variableMenuButton()}
             {:else if kind !== "literal"}<span class="menu-spacer"></span>{/if}
         </div>
-        {#if unit}<small class="unit">{unit}</small>{/if}
+        {#if !compact}<small class="unit control-unit">{unit}</small>{/if}
     </div>
     {#if editing}<div hidden bind:this={mirror}>{@render formatted(draft, false)}</div>{/if}
     {#if editing && expanded}
-        <div class="expanded-edit" role="group" aria-label={"编辑" + label} popover="manual" bind:this={expandedBox} use:placeEditor>
-            <div class="expanded-line number-box" class:invalid={!!error}>{@render editControl()}{@render variableMenuButton()}</div>
+        <div class="expanded-edit popup" role="group" aria-label={"编辑" + label} popover="manual" bind:this={expandedBox} use:placeEditor>
+            <div class="expanded-line number-box input-box" class:invalid={!!error}>{@render editControl()}{@render variableMenuButton()}</div>
             {#if error}<div class="number-error" role="alert">{error}</div>{/if}
         </div>
     {:else if error}<div class="number-error" role="alert">{error}</div>{/if}
     {#if opened}
-        <div class="reference-menu" role="listbox" tabindex="-1" aria-label="可用变量" popover="manual" use:anchoredPopup={{ anchor: expandedBox ?? box, close: closeMenu, viewport: expanded }} onpointerdown={e => e.preventDefault()}>
+        <div class="reference-menu popup menu" role="listbox" tabindex="-1" aria-label="可用变量" popover="manual" use:anchoredPopup={{ anchor: expandedBox ?? box, close: closeMenu, viewport: expanded }} onpointerdown={e => e.preventDefault()}>
             {#if parent}<button class="ref-back" onclick={() => {
                 parent = ""; active = 0;
-            }}>‹ 返回</button>{/if}
+            }}><Icon name="chevronLeft" />返回</button>{/if}
             {#each groups as group (group.title)}
-                <div class="ref-group"><div class="group-name">{group.title}</div>
+                <div class="menu-group"><div class="group-name">{group.title}</div>
                     {#each group.items as item (item.key)}
-                        <button role="option" aria-selected={options[active]?.key === item.key} data-option={item.key}
+                        <button role="option" class:create-option={item.key.startsWith("+")} aria-selected={options[active]?.key === item.key} data-option={item.key}
                             onmouseenter={() => active = options.indexOf(item)} onclick={() => choose(item)}>
-                            <Icon name={item.icon} />{item.name}{#if item.branch}<span class="sub-arrow">›</span>{/if}
+                            <Icon name={item.icon} />{item.name}{#if item.branch}<span class="sub-arrow"><Icon name="chevronRight" /></span>{/if}
                         </button>
                     {/each}
                 </div>
@@ -66,36 +66,48 @@
     {/if}
 </div>
 <style>
-    .number-row { margin: 5px 0; }
-    .number-line { display: flex; align-items: center; gap: 5px; min-height: 27px; }
-    .number-label { flex: 1 1 32%; min-width: 0; font-size: 12px; }
-    .number-label:empty { display: none; }
-    .number-box { display: flex; align-items: stretch; flex: 2 1 64%; min-width: 0; border: 1px solid #b8c6ba; border-radius: 4px; background: #fffefa; }
-    .number-box:focus-within { border-color: var(--teal); }
-    .number-box.warning { border-color: #ad771c; }
-    .number-box.invalid { border-color: var(--red); }
-    .number-box button { min-height: 25px; padding: 0; background: transparent; border: 0; border-radius: 2px; }
-    .number-box button:hover { background: var(--light); }
-    .number-box .step, .number-box .reference-toggle, .menu-spacer { flex: 0 0 17px; color: var(--muted); touch-action: none; }
-    .numeric-face, .numeric-edit { display: block; flex: 1; min-width: 0; text-align: center; white-space: nowrap; font: inherit; font-size: 12px; line-height: 18px; }
+    .compact .number-line { grid-template-columns: minmax(0, 1fr); }
+    .number-box { display: flex; align-items: stretch; min-width: 0; padding: 0; }
+    .number-box.warning { border-color: var(--warning); }
+    .number-box.invalid { border-color: var(--danger); }
+    .number-box button { min-height: 0; padding: 0; background: transparent; border: 0; }
+    .number-box .step, .number-box .reference-toggle, .menu-spacer { flex: 0 0 var(--unit-w); touch-action: none; }
+    .number-box .step { color: var(--text-secondary); }
+    .number-box:hover .step { color: var(--text); }
+    .number-box .reference-toggle, .menu-spacer { border-left: 1px solid var(--border); border-radius: 0; }
+    .numeric-face, .numeric-edit {
+        display: block;
+        flex: 1;
+        min-width: 0;
+        text-align: center;
+        white-space: nowrap;
+        line-height: var(--leading-md);
+    }
     .numeric-face { cursor: ew-resize; user-select: none; overflow: hidden; touch-action: none; }
-    .numeric-face:global([data-overflow]) { text-align: left; mask-image: linear-gradient(to right, black calc(100% - 14px), transparent); }
-    .expanded-edit { position: fixed; inset: auto; margin: 0; padding: 7px; overflow: auto; color: var(--ink);
-        background: var(--panel); border: 1px solid var(--line); border-radius: 5px; box-shadow: 0 5px 22px #163e342e; }
+    .numeric-face:global([data-overflow]) { text-align: left; mask-image: linear-gradient(to right, var(--text) calc(100% - var(--space-4)), transparent); }
+    .expanded-edit { padding: var(--space-2); overflow: auto; }
+    .expanded-line { height: auto; }
     .expanded-line .edit-face { align-self: stretch; }
-    .expanded-line .numeric-edit { min-height: 62px; padding: 4px 5px; white-space: pre-wrap; overflow-wrap: anywhere; text-align: left; }
-    .expanded-line :global(.ref-chip) { display: inline-block; max-width: 100%; white-space: normal; }
-    .edit-face { position: relative; align-self: center; min-width: 0; flex: 1; overflow: hidden; --caret-height: 18px; }
-    .edit-face::after { content: ""; display: var(--caret-display, none); position: absolute; left: var(--caret-x); top: var(--caret-y); height: var(--caret-height); width: 1px; background: currentColor; pointer-events: none; animation: blink 1.1s steps(1) infinite; }
+    .expanded-line .numeric-edit { min-height: calc(3 * var(--leading-md)); padding: var(--space-1); white-space: pre-wrap; overflow-wrap: anywhere; text-align: left; }
+    .expanded-line :global(.ref-chip) { max-width: 100%; white-space: normal; }
+    .edit-face { position: relative; align-self: center; min-width: 0; flex: 1; overflow: hidden; }
+    .edit-face::after {
+        content: "";
+        display: var(--caret-display, none);
+        position: absolute;
+        left: var(--caret-x);
+        top: var(--caret-y);
+        height: var(--leading-md);
+        width: 1px;
+        background: currentColor;
+        pointer-events: none;
+        animation: blink 1.1s steps(1) infinite;
+    }
     @keyframes blink { 50% { opacity: 0; } }
-    .numeric-edit { caret-color: transparent; line-height: var(--caret-height); min-height: var(--caret-height); padding: 0 2px; outline: none; overflow-x: auto; scrollbar-width: none; white-space: pre; }
-    .unit { color: var(--muted); font-size: 11px; }
-    .number-error { color: var(--red); font-size: 11px; margin: 3px 0; }
-    .reference-menu { position: fixed; z-index: 8; inset: auto; margin: 0; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 5px; box-shadow: 0 5px 22px #163e342e; padding: 4px; }
-    .group-name { font-size: 10px; color: var(--muted); margin: 4px 6px; }
-    .ref-group button, .ref-back { display: flex; width: 100%; align-items: center; gap: 6px; justify-content: flex-start; border: none; background: transparent; min-height: 24px; font-size: 12px; }
-    .ref-group button[aria-selected="true"] { background: var(--light); }
-    .sub-arrow { margin-left: auto; }
+    .numeric-edit { caret-color: transparent; min-height: var(--leading-md); outline: none; overflow-x: auto; scrollbar-width: none; white-space: pre; }
+    .number-error { color: var(--danger); font-size: var(--text-xs); line-height: var(--leading-xs); margin: var(--space-1) 0 0 calc(var(--name-w) + var(--space-1)); }
+    .compact .number-error, .expanded-edit .number-error { margin-left: 0; }
+    .sub-arrow { margin-left: auto; display: inline-flex; }
 </style>
 
 <script lang="ts">
@@ -111,9 +123,9 @@
     import { anchoredPopup } from "../state/popup.ts";
     import Icon from "./Icon.svelte";
     import ReferenceChip from "./ReferenceChip.svelte";
-    let { editor, address, label, kind = "number", step = .1, range, unit = "", self, owner, displayFactor = 1 }: {
+    let { editor, address, label, kind = "number", step = .1, range, unit = "", self, owner, displayFactor = 1, compact = false }: {
         editor: session.Editor; address: Address; label: string; kind?: "number" | "field" | "literal"; step?: number;
-        range?: Range; unit?: string; self?: string; owner?: string; displayFactor?: number;
+        range?: Range; unit?: string; self?: string; owner?: string; displayFactor?: number; compact?: boolean;
     } = $props();
     let face = $state<HTMLButtonElement>(), expandedBox = $state<HTMLElement>();
     let root: HTMLElement, box = $state<HTMLElement>(null!), input = $state<HTMLElement>(null!), mirror = $state<HTMLElement>(null!);
@@ -125,12 +137,9 @@
     let active = $state(0);
     let catalogDraft = $state.raw<Design>(), catalog = $derived(catalogDraft ?? base), slots = $derived(parameters(catalog));
     let gesturing = $state(false), live = $state<Expression>(0), shown = $derived(gesturing ? live : value);
-    let outside = $derived(typeof shown === "number" && range && (shown < range[0] || shown > range[1]));
-    let tip = $derived.by(() => {
-        if (typeof shown !== "string") return;
-        const result = currentResult(shown);
-        return result === undefined ? "= 未定义" : "= " + Number(displayNumber(result * displayFactor, step)) + (unit ? " " + unit : "");
-    });
+    let result = $derived(currentResult(shown));
+    let outside = $derived(result !== undefined && range && (result < range[0] || result > range[1]));
+    let tip = $derived(typeof shown === "string" ? (result === undefined ? "= 未定义" : "= " + displayNumber(result * displayFactor, step, unit)) : undefined);
     let origin: Design | undefined, cleanup: (() => void) | undefined, version = 0;
     type IconName = "inputs" | "field" | "terrain" | "edge" | "node" | "building" | "property" | "plus";
     type Option = { key: string; name: string; icon: IconName; branch?: boolean };

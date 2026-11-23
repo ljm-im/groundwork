@@ -1,9 +1,22 @@
 <span class="ref-chip" data-ref={refKey} contenteditable="false"><Icon name={info.icon} /><span>{info.name}{info.property ? "." + info.property : ""}</span></span>
 
 <style>
-    .ref-chip { display: inline; vertical-align: baseline; border-radius: 3px; padding: 0 4px; background: #e6eee8; color: #265453; white-space: nowrap; font: inherit; line-height: inherit; }
-    .ref-chip :global(.icon) { display: inline-block; width: 12px; height: 12px; vertical-align: -.1em; margin-right: 2px; }
-    .ref-chip:global([data-selected]) { background: var(--teal); color: white; }
+    .ref-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--space-1);
+        min-height: var(--leading-md);
+        vertical-align: top;
+        border-radius: var(--radius-chip);
+        padding: 0 var(--space-1);
+        background: var(--bg-chip);
+        color: var(--text);
+        white-space: nowrap;
+        font-size: var(--text-md);
+        line-height: var(--leading-md);
+    }
+    .ref-chip :global(.icon) { width: var(--icon-chip); height: var(--icon-chip); }
+    .ref-chip:global([data-selected]) { background: var(--bg-selected); box-shadow: inset 0 0 0 1px var(--accent); }
 </style>
 
 <script lang="ts">

@@ -25,23 +25,46 @@
 <style>
     :global {
         .workspace {
-            grid-template-columns: minmax(360px, 1fr) 5px clamp(270px, var(--right), calc(100% - 410px));
+            height: calc(100dvh - var(--topbar-h));
+            display: grid;
+            grid-template-columns: minmax(360px, 1fr) var(--split-target) clamp(270px, var(--right), calc(100% - 410px));
             min-height: 540px;
         }
-        .map-column { display: grid; grid-template-rows: minmax(220px, 1fr) 5px clamp(110px, var(--bottom), calc(100% - 225px)); min-width: 0; min-height: 0; }
-        .map-column.closed { grid-template-rows: minmax(0, 1fr) 5px 0; }
-        .split { min-height: 0; min-width: 0; padding: 0; background: var(--line); border: 0; border-radius: 0; touch-action: none; user-select: none; }
-        .split:hover, .split:focus-visible { background: #90aca0; }
+        .map-column { display: grid; grid-template-rows: minmax(220px, 1fr) var(--split-target) clamp(110px, var(--bottom), calc(100% - 225px)); min-width: 0; min-height: 0; }
+        .map-column.closed { grid-template-rows: minmax(0, 1fr) var(--split-target) 0; }
+        .split {
+            position: relative;
+            z-index: var(--z-split);
+            min-height: 0;
+            min-width: 0;
+            padding: 0;
+            background: var(--bg-app);
+            border: 0;
+            border-radius: 0;
+            touch-action: none;
+            user-select: none;
+        }
+        .split::before { content: ""; position: absolute; background: var(--border); }
+        .split:is(:hover, :focus-visible)::before { background: var(--border-strong); }
         .split.horizontal { cursor: row-resize; width: 100%; }
+        .split.horizontal::before { inset: 50% 0 auto; height: 1px; }
         .split.vertical { cursor: col-resize; }
-        .bottom-pane { display: grid; grid-template-rows: 31px minmax(0, 1fr); background: var(--paper); min-height: 0; }
+        .split.vertical::before { inset: 0 auto 0 50%; width: 1px; }
+        .bottom-pane { display: grid; grid-template-rows: var(--row-h) minmax(0, 1fr); background: var(--bg-panel); min-height: 0; }
         .bottom-pane[hidden], .plot-pane[hidden] { display: none; }
         .plot-pane { min-width: 0; min-height: 0; }
-        .bottom-tabs { display: flex; align-items: stretch; padding: 0 13px; gap: 8px; }
-        .bottom-tabs button { border: 0; border-radius: 0; border-bottom: 2px solid transparent; background: transparent; min-height: 0; font-size: 12px; }
-        .bottom-tabs button[aria-pressed="true"] { border-color: var(--teal); color: var(--teal); font-weight: 650; }
-        .bottom-tabs small { margin: auto 0 auto auto; color: var(--muted); }
-        .workspace .sections { border: 0; }
+        .bottom-tabs { display: flex; align-items: stretch; padding: 0 var(--space-3); gap: var(--space-2); background: var(--bg-sunken); }
+        .bottom-tabs button { border: 0; border-radius: 0; background: transparent; color: var(--text-secondary); }
+        .bottom-tabs button[aria-pressed="true"] { color: var(--text); background: var(--bg-selected); box-shadow: inset 0 -2px var(--accent); }
+        .bottom-tabs button:focus-visible { box-shadow: inset 0 0 0 2px var(--focus-ring); }
+        .bottom-tabs button[aria-pressed="true"]:focus-visible { box-shadow: inset 0 -2px var(--accent), inset 0 0 0 2px var(--focus-ring); }
+        .bottom-tabs small { margin: auto 0 auto auto; color: var(--text-secondary); }
+        @media (max-width: 680px) {
+            .workspace { display: flex; flex-direction: column; height: auto; }
+            .map-column { height: max(340px, 64dvh); }
+            .workspace > .split.vertical { display: none; }
+            .inspector { height: max(400px, 70dvh); }
+        }
     }
 </style>
 

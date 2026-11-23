@@ -23,6 +23,4 @@ export type Gesture = GestureStart & (
   { branch: true } |
   { handle: Handle; offset: number[]; hits: Issue[] }
 );
-export type Editable = HTMLInputElement | HTMLSelectElement;
-export const checked = (input: Editable) => input instanceof HTMLInputElement && input.checked;
 export const errorText = (error: unknown) => error instanceof Error ? error.message : String(error);

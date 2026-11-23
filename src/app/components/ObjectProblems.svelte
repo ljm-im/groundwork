@@ -1,4 +1,6 @@
-{#if issues.length}<Part title="对象校验" count={issues.length}><IssueRows {editor} {issues} /></Part>{/if}
+<Part>
+    {#if issues.length}<IssueRows {editor} {issues} />{:else}<div class="sub">通过全部检查</div>{/if}
+</Part>
 
 <script lang="ts">
     import * as session from "../state/session.svelte.ts";

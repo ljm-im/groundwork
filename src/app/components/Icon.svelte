@@ -1,6 +1,6 @@
 <svg class="icon" viewBox="0 0 18 18" aria-hidden="true"><path d={icons[name]} /></svg>
 
-<script lang="ts">
+<script module lang="ts">
     const icons = {
         point: "M9 1v4m0 8v4M1 9h4m8 0h4M12 9a3 3 0 1 1-6 0 3 3 0 1 1 6 0z",
         polyline: "M3 12l4-7 7 4M1 12h3v3H1z M6 2h3v3H6z M13 8h3v3h-3z",
@@ -10,7 +10,15 @@
         function: "M3 13h3l3-9h4M5 8h7m0 2 4 5m0-5-4 5",
         property: "M3 13 8 4l5 9z M3 15h12",
         exclude: "M15.5 9a6.5 6.5 0 1 1-13 0 6.5 6.5 0 1 1 13 0z M4.4 13.6l9.2-9.2",
-        marks: "M14 7c0 3-5 8-5 8S4 10 4 7a5 5 0 1 1 10 0z M10.5 7a1.5 1.5 0 1 1-3 0 1.5 1.5 0 1 1 3 0z",
+        marks: "M4 16V3m0 1c4-4 7 3 11-1v8c-4 4-7-3-11 1",
+        section: "M3 5v8m0-4h12m0-4v8",
+        tag: "M2.5 3h7l6 6-6 6-7-7z M6 6h.2",
+        region: "M2.5 6V2.5H6m3 0h1m3 0h2.5V6m0 3v1m0 3v2.5H12m-3 0H8m-3 0H2.5V12m0-3v-1",
+        project: "M4 2.5h6l4 4v9H4z M10 2.5v4h4",
+        expand: "m7 5 4 4-4 4",
+        collapse: "m5 7 4 4 4-4",
+        chevronLeft: "m11 4-5 5 5 5",
+        chevronRight: "m7 4 5 5-5 5",
         textMark: "M3 6V3h12v3M9 3v12m-3 0h6",
         scaleMark: "M2 6v7h14V6z M5.5 6v3M9 6v4m3.5-4v3",
         display: "M2 3h14v10H2z M6 16h6m-3-3v3",
@@ -32,6 +40,7 @@
         building: "M2 8l7-6 7 6M4 7v9h10V7M7 16v-5h4v5",
         fork: "M3 15l5-6 7-6M8 9l7 4M13 2h3v3m-3 6 3 2-2 2",
         undo: "M7 4L3 8l4 4M4 8h7c6 0 6 8 0 8",
+        reroute: "M3 15V8h4m1 0 3-5h4m-2-2 2 2-2 2M8 8l3 5h4m-2-2 2 2-2 2",
         redo: "M11 4l4 4-4 4m3-4H7c-6 0-6 8 0 8",
         open: "M2 5h5l2 2h7v2M2 5v10h13l2-6H5l-2 6",
         new: "M3 2h8l4 4v10H3zM11 2v4h4M6 10h6m-3-3v6",
@@ -40,5 +49,9 @@
         plus: "M3 9h12M9 3v12",
         fit: "M2 7V3h4m6 0h4v4m0 5v4h-4m-6 0H2v-4"
     };
-    let { name }: { name: keyof typeof icons } = $props();
+    export type IconName = keyof typeof icons;
+</script>
+
+<script lang="ts">
+    let { name }: { name: IconName } = $props();
 </script>

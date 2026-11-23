@@ -1,0 +1,70 @@
+:root {
+    --text-xs: 11px;
+    --text-sm: 12px;
+    --text-md: 13px;
+    --text-lg: 15px;
+    --leading-xs: 16px;
+    --leading-sm: 18px;
+    --leading-md: 20px;
+    --leading-lg: 22px;
+    --weight-regular: 400;
+    --weight-semibold: 600;
+    --font-body: "Inter", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+    --font-coords: "IBM Plex Mono", Consolas, monospace;
+
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-6: 24px;
+
+    --control-h: 28px;
+    --icon-button: 28px;
+    --row-h: 32px;
+    --name-w: 104px;
+    --unit-w: 20px;
+    --tabs-w: 36px;
+    --topbar-h: 44px;
+    --status-h: 24px;
+    --split-target: 6px;
+    --scrollbar-w: 6px;
+    --stripe-step: 6px;
+    --icon: 16px;
+    --icon-toolbar: 18px;
+    --icon-chip: 14px;
+    --radius: 4px;
+    --radius-lg: 6px;
+    --radius-chip: 3px;
+    --radius-round: 50%;
+
+    --bg-app: #f9faf6;
+    --bg-panel: #fffefa;
+    --bg-sunken: #f2f5ed;
+    --bg-hover: #edf2eb;
+    --bg-selected: #e2ece4;
+    --bg-chip: #e6eee6;
+    --text: #233d37;
+    --text-secondary: #657570;
+    --text-disabled: #a3afaa;
+    --border: #d9dfd7;
+    --border-strong: #9db5a8;
+    --accent: #226659;
+    --focus-ring: rgb(34 102 89 / 25%);
+    --warning: #ad771c;
+    --danger: #a34839;
+    --on-accent: #ffffff;
+    --backdrop: rgb(35 61 55 / 33%);
+    --shadow-pop: 0 4px 16px rgb(35 61 55 / 14%);
+
+    /* Swatches represent the unchanged vegetation colors on the map. */
+    --map-tree-forest: #537848;
+    --map-tree-avenue: #467c67;
+    --map-tree-small: #81a56d;
+    --map-tree-shrub: #9eaf74;
+
+    --z-panel: 0;
+    --z-split: 10;
+    --z-pop: 100;
+    --z-tip: 200;
+    --z-dialog: 300;
+}

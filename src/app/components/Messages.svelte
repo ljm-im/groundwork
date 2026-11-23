@@ -6,18 +6,20 @@
             position: absolute;
             left: 50%;
             transform: translateX(-50%);
-            z-index: 4;
-            background: #244b42;
-            color: white;
-            padding: 8px 15px;
-            border-radius: 5px;
-            box-shadow: 0 3px 12px #244b4230;
-            font-size: 12px;
+            z-index: var(--z-pop);
+            background: var(--bg-panel);
+            color: var(--text);
+            padding: var(--space-1) var(--space-2);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-pop);
+            font-size: var(--text-sm);
+            line-height: var(--leading-sm);
         }
         .toast {
             white-space: pre-line;
             max-width: calc(100% - 30px);
-            bottom: 34px;
+            bottom: calc(var(--status-h) + var(--space-2));
             pointer-events: none;
         }
         .toast.near {

@@ -1,11 +1,12 @@
 import { tick } from "svelte";
 import { Island } from "../../core/island.ts";
 import { TerrainCache } from "../../core/terrain/cache.ts";
-import { History, promptOwner, type PromptTarget } from "../../core/edit/history.ts";
+import { History, promptOwner } from "../../core/edit/history.ts";
+import { descriptionOwner, type DescriptionTarget } from "./descriptions.ts";
 import { readDisplaySettings, saveDisplaySettings, type GridDisplay } from "./layers.ts";
 import { nodePose } from "../../core/design/model.ts";
 import { bounds } from "../../core/math/geometry.ts";
-import { addDoor, doorNode, doorRoads, openDoorAt, removeBuildingPart } from "../../core/edit/buildings.ts";
+import { addDoor, doorNode, doorRoads, nearbyWall, openDoorAt, removeBuildingPart } from "../../core/edit/buildings.ts";
 import { removeVia, removeLinks } from "../../core/edit/topology.ts";
 import { type Expression, type GeoNode, type GeoFunction, markPoint } from "../../core/design/v5.ts";
 import { randomFunctions, referenceUses, type Owner } from "../../core/design/parameters.ts";
@@ -15,6 +16,7 @@ import { addInput, addField, copyGeo, defaultFunction, deleteGeo, dependentStrip
 import { setSegment } from "../../core/edit/paths.ts";
 import { drawingTools, finishDraft, geoAt, startDrawing, updatePreview, type DrawTool } from "./geoTools.ts";
 import { objectIssues } from "../../core/checks/issues.ts";
+import { propertyTabs, tabForSelection, type PropertyTab, type SubitemGroup } from "./inspector.ts";
 import { drawSections } from "../../render/sections.ts";
 import { IslandMap } from "../../render/map.ts";
 import { DesignFiles, type FileAction, type SaveState } from "./files.ts";
@@ -39,12 +41,16 @@ export function timed<T>(name: string, work: () => T): T {
     return result;
 }
 
+type Wall = NonNullable<ReturnType<typeof nearbyWall>>;
+
 export class Editor {
     // The engine mutates large grids in place. Publish an inspector revision only after a completed edit.
     island = $state.raw<IslandModel>(null!);
     tab = $state<Tab>("terrain");
     tool = $state<Tool>("select");
     selection = $state.raw<Selection | null>(null);
+    propertyTab = $state<PropertyTab>("general");
+    private openSubitems = $state.raw<Record<string, readonly (string | number)[]>>({});
     issue = $state.raw<Issue | null>(null);
     candidates = $state.raw<Issue[] | null>(null);
     private readonly display = readDisplaySettings();
@@ -59,7 +65,6 @@ export class Editor {
     viewport = $state<string | null>(null);
     bottomTab = $state<"sections" | "profile">("sections");
     pathIndex = $state(0);
-    erosionOpen = $state(false);
     menu = $state.raw<{ x: number; y: number; map?: boolean; segment?: GeoControl } | null>(null);
     revision = $state(0);
     hint = $state(hints.select);
@@ -111,12 +116,37 @@ export class Editor {
     record() {
         this.syncHistory(this.history.record(this.island.design));
     }
-    describe(target: PromptTarget, value: string) {
-        const owner = promptOwner(this.island.design, target);
+    describe(target: DescriptionTarget, value: string) {
+        const owner = descriptionOwner(this.island.design, target);
         if ((owner.prompt ?? "") === value) return;
         if (value === "") delete owner.prompt;
         else owner.prompt = value;
-        this.syncHistory(this.history.record(this.island.design, target));
+        this.syncHistory(this.history.record(this.island.design, target.group === "sections" ? undefined : target));
+    }
+    changePropertyTab(tab: PropertyTab) {
+        if (tab === this.propertyTab || !propertyTabs(this.selection).some(([id]) => id === tab)) return;
+        this.propertyTab = tab;
+        if (this.properties) this.properties.scrollTop = 0;
+    }
+    setSelection(selection: Selection | null) {
+        this.propertyTab = tabForSelection(selection, this.propertyTab);
+        this.selection = selection;
+    }
+    subitemOpen(owner: string, group: SubitemGroup, item: string | number) {
+        return this.openSubitems[group + ":" + owner]?.includes(item) ?? false;
+    }
+    toggleSubitem(owner: string, group: SubitemGroup, item: string | number, open = !this.subitemOpen(owner, group, item)) {
+        const key = group + ":" + owner, items = this.openSubitems[key] ?? [];
+        this.openSubitems = { ...this.openSubitems, [key]: open ? [...new Set([...items, item])] : items.filter(value => value !== item) };
+    }
+    removeSubitem(owner: string, group: "ridges" | "peaks", index: number) {
+        const key = group + ":" + owner, items = (this.openSubitems[key] ?? []) as readonly number[];
+        this.openSubitems = { ...this.openSubitems, [key]: items.filter(value => value !== index).map(value => value > index ? value - 1 : value) };
+    }
+    private clearSubitems(owner: string, kind: "geoNode" | "building") {
+        const next = { ...this.openSubitems };
+        for (const group of kind === "geoNode" ? ["ridges", "peaks"] : ["doors"]) delete next[group + ":" + owner];
+        this.openSubitems = next;
     }
     select(h: Selection | null, open = true, extend = false) {
         this.menu = null;
@@ -132,7 +162,7 @@ export class Editor {
         const focus = this.map.objectGeometry;
         if (focus && (focus.kind !== h?.kind || focus.id !== h.id || focus.kind === "via" && focus.index !== h.index)) this.map.objectGeometry = undefined;
         this.map.geoSelection = this.geoSelection;
-        this.selection = h;
+        this.setSelection(h);
         this.map.selection = h;
         this.issue = this.candidates = null;
         this.map.clearIssue();
@@ -284,7 +314,9 @@ export class Editor {
         }
         this.geoSelection = []; this.hoverRefs = []; this.map.highlights = []; this.map.geometry = undefined;
         this.island = new Island(design, this.terrainCache);
-        this.selection = this.issue = this.candidates = null;
+        this.setSelection(null);
+        this.issue = this.candidates = null;
+        this.openSubitems = {};
         this.map.clearIssue();
         this.setTool("select");
         this.refresh(reset);
@@ -372,8 +404,14 @@ export class Editor {
         }, () => {
             this.setTool("select");
             const n = geoAt(this.island.design, this.selection!.id), f = n.function;
-            if (draft.tool === "ridge" && f.type === "mountain") this.map.geometry = { kind: "parameter", index: f.ridges.length - 1 };
-            else if (draft.tool === "peak" && f.type === "mountain") this.map.geometry = { kind: "parameter", index: f.ridges.length + f.peaks.length - 1 };
+            if (draft.tool === "ridge" && f.type === "mountain") {
+                this.map.geometry = { kind: "parameter", index: f.ridges.length - 1 };
+                this.toggleSubitem(n.id, "ridges", f.ridges.length - 1, true);
+            }
+            else if (draft.tool === "peak" && f.type === "mountain") {
+                this.map.geometry = { kind: "parameter", index: f.ridges.length + f.peaks.length - 1 };
+                this.toggleSubitem(n.id, "peaks", f.peaks.length - 1, true);
+            }
             else if (draft.tool === "center" || draft.tool === "slopeLine") this.map.geometry = { kind: "parameter", index: 0 };
             else if (draft.tool === "shore") this.map.geometry = { kind: "path", index: -1 };
             else if (n.construction.type === "free") this.map.geometry = { kind: "path", index: n.construction.paths.length - 1 };
@@ -401,6 +439,7 @@ export class Editor {
         this.edit(d => {
             geoAt(d, n.id).function = defaultFunction(type)!;
         }, () => {
+            this.clearSubitems(n.id, "geoNode");
             this.map.geometry = undefined;
         });
     }
@@ -454,7 +493,10 @@ export class Editor {
                 removeParameterPoint(d, geoAt(d, id), vertex);
             }, () => {
                 this.map.vertex = undefined;
-                if (n.function.type === "mountain" && vertex.path >= n.function.ridges.length) this.map.geometry = undefined;
+                if (n.function.type === "mountain" && vertex.path >= n.function.ridges.length) {
+                    this.removeSubitem(id, "peaks", vertex.path - n.function.ridges.length);
+                    this.map.geometry = undefined;
+                }
             });
             return;
         }
@@ -477,9 +519,12 @@ export class Editor {
         const perform = () => {
             this.edit(d => {
                 deleteGeo(d, id, true); return null;
+            }, () => {
+                this.clearSubitems(id, "geoNode");
+                for (const ref of refs) this.clearSubitems(ref.id, "geoNode");
             });
         };
-        if (refs.length) this.removal = { title: "删除“" + n.label + "”？", detail: "以下条带引用了这个地件。", action: "一并删除这些条带", items: refs.map(r => r.label), perform };
+        if (refs.length) this.removal = { title: "删除“" + n.label + "”？", detail: "以下条带引用了这个地件。", action: "一并删除", items: refs.map(r => r.label), perform };
         else perform();
     }
     segment(type: "line" | "curve" | "arc" | "tangent") {
@@ -507,8 +552,8 @@ export class Editor {
     issueAt(issue: Issue) {
         this.layers.issues = true;
         if (!objectIssues(this.island, this.selection).includes(issue)) {
-            this.selection = issue.node ? { kind: "node", id: issue.node } : issue.building ? { kind: "building", id: issue.building }
-                : issue.geoNode ? { kind: "geoNode", id: issue.geoNode } : issue.road ? { kind: "edge", id: issue.road } : null;
+            this.setSelection(issue.node ? { kind: "node", id: issue.node } : issue.building ? { kind: "building", id: issue.building }
+                : issue.geoNode ? { kind: "geoNode", id: issue.geoNode } : issue.road ? { kind: "edge", id: issue.road } : null);
         }
         this.geoSelection = this.selection?.kind === "geoNode" ? [this.selection.id] : [];
         this.map.geoSelection = this.geoSelection;
@@ -546,8 +591,16 @@ export class Editor {
             return { kind: "mark", id: copy.id };
         });
     }
+    openWallDoor(design: Design, wall: Wall, node?: RoadNode<Expression>) {
+        const building = design.buildings.find(item => item.id === wall.building.id)!;
+        const count = building.doors.length;
+        const result = openDoorAt(design, wall, node);
+        if (building.doors.length > count) this.toggleSubitem(building.id, "doors", building.doors[count].id, true);
+        return result;
+    }
     addDoor(building: Building<Expression>, wall: number) {
         addDoor(this.island.design, building, wall);
+        this.toggleSubitem(building.id, "doors", building.doors.at(-1)!.id, true);
         this.select({ kind: "building", id: building.id });
         this.island.reroute(new Set());
         this.refresh();
@@ -572,6 +625,9 @@ export class Editor {
             const target = draft.buildings.find(item => item.id === b.id)!;
             removeBuildingPart(draft, target, door && target.doors.find(v => v.id === door.id));
             return door ? { kind: "building", id: b.id } : null;
+        }, () => {
+            if (door) this.toggleSubitem(b.id, "doors", door.id, false);
+            else this.clearSubitems(b.id, "building");
         });
         if (!edges.length) {
             perform();
@@ -579,12 +635,12 @@ export class Editor {
         }
         this.removal = { title: "删除“" + (door ? door.label ?? door.id : b.label) + "”？", items: edges.map(e => e.label), perform };
     }
-    offerConversion(node: RoadNode<Expression>, wall: NonNullable<ReturnType<typeof import("../../core/edit/buildings.ts").nearbyWall>>, edges: EdgeLike[]) {
+    offerConversion(node: RoadNode<Expression>, wall: Wall, edges: EdgeLike[]) {
         this.conversion = {
             text: "将“" + node.label + "”吸附到“" + wall.building.label + "”外墙。连接此节点的 " + edges.length + " 条道路会保留。",
             finish: (convert) => {
                 if (convert) {
-                    openDoorAt(this.island.design, wall, node);
+                    this.openWallDoor(this.island.design, wall, node);
                     this.select({ kind: "node", id: node.id });
                     this.reroute(new Set(edges.map(e => e.id)));
                 }
@@ -638,7 +694,7 @@ export class Editor {
         }
         else if (h.kind === "edge") ids = removeLinks(d, new Set([h.id]));
         else return;
-        this.selection = null;
+        this.setSelection(null);
         this.reroute(ids);
     }
 }

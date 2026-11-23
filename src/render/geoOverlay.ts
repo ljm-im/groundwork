@@ -3,37 +3,50 @@ import { geoControls, geometryPath, linePoints, pathEntries, type GeoControl } f
 import { flattenPath } from "../core/terrain/path.ts";
 import { type Point, type GeoNode } from "../core/design/v5.ts";
 import { type Segment } from "../core/design/regions.ts";
+import { overlay, palette } from "./palette.ts";
+
+export function drawHandle(ctx: CanvasRenderingContext2D, x: number, y: number, selected: boolean, control = false) {
+    ctx.beginPath();
+    ctx.arc(x, y, control ? overlay.controlRadius : overlay.handleRadius, 0, Math.PI * 2);
+    ctx.fillStyle = selected ? palette.accent : palette.bgPanel;
+    ctx.strokeStyle = palette.accent;
+    ctx.lineWidth = overlay.handleOutline;
+    ctx.fill();
+    ctx.stroke();
+}
 
 export function drawGeoOverlay(map: IslandMap) {
     const ctx = map.ctx, scale = map.scale, d = map.island.design, draft = map.draft;
-    const edges = (segments: Segment[], color: string, width: number, dash: number[] = []) => {
-        ctx.strokeStyle = color; ctx.lineWidth = width; ctx.setLineDash(dash); ctx.beginPath();
+    const edges = (segments: Segment[], color: string, width: number, dashed = false) => {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = width;
+        ctx.setLineDash(dashed ? [...overlay.dash] : []);
+        ctx.beginPath();
         let last: Point | undefined;
         for (const { a, b } of segments) {
             if (!last || a[0] !== last[0] || a[1] !== last[1]) ctx.moveTo(...map.screen(a));
             ctx.lineTo(...map.screen(b));
             last = b;
         }
-        ctx.stroke(); ctx.setLineDash([]);
+        ctx.stroke();
+        ctx.setLineDash([]);
     };
-    const dot = (p: Point, color: string, active = false, radius = 3.5) => {
-        ctx.beginPath(); ctx.arc(...map.screen(p), radius, 0, Math.PI * 2);
-        ctx.fillStyle = active ? color : "#fffdf2"; ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.fill(); ctx.stroke();
-    };
+    const dot = (point: Point, active = false, control = false) => drawHandle(ctx, ...map.screen(point), active, control);
     function controls(n: GeoNode) {
         for (const [i, path] of pathEntries(n)) {
-            if (i === -1 || map.dragNode || draft?.owner === n.id) edges(flattenPath(path, .6 / scale), i === -1 ? "#894a86" : "#12696a", 2, i === -1 ? [6, 4] : []);
+            if (i === -1) edges(flattenPath(path, .6 / scale), palette.parameterGeometry, overlay.parameterWidth, true);
+            else if (map.dragNode || draft?.owner === n.id) edges(flattenPath(path, .6 / scale), palette.accent, overlay.selectedWidth);
         }
-        for (const pts of linePoints(n)) {
-            if (pts.length === 1) dot(pts[0], "#894a86", true, 2);
-            else edges(pts.slice(1).map((b, i) => ({ a: pts[i], b })), "#894a86", 2.5, [6, 4]);
+        for (const points of linePoints(n)) {
+            if (points.length === 1) dot(points[0]);
+            else edges(points.slice(1).map((b, i) => ({ a: points[i], b })), palette.parameterGeometry, overlay.parameterWidth, true);
         }
         if (draft) return;
         for (const c of geoControls(n, map.geometry)) {
-            const param = c.role === "parameter" || c.path === -1;
-            if (c.role === "in" || c.role === "out") edges([{ a: geometryPath(n, c.path)!.nodes[c.index].p, b: c.point }], "#377973", 1);
+            const tangent = c.role === "in" || c.role === "out";
+            if (tangent) edges([{ a: geometryPath(n, c.path)!.nodes[c.index].p, b: c.point }], palette.accent, overlay.controlLine);
             const active = map.vertex && (["path", "role", "index"] as (keyof GeoControl)[]).every(k => map.vertex![k] === c[k]);
-            dot(c.point, param ? "#894a86" : "#12696a", !!active, c.role === "vertex" || param ? 4 : 3);
+            dot(c.point, !!active, tangent);
         }
     }
     ctx.save();
@@ -41,23 +54,23 @@ export function drawGeoOverlay(map: IslandMap) {
     if (owner && (!draft || draft.owner === owner.id)) controls(map.dragNode ?? owner);
     if (draft) {
         if (draft.tool === "strip") {
-            edges(draft.spine ?? [], "#d37627", 3);
+            edges(draft.spine ?? [], palette.accent, overlay.selectedWidth);
             const upper = d.geoNodes.findLast(n => draft.ids.includes(n.id));
             if (upper?.construction.type === "free") for (const path of upper.construction.paths) for (const v of path.nodes)
-                dot(v.p, "#855021", draft.anchors.includes(v.id), 4.5);
+                dot(v.p, draft.anchors.includes(v.id));
         }
         else {
             if (draft.tool === "peak" || draft.tool === "center") {
-                if (!draft.nodes.length && draft.cursor) dot(draft.cursor, "#894a86");
+                if (!draft.nodes.length && draft.cursor) dot(draft.cursor);
             }
-            else if (draft.path) edges(flattenPath(draft.path, .5 / scale), "#12696a", 2, [5, 3]);
+            else if (draft.path) edges(flattenPath(draft.path, .5 / scale), palette.accent, overlay.selectedWidth, true);
             else {
-                const pts = [...(draft.start ? [draft.start] : []), ...draft.nodes.map(v => v.p), ...(draft.cursor ? [draft.cursor] : [])];
-                edges(pts.slice(1).map((b, i) => ({ a: pts[i], b })), "#894a86", 2, [5, 3]);
+                const points = [...(draft.start ? [draft.start] : []), ...draft.nodes.map(v => v.p), ...(draft.cursor ? [draft.cursor] : [])];
+                edges(points.slice(1).map((b, i) => ({ a: points[i], b })), palette.parameterGeometry, overlay.parameterWidth, true);
             }
-            for (const v of draft.nodes) dot(v.p, "#12696a");
+            for (const v of draft.nodes) dot(v.p);
         }
     }
-    if (map.profilePoint) dot(map.profilePoint, "#b24933", false, 6);
+    if (map.profilePoint) dot(map.profilePoint, true);
     ctx.restore();
 }

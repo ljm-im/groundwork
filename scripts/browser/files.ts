@@ -397,14 +397,16 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
         await click("[data-tab=terrain]");
         assert.match(await evaluate(() => document.querySelector("[data-geo-node=\"T\"]")!.textContent!), /flat\s*\+\s*1\b/);
         await click("[data-geo-node=\"T\"]");
+        await click("[data-property-tab=function]");
         assert.match(await evaluate(() => document.querySelector("[data-parameter$=\".function.amount\"] .numeric-face")!.textContent!.trim()), /^1(?:\.0+)?$/);
         await click("[data-tab=inputs]");
-        assert.equal(await evaluate(() => document.querySelector("[data-select-field=\"F\"] small")!.textContent), "0");
-        for (const [tab, row, geometry] of [["buildings", "[data-building=\"A\"]", "中心"], ["network", "[data-edge=\"E\"]", "路线控制点"], ["network", "[data-node=\"a\"]", "位置"]]) {
+        assert.equal(await evaluate(() => document.querySelector("[data-select-field=\"F\"] small")!.textContent), "0.0");
+        for (const [tab, row, propertyTab, geometry] of [["buildings", "[data-building=\"A\"]", "building", "中心"], ["network", "[data-edge=\"E\"]", "edge", "路线控制点"], ["network", "[data-node=\"a\"]", "node", "位置"]]) {
             await click("[data-tab=" + tab + "]");
             if (row.startsWith("[data-node")) await click("#panel details > summary");
             await click(row);
-            const control = "#properties .geometry-row[aria-label=\"" + geometry + "\"]";
+            await click("[data-property-tab=" + propertyTab + "]");
+            const control = "#properties .geometry-select[aria-label=\"" + geometry + "\"]";
             await click(control);
             assert.equal(await evaluate(s => document.querySelector(s)!.getAttribute("aria-pressed"), control), "true");
             assert.equal(await evaluate(() => [...document.querySelectorAll("#properties .number-label")].filter(n => /^(中心 )?[XY]$/.test(n.textContent!)).length), 0);

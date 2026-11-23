@@ -10,7 +10,7 @@ export function fieldContours(t: Terrain, name: string) {
     }
     const step = niceStep((high - low) / 10);
     const lines: { value: number; path: Path2D; label?: Point }[] = [];
-    if (low >= high) return { lines, constant: low === high ? low : undefined };
+    if (low >= high) return { lines, step, constant: low === high ? low : undefined };
     for (let n = Math.floor(low / step) + 1; n * step <= high; n++) {
         const value = n * step, path = new Path2D();
         let label: Point | undefined;
@@ -33,5 +33,5 @@ export function fieldContours(t: Terrain, name: string) {
         }
         lines.push({ value, path, label: n % 3 === 0 ? label : undefined });
     }
-    return { lines, constant: undefined };
+    return { lines, step, constant: undefined };
 }

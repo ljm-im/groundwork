@@ -2,7 +2,8 @@ import { type Section, type Point } from "../core/design/v5.ts";
 import { type Terrain } from "../core/design/results.ts";
 import { type IslandView } from "../core/island.ts";
 import { clamp, distance, mixPoint, sampleDefined } from "../core/math/geometry.ts";
-import { treeStyles } from "../core/vegetation/vegetation.ts";
+import { canvasText, palette, sectionColors, treeStyles } from "./palette.ts";
+import { displayNumber } from "../app/state/numbers.ts";
 
 // Section stations and building intersections only change when an endpoint or the terrain changes.
 const sectionCuts = new WeakMap<Section, { terrain: Terrain; footprints: string; x0: number; y0: number; x1: number; y1: number;
@@ -69,18 +70,18 @@ export function drawSections(container: HTMLElement, island: IslandView) {
             ys = Math.min((h - 27) / Math.max(28, ...ground.filter(v => v !== undefined)), 3.4);
         const sx = (v: number) => left + v / len * (right - left),
             sy = (v: number) => base - v * ys;
-        ctx.font = "9px Consolas,monospace";
+        ctx.font = canvasText.xs + "px " + canvasText.font;
         ctx.textAlign = "right";
         ctx.textBaseline = "middle";
         for (const level of [0, 10, 20, 30]) {
             const y = sy(level);
             if (y < 4) continue;
-            ctx.fillStyle = "#84938a";
+            ctx.fillStyle = palette.textSecondary;
             ctx.fillText(String(level), left - 3, y);
             ctx.beginPath();
             ctx.moveTo(left, y);
             ctx.lineTo(right, y);
-            ctx.strokeStyle = "#dfe5dc";
+            ctx.strokeStyle = palette.border;
             ctx.lineWidth = .7;
             ctx.stroke();
         }
@@ -95,9 +96,9 @@ export function drawSections(container: HTMLElement, island: IslandView) {
             ctx.lineTo(sx(len * (i - 1) / n), base + 6);
             ctx.lineTo(sx(len * start / n), base + 6);
             ctx.closePath();
-            ctx.fillStyle = "#cec5a8";
+            ctx.fillStyle = sectionColors.ground;
             ctx.fill();
-            ctx.strokeStyle = "#978e71";
+            ctx.strokeStyle = sectionColors.groundOutline;
             ctx.lineWidth = .8;
             ctx.stroke();
         }
@@ -111,7 +112,7 @@ export function drawSections(container: HTMLElement, island: IslandView) {
             ctx.beginPath();
             ctx.moveTo(px, sy(g));
             ctx.lineTo(px, sy(crown));
-            ctx.strokeStyle = "#806d4e";
+            ctx.strokeStyle = sectionColors.trunk;
             ctx.stroke();
             ctx.beginPath();
             ctx.ellipse(px, sy(crown), Math.max(1, tree.radius * (right - left) / len), tree.radius * ys, 0, 0, Math.PI * 2);
@@ -127,13 +128,11 @@ export function drawSections(container: HTMLElement, island: IslandView) {
         }
         ctx.textAlign = "left";
         ctx.textBaseline = "bottom";
-        ctx.font = "9px Consolas,monospace";
-        ctx.fillStyle = "#738278";
+        ctx.fillStyle = palette.textSecondary;
         ctx.fillText("0", left, h);
         ctx.textAlign = "right";
-        ctx.fillText(Math.round(len) + " m", right, h);
+        ctx.fillText(displayNumber(len, 1, "m"), right, h);
         if (w >= 200) {
-            ctx.font = "9px \"Microsoft YaHei UI\",sans-serif";
             ctx.textAlign = "center";
             let last = -100;
             for (const mark of section.marks) {
@@ -144,7 +143,7 @@ export function drawSections(container: HTMLElement, island: IslandView) {
                     height = ground[Math.round(at / len * n)],
                     text = mark[1];
                 if (height === undefined || x - last < ctx.measureText(text).width + 6) continue;
-                ctx.fillStyle = "#556955";
+                ctx.fillStyle = palette.textSecondary;
                 ctx.fillText(text, x, Math.max(13, sy(height) - 9));
                 last = x;
             }

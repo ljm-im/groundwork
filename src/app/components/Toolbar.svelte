@@ -1,6 +1,6 @@
 <div class="map-tools" aria-label="地图工具">
     {#each tools as [tool, icon, label] (tool)}
-        <button data-tool={tool} data-tip={label} aria-label={label} class:active={!!editor.island && editor.tool === tool} aria-pressed={!!editor.island && editor.tool === tool}
+        <button class="icon-button" data-tool={tool} data-tip={label} aria-label={label} aria-pressed={!!editor.island && editor.tool === tool}
             disabled={!editor.island || !!editor.busy} onclick={() => editor.setTool(tool)}><Icon name={icon} /></button>
     {/each}
 </div>

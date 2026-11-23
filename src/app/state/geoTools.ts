@@ -1,4 +1,4 @@
-import { type Design, type GeoNode, type Path, type PathNode, type Point, type Strip } from "../../core/design/v5.ts";
+import { type Design, type GeoNode, type Path, type PathNode, type Point } from "../../core/design/v5.ts";
 import { functionDefaults, ridgeNoiseDefaults } from "../../core/design/defaults.ts";
 import { type Segment } from "../../core/design/regions.ts";
 import { closedPen, nearestSegment, penNode, shapePath, type ShapeTool } from "../../core/edit/paths.ts";
@@ -169,9 +169,6 @@ export function draftPointer(e: Editor, phase: "down" | "move" | "up", raw: Poin
     }
     if (e.map.draft === draft) updatePreview(e, draft);
     return true;
-}
-export function drawnRange(c: Strip) {
-    return c.range ? "从 " + c.range.from + " 到 " + c.range.to : "整圈";
 }
 export function geoAt(d: Design, id: string): GeoNode {
     return d.geoNodes.find(n => n.id === id)!;
