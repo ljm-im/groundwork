@@ -13,7 +13,7 @@ export function nodePose(design: Pick<Design, "nodes" | "buildings">, node: Pick
     return pose;
 }
 
-export function parseDesign(text: unknown): Design {
+export function parseDesign(text: unknown, allowBrokenReferences = false): Design {
     const d: Design = typeof text === "string" ? JSON.parse(text) : structuredClone(text);
     check(d && typeof d === "object", "不支持的版本");
     check(![1, 2, 3, 4].includes(d.version), "暂不支持 v4 设计，等待迁移");
@@ -38,7 +38,7 @@ export function parseDesign(text: unknown): Design {
     for (const [i, label] of d.labels.entries()) rejectRetired(label, "labels[" + i + "].", ["level"]);
     for (const [i, b] of d.buildings.entries()) rejectRetired(b, "buildings[" + i + "].", ["zone"]);
     for (const [i, n] of d.nodes.entries()) rejectRetired(n, "nodes[" + i + "].", ["yard", "at"]);
-    validateGeo(d);
+    validateGeo(d, allowBrokenReferences);
     const routing = d.routing;
     check(routing && (["sampleStep", "gradeWindow", "overlapLength"] as const).every(k => positive(routing[k])) &&
     (["landing", "clearLead", "viaTolerance"] as const).every(k => routing[k] == null || Number.isFinite(routing[k]) && routing[k] >= 0) &&

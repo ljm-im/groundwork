@@ -8,7 +8,7 @@ export const positive = (n: unknown): n is number => typeof n === "number" && Nu
 const record = (v: unknown) => !!v && typeof v === "object" && !Array.isArray(v);
 const finite = Number.isFinite;
 
-export function validateGeo(d: Design) {
+export function validateGeo(d: Design, allowBrokenReferences = false) {
     check(record(d.variables), "variables 缺失");
     check(record(d.fields) && !Object.hasOwn(d.fields, "height"), "fields 无效，高度场是内置场");
     for (const [key, variable] of Object.entries(d.variables)) {
@@ -19,11 +19,15 @@ export function validateGeo(d: Design) {
     for (const [key, f] of Object.entries(d.fields))
         check(key && finite(f?.default) && (f.label == null || typeof f.label === "string"), "fields." + key + " 无效");
     const field = (name: string) => name === "height" || Object.hasOwn(d.fields, name);
-    const missingVariables: string[] = [];
+    const problems: { index?: number; message: string }[] = [];
     const upperPaths = new Map<string, Path[]>();
     for (const [i, n] of d.geoNodes.entries()) {
         const at = "geoNodes[" + i + "]";
         const valid = (ok: unknown, path: string) => check(ok, at + "." + path + " 无效");
+        valid(!Object.hasOwn(n, "disabled") || n.disabled === true, "disabled");
+        const missing = (message: string) => {
+            if (!n.disabled) problems.push({ index: i, message: at + "." + message });
+        };
         const ids = new Set<string>();
         function path(p: Path, key: string) {
             valid(p?.closed === true && Array.isArray(p.nodes) && p.nodes.length >= 2, key);
@@ -42,14 +46,15 @@ export function validateGeo(d: Design) {
             if (typeof h === "number") valid(finite(h), key);
             else {
                 valid(h && typeof h.var === "string", key);
-                if (!Object.hasOwn(d.variables, h.var)) missingVariables.push(at + "." + key + " 找不到变量 " + h.var);
+                if (!Object.hasOwn(d.variables, h.var)) missing(key + " 找不到变量 " + h.var);
                 valid(finite(h.offset ?? 0), key + ".offset");
             }
         }
         function input(v: FieldInput, key: string) {
             if (typeof v === "number") valid(finite(v), key);
             else {
-                check(v && field(v.field), at + "." + key + " 找不到场 " + v?.field);
+                valid(v && typeof v.field === "string", key);
+                if (!field(v.field)) missing(key + " 找不到场 " + v.field);
                 valid(finite(v.scale ?? 1) && finite(v.offset ?? 0), key);
             }
         }
@@ -69,17 +74,17 @@ export function validateGeo(d: Design) {
         }
         else {
             valid(Array.isArray(c.of) && [1, 2].includes(c.of.length) && new Set(c.of).size === c.of.length, "construction.of");
-            for (const ref of c.of) check(upperPaths.has(ref), at + ".construction.of 找不到下方地件 " + ref);
+            for (const ref of c.of) if (!upperPaths.has(ref)) missing("construction.of 找不到下方地件 " + ref);
             valid(point(c.widths) && c.widths.every(w => w >= 0) && c.widths.some(positive), "construction.widths");
             if (c.range) {
                 const upper = [...upperPaths.keys()].reverse().find(id => c.of.some(ref => ref === id))!;
                 const { from, to } = c.range;
-                check(upperPaths.get(upper)!.some(p => [from, to].every(id => p.nodes.some(v => v.id === id))),
-                    at + ".construction.range 在同一路径上找不到 " + from + "、" + to);
+                if (!upperPaths.get(upper)?.some(p => [from, to].every(id => p.nodes.some(v => v.id === id))))
+                    missing("construction.range 在同一路径上找不到 " + from + "、" + to);
             }
         }
         upperPaths.set(n.id, c.type === "free" ? c.paths : []);
-        check(field(n.field ?? "height"), at + ".field 找不到场 " + n.field);
+        if (!field(n.field ?? "height")) missing("field 找不到场 " + n.field);
         valid(!n.field || n.field === "height" || ["flat", "slope", "add", "noise", "blend", "split"].includes(f.type), "field");
         if (["blend", "split", "batter"].includes(f.type)) valid(c.type === "strip", "construction.type");
         check(!Object.hasOwn(f, "noise"), at + ".function.noise 是未知字段");
@@ -133,8 +138,9 @@ export function validateGeo(d: Design) {
             default: valid(false, "function.type");
         }
     }
-    check(d.geoNodes.some(n => n.function.type === "ground"), "geoNodes 缺少确定画布的 ground");
+    if (!d.geoNodes.some(n => n.function.type === "ground")) problems.push({ message: "geoNodes 缺少确定画布的 ground" });
     for (const [i, label] of d.labels.entries())
-        if (label.var !== undefined && !Object.hasOwn(d.variables, label.var)) missingVariables.push("labels[" + i + "].var 找不到变量 " + label.var);
-    check(!missingVariables.length, missingVariables.join("\n"));
+        if (label.var !== undefined && !Object.hasOwn(d.variables, label.var)) problems.push({ message: "labels[" + i + "].var 找不到变量 " + label.var });
+    if (!allowBrokenReferences) check(!problems.length, problems.map(p => p.message).join("\n"));
+    return problems;
 }

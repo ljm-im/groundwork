@@ -69,7 +69,7 @@ function exportTerrain(terrain: Terrain, heights: Float32Array): ExportTerrain {
         surfaceTypes: { 0: "海底", 1: "沙", 2: "岩石", 3: "草", 4: "铺装" }, surfaceRules, heights: heightsOut, defined, surface };
 }
 
-function exportFlights(route: Route): Flight[] {
+export function exportFlights(route: Route): Flight[] {
     return stairSpans(route.stairs, route.s).map(({ start, end }) => {
         const from = precision(route.s[start]), to = precision(route.s[end]);
         // Count from the published endpoint elevations in whole millimetres.

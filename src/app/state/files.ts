@@ -51,7 +51,7 @@ export class DesignFiles {
             if (stored) {
                 const draft: unknown = JSON.parse(stored);
                 if (draft && typeof draft === "object" && "text" in draft && typeof draft.text === "string") {
-                    parseDesign(draft.text);
+                    parseDesign(draft.text, true);
                     e.draft = draft as NonNullable<session.Editor["draft"]>;
                 }
             }
@@ -100,7 +100,7 @@ export class DesignFiles {
         const e = this.editor, draft = e.draft;
         if (!draft || !this.supported) return;
         return e.working("正在恢复草稿…", () => {
-            this.install(parseDesign(draft.text), draft.filename || "island.json", { recovered: true });
+            this.install(parseDesign(draft.text, true), draft.filename || "island.json", { recovered: true });
             e.draft = null;
             e.message("已恢复未保存的草稿");
         });
@@ -161,7 +161,7 @@ export class DesignFiles {
         const file = await handle.getFile();
         // Keep a UTF-8 BOM, original whitespace and line endings for an untouched design.
         const text = new TextDecoder("utf-8", { ignoreBOM: true }).decode(await file.arrayBuffer());
-        const json = text.replace(/^\uFEFF/, ""), design = parseDesign(json);
+        const json = text.replace(/^\uFEFF/, ""), design = parseDesign(json, true);
         const source = JSON.parse(json) as { version: number };
         const original = serializeDesign(source) === JSON.stringify(source, null, 2) &&
             JSON.stringify(source) === JSON.stringify(design) ? text : null;

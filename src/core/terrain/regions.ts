@@ -10,7 +10,8 @@ const expand = (b: Box, w: number): Box => [b[0] - w, b[1] - w, b[2] + w, b[3] +
 
 function rangeOf(paths: Segment[][], range: Strip["range"]) {
     if (!range) return paths.flat();
-    const path = paths.find(parts => parts.some(s => s.from === range.from))!;
+    const path = paths.find(parts => [range.from, range.to].every(id => parts.some(s => s.from === id)));
+    if (!path) return [];
     const i = path.findIndex(s => s.from === range.from);
     const rotated = path.slice(i).concat(path.slice(0, i));
     const stop = rotated.findIndex((s, j) => j > 0 && s.from !== rotated[j - 1].from && s.from === range.to);
@@ -84,7 +85,7 @@ export function makeShape(node: GeoNode, below: Map<string, RegionShape>, tolera
     const upperId = references.at(-1)!, upper = below.get(upperId)!;
     const lower = references.length === 2 ? below.get(references[0]) : undefined;
     const firstInside = upperId === c.of[0], [w1, w2] = c.widths;
-    const outline = rangeOf(upper.boundary(), c.range), lowerEdges = lower?.boundary().flat() ?? [];
+    const outline = upper && references.length === c.of.length ? rangeOf(upper.boundary(), c.range) : [], lowerEdges = lower?.boundary().flat() ?? [];
     const edges = lower ? outline.flatMap(s => commonEdge(s, lower, lowerEdges, tolerance)) : outline;
     const oriented = edges.filter(({ a, b }) => distance(a, b) > 0).map(({ a, b }) => {
         const length = distance(a, b), nx = (a[1] - b[1]) / length, ny = (b[0] - a[0]) / length, mid = mixPoint(a, b, .5);
@@ -112,17 +113,18 @@ export function makeShape(node: GeoNode, below: Map<string, RegionShape>, tolera
     }
     let contour: Segment[][] | undefined;
     const shape: RegionShape = { box: expand(bounds(edges.flatMap(e => [e.a, e.b])), Math.max(w1, w2)),
-        cross, contains: p => !!cross(p), boundary: () => contour ??= trace(shape, tolerance) };
+        spine: edges, cross, contains: p => oriented.length > 0 && !!cross(p), boundary: () => contour ??= trace(shape, tolerance) };
     return shape;
 }
 
 export function canvasGrid(d: Design, shapes: Map<string, RegionShape>) {
-    const boxes = d.geoNodes.filter(n => n.function.type === "ground").map(n => {
+    const boxes = d.geoNodes.filter(n => !n.disabled && n.function.type === "ground").map(n => {
         const shape = shapes.get(n.id)!;
         if (n.construction.type === "free") return shape.box;
         return bounds(shape.boundary().flatMap(path => path.flatMap(s => [s.a, s.b])));
     });
     const { step } = d.grid, low = (x: number) => Math.floor(x / step) * step, high = (x: number) => Math.ceil(x / step) * step;
+    if (!boxes.length) return createGrid({ xMin: 0, yMin: 0, xMax: step, yMax: step, step });
     const xMin = low(Math.min(...boxes.map(b => b[0]))), yMin = low(Math.min(...boxes.map(b => b[1])));
     const xMax = high(Math.max(...boxes.map(b => b[2]))), yMax = high(Math.max(...boxes.map(b => b[3])));
     if (![xMin, yMin, xMax, yMax].every(Number.isFinite) || xMax <= xMin || yMax <= yMin) throw new Error("ground 画布范围为空");

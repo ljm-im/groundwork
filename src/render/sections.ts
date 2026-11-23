@@ -1,6 +1,6 @@
 import { type Section, type Point } from "../core/design/types.ts";
 import { type Terrain } from "../core/design/results.ts";
-import { type Island } from "../core/island.ts";
+import { type IslandView } from "../core/island.ts";
 import { clamp, distance, mixPoint, sampleDefined } from "../core/math/geometry.ts";
 import { treeStyles } from "../core/vegetation/vegetation.ts";
 
@@ -31,7 +31,7 @@ function sectionCut(section: Section, terrain: Terrain, footprints: string) {
     return cut;
 }
 
-export function drawSections(container: HTMLElement, island: Island) {
+export function drawSections(container: HTMLElement, island: IslandView) {
     const { design: d, terrain: t, graded } = island;
     const footprints = t.buildings.map(({ data: b }) => [b.shape, ...b.center, b.angle, b.radius, b.inner, ...(b.size ?? [])].join(",")).join(";");
     while (container.children.length > d.sections.length) container.lastChild!.remove();

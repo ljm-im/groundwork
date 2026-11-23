@@ -52,6 +52,7 @@ export type GeoFunction = (
     { type: "batter"; grade: number }
 ) & { seed?: number };
 export interface GeoNode extends Named {
+    disabled?: true;
     prompt?: string;
     field?: string;
     construction: Construction;

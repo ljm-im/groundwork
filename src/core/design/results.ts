@@ -11,6 +11,7 @@ export interface RoutingSurface {
     search?: { cost: Float64Array; parent: Int32Array; seen: Int32Array; clock: number };
 }
 export interface Terrain extends RoutingSurface {
+    stackHeights: Float32Array;
     fields: Record<string, Float32Array>;
     shore: Float32Array;
     buildings: ReturnType<typeof buildingShape<Building>>[];

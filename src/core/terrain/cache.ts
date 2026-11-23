@@ -54,7 +54,17 @@ export class TerrainCache {
     }
 
     private terrainKey(d: Design) {
-        return JSON.stringify([d.grid.step, d.seed, d.fields, d.variables, d.geoNodes.map(n => [n.id, n.construction, n.field, n.function])]);
+        return JSON.stringify([d.grid.step, d.seed, d.fields, d.variables, d.geoNodes.map(n => [n.id, n.disabled, n.construction, n.field, n.function])]);
+    }
+
+    preview(d: Design) {
+        // Preview can have a different canvas. Copy geometry entries before replacing their raster.
+        const copy = new TerrainCache();
+        copy.geometry = new Map([...this.geometry].map(([id, g]) => [id, { ...g }]));
+        copy.layers = this.layers;
+        copy.gridKey = this.gridKey;
+        copy.serial = this.serial;
+        return copy.generate(d);
     }
 
     generate(d: Design) {
@@ -79,8 +89,9 @@ export class TerrainCache {
         }
         const state = initialFields(d, grid, regions), writers: Writer[] = [], layers = new Map<string, Layer>();
         const batterResiduals = new Map<string, NonNullable<LayerOutput["residual"]>>(), recomputed: string[] = [];
-        const grounds = d.geoNodes.filter(n => n.function.type === "ground");
+        const grounds = d.geoNodes.filter(n => !n.disabled && n.function.type === "ground");
         for (const n of d.geoNodes) {
+            if (n.disabled) continue;
             const start = performance.now(), g = current.get(n.id)!, box = readBox(n, g.shape, grid);
             const { fields, params } = inputs(d, n), field = n.field ?? "height";
             const reads = writers.filter(w => fields.has(w.field) && intersects(box, w.box));

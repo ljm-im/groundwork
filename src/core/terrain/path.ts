@@ -31,19 +31,20 @@ function flattenArc(a: Point, b: Point, bulge: number, tolerance: number, out: P
     out.push(b);
 }
 
+export function pathHandle(path: Path, i: number, side: "in" | "out"): Point {
+    const nodes = path.nodes, v = nodes[i], prev = nodes[(i + nodes.length - 1) % nodes.length].p, next = nodes[(i + 1) % nodes.length].p;
+    const sign = side === "in" ? -1 : 1;
+    const offset = v.mode === "auto" ? [(next[0] - prev[0]) * sign / 6, (next[1] - prev[1]) * sign / 6] : v[side] ?? [0, 0];
+    return [v.p[0] + offset[0], v.p[1] + offset[1]];
+}
+
 export function flattenPath(path: Path, tolerance: number) {
     const { nodes } = path, count = nodes.length, segments: Segment[] = [];
-    const get = (i: number) => nodes[(i + count) % count];
-    function handle(i: number, side: "in" | "out"): Point {
-        const v = get(i), prev = get(i - 1).p, next = get(i + 1).p, sign = side === "in" ? -1 : 1;
-        const offset = v.mode === "auto" ? [(next[0] - prev[0]) * sign / 6, (next[1] - prev[1]) * sign / 6] : v[side] ?? [0, 0];
-        return [v.p[0] + offset[0], v.p[1] + offset[1]];
-    }
     for (let i = 0; i < count; i++) {
-        const v = nodes[i], next = get(i + 1), points = [v.p];
+        const v = nodes[i], next = nodes[(i + 1) % count], points = [v.p];
         if (v.next === "arc") flattenArc(v.p, next.p, v.bulge!, tolerance, points);
         else if (v.next === "line") points.push(next.p);
-        else flattenCurve(v.p, handle(i, "out"), handle(i + 1, "in"), next.p, tolerance, points);
+        else flattenCurve(v.p, pathHandle(path, i, "out"), pathHandle(path, (i + 1) % count, "in"), next.p, tolerance, points);
         const start = segments.length;
         for (let j = 1; j < points.length; j++)
             if (distance(points[j - 1], points[j]) > 0) segments.push({ a: points[j - 1], b: points[j], from: v.id });

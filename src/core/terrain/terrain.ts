@@ -18,7 +18,7 @@ export function layout(d: Design) {
 export function initialFields(d: Design, grid: Grid, regions: Map<string, Region>): FieldState {
     const defined = new Uint8Array(grid.size);
     for (const n of d.geoNodes)
-        if (n.function.type === "ground") for (const k of regions.get(n.id)!.cells) defined[k] = 1;
+        if (!n.disabled && n.function.type === "ground") for (const k of regions.get(n.id)!.cells) defined[k] = 1;
     const fields = Object.fromEntries(Object.entries(d.fields).map(([key, f]) => [key, Float32Array.from(defined, v => v ? f.default : 0)]));
     fields.height = new Float32Array(grid.size);
     return { grid, defined, fields, heightDefined: new Uint8Array(grid.size) };
@@ -28,6 +28,7 @@ export function evaluateStack(d: Design) {
     const { grid, regions } = layout(d), state = initialFields(d, grid, regions);
     const batterResiduals: Terrain["batterResiduals"] = new Map();
     for (const n of d.geoNodes) {
+        if (n.disabled) continue;
         const result = evaluateLayer(d, n, regions.get(n.id)!, state);
         applyLayer(result, n, state);
         if (result.residual) batterResiduals.set(n.id, result.residual);
@@ -59,7 +60,7 @@ export function finishTerrain(d: Design, stack: ReturnType<typeof evaluateStack>
         }
         return cells;
     });
-    return { grid, defined, fields, heights, shore, clearance, padMask, pads, buildings, regions, batterResiduals };
+    return { grid, defined, fields, stackHeights: stack.fields.height, heights, shore, clearance, padMask, pads, buildings, regions, batterResiduals };
 }
 
 export function generateTerrain(d: Design) {

@@ -1,6 +1,6 @@
 import { type Grid } from "../core/math/geometry.ts";
 import { type Terrain, type Tree } from "../core/design/results.ts";
-import { type Island } from "../core/island.ts";
+import { type IslandView } from "../core/island.ts";
 import { clamp, gradient, smooth } from "../core/math/geometry.ts";
 
 const colors = [
@@ -73,7 +73,7 @@ function chartPaper(t: Terrain) {
     return chart;
 }
 
-export function relief(island: Island) {
+export function relief(island: IslandView) {
     const { terrain: t, graded } = island, { grid } = t, { width, height, step } = grid, h = graded.heights;
     const chart = chartPaper(t), { raster, ctx, pad, pixels } = chart, data = pixels.data;
     const previous = chart.heights, bandHeight = 16;

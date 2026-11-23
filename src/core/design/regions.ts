@@ -6,6 +6,7 @@ export interface RegionShape {
     box: Box;
     contains: (p: Point) => boolean;
     boundary: () => Segment[][];
+    spine?: Segment[];
     cross?: (p: Point) => CrossSection | undefined;
 }
 export interface Region { shape: RegionShape; cells: number[]; mask: Uint8Array }
