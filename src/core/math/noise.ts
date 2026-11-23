@@ -57,7 +57,8 @@ export function fbm(n: Noise, x: number, y: number, count: number, ridged = fals
         weight = 0,
         a = 1,
         f = 1;
-    for (let i = 0; i < count; i++) {
+    // Stop when another octave no longer changes the normalization at double precision.
+    for (let i = 0; i < count && weight + a !== weight; i++) {
         const v = ridged ? 1 - Math.abs(n(x * f + i * 5.7, y * f + i * 3.3)) : n(x * f + i * 17.3, y * f - i * 9.1);
         sum += a * (ridged ? v * v : v);
         weight += a;

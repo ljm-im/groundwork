@@ -35,19 +35,19 @@ export interface Strip {
     range?: { from: string; to: string };
 }
 export type Construction = { type: "free"; paths: Path[] } | Strip;
-interface Noise { amplitude: number; scale?: number }
 export interface Ridge { line: Polyline; widths: Point; widthNoise: NoiseSettings; heightNoise: NoiseSettings }
 export interface Peak { at: { p: Point; h: Height }; radius: number; noise: number; scale: number }
 export type GeoFunction = (
-    { type: "ground" | "flat"; value: Height; noise?: Noise } |
+    { type: "ground" | "flat"; value: Height } |
     { type: "coast"; shore: Path; roughness: FieldInput; harbor?: Harbor } |
     { type: "mountain"; ridges: Ridge[]; peaks: Peak[]; floor?: Height } |
     { type: "cliff"; factor: FieldInput; seaLevel?: Height } |
     ({ type: "erosion"; strength?: FieldInput; floor?: Height } & Erosion) |
     { type: "islets"; density: FieldInput; reach: number; threshold?: number; seaLevel?: Height } |
-    { type: "slope"; kind: "path"; line: Polyline; ease?: boolean; noise?: Noise } |
-    { type: "slope"; kind: "radial"; center: Point; radius: number; value: Height; rate: number; noise?: Noise } |
+    { type: "slope"; kind: "path"; line: Polyline; ease?: boolean } |
+    { type: "slope"; kind: "radial"; center: Point; radius: number; value: Height; rate: number } |
     { type: "add"; amount: Height; feather: number } |
+    { type: "noise"; amplitude: FieldInput; scale: number; octaves?: number; feather?: number } |
     { type: "blend" | "split" } |
     { type: "batter"; grade: number }
 ) & { seed?: number };

@@ -80,9 +80,9 @@ export function validateGeo(d: Design) {
         }
         upperPaths.set(n.id, c.type === "free" ? c.paths : []);
         check(field(n.field ?? "height"), at + ".field 找不到场 " + n.field);
-        valid(!n.field || n.field === "height" || ["flat", "slope", "add", "blend", "split"].includes(f.type), "field");
+        valid(!n.field || n.field === "height" || ["flat", "slope", "add", "noise", "blend", "split"].includes(f.type), "field");
         if (["blend", "split", "batter"].includes(f.type)) valid(c.type === "strip", "construction.type");
-        if ("noise" in f && f.noise) valid(finite(f.noise.amplitude) && positive(f.noise.scale ?? 1), "function.noise");
+        check(!Object.hasOwn(f, "noise"), at + ".function.noise 是未知字段");
         if ("floor" in f && f.floor !== undefined) height(f.floor, "function.floor");
         if ("seaLevel" in f && f.seaLevel !== undefined) height(f.seaLevel, "function.seaLevel");
         switch (f.type) {
@@ -122,6 +122,12 @@ export function validateGeo(d: Design) {
                 }
                 break;
             case "add": height(f.amount, "function.amount"); valid(finite(f.feather) && f.feather >= 0, "function.feather"); break;
+            case "noise":
+                input(f.amplitude, "function.amplitude");
+                valid(positive(f.scale), "function.scale");
+                valid(f.octaves === undefined || Number.isSafeInteger(f.octaves) && f.octaves > 0, "function.octaves");
+                valid(f.feather === undefined || finite(f.feather) && f.feather >= 0, "function.feather");
+                break;
             case "batter": valid(positive(f.grade), "function.grade"); break;
             case "blend": case "split": break;
             default: valid(false, "function.type");

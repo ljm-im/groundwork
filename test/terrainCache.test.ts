@@ -47,7 +47,34 @@ test("Incremental layers match a fresh stack byte for byte after every fixture e
         d.geoNodes = d.geoNodes.filter(n => n.id !== rule.remove &&
             !(n.construction.type === "strip" && n.construction.of.some(id => id === rule.remove)));
         check();
+        const index = d.geoNodes.findIndex(n => n.function.type === "noise"), detail = d.geoNodes[index];
+        assert(detail?.function.type === "noise" && typeof detail.function.amplitude === "number");
+        const initial = detail.function.amplitude;
+        for (const offset of [.25, .5, 0]) {
+            detail.function.amplitude = initial + offset;
+            check();
+            assert(cache.recomputed.includes(detail.id) && cache.recomputed.includes(erosion.id));
+            assert(d.geoNodes.slice(0, index).every(n => !cache.recomputed.includes(n.id)));
+        }
     }
+});
+
+test("Cached noise follows its amplitude field and the order of a flat terrace", () => {
+    const d = syntheticDesign(), area = rect(2, 0, 18, 14), cache = new TerrainCache();
+    d.fields.A = { default: 2 };
+    const amplitude = layer("F", area, { type: "flat", value: 1 }, "A");
+    const detail = layer("N", area, { type: "noise", amplitude: { field: "A" }, scale: 9 });
+    const terrace = layer("P", area, { type: "flat", value: 8 });
+    d.geoNodes = [d.geoNodes[0], amplitude, detail, terrace];
+    const plain = compare(cache, d), cells = plain.regions.get(terrace.id)!.cells;
+    assert(cells.every(k => plain.heights[k] === 8));
+    d.geoNodes = [d.geoNodes[0], amplitude, terrace, detail];
+    const textured = compare(cache, d);
+    assert(cells.some(k => textured.heights[k] !== 8));
+    amplitude.function = { type: "flat", value: 0 };
+    const muted = compare(cache, d);
+    assert.deepEqual(cache.recomputed, [amplitude.id, detail.id]);
+    assert(cells.every(k => muted.heights[k] === 8));
 });
 
 test("Moved, deleted and reordered writes restore old cells and keep earlier Island snapshots isolated", () => {

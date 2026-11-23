@@ -93,6 +93,22 @@ test("Geo references report their location and reject invalid field writers", ()
     assert.throws(() => parseDesign(d), /geoNodes\[2\].id/);
 });
 
+test("Noise validates its inputs and rejects the retired inline noise parameter", () => {
+    const d = syntheticDesign(), node = d.geoNodes[1];
+    const fn = { type: "noise" as const, amplitude: 2, scale: 8 };
+    for (const [key, value] of [["scale", 0], ["scale", Infinity], ["octaves", 0], ["octaves", 1.5], ["feather", -1],
+        ["amplitude", { field: "missing" }]] as const) {
+        node.function = { ...fn, [key]: value };
+        assert.throws(() => parseDesign(d), error => error instanceof Error && error.message.includes("geoNodes[1].function." + key));
+    }
+    for (const surface of [{ type: "ground", value: 1 }, { type: "flat", value: 1 },
+        { type: "slope", kind: "radial", value: 1, center: [0, 0], radius: 2, rate: .1 },
+        { type: "slope", kind: "path", line: { points: [{ p: [0, 0], h: 1 }, { p: [2, 0], h: 2 }] } }]) {
+        Object.assign(node, { function: { ...surface, noise: { amplitude: 1 } } });
+        assert.throws(() => parseDesign(d), /geoNodes\[1\]\.function\.noise.*未知字段/);
+    }
+});
+
 test("Removing a referenced variable lists every layer and label location", () => {
     const d = syntheticDesign();
     delete d.variables.A;
