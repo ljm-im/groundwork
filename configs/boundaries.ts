@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { resolve, relative, sep, extname } from "node:path";
@@ -91,4 +92,15 @@ export function checkBoundaries() {
     }
     for (const path of graph.keys()) checkCycles(path);
     checkDirectory(tests, graph);
+}
+
+export function checkEditorSource() {
+    const tracked = execFileSync("git", ["ls-files", "-z", "--", "src"], { cwd: root, encoding: "utf8" }).split("\0").filter(Boolean);
+    assert(tracked.length);
+    for (const file of tracked) {
+        const source = readFileSync(resolve(root, file), "utf8");
+        assert.doesNotMatch(source, /[「」]/u, file);
+        assert.doesNotMatch(source, /<input\b[^>]*\btype=["']range["']/u, file);
+        assert.doesNotMatch(source, /(?:disabled[^\n]*关闭|关闭[^\n]*disabled)/u, file);
+    }
 }

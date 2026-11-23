@@ -354,18 +354,22 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
             assert.equal(await evaluate(() => document.querySelectorAll("#plots canvas").length), design.sections.length);
             const screenshot = await cdp("Page.captureScreenshot", { format: "png", fromSurface: true });
             await writeFile(join(artifactDir, key + ".png"), Buffer.from(screenshot.data, "base64"));
-            const [variable, rule] = Object.entries(design.variables).find(([, v]) => v.range)!;
-            const [min, max, step] = rule.range!, value = rule.value + (rule.value + step <= max ? step : -step);
+            const [variable, rule] = Object.entries(design.variables).find(([, v]) => v.range && typeof v.value === "number")!;
+            const [min, max, step] = rule.range!, current = Number(rule.value), direction = current + step <= max ? 1 : -1;
+            const value = Number((current + direction * step).toPrecision(15));
             assert(value >= min);
             await click("[data-tab=variables]");
             const selector = "[data-variable=" + JSON.stringify(variable) + "]";
-            await evaluate(({ selector, value }) => {
-                const input = document.querySelector<HTMLInputElement>(selector)!;
-                input.value = String(value);
-                input.dispatchEvent(new Event("input", { bubbles: true }));
-            }, { selector, value });
-            await wait(({ selector, value }) => document.querySelector(selector)?.closest(".declaration")?.querySelector("small")?.textContent === String(value), { selector, value });
-            await evaluate(selector => document.querySelector(selector)!.dispatchEvent(new Event("change", { bubbles: true })), selector);
+            const [x, y] = await evaluate(s => {
+                const button = document.querySelector<HTMLElement>(s)!;
+                button.scrollIntoView({ block: "nearest" });
+                const box = button.getBoundingClientRect();
+                return [box.x + box.width / 2, box.y + box.height / 2];
+            }, selector + (direction > 0 ? " .step[aria-label^=增大]" : " .step"));
+            await mouse("mousePressed", x, y);
+            await wait(({ selector, value }) => Number(document.querySelector(selector + " .numeric-face")?.textContent) === value, { selector, value });
+            assert.equal(await prop("writes"), 0);
+            await mouse("mouseReleased", x, y);
             await saved(1);
             assert.equal(parseDesign(await disk(name)).variables[variable].value, value);
             report.checks[key] = { layers: design.geoNodes.length, selected: layer.id, sections: design.sections.length, variable, value };
