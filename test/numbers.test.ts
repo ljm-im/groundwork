@@ -25,6 +25,16 @@ test("Number steps adjust the final signed literal, avoid zero divisors and pres
     for (const expr of ["1 + 2", "{input:a}", "NaN", ""]) assert.throws(() => numericText(expr, true));
     assert.equal(numericText("3 × (2 − 1)", false), "3 * (2 - 1)");
 });
+test("Read-only values use the input step, keyboard minus, and unit spacing", () => {
+    assert.equal(displayNumber(55.00000000000001, .1, "m"), "55.0 m");
+    assert.equal(displayNumber(-2.6, 1), "-3");
+    assert.equal(displayNumber(-1.2345, .25), "-1.23");
+    assert.equal(displayNumber(2.5, .25), "2.50");
+    assert.equal(displayNumber(25, 1, "%"), "25%");
+    assert.equal(displayNumber(-.001, .1, "m"), "0.0 m");
+    assert.equal(displayNumber(1.4e-7, 1e-7), "0.0000001");
+    assert.equal(displayNumber(NaN, .1, "m"), "—");
+});
 test("Dragging and repeating preview several values but release records one history entry", async t => {
     const jitter = new NumberDrag();
     for (const dx of [2, -2, 2, -2]) assert.equal(jitter.move(dx, 0, false, false), 0);

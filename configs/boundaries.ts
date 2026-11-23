@@ -4,6 +4,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { resolve, relative, sep, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
+import { palette, treeStyles } from "../src/render/palette.ts";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const tests = resolve(root, "test"), core = resolve(root, "src/core");
@@ -104,4 +105,32 @@ export function checkEditorSource() {
         assert.doesNotMatch(source, /<input\b[^>]*\btype=["']range["']/u, file);
         assert.doesNotMatch(source, /(?:disabled[^\n]*关闭|关闭[^\n]*disabled)/u, file);
     }
+}
+
+export function checkDesignTokens() {
+    const colors = /#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?|oklch|oklab|lch|lab|hwb)\s*\(/iu;
+    const pixelFont = /\bfont-size\s*:\s*[^;{}\n]*\b\d+(?:\.\d+)?px\b/i;
+    const legacy = /--(?:ink|muted|line|paper|panel|teal|light|red)\s*[:)]/u;
+    const tokens = resolve(root, "src/app/styles/tokens.css");
+    const paletteFile = resolve(root, "src/render/palette.ts");
+    for (const [directory, tokenFile] of [["app", tokens], ["render", paletteFile]]) {
+        for (const entry of readdirSync(resolve(root, "src", directory), { recursive: true, withFileTypes: true })) {
+            if (!entry.isFile() || !/\.(svelte|ts|css)$/u.test(entry.name)) continue;
+            const path = resolve(entry.parentPath, entry.name);
+            if (path === tokenFile) continue;
+            const source = readFileSync(path, "utf8");
+            assert.doesNotMatch(source, colors, relative(root, path) + " must use color tokens");
+            if (directory === "app") {
+                assert.doesNotMatch(source, pixelFont, relative(root, path) + " must use font tokens");
+                assert.doesNotMatch(source, legacy, relative(root, path) + " uses a retired token");
+            }
+        }
+    }
+    const definitions = new Map([...readFileSync(tokens, "utf8").matchAll(/(--[a-z-]+):\s*([^;]+);/g)].map(match => [match[1], match[2].trim()]));
+    for (const key of ["bgApp", "bgPanel", "bgSelected", "text", "textSecondary", "border", "accent", "warning", "danger"] as const) {
+        const token = "--" + key.replace(/[A-Z]/g, letter => "-" + letter.toLowerCase());
+        assert.equal(definitions.get(token), palette[key], token);
+    }
+    for (const [species, [color]] of Object.entries(treeStyles))
+        assert.equal(definitions.get("--map-tree-" + species), color, species);
 }
