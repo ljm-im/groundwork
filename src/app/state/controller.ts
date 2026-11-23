@@ -1,11 +1,10 @@
-import { areaBoundary, clearingShape, nodePose } from "../../core/design/model.ts";
-import { distance, nearest, sample } from "../../core/math/geometry.ts";
+import { nodePose } from "../../core/design/model.ts";
+import { distance, onCanvas, sampleDefined } from "../../core/math/geometry.ts";
 import { moveHandle } from "../../core/edit/controls.ts";
 import { drawingTarget, featureHit, featureOf, insertVertex } from "../../core/edit/landforms.ts";
-import { addGate, addNode, connect, insertVia, splitRoad } from "../../core/edit/topology.ts";
+import { addNode, connect, insertVia, splitRoad } from "../../core/edit/topology.ts";
 import { canPlaceBuilding, doorRoads, nearbyWall, openDoorAt, placeBuilding } from "../../core/edit/buildings.ts";
-import { insidePolygon } from "../../core/math/polygon.ts";
-import { errorText, type Design, type Point, type RoadNode, type Selection, type Yard } from "../types.ts";
+import { errorText, type Design, type Point, type RoadNode, type Selection } from "../types.ts";
 import * as session from "./session.svelte.ts";
 
 declare global {
@@ -22,16 +21,16 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
 
     function insertFeaturePoint(p: Point) {
         const d = editor.island.design, h = editor.selection, item = featureOf(d, h);
-        if (!h || !item || !(h!.kind === "ridge" || h.kind === "planting" || h.kind === "clearing" && clearingShape(d, item).type === "polygon"))
+        if (!h || !item || !(h.kind === "planting" || h.kind === "clearing" && "shape" in item && item.shape.type === "polygon"))
             return false;
-        const hit = featureHit(d, h.kind, item, p);
+        const hit = featureHit(h.kind, item, p);
         if (hit.distance * map.scale > 10)
             return false;
         try {
             const index = insertVertex(d, h, hit);
             if (index != null) {
                 editor.select({ kind: h.kind, id: h.id, role: "vertex", index });
-                editor.finishFeature(h.kind);
+                editor.finishFeature();
             }
         }
         catch (e) {
@@ -91,17 +90,11 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         canvas.setPointerCapture(ev.pointerId);
     }
 
-    function canPlace(d: Design, p: Point) {
-        const g = d.grid;
-        if (p[0] < g.xMin || p[0] > g.xMax || p[1] < g.yMin || p[1] > g.yMax) {
-            editor.message("请在网格范围内放置节点");
-            return false;
-        }
-        if ((d.yards ?? []).some(y => insidePolygon(areaBoundary(d, y), p))) {
-            editor.message("请使用区域边界上的入口连接外部道路");
-            return false;
-        }
-        return true;
+    function canPlace(p: Point) {
+        const t = editor.island.terrain;
+        if (onCanvas(t.grid, t.defined, ...p)) return true;
+        editor.message("请在画布内放置节点");
+        return false;
     }
 
     function nodeAt(d: Design, h: Selection | null, p: Point) {
@@ -131,7 +124,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
                 editor.message("请单击路网节点或建筑外墙");
                 return;
             }
-            if (!canPlace(d, p))
+            if (!canPlace(p))
                 return;
             to = addNode(d, p);
         }
@@ -152,18 +145,6 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         editor.select({ kind: "node", id: node.id });
         editor.reroute(new Set());
         editor.hint = fork ? "单击道路中部建立分岔，Esc 完成开门" : "单击终点节点或建筑外墙，Esc 完成开门";
-    }
-
-    function finishGate(d: Design, yard: Yard, other: RoadNode, gateFirst: boolean) {
-        if (other.yard === yard.id || insidePolygon(yard, nodePose(d, other).point)) {
-            editor.message("请选择区域外的节点");
-            return;
-        }
-        const { gate, edge } = addGate(d, yard, other, gateFirst);
-        editor.setTool("select");
-        editor.selection = { kind: "node", id: gate.id };
-        editor.tab = "network";
-        editor.reroute(new Set([edge.id]));
     }
 
     function insertWaypoint(screen: Point) {
@@ -206,10 +187,6 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             });
             return;
         }
-        if (editor.tool === "peak") {
-            beginPan(ev, screen, () => editor.createFeature("peak", [p]));
-            return;
-        }
         if (editor.tool === "via" || ev.altKey) {
             beginPan(ev, screen, () => {
                 if (editor.tool !== "select" || !insertFeaturePoint(p)) insertWaypoint(screen);
@@ -223,7 +200,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
                     editor.message("请在空地上放置建筑", screen);
                     return;
                 }
-                const b = placeBuilding(d, p.map(v => +v.toFixed(2)) as Point, editor.island.terrain.zones[editor.island.terrain.zoneAt[editor.island.terrain.grid.index(...p)]]?.id);
+                const b = placeBuilding(d, p.map(v => +v.toFixed(2)) as Point);
                 editor.setTool("select");
                 editor.select({ kind: "building", id: b.id });
                 editor.rebuild();
@@ -237,7 +214,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
                     editor.message("请单击建筑外墙（2 m 以内）", screen);
                     return;
                 }
-                if (!wall && !canPlace(d, p)) return;
+                if (!wall && !canPlace(p)) return;
                 const n = wall ? openDoorAt(d, wall, undefined) : addNode(d, p.map(v => +v.toFixed(2)) as Point);
                 editor.setTool("select");
                 editor.select({ kind: "node", id: n.id });
@@ -245,13 +222,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             });
             return;
         }
-        if (editor.tool === "edge" || editor.tool === "gate") {
-            const yardAtPoint = () => (d.yards ?? []).map(y => areaBoundary(d, y)).find(y => insidePolygon(y, p) || nearest(...p, y.points, true).distance * map.scale < 8);
-            if (editor.linkYard) {
-                if (h?.kind === "node") finishGate(d, editor.linkYard, d.nodes.find(n => n.id === h!.id)!, true);
-                else beginPan(ev, screen, () => editor.message("请单击区域外的终点节点"));
-                return;
-            }
+        if (editor.tool === "edge") {
             if (!editor.linkFrom) {
                 const wall = editor.tool === "edge" && nearbyWall(d, p);
                 if (wall) {
@@ -259,31 +230,14 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
                     return;
                 }
                 if (h?.kind !== "node") {
-                    beginPan(ev, screen, () => {
-                        const yard = editor.tool === "gate" ? yardAtPoint() : null;
-                        if (yard) {
-                            editor.linkYard = yard;
-                            editor.hint = yard.name + " → 单击区域外终点，Esc 取消";
-                        }
-                        else editor.message(editor.tool === "gate" ? "请单击院落、广场或外部节点" : "请先单击路网节点");
-                    });
+                    beginPan(ev, screen, () => editor.message("请先单击路网节点或建筑外墙"));
                     return;
                 }
                 editor.linkFrom = h.id;
                 editor.select(h);
-                editor.hint = editor.tool === "gate" ? "单击院落或广场放置入口，Esc 取消" : "单击终点节点或建筑外墙，Esc 取消";
+                editor.hint = "单击终点节点或建筑外墙，Esc 取消";
             }
-            else if (editor.tool === "edge") {
-                beginPan(ev, screen, () => completeLink(d, h, p, false));
-            }
-            else beginPan(ev, screen, () => {
-                const yard = yardAtPoint();
-                if (!yard) {
-                    editor.message("请单击院落或广场");
-                    return;
-                }
-                finishGate(d, yard, d.nodes.find(n => n.id === editor.linkFrom)!, false);
-            });
+            else beginPan(ev, screen, () => completeLink(d, h, p, false));
             return;
         }
         if (editor.tool === "fork") {
@@ -357,11 +311,11 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         const screen = localPoint(ev),
             p = map.world(...screen),
             d = editor.island.design;
-        editor.position = "X " + p[0].toFixed(1) + "   Y " + p[1].toFixed(1) + "   H " + sample(editor.island.terrain.grid, editor.island.graded.heights, ...p).toFixed(1) + " m";
+        editor.position = "X " + p[0].toFixed(1) + "   Y " + p[1].toFixed(1) + "   H " + (sampleDefined(editor.island.terrain.grid, editor.island.graded.heights, editor.island.terrain.defined, ...p)?.toFixed(1) ?? "—") + " m";
         if (map.drawing && !(editor.gesture && "pan" in editor.gesture)) {
             const drawing = map.drawing;
             drawing.cursor = p;
-            drawing.hover = !drawing.points.length && !drawing.extension ? drawingTarget(d, drawing.kind, p, map.scale) : null;
+            drawing.hover = !drawing.points.length ? drawingTarget(d, drawing.kind, p, map.scale) : null;
             map.draw();
         }
         if (editor.linkFrom && ["edge", "fork"].includes(editor.tool) && !(editor.gesture && "pan" in editor.gesture)) {
@@ -388,7 +342,10 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         if (!editor.gesture.changed && distance(screen, editor.gesture.screen) < 2) return;
         editor.gesture.changed = true;
         const h = editor.gesture.handle;
-        moveHandle(d, h, [p[0] + editor.gesture.offset[0], p[1] + editor.gesture.offset[1]]);
+        const target: Point = [p[0] + editor.gesture.offset[0], p[1] + editor.gesture.offset[1]];
+        const { grid, defined } = editor.island.terrain;
+        if (!onCanvas(grid, defined, ...target)) return;
+        moveHandle(d, h, target);
         if (h.kind === "via") editor.pendingEdges.add(h.id);
         if (h.kind === "node" || h.kind === "door") {
             const node = h.kind === "node" ? d.nodes.find(n => n.id === h.id) : d.nodes.find(n => n.building === h.id && n.door === h.role);
@@ -405,7 +362,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
 
     function offerDoorConversion(h: Selection, p: Point) {
         const d = editor.island.design, node = d.nodes.find(n => n.id === h.id);
-        if (!node || node.type === "door" || node.type === "gate")
+        if (!node || node.type === "door")
             return false;
         const edges = d.edges.filter(e => e.from === node.id || e.to === node.id);
         const wall = edges.length && nearbyWall(d, p);
@@ -439,7 +396,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         editor.flushPending();
         if (g.handle.kind === "node" && ev.type === "pointerup" && offerDoorConversion(g.handle, map.world(...localPoint(ev)))) return;
         if (g.handle.kind === "planting" || g.handle.kind === "clearing") {
-            editor.finishFeature(g.handle.kind);
+            editor.finishFeature();
             return;
         }
         if (g.handle.kind === "building" && g.handle.role === "title") {
@@ -447,7 +404,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             editor.record();
             return;
         }
-        if (["coast", "ridge", "zone", "yard", "building", "peak"].includes(g.handle.kind)) {
+        if (g.handle.kind === "building") {
             editor.rebuild();
             return;
         }
@@ -477,11 +434,6 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         if (ev.key === "Escape" && (!input || editor.tool !== "select")) {
             ev.preventDefault();
             canvas.focus({ preventScroll: true });
-            if (map.drawing?.extension) {
-                editor.setTool("ridge");
-                map.draw();
-                return;
-            }
             editor.setTool("select");
             editor.select(null);
             return;

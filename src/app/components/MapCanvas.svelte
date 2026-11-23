@@ -10,7 +10,7 @@
             </div>
         </div>
     {/if}
-    <div class="legend"><span><i class="key"></i>建筑门</span><span><i class="key gate"></i>院门</span><span><i class="key junction"></i>路口</span><span><i
+    <div class="legend"><span><i class="key"></i>建筑门</span><span><i class="key junction"></i>路口</span><span><i
         class="key via"></i>途经点</span><span><i class="key issue"></i>校验</span><span class="tree-key"><i class="forest"></i>林木</span><span class="tree-key"><i class="avenue"></i>行道树</span><span class="tree-key"><i class="small"></i>小乔木</span><span class="tree-key"><i class="shrub"></i>灌木</span></div>
     <div class="north" aria-label="正北">
         N<svg viewBox="0 0 16 28"><path d="m8 1 7 24-7-6-7 6z" fill="#365d5b"/><path d="m8 3 5.4 19-5.4-4z" fill="#e6f0e5"/></svg></div>
@@ -194,9 +194,6 @@
         .key.junction {
             border-radius: 50%;
             background: #27524c;
-        }
-        .key.gate {
-            background: linear-gradient(to bottom, #fffced 39%, #27524c 40% 60%, #fffced 61%);
         }
         .key.via {
             transform: rotate(45deg);

@@ -10,7 +10,7 @@
     import * as session from "../state/session.svelte.ts";
     let { editor }: { editor: session.Editor } = $props();
     const tools = [
-        ["select", "cursor", "选择"], ["node", "node", "新建节点"], ["gate", "gate", "院门"], ["edge", "edge", "连线"],
+        ["select", "cursor", "选择"], ["node", "node", "新建节点"], ["edge", "edge", "连线"],
         ["via", "via", "途经点"], ["fork", "fork", "分岔"], ["door", "door", "门"], ["building", "building", "建筑"]
     ] as const;
 </script>

@@ -1,6 +1,6 @@
 import { type Building as Footprint, type ClearingShape, type Disk, type Edge, type Erosion, type Harbor, type Label as MapLabel, type Named, type NoiseSettings, type Planting as PlantingRules, type Point, type RoadClass, type RoadNode as NetworkNode, type Routing, type Section } from "./types.ts";
 
-export { type ClearingShape, type Disk, type Door, type Edge, type Erosion, type Named, type Point, type RoadClass, type RoadMode, type RoadPair, type Routing, type Section, type Segment, type Species } from "./types.ts";
+export { type ClearingShape, type Disk, type Door, type Ellipse, type Polygon, type Sector, type Edge, type Erosion, type Named, type Point, type RoadClass, type RoadMode, type RoadPair, type Routing, type Section, type Segment, type Species } from "./types.ts";
 export type Building = Omit<Footprint, "zone">;
 export type RoadNode = Omit<NetworkNode, "yard" | "at" | "type"> & { type: Exclude<NetworkNode["type"], "gate"> };
 export type Planting = Omit<PlantingRules, "zones">;

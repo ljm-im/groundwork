@@ -46,20 +46,15 @@
 {:else if node}
     {@const pose = nodePose(d, node) as { point: number[]; normal?: number }}
     {@const linked = m.routes.filter(r => r.edge.from === node.id || r.edge.to === node.id)}
-    {@const area = d.yards?.find(y => y.id === node.yard)}
     {@render back()}<h2>{node.name}</h2><div class="sub">{nodeType(node)}</div><ObjectProblems {editor} />
     <dl class="stat-grid">{@render stat("东向 X", pose.point[0].toFixed(2) + " m")}{@render stat("北向 Y", pose.point[1].toFixed(2) + " m")}</dl>
     <Part title="节点属性">
         <label class="field">名称<input class="wide" data-node-param="name" value={node.name} /></label>
-        {#if node.type === "gate" && area}
-            <div class="field">所属区域<b>{area.name}</b></div><div class="field">沿边界位置<span class="mono">{(node.at! * 100).toFixed(1)}%</span></div>
-            <div class="field">外法线<span class="mono">{(pose.normal! / radians).toFixed(1)}°</span></div>
-            <div class="sub">{area.kind === "plaza" ? "拖动入口可沿广场边界滑动。" : "拖动院门可沿院墙滑动。打开台地图层可拖动院墙。"}</div>
-        {:else if node.type === "door"}
+        {#if node.type === "door"}
             {@const b = d.buildings.find(b => b.id === node.building)!}
             <div class="field">所属建筑<b>{b.name}</b></div><div class="field">外法线<span class="mono">{(pose.normal! / radians).toFixed(1)}°</span></div><div class="sub">拖动门可沿建筑外墙移动。</div>
             {#if b.summit}
-                {@const heights = summitHeights(m.terrain.grid, m.graded.heights, b.center)}
+                {@const heights = summitHeights(m.terrain.grid, m.graded.heights, b.center, m.terrain.defined)}
                 <dl class="stat-grid">{@render stat("基座实测", heights.ground.toFixed(2) + " m")}{@render stat("25 m 内最高", heights.highest.toFixed(2) + " m")}</dl>
             {/if}
         {:else}
@@ -101,7 +96,7 @@
     import ObjectProblems from "./ObjectProblems.svelte";
 
     let { editor }: { editor: session.Editor } = $props();
-    const types: Record<string, string> = { door: "建筑门", gate: "院门", junction: "路口", endpoint: "端点", viewpoint: "观景点" };
+    const types: Record<string, string> = { door: "建筑门", junction: "路口", endpoint: "端点", viewpoint: "观景点" };
     const modes: Record<string, string> = { route: "选线", smooth: "平滑", straight: "直线" };
     const pct = (v: number) => (v * 100).toFixed(1) + "%";
     let m = $derived(editor.island), d = $derived(m.design), h = $derived(editor.selection);
@@ -110,5 +105,5 @@
     let q = $derived((editor.filter ?? "").trim().toLowerCase());
     let routes = $derived(m.routes.filter(r => r.edge.name.toLowerCase().includes(q)));
     let nodes = $derived(d.nodes.filter(n => n.name.toLowerCase().includes(q)));
-    const nodeType = (n: RoadNode) => n.type === "gate" && d.yards?.find(y => y.id === n.yard)?.kind === "plaza" ? "广场入口" : types[n.type];
+    const nodeType = (n: RoadNode) => types[n.type];
 </script>

@@ -231,17 +231,16 @@ export class IslandMap {
             ctx.save();
             ctx.lineWidth = (active ? 2.8 : 1.6) / scale;
             ctx.setLineDash(active ? [] : [5 / scale, 3 / scale]);
-            polygon(ctx, featureLine(d, kind, item), kind === "planting" ? "rgba(77,135,77,.11)" : "rgba(255,243,195,.21)", color, ctx.lineWidth);
+            polygon(ctx, featureLine(kind, item), kind === "planting" ? "rgba(77,135,77,.11)" : "rgba(255,243,195,.21)", color, ctx.lineWidth);
             ctx.restore();
         }
         if (this.drawing?.hover) {
-            const { hover, cursor } = this.drawing;
-            if (hover.action === "extend" && cursor) stroke(ctx, [hover.point, cursor], ink, 2 / scale, [3 / scale, 3 / scale]);
+            const { hover } = this.drawing;
             circle(ctx, ...hover.point, 7 / scale, null, paper, 4 / scale);
             circle(ctx, ...hover.point, 7 / scale, null, ink, 2 / scale);
         }
-        if (this.drawing && (this.drawing.points.length || this.drawing.extension)) {
-            const { points, cursor, extension } = this.drawing, preview = extension ? [extension.origin, ...points] : [...points];
+        if (this.drawing?.points.length) {
+            const { points, cursor } = this.drawing, preview = [...points];
             if (cursor) preview.push(cursor);
             if (preview.length > 1) stroke(ctx, preview, "#135e63", 2 / scale, [5 / scale, 3 / scale]);
             for (const p of points) circle(ctx, ...p, 3.5 / scale, paper, ink, 1.3 / scale);
@@ -252,7 +251,7 @@ export class IslandMap {
         let best = null;
         for (const kind of ["planting", "clearing"] as const) for (const item of features(d, kind)) {
             if (!this.layers.plantingAreas && !(active?.kind === kind && active.id === item.id)) continue;
-            const line = featureLine(d, kind, item), gap = nearest(...p, line, true).distance;
+            const line = featureLine(kind, item), gap = nearest(...p, line, true).distance;
             if (gap * this.scale <= 9 && (!best || gap < best.gap)) best = { kind, id: item.id, gap };
         }
         return best;
@@ -408,13 +407,6 @@ export class IslandMap {
                 else mapText(ctx, text, x, y, size, "#2d3a2d", actual == null);
                 ctx.restore();
             }
-        for (const kind of ["ridge", "peak"] as const) if (this.layers.ridges) {
-            for (const item of features(d, kind)) {
-                const p = "points" in item ? item.points[Math.floor(item.points.length / 2)].point : item.center;
-                const [x, y] = this.screen(p);
-                mapText(ctx, item.name, x, y - 13, 12, "#713d22", true);
-            }
-        }
         this.drawOverlays();
         const treeKey = this.layers.trees && (this.layers.plantingAreas || ["planting", "clearing"].includes(this.selection?.kind!));
         this.canvas.parentElement!.querySelector(".legend")!.classList.toggle("show-trees", treeKey);

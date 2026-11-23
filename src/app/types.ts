@@ -1,19 +1,17 @@
-import { type Point } from "../core/design/types.ts";
+import { type Point } from "../core/design/v5.ts";
 import { type Issue } from "../core/design/results.ts";
 import { type FeatureKind, type Handle } from "../core/edit/types.ts";
-import { type areaBoundary } from "../core/design/shapes.ts";
 import { type layerDefaults } from "./state/layers.ts";
 
-export { type Building, type Design, type Door, type Edge, type Height, type Named, type Point, type RoadClass, type RoadNode, type Zone } from "../core/design/types.ts";
+export { type Building, type Design, type Door, type Edge, type Height, type Named, type Point, type RoadClass, type RoadNode } from "../core/design/v5.ts";
 export { type Issue, type Route } from "../core/design/results.ts";
 export { type Drawing, type FeatureKind, type Handle, type Selection } from "../core/edit/types.ts";
 export { type Island as IslandModel } from "../core/island.ts";
 export { type IslandMap as MapView } from "../render/map.ts";
-export type Yard = ReturnType<typeof areaBoundary>;
 
 export type Tab = "network" | "buildings" | "terrain" | "layers" | "issues";
 
-export type Tool = "select" | "node" | "gate" | "edge" | "via" | "fork" | "door" | "building" | FeatureKind;
+export type Tool = "select" | "node" | "edge" | "via" | "fork" | "door" | "building" | FeatureKind;
 export type Layer = keyof typeof layerDefaults;
 
 interface GestureStart { screen: Point; pointer: number; changed?: boolean }

@@ -1,7 +1,7 @@
-import { type Design } from "../design/types.ts";
+import { type Design } from "../design/v5.ts";
 import { parseDesign, serializeDesign } from "../design/model.ts";
 
-export type PromptTarget = { group: "design" } | { group: "buildings" | "edges" | "nodes" | "zones"; id: string };
+export type PromptTarget = { group: "design" } | { group: "buildings" | "edges" | "nodes"; id: string };
 
 export function promptOwner(design: Design, target: PromptTarget): { prompt?: string } {
     return target.group === "design" ? design : design[target.group].find(object => object.id === target.id)!;

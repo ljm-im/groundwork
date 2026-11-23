@@ -6,7 +6,7 @@ import { FileWrites, type WriteHandle } from "./fileWrites.ts";
 import * as session from "./session.svelte.ts";
 
 const draftKey = "terrain-editor/unsaved-v1";
-const example = new URL("../../../examples/island.json", import.meta.url);
+import { newDesign } from "../../core/design/newDesign.ts";
 const types = [{ description: "海岛设计 JSON", accept: { "application/json": [".json"] } }];
 const permissionWarning = "未获得写入权限，修改不会写入文件";
 
@@ -133,9 +133,7 @@ export class DesignFiles {
         e.busy = action === "new" ? "正在新建设计…" : "正在打开海岛设计…";
         try {
             if (action === "new") {
-                const response = await fetch(example, { cache: "no-cache" });
-                if (!response.ok) throw new Error("island.json 读取失败（" + response.status + "）");
-                this.install(parseDesign(await response.text()), "未命名");
+                this.install(newDesign(), "未命名");
                 e.message("已新建设计");
             }
             else {
@@ -161,11 +159,11 @@ export class DesignFiles {
     async open(handle: DesignHandle) {
         const writable = await this.permission(handle);
         const file = await handle.getFile();
-        // Keep a UTF-8 BOM, original whitespace and line endings for an untouched legacy file.
+        // Keep a UTF-8 BOM, original whitespace and line endings for an untouched design.
         const text = new TextDecoder("utf-8", { ignoreBOM: true }).decode(await file.arrayBuffer());
         const json = text.replace(/^\uFEFF/, ""), design = parseDesign(json);
         const source = JSON.parse(json) as { version: number };
-        const original = source.version !== 4 || serializeDesign(source) === JSON.stringify(source, null, 2) &&
+        const original = serializeDesign(source) === JSON.stringify(source, null, 2) &&
             JSON.stringify(source) === JSON.stringify(design) ? text : null;
         this.install(design, file.name, { handle, writable, original });
         this.editor.message(writable ? "已打开 " + file.name : permissionWarning);

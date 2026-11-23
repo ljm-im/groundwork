@@ -1,15 +1,18 @@
-import { type Design, type Point, type Building, type Door, type RoadNode } from "../design/types.ts";
+import { type Design, type Point, type Building, type Door, type RoadNode } from "../design/v5.ts";
 import { type Terrain, type Route } from "../design/results.ts";
-import { advance, bearing, distance, mixPoint, nearest, radians, sample } from "../math/geometry.ts";
+import { advance, bearing, distance, mixPoint, nearest, radians, sampleDefined, eachCell } from "../math/geometry.ts";
 import { corners, moveNode, nodePose } from "../design/model.ts";
 import { newId } from "./topology.ts";
 
 export function canPlaceBuilding(island: { terrain: Terrain; routes: Route[] }, center: Point) {
     const { terrain, routes } = island, [x, y] = center;
     const box: Point[] = [[x - 4, y - 3], [x + 4, y - 3], [x + 4, y + 3], [x - 4, y + 3]];
-    if ([...box, center].some(p => p[0] < terrain.grid.xMin || p[1] < terrain.grid.yMin ||
-    p[0] > terrain.grid.xMax || p[1] > terrain.grid.yMax || sample(terrain.grid, terrain.heights, ...p) < 0))
-        return false;
+    if ([...box, center].some(p => (sampleDefined(terrain.grid, terrain.heights, terrain.defined, ...p) ?? -1) < 0)) return false;
+    let supported = true;
+    eachCell(terrain.grid, [x - 4, y - 3, x + 4, y + 3], 0, k => {
+        if (!terrain.defined[k] || terrain.heights[k] < 0) supported = false;
+    });
+    if (!supported) return false;
     const gap = (p: Point) => Math.hypot(Math.max(0, Math.abs(p[0] - x) - 4), Math.max(0, Math.abs(p[1] - y) - 3));
     // A segment can enter the rectangle between its vertices. Clip its two axis
     // intervals before measuring the distance to the nearest side or corner.
@@ -43,11 +46,9 @@ export function canPlaceBuilding(island: { terrain: Terrain; routes: Route[] }, 
     return !routes.some(r => r.points.slice(1).some((p, i) => segmentGap(r.points[i], p) <= r.edge.width / 2));
 }
 
-export function placeBuilding(d: Design, point: Point, zone?: string): Building {
+export function placeBuilding(d: Design, point: Point): Building {
     const id = newId(d.buildings, "building");
     const b: Building = { id, name: "新建筑 " + id.split("-").at(-1), shape: "rect", center: point.slice() as Point, size: [8, 6], angle: 0, height: 4, color: "#c78b69", doors: [], showTitle: true };
-    if (zone)
-        b.zone = zone;
     d.buildings.push(b);
     return b;
 }
@@ -182,7 +183,4 @@ export function removeBuildingPart(d: Design, b: Building, door?: Door) {
     }
     d.buildings = d.buildings.filter(item => item !== b);
     d.labels = d.labels.filter(l => l.building !== b.id);
-    for (const y of d.yards ?? [])
-        if (y.buildings)
-            y.buildings = y.buildings.filter(id => id !== b.id);
 }

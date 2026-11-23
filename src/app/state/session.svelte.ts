@@ -3,25 +3,23 @@ import { Island } from "../../core/island.ts";
 import { TerrainCache } from "../../core/terrain/cache.ts";
 import { History, promptOwner, type PromptTarget } from "../../core/edit/history.ts";
 import { layerDefaults } from "./layers.ts";
-import { areaBoundary, nodePose, zonePolygon } from "../../core/design/model.ts";
-import { bounds, sample } from "../../core/math/geometry.ts";
+import { nodePose } from "../../core/design/model.ts";
+import { bounds } from "../../core/math/geometry.ts";
 import { addDoor, doorNode, doorRoads, openDoorAt, removeBuildingPart } from "../../core/edit/buildings.ts";
 import { removeVia, removeLinks } from "../../core/edit/topology.ts";
-import { addFeature, clickDrawing, deleteFeature, featureBounds, featureNames, featureOf, finishExtension, newDrawing } from "../../core/edit/landforms.ts";
+import { addFeature, clickDrawing, deleteFeature, featureBounds, featureNames, featureOf, newDrawing } from "../../core/edit/landforms.ts";
 import { objectIssues } from "../../core/checks/issues.ts";
 import { drawSections } from "../../render/sections.ts";
 import { IslandMap } from "../../render/map.ts";
-import { previewLevels } from "./levelPreview.ts";
 import { DesignFiles, type FileAction, type SaveState } from "./files.ts";
 import { errorText, type Building, type Design, type Door, type FeatureKind, type Gesture, type IslandModel, type Issue, type Layer, type MapView, type Point, type RoadNode, type Selection, type Tab, type Tool } from "../types.ts";
 
 export const hints: Record<Tool, string> = {
-    peak: "单击地图放置山头", ridge: "依次点出山脊折点，双击或按 Enter 完成 · 单击已有山脊线加点，单击端点延长",
     planting: "依次点出绿化区边界，双击或按 Enter 完成 · 单击已有绿化区边界加点",
     clearing: "依次点出空地边界，双击或按 Enter 完成 · 单击已有多边形空地边界加点",
-    door: "单击建筑外墙开门", select: "拖动空白处平移 · 拖动控制点编辑 · 双击山脊或边界线加点",
+    door: "单击建筑外墙开门", select: "拖动空白处平移 · 拖动控制点编辑 · 双击种植边界加点",
     node: "单击空地放置节点，或单击建筑外墙开门", edge: "单击起点节点或建筑外墙",
-    gate: "依次点区域和外部节点，先点的一端是起点", fork: "单击道路插入分岔，或从建筑外墙起步",
+    fork: "单击道路插入分岔，或从建筑外墙起步",
     building: "单击空地放置建筑，Esc 返回选择", via: "单击道路插入途经点，可连续添加，Esc 返回选择"
 };
 
@@ -65,7 +63,6 @@ export class Editor {
     panel!: HTMLElement;
     plots!: HTMLElement;
     linkFrom: string | null = null;
-    linkYard: ReturnType<typeof areaBoundary> | null = null;
     forkFromDoor = false;
     gesture: Gesture | null = null;
     pendingLevels = new Set<string>();
@@ -110,7 +107,7 @@ export class Editor {
         this.map.clearIssue();
         this.panel.scrollTop = 0;
         if (open && h) {
-            if (h.kind in featureNames || h.kind === "zone") this.tab = "terrain";
+            if (h.kind in featureNames || h.kind === "geoNode") this.tab = "terrain";
             if (["edge", "node", "via"].includes(h.kind)) this.tab = "network";
             if (h.kind === "building") this.tab = "buildings";
         }
@@ -131,12 +128,11 @@ export class Editor {
     }
     setTool(mode: Tool) {
         this.tool = mode;
-        this.linkFrom = this.linkYard = null;
+        this.linkFrom = null;
         this.forkFromDoor = false;
-        this.map.drawing = ["ridge", "planting", "clearing"].includes(mode) ? newDrawing(mode as FeatureKind) : null;
-        if (mode === "ridge" || mode === "peak") this.layers.ridges = true;
+        this.map.drawing = ["planting", "clearing"].includes(mode) ? newDrawing(mode as FeatureKind) : null;
         if (mode === "planting" || mode === "clearing") this.layers.plantingAreas = true;
-        if (["node", "edge", "fork", "gate", "door", "via"].includes(mode)) this.layers.network = true;
+        if (["node", "edge", "fork", "door", "via"].includes(mode)) this.layers.network = true;
         this.map.linkPreview = null;
         this.hint = hints[mode];
         this.map.draw();
@@ -156,10 +152,9 @@ export class Editor {
         cancelAnimationFrame(this.frame);
         this.frame = 0;
         if (this.pendingLevels.size) {
-            const changed = this.pendingLevels;
             this.pendingLevels = new Set();
             timed("terrain-editor:level-preview", () => {
-                previewLevels(this.island, changed);
+                this.island.variables();
                 this.refresh(false, false);
             });
         }
@@ -201,7 +196,7 @@ export class Editor {
     }
     terrainWork(design: Design, fn: () => void) {
         const missing = this.terrainCache.missing(design);
-        return this.working(missing === "base" ? "正在重新生成地形与侵蚀…" : missing === "natural" ? "正在重新计算侵蚀…" : null, fn);
+        return this.working(missing === "base" ? "正在生成地形…" : missing === "natural" ? "正在更新地件…" : null, fn);
     }
     replace(design: Design, reset = false) {
         if (reset) this.terrainCache.clear();
@@ -250,23 +245,17 @@ export class Editor {
         });
         this.message("全部道路已重新选线");
     }
-    finishFeature(kind: string) {
-        if (kind === "peak" || kind === "ridge") return this.rebuild();
+    finishFeature() {
         this.island.replant();
         this.refresh();
         this.record();
     }
-    groundHeights(points: Point[]) {
-        const { grid, heights } = this.island.terrain;
-        return points.map(p => Math.round(sample(grid, heights, ...p) + 6));
-    }
     createFeature(kind: FeatureKind, points: Point[]) {
-        const heights = this.groundHeights(points);
         try {
-            const item = addFeature(this.island.design, kind, points, kind === "ridge" ? heights : heights[0]);
+            const item = addFeature(this.island.design, kind, points);
             this.setTool("select");
             this.select({ kind, id: item.id });
-            this.finishFeature(kind);
+            this.finishFeature();
         }
         catch (e) {
             this.message(errorText(e));
@@ -281,8 +270,7 @@ export class Editor {
                 return;
             }
             this.select(result.selection);
-            if (result.changed) this.finishFeature(drawing.kind);
-            if (drawing.extension) this.hint = "依次单击延长山脊，双击或按 Enter 确认，Esc 放弃延长";
+            if (result.changed) this.finishFeature();
         }
         catch (e) {
             this.message(errorText(e));
@@ -290,39 +278,30 @@ export class Editor {
     }
     finishDrawing() {
         const drawing = this.map.drawing!;
-        if (!drawing.extension) {
-            if (drawing.points.length) this.createFeature(drawing.kind, drawing.points);
-            return;
-        }
-        const selected = finishExtension(this.island.design, drawing, this.groundHeights(drawing.points));
-        this.setTool("ridge");
-        this.select(selected);
-        if (drawing.points.length) this.finishFeature("ridge");
+        if (drawing.points.length) this.createFeature(drawing.kind, drawing.points);
     }
     focus(kind: string, id: string) {
         const d = this.island.design, h = { kind, id };
         if (kind in featureNames) {
-            this.layers[kind === "ridge" || kind === "peak" ? "ridges" : "plantingAreas"] = true;
+            this.layers.plantingAreas = true;
             this.setTool("select");
         }
-        else if (kind === "zone") this.setTool("select");
+        else if (kind === "geoNode") this.setTool("select");
         this.select(h);
         if (kind === "edge") this.map.focusBounds(bounds(this.island.routes.find(r => r.id === id)!.points));
         else if (kind === "node") this.map.focus(nodePose(d, id).point, 2.3);
         else if (kind === "building") this.map.focus(d.buildings.find(b => b.id === id)!.center, 3);
-        else if (kind === "zone") this.map.focusBounds(bounds(zonePolygon(d.zones.find(z => z.id === id)!.shape)));
-        else this.map.focusBounds(featureBounds(d, kind as FeatureKind, featureOf(d, h)!));
-    }
-    vertex(index: number) {
-        const h = this.selection!, item = this.island.design.ridges.find(r => r.id === h.id)!;
-        this.select({ kind: h.kind, id: h.id, role: "vertex", index });
-        this.map.focus(item.points[index].point, 2.5);
+        else if (kind === "geoNode") {
+            const box = this.island.terrain.regions.get(id)!.shape.box;
+            if (box.every(Number.isFinite)) this.map.focusBounds(box);
+        }
+        else this.map.focusBounds(featureBounds(kind as FeatureKind, featureOf(d, h)!));
     }
     issueAt(issue: Issue) {
         this.layers.issues = true;
         if (!objectIssues(this.island, this.selection).includes(issue)) {
             this.selection = issue.node ? { kind: "node", id: issue.node } : issue.building ? { kind: "building", id: issue.building }
-                : issue.zone ? { kind: "zone", id: issue.zone } : { kind: "edge", id: issue.road! };
+                : issue.geoNode ? { kind: "geoNode", id: issue.geoNode } : { kind: "edge", id: issue.road! };
         }
         this.map.selection = this.selection;
         this.issue = issue;
@@ -390,9 +369,8 @@ export class Editor {
         if (h.kind in featureNames) {
             try {
                 const next = deleteFeature(d, h);
-                if (this.map.drawing?.extension?.id === h.id) this.setTool(this.tool);
                 this.select(next);
-                this.finishFeature(h.kind);
+                this.finishFeature();
             }
             catch (e) {
                 this.message(errorText(e));

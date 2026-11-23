@@ -1,8 +1,7 @@
-import { type Design, type RoadNode, type Edge, type Yard, type Point, type Segment, type RoadPair } from "../design/types.ts";
+import { type Design, type RoadNode, type Edge, type Point, type Segment, type RoadPair } from "../design/v5.ts";
 import { type Route } from "../design/results.ts";
 import { distance, nearest } from "../math/geometry.ts";
-import { areaBoundary, nodePose, throughPairs } from "../design/model.ts";
-import { gateFraction } from "../design/gates.ts";
+import { nodePose, throughPairs } from "../design/model.ts";
 
 export function newId(list: { id: string }[], prefix: string) {
     let i = 1;
@@ -23,14 +22,6 @@ export function connect(d: Design, from: RoadNode, to: RoadNode): Edge {
         via: [], grade: "path", width, comfort, maxGrade, corridor };
     d.edges.push(edge);
     return edge;
-}
-
-export function addGate(d: Design, yard: Yard, other: RoadNode, gateFirst = false) {
-    const id = newId(d.nodes, "gate");
-    const gate: RoadNode = { id, name: yard.name + (yard.kind === "plaza" ? "·入口 " : "·院门 ") + id.split("-").at(-1)!, type: "gate", yard: yard.id,
-        at: gateFraction(areaBoundary(d, yard), nodePose(d, other).point) };
-    d.nodes.push(gate);
-    return { gate, edge: gateFirst ? connect(d, gate, other) : connect(d, other, gate) };
 }
 
 export function setSegment<K extends keyof Segment>(edge: Edge, index: number, key: K, value: Segment[K] | false | "" | null) {

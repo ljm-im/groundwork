@@ -9,7 +9,7 @@
     }}>
         {#if editor.island}{#key editor.revision}<View {editor} />{/key}{/if}
     </div>
-    {#if editor.island}<div class="hint"><span>双击道路、山脊或边界加点，也可按住 <kbd>Alt</kbd> 单击</span><span>拖动空白处或双指滑动平移 · 滚轮或捏合缩放</span></div>{/if}
+    {#if editor.island}<div class="hint"><span>双击道路或种植边界加点，也可按住 <kbd>Alt</kbd> 单击</span><span>拖动空白处或双指滑动平移 · 滚轮或捏合缩放</span></div>{/if}
 </aside>
 
 <style>

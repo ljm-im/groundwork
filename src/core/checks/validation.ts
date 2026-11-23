@@ -40,7 +40,6 @@ function surfaceIssues(route: Route, terrain: Pick<Terrain, "buildings">, emit: 
         box = bounds(points);
     const nearby = (b: Box) => box[0] - half <= b[2] && box[2] + half >= b[0] && box[1] - half <= b[3] && box[3] + half >= b[1];
     const buildings = terrain.buildings.filter(b => nearby(b.box));
-    const yards = (terrain.yards ?? []).filter(y => nearby(y.box) && y.yard.kind !== "plaza");
     const active = new Map<string, Issue>();
     const finish = (key: string, at: number) => {
         const issue = active.get(key);
