@@ -1,4 +1,5 @@
 import { type Design, type GeoNode, type Path, type PathNode, type Point, type Strip } from "../../core/design/v5.ts";
+import { ridgeNoiseDefaults } from "../../core/design/defaults.ts";
 import { type Segment } from "../../core/design/regions.ts";
 import { closedPen, nearestSegment, penNode, shapePath, type ShapeTool } from "../../core/edit/paths.ts";
 import { createFree, createStrip, defaultFunction, nodeIds, sampleField, stripConstruction, stripRange, tenth } from "../../core/edit/geoNodes.ts";
@@ -98,7 +99,7 @@ export function finishDraft(d: Design, terrain: Terrain, draft: GeoDraft) {
             if (n!.function.type === "slope" && n!.function.kind === "path") n!.function.line = line;
             else n!.function = defaultFunction("slope", 0, { line })!;
         }
-        else if (n?.function.type === "mountain") n.function.ridges.push({ line, widths: [5, 5], widthNoise: [0, 1, 1], heightNoise: [0, 1, 1] });
+        else if (n?.function.type === "mountain") n.function.ridges.push({ line, widths: [5, 5], widthNoise: { ...ridgeNoiseDefaults }, heightNoise: { ...ridgeNoiseDefaults } });
         return n!;
     }
     if (tool === "peak" || tool === "center") {

@@ -41,7 +41,7 @@ test("A local mountain preserves the underlying height differences along its bou
     const d = design([g, slope]), before = evaluateStack(d).fields.height;
     d.geoNodes.push(layer("M", rect(-12, -12, 12, 12), { type: "mountain",
         ridges: [{ line: { points: [{ p: [-5, 0], h: 12 }, { p: [5, 0], h: 10 }] },
-            widths: [2, 3], widthNoise: [.1, 1, 2], heightNoise: [.1, 3, 4] }],
+            widths: [2, 3], widthNoise: { amount: 10, wavelength: 2 }, heightNoise: { amount: 10, wavelength: 4 } }],
         peaks: [{ at: { p: [0, 3], h: 16 }, radius: 2, noise: .1, scale: 7 }] }));
     const t = evaluateStack(parseDesign(d)), after = t.fields.height, mask = t.regions.get("M")!.mask;
     assert(after[t.grid.index(0, 3)] > 12 && after[t.grid.index(-5, 0)] > 8);
@@ -253,4 +253,45 @@ test("A route cannot cross a canvas gap and a failed alignment leaves the ground
     assert(!i.issues.some(issue => issue.kind.endsWith("-grade")));
     assert.deepEqual(i.graded.heights, i.terrain.heights);
     assert(i.trees.every(tree => i.terrain.defined[i.terrain.grid.index(...tree.point)]));
+});
+
+test("Ridge variation follows distance, wavelength and seed independently of collinear vertices", () => {
+    const area = rect(-2, -8, 131, 8), line = { points: [{ p: [.5, -.5] as Point, h: 10 }, { p: [128.5, -.5] as Point, h: 10 }] };
+    const ridge = { line, widths: [4, 4] as [number, number], widthNoise: { amount: 0, wavelength: 8 }, heightNoise: { amount: 0, wavelength: 8 } };
+    const mountain = { type: "mountain" as const, ridges: [ridge], peaks: [], seed: 12 };
+    const d = design([layer("A", area, { type: "ground", value: 0 }), layer("B", area, mountain)]);
+    const samples = (y: number) => {
+        const t = evaluateStack(d);
+        return Array.from({ length: 129 }, (_, x) => t.fields.height[t.grid.index(x, y)]);
+    };
+    for (const [key, y] of [["heightNoise", 0], ["widthNoise", 3]] as const) {
+        const straight = samples(y);
+        assert.equal(new Set(straight).size, 1);
+        ridge[key].amount = 25;
+        const short = samples(y);
+        assert(new Set(short).size > 8);
+        if (y === 0) assert(short.every(h => h >= 7.5 && h <= 12.5));
+        ridge[key].wavelength *= 2;
+        const long = samples(y);
+        // The entire waveform, including every zero crossing, stretches twofold.
+        assert.deepEqual(long.filter((_, i) => i % 2 === 0), short.slice(0, 65));
+        line.points.splice(1, 0, { p: [37.5, -.5], h: 10 });
+        assert.deepEqual(samples(y), long);
+        mountain.seed++;
+        assert.notDeepEqual(samples(y), long);
+        line.points.splice(1, 1); ridge[key].amount = 0;
+    }
+});
+
+test("Omitted mountain and erosion floors preserve cells at and below minus one thousand", () => {
+    const area = rect(-12, -12, 12, 12);
+    const m = layer("M", area, { type: "mountain", ridges: [], peaks: [{ at: { p: [0, 0], h: 5 }, radius: 3, noise: 0, scale: 12 }] });
+    const e = layer("E", area, { ...erosion });
+    for (const node of [m, e]) {
+        const d = design([layer("A", area, { type: "ground", value: -1000 }), node]);
+        const initial = evaluateStack(d).fields.height;
+        assert(initial.every(h => h === -1000));
+        Object.assign(node.function, { floor: -1000 });
+        assert.deepEqual(evaluateStack(d).fields.height, initial);
+    }
 });

@@ -8,11 +8,11 @@ import { literalPattern } from "./expression.ts";
 import { parameters, resolveDesign, writeAt } from "./parameters.ts";
 
 export { corners, buildingShape, moveDoorOrPoint as moveNode } from "./shapes.ts";
-export function nodePose(design: Pick<ResolvedDesign, "nodes" | "buildings">, node: Pick<RoadNode<Expression>, "point" | "type" | "building" | "door" | "direction"> | string) {
+export function nodePose(design: Pick<ResolvedDesign, "nodes" | "buildings">, node: Pick<RoadNode<Expression>, "point" | "type" | "building" | "door" | "direction" | "directionMode"> | string) {
     if (typeof node === "string") node = design.nodes.find(n => n.id === node)!;
     const pose = doorPose(design, node);
     if (node.type === "door") pose.normal = pose.angle;
-    if (node.direction != null) pose.angle = Number(node.direction) * radians;
+    if (node.directionMode !== "auto" && node.direction != null) pose.angle = Number(node.direction) * radians;
     return pose;
 }
 
@@ -104,7 +104,7 @@ export function parseDesign(text: unknown, allowBrokenReferences = false): Desig
     for (const [i, n] of numeric.nodes.entries()) {
         const pos = "nodes[" + i + "]";
         if (n.point !== undefined) check(point(n.point), pos + ".point 只能填写数字坐标");
-        check(["door", "junction", "endpoint", "viewpoint"].includes(n.type) && (n.direction == null || Number.isFinite(n.direction)), pos + " “" + n.name + "”的节点类型或朝向无效");
+        check(["door", "junction", "endpoint", "viewpoint"].includes(n.type) && (n.directionMode === undefined || ["manual", "auto"].includes(n.directionMode)) && Number.isFinite(n.direction), pos + " “" + n.name + "”的节点类型或朝向无效");
         for (const pair of [n.through, ...(n.otherThrough ?? [])].filter((pair): pair is RoadPair => !!pair)) {
             const [before, after] = pair;
             check(n.type === "junction" && Array.isArray(pair) && pair.length === 2 && before !== after &&

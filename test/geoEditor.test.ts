@@ -156,14 +156,14 @@ test("Copies regenerate paths and preserve references, geometry moves together a
 
 test("Function defaults preserve construction, mandatory geometry commits only on completion", () => {
     const d = syntheticDesign(), n = d.geoNodes[1], construction = structuredClone(n.construction), t = generateTerrain(d);
-    const defaults: GeoFunction[] = [{ type: "ground", value: 0 }, { type: "mountain", peaks: [], ridges: [] }, { type: "cliff", factor: .6 },
-        { type: "islets", density: .5, reach: 12 }, { type: "flat", value: 3.4 }, { type: "add", amount: 1, feather: 3 },
-        { type: "noise", amplitude: 1, scale: 24, feather: 0 }];
+    const defaults: GeoFunction[] = [{ type: "ground", value: 0 }, { type: "mountain", peaks: [], ridges: [], floor: -1000 }, { type: "cliff", factor: .6, seaLevel: 0 },
+        { type: "islets", density: .5, reach: 12, threshold: .45, seaLevel: 0 }, { type: "flat", value: 3.4 }, { type: "add", amount: 1, feather: 3 },
+        { type: "noise", amplitude: 1, scale: 24, octaves: 5, feather: 0 }];
     for (const f of defaults) historyEdit(d, () => {
         n.function = defaultFunction(f.type, 3.4)!; assert.deepEqual(n.function, ["mountain", "cliff", "islets", "noise"].includes(f.type) ? { ...f, seed: "{var:seed}" } : f); assert.deepEqual(n.construction, construction);
     });
     for (const f of [{ type: "blend" }, { type: "split" }, { type: "batter", grade: .5 } ] as const) assert.deepEqual(defaultFunction(f.type), f);
-    const erosion = defaultFunction("erosion"); assert(erosion?.type === "erosion" && erosion.strength === 1 && Number(erosion.droplets) > 0 && erosion.floor === 0);
+    const erosion = defaultFunction("erosion"); assert(erosion?.type === "erosion" && erosion.strength === 1 && Number(erosion.droplets) > 0 && erosion.floor === -1000);
     const before = serializeDesign(d), pending = draft(d, "shore", { owner: n.id });
     assert.equal(defaultFunction("coast"), undefined); assert.equal(serializeDesign(d), before);
     pending.nodes = geometryPath(n, 0)!.nodes.map(v => penNode(pending.nextId(), [...v.p]));
@@ -198,7 +198,7 @@ test("Canceling a required shore or slope in the editor keeps its original funct
 test("Erosion defaults match the example parameters with unit strength", fixtureOptions("round14-coast.json"), async () => {
     const d = parseDesign(await readFixture("round14-coast.json"));
     const f = d.geoNodes.find(n => n.function.type === "erosion")!.function;
-    assert.deepEqual(defaultFunction("erosion"), { ...f, strength: 1 });
+    assert.deepEqual(defaultFunction("erosion"), { ...f, strength: 1, floor: -1000 });
 });
 
 test("Disabled layers match deletion byte for byte and active strips can still use disabled outlines", () => {

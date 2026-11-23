@@ -1,4 +1,5 @@
 import { type Design, type GeoFunction, type GeoNode, type Path, type Point, type Strip, type Expression, type Polyline } from "../design/v5.ts";
+import { functionDefaults } from "../design/defaults.ts";
 import { type Terrain } from "../design/results.ts";
 import { bounds, sampleDefined } from "../math/geometry.ts";
 import { expressionGraph, referenceUses } from "../design/parameters.ts";
@@ -154,18 +155,17 @@ export function allowedFunctions(n: GeoNode) {
 }
 export function defaultFunction(type: GeoFunction["type"], value = 0, geometry?: { shore?: Path; line?: Polyline }): GeoFunction | undefined {
     switch (type) {
-        case "ground": return { type, value: 0 };
-        case "coast": return geometry?.shore && { type, seed: "{var:seed}", shore: geometry.shore, roughness: 6 };
-        case "mountain": return { type, seed: "{var:seed}", ridges: [], peaks: [] };
-        case "cliff": return { type, seed: "{var:seed}", factor: .6 };
-        case "erosion": return { type, seed: "{var:seed}", droplets: 40000, inertia: .06, capacity: 5, minCapacity: .002, deposition: .25, erosion: .35, evaporation: .02,
-            gravity: 6, lifetime: 50, radius: 2, strength: 1, floor: 0 };
-        case "islets": return { type, seed: "{var:seed}", density: .5, reach: 12 };
+        case "ground": return { type, ...functionDefaults.ground };
+        case "coast": return geometry?.shore && { type, seed: "{var:seed}", shore: geometry.shore, ...functionDefaults.coast };
+        case "mountain": return { type, seed: "{var:seed}", ridges: [], peaks: [], ...functionDefaults.mountain };
+        case "cliff": return { type, seed: "{var:seed}", ...functionDefaults.cliff };
+        case "erosion": return { type, seed: "{var:seed}", ...functionDefaults.erosion };
+        case "islets": return { type, seed: "{var:seed}", ...functionDefaults.islets };
         case "flat": return { type, value };
         case "slope": return geometry?.line && { type, kind: "path", line: geometry.line };
-        case "add": return { type, amount: 1, feather: 3 };
-        case "noise": return { type, seed: "{var:seed}", amplitude: 1, scale: 24, feather: 0 };
+        case "add": return { type, ...functionDefaults.add };
+        case "noise": return { type, seed: "{var:seed}", ...functionDefaults.noise };
         case "blend": case "split": return { type };
-        case "batter": return { type, grade: .5 };
+        case "batter": return { type, ...functionDefaults.batter };
     }
 }

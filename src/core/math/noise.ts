@@ -67,3 +67,9 @@ export function fbm(n: Noise, x: number, y: number, count: number, ridged = fals
     }
     return sum / weight;
 }
+
+export function noise1D(seed: number, x: number) {
+    const cell = Math.floor(x), t = fade(x - cell);
+    const a = randomAt(seed, cell) * 2 - 1, b = randomAt(seed, cell + 1) * 2 - 1;
+    return a + (b - a) * t;
+}

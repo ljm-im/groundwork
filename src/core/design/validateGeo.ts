@@ -92,7 +92,11 @@ export function validateGeo(d: Design, allowBrokenReferences = false) {
                     const key = "function.ridges[" + j + "]";
                     valid(r, key);
                     line(r.line, key + ".line");
-                    valid(point(r.widths) && r.widths.every(positive) && [r.widthNoise, r.heightNoise].every(a => Array.isArray(a) && a.length === 3 && a.every(finite)), key);
+                    valid(point(r.widths) && r.widths.every(positive), key + ".widths");
+                    for (const k of ["widthNoise", "heightNoise"] as const) {
+                        valid(record(r[k]) && finite(r[k].amount), key + "." + k + ".amount");
+                        valid(positive(r[k].wavelength), key + "." + k + ".wavelength");
+                    }
                 });
                 f.peaks.forEach((p, j) => {
                     const key = "function.peaks[" + j + "]";

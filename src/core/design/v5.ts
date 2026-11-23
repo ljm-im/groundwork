@@ -6,7 +6,7 @@ type NumericProperties<T, N> = { [K in keyof T]: Exclude<T[K], undefined> extend
 export type Door<N = number> = NumericProperties<Footprint["doors"][number], N>;
 export type Building<N = number> = NumericProperties<Omit<Footprint, "zone" | "size" | "doors">, N> & { size?: [N, N]; doors: Door<N>[] };
 export type Edge<N = number> = NumericProperties<Road, N>;
-export type RoadNode<N = number> = NumericProperties<Omit<NetworkNode, "yard" | "at" | "type">, N> & { type: Exclude<NetworkNode["type"], "gate"> };
+export type RoadNode<N = number> = NumericProperties<Omit<NetworkNode, "yard" | "at" | "type">, N> & { type: Exclude<NetworkNode["type"], "gate">; directionMode?: "auto" | "manual" };
 export type Planting = Omit<PlantingRules, "zones">;
 export type Label = Omit<MapLabel, "level"> & { var?: string };
 export interface Clearing extends Named { shape: ClearingShape; cover?: "ambient" }
@@ -37,7 +37,8 @@ export interface Strip<N = Expression> {
     range?: { from: string; to: string };
 }
 export type Construction<N = Expression> = { type: "free"; paths: Path[] } | Strip<N>;
-export interface Ridge<N> { line: Polyline<N>; widths: [N, N]; widthNoise: [N, N, N]; heightNoise: [N, N, N] }
+export interface RidgeNoise<N> { amount: N; wavelength: N }
+export interface Ridge<N> { line: Polyline<N>; widths: [N, N]; widthNoise: RidgeNoise<N>; heightNoise: RidgeNoise<N> }
 export interface Peak<N> { at: { p: Point; h: N }; radius: N; noise: N; scale: N }
 export type GeoFunction<N = Expression> = (
     { type: "ground" | "flat"; value: N } |

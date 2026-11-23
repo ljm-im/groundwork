@@ -29,7 +29,7 @@ test("Arithmetic and linear fields observe precedence, signed scalars and undefi
 test("Author inputs form one graph across stacks, array parameters, road nodes, roads and buildings", () => {
     const d: Design = syntheticDesign();
     d.geoNodes.push(layer("M", rect(-8, -8, 8, 8), { type: "mountain", peaks: [], ridges: [{
-        widths: [1, "{building:A.height} * 2"], widthNoise: [0, 1, 2], heightNoise: [0, 1, 2],
+        widths: [1, "{building:A.height} * 2"], widthNoise: { amount: 0, wavelength: 20 }, heightNoise: { amount: 0, wavelength: 20 },
         line: { points: [{ p: [0, 0], h: 2 }, { p: [2, 2], h: "{var:b}" }] }
     }] }));
     d.variables.b = { value: "{edge:E.width} + {node:a.direction}" };
@@ -97,4 +97,25 @@ test("Rounded per-layer seeds and transitive scalar inputs invalidate only their
     cache.generate(d); d.variables.base.value = 6.25;
     const after = cache.generate(d);
     assert.deepEqual(after.heights, generateTerrain(d).heights); assert.deepEqual(cache.recomputed, [base.id, "N"]);
+});
+
+test("Omitted parameters can be referenced and old ridge tuples fail at their original address", () => {
+    const d: Design = syntheticDesign(), mountain = { type: "mountain" as const, peaks: [], ridges: [{
+        line: { points: [{ p: [0, 0], h: 2 }, { p: [5, 0], h: 2 }] }, widths: [3, 3],
+        heightNoise: { amount: "{var:A} * 2" }, widthNoise: { wavelength: "{var:A} + 1" }
+    }] };
+    Object.assign(d.geoNodes[1], { function: mountain });
+    const graph = expressionGraph(d);
+    for (const [key, value] of [["heightNoise.amount", 14], ["heightNoise.wavelength", 20], ["widthNoise.amount", 0], ["widthNoise.wavelength", 8]])
+        assert.equal(graph.get("geo:T.ridges.0." + key), value);
+    d.variables.c = { value: "{geo:T.floor} + {geo:T.seed} + {geo:T.ridges.0.heightNoise.wavelength}" };
+    assert.equal(resolveDesign(parseDesign(d)).variables.c.value, -980);
+    for (const key of ["widthNoise", "heightNoise"]) {
+        const bad = structuredClone(d), f = bad.geoNodes[1].function;
+        assert(f.type === "mountain");
+        Object.assign(f.ridges[0], { [key]: [0, 1, 2] });
+        assert.throws(() => parseDesign(bad), e => e instanceof Error && e.message.includes("geoNodes[1].function.ridges[0]." + key));
+    }
+    Object.assign(mountain.ridges[0].widthNoise, { wavelength: 0 });
+    assert.throws(() => parseDesign(d), /widthNoise.wavelength/);
 });

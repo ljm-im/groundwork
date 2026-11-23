@@ -1,8 +1,10 @@
-import { type Expression, type GeoNode, type Point, type Polyline } from "../design/v5.ts";
+import { type Expression, type GeoNode, type Point } from "../design/v5.ts";
+import { numericProfile } from "../design/polyline.ts";
+import { functionDefaults } from "../design/defaults.ts";
 import { evaluate, fieldValue, sampleValue, type Value } from "../design/expression.ts";
 import { type Region } from "../design/regions.ts";
-import { distance, nearest, polygonField, sampleDefined, smooth, spline, stations, type Grid } from "../math/geometry.ts";
-import { fbm, noise } from "../math/noise.ts";
+import { distance, nearest, polygonField, sampleDefined, smooth, type Grid } from "../math/geometry.ts";
+import { fbm, noise, noise1D } from "../math/noise.ts";
 import { erode } from "./erosion.ts";
 import { flattenPath } from "./path.ts";
 import { signedBoundaryDistance } from "./regions.ts";
@@ -18,21 +20,6 @@ export interface LayerOutput {
     cells: number[];
     values: Float32Array;
     residual?: { height: number; point: Point };
-}
-
-function profileLine(line: Polyline<number>) {
-    const divisions = line.smooth ? 8 : 1, vertices = line.points.map(v => v.p);
-    const points = line.smooth ? spline(vertices, false, divisions) : vertices, lengths = stations(points);
-    const anchors = line.points.flatMap((v, i) => v.h === undefined ? [] : [{ s: lengths[i * divisions], h: v.h }]);
-    function value(segment: number, t: number, ease = false) {
-        const s = lengths[segment] + t * (lengths[segment + 1] - lengths[segment]);
-        const end = anchors.findIndex(a => a.s >= s);
-        if (end < 0) return anchors.at(-1)!.h;
-        if (!end) return anchors[0].h;
-        const a = anchors[end - 1], b = anchors[end], u = (s - a.s) / (b.s - a.s || 1);
-        return a.h + (b.h - a.h) * (ease ? smooth(u) : u);
-    }
-    return { points, divisions, value };
 }
 
 export function evaluateLayer(n: GeoNode<number>, region: Region, state: FieldState): LayerOutput {
@@ -68,10 +55,10 @@ export function evaluateLayer(n: GeoNode<number>, region: Region, state: FieldSt
                     const base = f.value;
                     return (_, x, y) => base + f.rate * (Math.hypot(x - f.center[0], y - f.center[1]) - f.radius);
                 }
-                const line = profileLine(f.line);
+                const line = numericProfile(f.line);
                 return (_, x, y) => {
                     const hit = nearest(x, y, line.points);
-                    return line.value(hit.segment, hit.t, f.ease);
+                    return line.value(line.station(hit.segment, hit.t), f.ease);
                 };
             }
             case "add": {
@@ -107,9 +94,9 @@ export function evaluateLayer(n: GeoNode<number>, region: Region, state: FieldSt
                 return k => land[k] ? Math.min(shore[k] * .28, 3.5) : -1 - Math.min(-shore[k] * .09, 5);
             }
             case "mountain": {
-                const n3 = noise(seed + 202), n4 = noise(seed + 303);
-                const floor = f.floor === undefined ? -Infinity : f.floor;
-                const ridges = f.ridges.map(r => ({ ...r, profile: profileLine(r.line) }));
+                const n3 = noise(seed + 202);
+                const floor = f.floor ?? functionDefaults[f.type].floor;
+                const ridges = f.ridges.map(r => ({ ...r, profile: numericProfile(r.line) }));
                 const peaks = f.peaks.map(p => ({ ...p, h: p.at.h }));
                 return (k, x, y) => {
                     let h = source[k];
@@ -117,9 +104,9 @@ export function evaluateLayer(n: GeoNode<number>, region: Region, state: FieldSt
                     for (const { profile, widths, widthNoise: w, heightNoise: gain } of ridges) {
                         const hit = nearest(x, y, profile.points), a = profile.points[hit.segment], b = profile.points[hit.segment + 1];
                         const side = (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]) > 0 ? 0 : 1;
-                        const at = (hit.segment + hit.t) / profile.divisions;
-                        const breadth = widths[side] * (1 + w[0] * n4(at * w[1], w[2]));
-                        const crest = profile.value(hit.segment, hit.t) * (1 + gain[0] * n4(at * gain[1], gain[2]));
+                        const s = profile.station(hit.segment, hit.t);
+                        const breadth = widths[side] * (1 + w.amount / 100 * noise1D(seed, s / w.wavelength));
+                        const crest = profile.value(s) * (1 + gain.amount / 100 * noise1D(seed + 1, s / gain.wavelength));
                         h = Math.max(h, crest * Math.exp(-((hit.distance / (breadth || 1e-9)) ** 2)));
                     }
                     for (const p of peaks) {
@@ -136,7 +123,7 @@ export function evaluateLayer(n: GeoNode<number>, region: Region, state: FieldSt
                     Math.min(source[k], Math.max(.4, shore[k] * input(f.factor, k)! * (1 + .3 * n1(x / 12, y / 12))));
             }
             case "erosion": {
-                const floor = f.floor === undefined ? -Infinity : f.floor;
+                const floor = f.floor ?? functionDefaults[f.type].floor;
                 const eligible = Uint8Array.from(region.mask, (v, k) => +(!!v && !!mask[k] && source[k] > floor));
                 const delta = erode(grid, eligible, source, f, seed);
                 return k => source[k] + delta[k] * input(f.strength ?? 1, k)!;

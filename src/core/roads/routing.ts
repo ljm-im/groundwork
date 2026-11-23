@@ -543,7 +543,7 @@ export function routeAll(design: Design, t: RoutingSurface, previous: Route[] = 
                 h = endTangent(a, n) + Math.PI;
             else if (mb === "smooth" && ma === "route")
                 h = endTangent(b, n);
-            if (n.direction != null && ma !== "straight" && mb !== "straight") {
+            if (n.directionMode !== "auto" && n.direction != null && ma !== "straight" && mb !== "straight") {
                 const manual = n.direction * radians;
                 h = angleDiff(manual, h) <= Math.PI / 2 ? manual : manual + Math.PI;
             }
