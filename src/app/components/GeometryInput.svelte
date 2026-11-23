@@ -1,5 +1,5 @@
 <button class="geometry-row" aria-label={label} aria-pressed={active} {onclick}>
-    <span>{label}</span><span class="geometry-box"><Icon name={icon} />{icon === "point" ? "点" : icon === "polyline" ? "折线 · " + count + " 个顶点" : "闭合路径 · " + count + " 个节点"}</span>
+    <span>{label}</span><span class="geometry-box"><Icon name={icon} />{icon === "point" ? "点" : icon === "polyline" ? "折线（" + count + " 个顶点）" : "闭合路径（" + count + " 个节点）"}</span>
 </button>
 
 <style>

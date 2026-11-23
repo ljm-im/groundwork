@@ -1,16 +1,16 @@
 {#if !properties}
-    <Part title="变量" count={Object.keys(d.variables).length}>
-        {#each Object.entries(d.variables) as [id, v] (id)}
+    <Part title="自定义输入" icon="inputs" count={Object.keys(d.inputs).length}>
+        {#each Object.entries(d.inputs) as [id, v] (id)}
             <div class="declaration">
-                <button class="object-row" data-select-variable={id} aria-pressed={h?.kind === "variable" && h.id === id} onclick={() => editor.select({ kind: "variable", id })}>
-                    <Icon name="variables" />{v.label ?? id}
+                <button class="object-row" data-select-input={id} aria-pressed={h?.kind === "input" && h.id === id} onclick={() => editor.select({ kind: "input", id })}>
+                    <Icon name="inputs" />{v.label ?? id}
                 </button>
-                <div data-variable={id}><NumberInput {editor} label={v.label ?? id} address={["variables", id, "value"]} self={"var:" + id} range={v.range} step={v.range?.[2] ?? (id === "seed" ? 1 : .1)} /></div>
+                <div data-input={id}><NumberInput {editor} label={v.label ?? id} address={["inputs", id, "value"]} self={"input:" + id} range={v.range} step={v.range?.[2] ?? (id === "seed" ? 1 : .1)} /></div>
             </div>
         {/each}
-        <button data-add="variable" onclick={() => editor.addDeclaration("variable")}>新建变量</button>
+        <button data-add="input" onclick={() => editor.addDeclaration("input")}>新建自定义输入</button>
     </Part>
-    <Part title="场" count={Object.keys(d.fields).length + 1}>
+    <Part title="场" icon="field" count={Object.keys(d.fields).length + 1}>
         {#each ["height", ...Object.keys(d.fields)] as id (id)}
             <button class="object-row" data-select-field={id} aria-pressed={h?.kind === "field" && h.id === id} onclick={() => editor.select({ kind: "field", id })}>
                 <Icon name="field" />{id === "height" ? "高度" : d.fields[id].label ?? id}{#if id !== "height"}<small>{d.fields[id].default ?? editor.island.resolved.fields[id].default}</small>{/if}
@@ -19,30 +19,30 @@
         <button data-add="field" onclick={() => editor.addDeclaration("field")}>新建场</button>
     </Part>
 {:else if h?.kind === "field" && h.id === "height"}
-    <PropertyTitle name="高度" label="场名称" /><div class="sub">内置场 · 单位 m</div>
+    <PropertyTitle name="高度" label="场名称" /><div class="sub">内置场（单位 m）</div>
 {:else if h}
-    {@const variable = h.kind === "variable"}
-    {@const table = variable ? "variables" : "fields"}
+    {@const variable = h.kind === "input"}
+    {@const table = variable ? "inputs" : "fields"}
     {@const item = d[table][h.id]}
     {#if item}
-        <PropertyTitle name={item.label ?? h.id} label={variable ? "变量名称" : "场名称"} rename={name => editor.edit(d => {
+        <PropertyTitle name={item.label ?? h.id} label={variable ? "自定义输入名称" : "场名称"} rename={name => editor.edit(d => {
             d[table][h!.id].label = name;
         })} remove={() => editor.removeSelected()} />
         {#if variable}
-            {@const v = d.variables[h.id]}
-            <NumberInput {editor} label="当前值" address={[table, h.id, "value"]} self={"var:" + h.id} range={v.range} step={v.range?.[2] ?? (h.id === "seed" ? 1 : .1)} />
+            {@const v = d.inputs[h.id]}
+            <NumberInput {editor} label="当前值" address={[table, h.id, "value"]} self={"input:" + h.id} range={v.range} step={v.range?.[2] ?? (h.id === "seed" ? 1 : .1)} />
             <Part title="取值范围">
                 {#if v.range}
                     {#each ["最小值", "最大值", "步长"] as label, i (label)}
                         <NumberInput {editor} {label} address={[table, h.id, "range", i]} kind="literal" />
                     {/each}
                     <button onclick={() => editor.edit(d => {
-                        delete d.variables[h!.id].range;
+                        delete d.inputs[h!.id].range;
                     })}>清空范围</button>
                 {:else}
                     <button onclick={() => editor.edit(d => {
-                        const value = editor.island.resolved.variables[h!.id].value;
-                        d.variables[h!.id].range = [Math.min(0, value), Math.max(10, value), .1];
+                        const value = editor.island.resolved.inputs[h!.id].value;
+                        d.inputs[h!.id].range = [Math.min(0, value), Math.max(10, value), .1];
                     })}>添加范围</button>
                 {/if}
             </Part>

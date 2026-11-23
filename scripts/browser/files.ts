@@ -194,7 +194,7 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
         const toast = await evaluate(() => document.querySelector("#toast")!.textContent);
         await key("s", 2);
         await wait(() => window.probe.suggestions.length === 1);
-        assert.deepEqual(await prop("suggestions"), ["island.json"]);
+        assert.deepEqual(await prop("suggestions"), ["project.json"]);
         assert.deepEqual(await draft(), initialDraft);
         assert.equal(await state(), "未保存");
         assert.equal(await evaluate(() => document.querySelector("#toast")!.textContent), toast);
@@ -207,7 +207,7 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
         assert.equal(await disk(a), lastA);
         assert.equal(await prop("writes"), writes);
         assert.deepEqual(await draft(), initialDraft);
-        report.checks.cancel = { suggested: "island.json", writesDuringUnboundEdits: 0, draftUnchanged: true, discardCancelledBeforePicker: true };
+        report.checks.cancel = { suggested: "project.json", writesDuringUnboundEdits: 0, draftUnchanged: true, discardCancelledBeforePicker: true };
 
         check("Ctrl+S binds, preserves a focused description and enables later writes");
         await set({ cancel: false, hold: true });
@@ -335,7 +335,7 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
         await filename(target);
         await saved(3);
         assert.equal(JSON.parse(await disk(target)).prompt, "写入期间的最后一步。");
-        assert.deepEqual(await prop("suggestions"), ["island.json", "island.json"]);
+        assert.deepEqual(await prop("suggestions"), ["project.json", "project.json"]);
         assert.deepEqual(await storage(), cleanStorage);
         report.checks.firstSave = { failedBeforeBinding: true, editsDuringFirstWrite: 2, successfulWrites: await prop("closes") };
 
@@ -356,12 +356,12 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
             assert.equal(await evaluate(() => document.querySelectorAll("#plots canvas").length), design.sections.length);
             const screenshot = await cdp("Page.captureScreenshot", { format: "png", fromSurface: true });
             await writeFile(join(artifactDir, key + ".png"), Buffer.from(screenshot.data, "base64"));
-            const [variable, rule] = Object.entries(design.variables).find(([, v]) => v.range && typeof v.value === "number")!;
+            const [variable, rule] = Object.entries(design.inputs).find(([, v]) => v.range && typeof v.value === "number")!;
             const [min, max, step] = rule.range!, current = Number(rule.value), direction = current + step <= max ? 1 : -1;
             const value = Number((current + direction * step).toPrecision(15));
             assert(value >= min);
-            await click("[data-tab=variables]");
-            const selector = "[data-variable=" + JSON.stringify(variable) + "]";
+            await click("[data-tab=inputs]");
+            const selector = "[data-input=" + JSON.stringify(variable) + "]";
             const [x, y] = await evaluate(s => {
                 const button = document.querySelector<HTMLElement>(s)!;
                 button.scrollIntoView({ block: "nearest" });
@@ -373,7 +373,7 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
             assert.equal(await prop("writes"), 0);
             await mouse("mouseReleased", x, y);
             await saved(1);
-            assert.equal(parseDesign(await disk(name)).variables[variable].value, value);
+            assert.equal(parseDesign(await disk(name)).inputs[variable].value, value);
             report.checks[key] = { layers: design.geoNodes.length, selected: layer.id, sections: design.sections.length, variable, value };
         }
         check("Reject an older file without replacing the active v5 design");
@@ -388,17 +388,17 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
 
         check("Show omitted numbers and edit point geometry on the map");
         const sparse = syntheticDesign();
-        Reflect.deleteProperty(sparse.geoNodes[1].function, "value");
+        Reflect.deleteProperty(sparse.geoNodes[1].function, "amount");
         sparse.fields.F = { default: 0 }; Reflect.deleteProperty(sparse.fields.F, "default");
         sparse.edges[0].via = [[2, 20]];
         await navigate();
         await seed("sparse.json", JSON.stringify(sparse));
         await set({ openName: "sparse.json" }); await click("#open"); await filename("sparse.json");
         await click("[data-tab=terrain]");
-        assert.match(await evaluate(() => document.querySelector("[data-geo-node=\"T\"]")!.textContent!), /flat\s*=\s*0\b/);
+        assert.match(await evaluate(() => document.querySelector("[data-geo-node=\"T\"]")!.textContent!), /flat\s*\+\s*1\b/);
         await click("[data-geo-node=\"T\"]");
-        assert.match(await evaluate(() => document.querySelector("[data-parameter$=\".function.value\"] .numeric-face")!.textContent!.trim()), /^0(?:\.0+)?$/);
-        await click("[data-tab=variables]");
+        assert.match(await evaluate(() => document.querySelector("[data-parameter$=\".function.amount\"] .numeric-face")!.textContent!.trim()), /^1(?:\.0+)?$/);
+        await click("[data-tab=inputs]");
         assert.equal(await evaluate(() => document.querySelector("[data-select-field=\"F\"] small")!.textContent), "0");
         for (const [tab, row, geometry] of [["buildings", "[data-building=\"A\"]", "中心"], ["network", "[data-edge=\"E\"]", "路线控制点"], ["network", "[data-node=\"a\"]", "位置"]]) {
             await click("[data-tab=" + tab + "]");
@@ -411,7 +411,7 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
             assert.equal(await evaluate(() => document.querySelectorAll("[title]").length), 0);
         }
         assert.equal(await prop("writes"), 0);
-        report.checks.sparseGeometry = { flat: 0, field: 0, geometryRows: 3 };
+        report.checks.sparseGeometry = { flat: 1, field: 0, geometryRows: 3 };
         check("Unsupported browser");
         await cdp("Page.addScriptToEvaluateOnNewDocument", { source: "window.showSaveFilePicker = undefined" });
         await navigate();

@@ -8,8 +8,11 @@ export function drawGeoOverlay(map: IslandMap) {
     const ctx = map.ctx, scale = map.scale, d = map.island.design, draft = map.draft;
     const edges = (segments: Segment[], color: string, width: number, dash: number[] = []) => {
         ctx.strokeStyle = color; ctx.lineWidth = width; ctx.setLineDash(dash); ctx.beginPath();
+        let last: Point | undefined;
         for (const { a, b } of segments) {
-            ctx.moveTo(...map.screen(a)); ctx.lineTo(...map.screen(b));
+            if (!last || a[0] !== last[0] || a[1] !== last[1]) ctx.moveTo(...map.screen(a));
+            ctx.lineTo(...map.screen(b));
+            last = b;
         }
         ctx.stroke(); ctx.setLineDash([]);
     };

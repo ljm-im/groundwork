@@ -11,14 +11,14 @@ export function newId(list: { id: string }[], prefix: string) {
 
 export function addNode(d: Design, point: Point): RoadNode {
     const id = newId(d.nodes, "node");
-    const node: RoadNode = { id, name: "新节点 " + id.split("-").at(-1)!, type: "junction", point: [...point] };
+    const node: RoadNode = { id, label: "新节点 " + id.split("-").at(-1)!, type: "junction", point: [...point] };
     d.nodes.push(node);
     return node;
 }
 
 export function connect(d: Design, from: RoadNode<Expression>, to: RoadNode<Expression>): Edge {
     const { width, comfort, maxGrade, corridor } = d.roadClasses.path;
-    const edge: Edge = { id: newId(d.edges, "edge"), name: from.name + " → " + to.name, from: from.id, to: to.id,
+    const edge: Edge = { id: newId(d.edges, "edge"), label: from.label + " → " + to.label, from: from.id, to: to.id,
         via: [], grade: "path", width, comfort, maxGrade, corridor };
     d.edges.push(edge);
     return edge;
@@ -55,8 +55,8 @@ export function splitRoad(d: Design, route: Route, point: Point, index: number) 
     const e = d.edges.find(edge => edge.id === route.id)!, oldEnd = d.nodes.find(n => n.id === e.to)!;
     if (distance(route.points[0], point) < .02 || distance(route.points.at(-1)!, point) < .02) return null;
     const node = addNode(d, point);
-    node.name = "分岔路口 " + node.id.split("-").at(-1)!;
-    const after = { ...e, id: newId(d.edges, "edge"), name: node.name + " → " + oldEnd.name, from: node.id, via: e.via.slice(index) };
+    node.label = "分岔路口 " + node.id.split("-").at(-1)!;
+    const after = { ...e, id: newId(d.edges, "edge"), label: node.label + " → " + oldEnd.label, from: node.id, via: e.via.slice(index) };
     if (route.edge.stairUntil != null) {
         const hit = nearest(...point, route.points);
         const station = route.s[hit.segment] + hit.t * (route.s[hit.segment + 1] - route.s[hit.segment]);

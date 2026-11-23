@@ -84,7 +84,7 @@ export function removeGeometryItem(d: Design, n: GeoNode, path: Address, index: 
             const target = slots.get(ref);
             if (!ref.startsWith(prefix) || target?.id !== n.id || target.owner !== "geo") return text;
             const [at, ...rest] = ref.slice(prefix.length).split(".");
-            if (Number(at) === index) uses.push(slotName(s) + " · " + s.location);
+            if (Number(at) === index) uses.push(slotName(s) + "（" + s.location + "）");
             return Number(at) > index ? "{" + prefix + (Number(at) - 1) + "." + rest.join(".") + "}" : text;
         });
         if (next !== formula) edits.push([s.path, next]);

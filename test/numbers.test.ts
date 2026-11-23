@@ -8,21 +8,21 @@ import { History } from "../src/core/edit/history.ts";
 import { syntheticDesign, layer, rect } from "./scenarios.ts";
 
 test("Number steps adjust the final signed literal, avoid zero divisors and preserve precision", () => {
-    assert.equal(adjustNumber("{var:a} + 0.5", 1, .1), "{var:a} + 0.6");
+    assert.equal(adjustNumber("{input:a} + 0.5", 1, .1), "{input:a} + 0.6");
     assert.equal(adjustNumber("{field:f} * 0.75 + 0.3", -1, .1), "{field:f} * 0.75 + 0.2");
     assert.equal(adjustNumber("{field:f} * 0.75", 1, .1), "{field:f} * 0.85");
-    assert.equal(adjustNumber("{var:a} - 0.5", 1, .1), "{var:a} - 0.4");
-    assert.equal(adjustNumber("{var:a} - 0.5", 6, .1), "{var:a} + 0.1");
-    assert.equal(adjustNumber("{var:a} / -0.1", 1, .1), "{var:a} / 0.1");
-    assert.equal(adjustNumber("{var:a} / -0.2", 3, .1), "{var:a} / 0.2");
-    assert.equal(adjustNumber("{var:a} / (0.1)", -1, .1), "{var:a} / (-0.1)");
+    assert.equal(adjustNumber("{input:a} - 0.5", 1, .1), "{input:a} - 0.4");
+    assert.equal(adjustNumber("{input:a} - 0.5", 6, .1), "{input:a} + 0.1");
+    assert.equal(adjustNumber("{input:a} / -0.1", 1, .1), "{input:a} / 0.1");
+    assert.equal(adjustNumber("{input:a} / -0.2", 3, .1), "{input:a} / 0.2");
+    assert.equal(adjustNumber("{input:a} / (0.1)", -1, .1), "{input:a} / (-0.1)");
     assert.equal(adjustNumber("{geo:B.ridges.0.widths.1}", -1, .1), "{geo:B.ridges.0.widths.1} - 0.1");
     assert.equal(adjustNumber(2, 3, .5, [0, 2, .5]), 2);
-    assert.equal(adjustNumber("{var:a} + 2", 3, .5, [0, 2, .5]), "{var:a} + 3.5");
+    assert.equal(adjustNumber("{input:a} + 2", 3, .5, [0, 2, .5]), "{input:a} + 3.5");
     assert.equal(displayNumber(1.2345, .1), "1.2"); assert.equal(displayNumber(2.6, 1), "3");
     assert.equal(adjustNumber(1.2345, 1, .1), 1.3345);
     assert.equal(numericText("1.2345", true), 1.2345);
-    for (const expr of ["1 + 2", "{var:a}", "NaN", ""]) assert.throws(() => numericText(expr, true));
+    for (const expr of ["1 + 2", "{input:a}", "NaN", ""]) assert.throws(() => numericText(expr, true));
     assert.equal(numericText("3 × (2 − 1)", false), "3 * (2 - 1)");
 });
 test("Dragging and repeating preview several values but release records one history entry", async t => {
@@ -42,14 +42,14 @@ test("Dragging and repeating preview several values but release records one hist
     let calls = 0;
     const stop = repeatButton(() => {
         calls++;
-        const preview = structuredClone(design); preview.variables.A.value += calls;
+        const preview = structuredClone(design); preview.inputs.A.value += calls;
         editor.previewNumber(preview);
     });
     assert.equal(calls, 1); t.mock.timers.tick(399); assert.equal(calls, 1);
     t.mock.timers.tick(1); assert.equal(calls, 2); t.mock.timers.tick(80); assert.equal(calls, 3);
     stop(); t.mock.timers.tick(300); assert.equal(calls, 3); assert.equal(editor.history.index, 0);
     editor.commitNumber(editor.island.design);
-    assert.equal(editor.history.index, 1); assert.equal(editor.history.step(false)!.variables.A.value, design.variables.A.value);
+    assert.equal(editor.history.index, 1); assert.equal(editor.history.step(false)!.inputs.A.value, design.inputs.A.value);
 });
 test("Camera framing survives empty and changing canvases and the viewport hides each row above it", () => {
     const d = syntheticDesign(); d.buildings = []; d.nodes = []; d.edges = [];
@@ -62,12 +62,12 @@ test("Camera framing survives empty and changing canvases and the viewport hides
         const next = new Island(d); map.island = next.view(); map.frame(next.terrain); assert.deepEqual(camera(), original);
     };
     update();
-    d.geoNodes.push(layer("Q", rect(80, 30, 97, 41), { type: "flat", value: 12 })); update();
+    d.geoNodes.push(layer("Q", rect(80, 30, 97, 41), { type: "flat", amount: 12 })); update();
     d.geoNodes.splice(1, 1); update();
     d.grid.step = 2; update(); map.fit(false);
     assert.equal(map.zoomFactor(), 1); assert.deepEqual(map.center, [24.5, 0]);
     delete d.geoNodes[0].disabled;
-    d.geoNodes.push(layer("C", rect(5, 5, 12, 12), { type: "flat", value: 15 }));
+    d.geoNodes.push(layer("C", rect(5, 5, 12, 12), { type: "flat", amount: 15 }));
     const island = new Island(d), fromTop = d.geoNodes.toReversed();
     for (const [k, n] of fromTop.entries()) {
         const view = island.viewBelow(n.id), expected = generateTerrain({ ...d, geoNodes: fromTop.slice(k + 1).reverse() });

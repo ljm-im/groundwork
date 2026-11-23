@@ -5,15 +5,15 @@ import { type Handle } from "../core/edit/types.ts";
 import { type DrawTool } from "./state/geoTools.ts";
 import { type layerDefaults } from "./state/layers.ts";
 
-export { type Building, type Design, type Door, type Edge, type Expression, type Named, type Point, type RoadClass, type RoadNode } from "../core/design/v5.ts";
+export { type Building, type Design, type Door, type Edge, type Expression, type Mark, type Point, type RoadClass, type RoadNode } from "../core/design/v5.ts";
 export { type Issue, type Route } from "../core/design/results.ts";
 export { type Handle, type Selection } from "../core/edit/types.ts";
 export { type Island as IslandModel } from "../core/island.ts";
 export { type IslandMap as MapView } from "../render/map.ts";
 
-export type Tab = "network" | "buildings" | "terrain" | "variables" | "layers" | "issues";
+export type Tab = "network" | "buildings" | "terrain" | "inputs" | "layers" | "marks" | "issues";
 
-export type Tool = "select" | "node" | "edge" | "via" | "fork" | "door" | "building" | DrawTool;
+export type Tool = "select" | "node" | "edge" | "via" | "fork" | "door" | "building" | "textMark" | "scaleMark" | DrawTool;
 export type Layer = keyof typeof layerDefaults;
 
 interface GestureStart { screen: Point; pointer: number; changed?: boolean }

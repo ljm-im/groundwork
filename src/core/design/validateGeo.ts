@@ -11,12 +11,12 @@ const record = (v: unknown) => !!v && typeof v === "object" && !Array.isArray(v)
 const finite = Number.isFinite;
 
 export function validateGeo(d: Design, allowBrokenReferences = false) {
-    check(record(d.variables), "variables 缺失");
+    check(record(d.inputs), "inputs 缺失");
     check(record(d.fields) && !Object.hasOwn(d.fields, "height"), "fields 无效，高度场是内置场");
-    for (const [key, variable] of Object.entries(d.variables)) {
+    for (const [key, variable] of Object.entries(d.inputs)) {
         const r = variable?.range;
         check(key && finite(variable?.value) && (variable.label == null || typeof variable.label === "string") &&
-            (r == null || Array.isArray(r) && r.length === 3 && r.every(finite) && r[0] < r[1] && positive(r[2])), "variables." + key + " 无效");
+            (r == null || Array.isArray(r) && r.length === 3 && r.every(finite) && r[0] < r[1] && positive(r[2])), "inputs." + key + " 无效");
     }
     for (const [key, f] of Object.entries(d.fields))
         check(key && finite(f?.default) && (f.label == null || typeof f.label === "string"), "fields." + key + " 无效");
@@ -80,7 +80,8 @@ export function validateGeo(d: Design, allowBrokenReferences = false) {
         if ("floor" in f && f.floor !== undefined) height(f.floor, "function.floor");
         if ("seaLevel" in f && f.seaLevel !== undefined) height(f.seaLevel, "function.seaLevel");
         switch (f.type) {
-            case "flat": case "ground": height(f.value, "function.value"); break;
+            case "ground": height(f.value, "function.value"); break;
+            case "flat": height(f.amount, "function.amount"); break;
             case "coast":
                 path(f.shore, "function.shore");
                 input(f.roughness, "function.roughness");
@@ -133,8 +134,6 @@ export function validateGeo(d: Design, allowBrokenReferences = false) {
         }
     }
     if (!d.geoNodes.some(n => n.function.type === "ground")) problems.push({ message: "geoNodes 缺少确定画布的 ground" });
-    for (const [i, label] of d.labels.entries())
-        if (label.var !== undefined && !Object.hasOwn(d.variables, label.var)) problems.push({ message: "labels[" + i + "].var 找不到变量“" + label.var + "”" });
     if (!allowBrokenReferences) check(!problems.length, problems.map(p => p.message).join("\n"));
     return problems;
 }

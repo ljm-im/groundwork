@@ -1,42 +1,54 @@
 {#snippet formatted(text: string, operators: boolean)}
-    {#each text.split(/(\{(?:var|field|geo|edge|node|building):[^{}]+\})/g) as part, i (i)}
+    {#each text.split(/(\{(?:input|field|geo|edge|node|building):[^{}]+\})/g) as part, i (i)}
         {#if part.startsWith("{") && part.endsWith("}")}<ReferenceChip refKey={part.slice(1, -1)} design={catalog} {slots} />
         {:else}{operators ? part.replaceAll("*", "×").replaceAll("/", "÷").replaceAll("-", "−") : part}{/if}
     {/each}
+{/snippet}
+{#snippet editControl()}
+    <div class="edit-face"><div class="numeric-edit" use:numericCaret role="textbox" aria-label={label} aria-invalid={!!error}
+        aria-multiline={expanded} data-tip={tip} contenteditable="true" spellcheck="false" tabindex="0"
+        bind:this={input} oninput={onInput} onkeydown={key} onpointerdown={selectChip} onblur={() => {
+            if (editing) finish(true);
+        }} onpaste={e => {
+            e.preventDefault(); insertText(e.clipboardData?.getData("text/plain") ?? "");
+        }}></div></div>
+{/snippet}
+{#snippet variableMenuButton()}
+    {#if kind !== "literal"}<button class="reference-toggle" data-tip="插入变量" aria-label={"为" + label + "插入变量"} aria-expanded={opened}
+        onpointerdown={e => e.preventDefault()} onclick={() => {
+            if (opened) closeMenu(); else showMenu();
+        }}>▾</button>{/if}
 {/snippet}
 <div class="number-row" data-parameter={address.join(".")} bind:this={root}>
     <div class="number-line"><span class="number-label">{label}</span>
         <div class="number-box" class:invalid={!!error} class:warning={outside} bind:this={box}>
             <button class="step" aria-label={"减小" + label} data-tip="减小" onpointerdown={e => beginGesture(e, -1)} onclick={e => keyboardStep(e, -1)}>‹</button>
-            {#if editing}
-                <div class="edit-face"><div class="numeric-edit" use:numericCaret role="textbox" aria-label={label} aria-invalid={!!error} data-tip={tip} contenteditable="true" spellcheck="false" tabindex="0"
-                    bind:this={input} oninput={onInput} onkeydown={key} onblur={() => {
-                        if (editing) finish(true);
-                    }}
-                    onpaste={e => {
-                        e.preventDefault(); insertText(e.clipboardData?.getData("text/plain") ?? "");
-                    }}></div></div>
-                <div hidden bind:this={mirror}>{@render formatted(draft, false)}</div>
+            {#if editing && !expanded}
+                {@render editControl()}
             {:else}
-                <button class="numeric-face" aria-label={label} data-tip={tip} onpointerdown={e => beginGesture(e, 0)}
+                <button class="numeric-face" use:flagOverflow bind:this={face} aria-label={label} data-tip={tip} onpointerdown={e => beginGesture(e, 0)}
                     onclick={e => {
-                        if (!e.detail) startEdit();
+                        if (!e.detail) void startEdit();
                     }}>
                     {#if typeof shown === "number"}{displayNumber(shown * displayFactor, step)}
                     {:else}{@render formatted(shown, true)}{/if}
                 </button>
             {/if}
             <button class="step" aria-label={"增大" + label} data-tip="增大" onpointerdown={e => beginGesture(e, 1)} onclick={e => keyboardStep(e, 1)}>›</button>
-            {#if kind !== "literal"}<button class="reference-toggle" data-tip="插入引用" aria-label={"为" + label + "插入引用"} aria-expanded={opened}
-                onpointerdown={e => e.preventDefault()} onclick={() => {
-                    if (opened) closeMenu(); else showMenu();
-                }}>▾</button>{/if}
+            {#if !expanded}{@render variableMenuButton()}
+            {:else if kind !== "literal"}<span class="menu-spacer"></span>{/if}
         </div>
         {#if unit}<small class="unit">{unit}</small>{/if}
     </div>
-    {#if error}<div class="number-error" role="alert">{error}</div>{/if}
+    {#if editing}<div hidden bind:this={mirror}>{@render formatted(draft, false)}</div>{/if}
+    {#if editing && expanded}
+        <div class="expanded-edit" role="group" aria-label={"编辑" + label} popover="manual" bind:this={expandedBox} use:placeEditor>
+            <div class="expanded-line number-box" class:invalid={!!error}>{@render editControl()}{@render variableMenuButton()}</div>
+            {#if error}<div class="number-error" role="alert">{error}</div>{/if}
+        </div>
+    {:else if error}<div class="number-error" role="alert">{error}</div>{/if}
     {#if opened}
-        <div class="reference-menu" role="listbox" tabindex="-1" aria-label="可用引用" popover="manual" use:anchoredPopup={{ anchor: box, close: closeMenu }} onpointerdown={e => e.preventDefault()}>
+        <div class="reference-menu" role="listbox" tabindex="-1" aria-label="可用变量" popover="manual" use:anchoredPopup={{ anchor: expandedBox ?? box, close: closeMenu, viewport: expanded }} onpointerdown={e => e.preventDefault()}>
             {#if parent}<button class="ref-back" onclick={() => {
                 parent = ""; active = 0;
             }}>‹ 返回</button>{/if}
@@ -64,18 +76,22 @@
     .number-box.invalid { border-color: var(--red); }
     .number-box button { min-height: 25px; padding: 0; background: transparent; border: 0; border-radius: 2px; }
     .number-box button:hover { background: var(--light); }
-    .number-box .step, .number-box .reference-toggle { flex: 0 0 17px; color: var(--muted); touch-action: none; }
-    .number-box .reference-toggle { border-left: 1px solid var(--line); }
+    .number-box .step, .number-box .reference-toggle, .menu-spacer { flex: 0 0 17px; color: var(--muted); touch-action: none; }
     .numeric-face, .numeric-edit { display: block; flex: 1; min-width: 0; text-align: center; white-space: nowrap; font: inherit; font-size: 12px; line-height: 18px; }
-    .numeric-face { cursor: ew-resize; user-select: none; overflow: hidden; text-overflow: ellipsis; touch-action: none; }
+    .numeric-face { cursor: ew-resize; user-select: none; overflow: hidden; touch-action: none; }
+    .numeric-face:global([data-overflow]) { text-align: left; mask-image: linear-gradient(to right, black calc(100% - 14px), transparent); }
+    .expanded-edit { position: fixed; inset: auto; margin: 0; padding: 7px; overflow: auto; color: var(--ink);
+        background: var(--panel); border: 1px solid var(--line); border-radius: 5px; box-shadow: 0 5px 22px #163e342e; }
+    .expanded-line .edit-face { align-self: stretch; }
+    .expanded-line .numeric-edit { min-height: 62px; padding: 4px 5px; white-space: pre-wrap; overflow-wrap: anywhere; text-align: left; }
+    .expanded-line :global(.ref-chip) { display: inline-block; max-width: 100%; white-space: normal; }
     .edit-face { position: relative; align-self: center; min-width: 0; flex: 1; overflow: hidden; --caret-height: 18px; }
-    .edit-face::after { content: ""; display: var(--caret-display, none); position: absolute; left: var(--caret-x); top: 0; height: var(--caret-height); width: 1px; background: currentColor; pointer-events: none; animation: blink 1.1s steps(1) infinite; }
+    .edit-face::after { content: ""; display: var(--caret-display, none); position: absolute; left: var(--caret-x); top: var(--caret-y); height: var(--caret-height); width: 1px; background: currentColor; pointer-events: none; animation: blink 1.1s steps(1) infinite; }
     @keyframes blink { 50% { opacity: 0; } }
     .numeric-edit { caret-color: transparent; line-height: var(--caret-height); min-height: var(--caret-height); padding: 0 2px; outline: none; overflow-x: auto; scrollbar-width: none; white-space: pre; }
     .unit { color: var(--muted); font-size: 11px; }
     .number-error { color: var(--red); font-size: 11px; margin: 3px 0; }
     .reference-menu { position: fixed; z-index: 8; inset: auto; margin: 0; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 5px; box-shadow: 0 5px 22px #163e342e; padding: 4px; }
-    .ref-group + .ref-group { border-top: 1px solid var(--line); }
     .group-name { font-size: 10px; color: var(--muted); margin: 4px 6px; }
     .ref-group button, .ref-back { display: flex; width: 100%; align-items: center; gap: 6px; justify-content: flex-start; border: none; background: transparent; min-height: 24px; font-size: 12px; }
     .ref-group button[aria-selected="true"] { background: var(--light); }
@@ -89,9 +105,9 @@
     import { canReference, expressionGraph, parameters, readAt, writeAt, type Address, type Owner } from "../../core/design/parameters.ts";
     import { evaluate, sampleValue } from "../../core/design/expression.ts";
     import { parseDesign } from "../../core/design/model.ts";
-    import { addVariable, addField } from "../../core/edit/geoNodes.ts";
+    import { addInput, addField } from "../../core/edit/geoNodes.ts";
     import { offsetBuildingParts } from "../../core/edit/buildings.ts";
-    import { adjustNumber, caretAt, displayNumber, editorText, NumberDrag, numericCaret, numericText, repeatButton, selectionOffsets, type Range } from "../state/numbers.ts";
+    import { adjustNumber, chipSpans, displayNumber, editorSelection, flagOverflow, editorText, NumberDrag, numericCaret, numericText, repeatButton, selectionOffsets, type Range } from "../state/numbers.ts";
     import { anchoredPopup } from "../state/popup.ts";
     import Icon from "./Icon.svelte";
     import ReferenceChip from "./ReferenceChip.svelte";
@@ -99,11 +115,12 @@
         editor: session.Editor; address: Address; label: string; kind?: "number" | "field" | "literal"; step?: number;
         range?: Range; unit?: string; self?: string; owner?: string; displayFactor?: number;
     } = $props();
+    let face = $state<HTMLButtonElement>(), expandedBox = $state<HTMLElement>();
     let root: HTMLElement, box = $state<HTMLElement>(null!), input = $state<HTMLElement>(null!), mirror = $state<HTMLElement>(null!);
     let base = $derived(editor.island.design), authored = $derived(readAt(base, address) as Expression | undefined);
     let value = $derived(authored ?? (readAt(editor.island.resolved, address) as number | undefined) ??
         (self ? expressionGraph(base).get(self) as number : 0));
-    let editing = $state(false), draft = $state(""), error = $state(""), opened = $state(false), parent = $state(""), query = $state("");
+    let editing = $state(false), expanded = $state(false), draft = $state(""), error = $state(""), opened = $state(false), parent = $state(""), query = $state("");
     let queryStart = 0, queryEnd = 0;
     let active = $state(0);
     let catalogDraft = $state.raw<Design>(), catalog = $derived(catalogDraft ?? base), slots = $derived(parameters(catalog));
@@ -115,7 +132,7 @@
         return result === undefined ? "= 未定义" : "= " + Number(displayNumber(result * displayFactor, step)) + (unit ? " " + unit : "");
     });
     let origin: Design | undefined, cleanup: (() => void) | undefined, version = 0;
-    type IconName = "variables" | "field" | "terrain" | "edge" | "node" | "building" | "property" | "plus";
+    type IconName = "inputs" | "field" | "terrain" | "edge" | "node" | "building" | "property" | "plus";
     type Option = { key: string; name: string; icon: IconName; branch?: boolean };
     type Group = { title: string; items: Option[] };
     const categories: [Owner, string, IconName][] = [["geo", "地件", "terrain"], ["edge", "道路", "edge"], ["node", "节点", "node"], ["building", "建筑", "building"]];
@@ -126,8 +143,8 @@
         const leaves = [...slots.values()].filter(s => !s.field && allowed(s.key));
         if (parent) return [{ title: leaves.find(s => s.owner + ":" + s.id === parent)?.name ?? "属性",
             items: leaves.filter(s => s.owner + ":" + s.id === parent).map(s => ({ key: s.key, name: s.label, icon: "property" as const })).filter(filter) }];
-        const items: Option[] = leaves.filter(s => s.owner === "var").map(s => ({ key: s.key, name: s.name, icon: "variables" }));
-        const result: Group[] = [{ title: "变量", items: [...items.filter(filter), { key: "+var", name: "新建变量", icon: "plus" }] }];
+        const items: Option[] = leaves.filter(s => s.owner === "input").map(s => ({ key: s.key, name: s.name, icon: "inputs" }));
+        const result: Group[] = [{ title: "自定义输入", items: [...items.filter(filter), { key: "+input", name: "新建自定义输入", icon: "plus" }] }];
         if (kind === "field") {
             const fields = ["height", ...Object.keys(catalog.fields)].map(id => ({ key: "field:" + id, name: catalog.fields[id]?.label ?? (id === "height" ? "高度" : id), icon: "field" as const }));
             result.push({ title: "场", items: [...fields.filter(filter), { key: "+field", name: "新建场", icon: "plus" }] });
@@ -177,7 +194,7 @@
     function closeMenu() {
         opened = false; parent = query = ""; queryStart = queryEnd = 0; active = 0;
     }
-    async function paint(at: number) {
+    async function paint(at: number, end = at) {
         const paintId = ++version;
         await tick();
         if (!editing || paintId !== version || !input) return;
@@ -185,12 +202,69 @@
         // eslint-disable-next-line svelte/no-dom-manipulating
         input.replaceChildren(...Array.from(mirror.childNodes).filter(n => n.nodeType === Node.ELEMENT_NODE || n.nodeType === Node.TEXT_NODE && n.textContent).map(n => n.cloneNode(true)));
         input.focus({ preventScroll: true });
-        caretAt(input, at);
+        editorSelection(input, at, end);
     }
-    async function startEdit() {
+    async function startEdit(chip?: { start: number; end: number }) {
         if (editing) return;
+        expanded = face?.hasAttribute("data-overflow") ?? false;
         editing = true; draft = String(typeof value === "number" ? value * displayFactor : value); error = "";
-        await paint(draft.length);
+        await paint(chip?.start ?? draft.length, chip?.end);
+    }
+    function placeEditor(popup: HTMLElement) {
+        const panel = box.closest<HTMLElement>(".panel-content");
+        const inset = panel ? parseFloat(getComputedStyle(panel).getPropertyValue("--panel-inset")) : 12;
+        function reveal() {
+            if (!panel) return;
+            const space = innerHeight - box.getBoundingClientRect().bottom;
+            if (space < 116) {
+                panel.style.setProperty("--editor-clearance", "116px");
+                panel.scrollTop += 116 - space;
+            }
+        }
+        reveal();
+        popup.showPopover();
+        function position() {
+            const container = panel?.getBoundingClientRect(), bounds = box.getBoundingClientRect();
+            if (bounds.bottom < (container?.top ?? 0) || bounds.top >= (container?.bottom ?? innerHeight)) {
+                finish(true); return;
+            }
+            const width = Math.max(360, (panel?.clientWidth ?? bounds.width) - 2 * inset);
+            const left = (container?.left ?? bounds.right - width) + inset;
+            popup.style.width = width + "px";
+            popup.style.left = Math.max(4, Math.min(left, innerWidth - width - 4)) + "px";
+            popup.style.top = bounds.bottom + "px";
+            popup.style.maxHeight = Math.max(0, innerHeight - bounds.bottom - 4) + "px";
+        }
+        function outside(e: PointerEvent) {
+            const path = e.composedPath();
+            if (!path.includes(box) && !path.includes(popup) && !path.some(n => n instanceof Element && n.matches(".reference-menu"))) finish(true);
+        }
+        function resizeEditor() {
+            reveal(); position();
+        }
+        position();
+        const lifecycle = new AbortController(), options = { signal: lifecycle.signal };
+        document.addEventListener("pointerdown", outside, { ...options, capture: true });
+        document.addEventListener("scroll", position, { ...options, capture: true });
+        window.addEventListener("resize", resizeEditor, options);
+        const resize = new ResizeObserver(position);
+        if (panel) resize.observe(panel);
+        return { destroy() {
+            resize.disconnect(); lifecycle.abort();
+            panel?.style.removeProperty("--editor-clearance");
+        } };
+    }
+    function chipAt(input: HTMLElement, target: EventTarget | null) {
+        return target instanceof Node ? chipSpans(input).find(chip => chip.node.contains(target)) : undefined;
+    }
+    function selectChip(e: PointerEvent) {
+        if (e.button !== 0) return;
+        const chip = chipAt(input, e.target);
+        if (!chip) return;
+        e.preventDefault();
+        input.focus({ preventScroll: true });
+        closeMenu();
+        editorSelection(input, chip.start, chip.end);
     }
     async function showMenu() {
         await startEdit(); closeMenu(); opened = true;
@@ -206,7 +280,7 @@
                 error = (e as Error).message;
             }
         }
-        editing = false; closeMenu(); catalogDraft = undefined; error = "";
+        editing = expanded = false; closeMenu(); catalogDraft = undefined; error = "";
         if (next && JSON.stringify(next) !== JSON.stringify(base)) editor.commitNumber(next);
     }
     function insertText(text: string, replaceLiteral = false) {
@@ -226,11 +300,11 @@
         let key = item.key;
         if (key.startsWith("+")) {
             const d = structuredClone(catalog);
-            if (key === "+var") {
+            if (key === "+input") {
                 const formula = queryEnd > queryStart ? draft.slice(0, queryStart) + draft.slice(queryEnd) : draft;
                 const entered = numericText(formula, false);
                 const effective = currentResult(typeof entered === "number" ? entered / displayFactor : entered) ?? currentResult(value) ?? 0;
-                key = "var:" + addVariable(d, effective);
+                key = "input:" + addInput(d, effective);
             }
             else key = "field:" + addField(d);
             catalogDraft = d;
@@ -250,6 +324,9 @@
         if (prefix.endsWith("}")) void paint(at);
     }
     function key(e: KeyboardEvent) {
+        if (expanded && e.key === "Escape") {
+            e.preventDefault(); e.stopPropagation(); finish(false); return;
+        }
         if (opened && ["ArrowUp", "ArrowDown", "Enter", "Escape"].includes(e.key)) {
             e.preventDefault(); e.stopPropagation();
             if (e.key === "Escape") closeMenu();
@@ -266,15 +343,34 @@
             e.preventDefault(); e.stopPropagation();
             if (e.key === "Escape" || !error) finish(e.key === "Enter");
         }
-        if (e.key === "Backspace" || e.key === "Delete") {
-            const [a, b] = selectionOffsets(input);
-            if (a !== b) return;
-            const match = e.key === "Backspace" ? draft.slice(0, a).match(/\{[^{}]+\}$/) : draft.slice(b).match(/^\{[^{}]+\}/);
-            if (match) {
+        const [a, b] = selectionOffsets(input);
+        const chips = chipSpans(input);
+        if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && !e.ctrlKey && !e.metaKey && !e.altKey) {
+            const left = e.key === "ArrowLeft";
+            if (a !== b && !e.shiftKey) {
                 e.preventDefault();
-                const start = e.key === "Backspace" ? a - match[0].length : a;
-                draft = draft.slice(0, start) + draft.slice(start + match[0].length); validate(); void paint(start);
+                editorSelection(input, left ? a : b);
+                return;
             }
+            const selection = input.ownerDocument.getSelection();
+            const range = selection?.rangeCount ? selection.getRangeAt(0) : undefined;
+            const backwards = range && selection?.anchorNode === range.endContainer && selection.anchorOffset === range.endOffset;
+            const focus = backwards ? a : b, anchor = backwards ? b : a;
+            const chip = chips.find(c => left ? c.end === focus : c.start === focus);
+            if (chip) {
+                e.preventDefault();
+                const next = left ? chip.start : chip.end;
+                editorSelection(input, e.shiftKey ? anchor : next, next);
+            }
+        }
+        if (e.key === "Backspace" || e.key === "Delete") {
+            const left = e.key === "Backspace";
+            const chip = a === b ? chips.find(c => left ? c.end === a : c.start === b) : undefined;
+            if (!chip && !chips.some(c => c.start < b && c.end > a)) return;
+            e.preventDefault();
+            const start = chip?.start ?? a, end = chip?.end ?? b;
+            draft = draft.slice(0, start) + draft.slice(end);
+            closeMenu(); validate(); void paint(start);
         }
     }
     function advance(n: number) {
@@ -299,10 +395,14 @@
     function beginGesture(e: PointerEvent, direction: number) {
         if (e.button !== 0 || cleanup) return;
         e.preventDefault();
+        if (editing && expanded) {
+            finish(true); return;
+        }
         if (editing) finish(false);
         const initial = value;
         origin = base; live = initial; gesturing = true;
         const button = e.currentTarget as HTMLButtonElement, drag = new NumberDrag(), id = e.pointerId;
+        const chip = direction ? undefined : chipAt(button, e.target);
         button.setPointerCapture(id);
         const stop = direction ? repeatButton(() => advance(direction)) : undefined;
         let x = e.clientX, y = e.clientY, requested = false;
@@ -330,7 +430,7 @@
             const changed = live !== initial;
             gesturing = false; error = "";
             if (changed || direction || drag.moved) editor.commitNumber(cancel ? origin! : candidate(live, origin));
-            else if (!cancel && !direction && !drag.moved) void startEdit();
+            else if (!cancel && !direction && !drag.moved) void startEdit(chip);
             origin = undefined;
         }
         const up = (ev: PointerEvent) => {

@@ -70,7 +70,7 @@ export function referenceLabel(key: string, d: Design, slots: Map<string, Slot>)
     const kind = key.slice(0, key.indexOf(":")), id = key.slice(kind.length + 1);
     if (kind === "field") return { icon: "field" as const, name: id === "height" ? "高度" : d.fields[id]?.label ?? id };
     const s = slots.get(key);
-    if (kind === "var") return { icon: "variables" as const, name: d.variables[id]?.label ?? id };
+    if (kind === "input") return { icon: "inputs" as const, name: d.inputs[id]?.label ?? id };
     const icon = kind === "geo" ? "terrain" : kind === "edge" ? "edge" : kind === "building" ? "building" : "node";
     return { icon, name: s?.name ?? id, property: s?.label } as const;
 }
@@ -79,7 +79,7 @@ export function displayExpression(v: Expression, d: Design) {
     const slots = parameters(d);
     return v.replace(/\{([^{}]+)\}/g, (_, key: string) => {
         const item = referenceLabel(key, d, slots);
-        return item.name + (item.property ? " · " + item.property : "");
+        return item.name + (item.property ? "." + item.property : "");
     }).replaceAll("*", "×").replaceAll("/", "÷");
 }
 
@@ -101,32 +101,52 @@ export function selectionOffsets(el: HTMLElement): [number, number] {
     }
     return [offset(range.startContainer, range.startOffset), offset(range.endContainer, range.endOffset)];
 }
-export function caretAt(el: HTMLElement, at: number) {
-    const range = document.createRange();
-    range.selectNodeContents(el); range.collapse(false);
-    for (const child of el.childNodes) {
-        const length = editorText(child).length;
-        if (at <= length) {
-            if (child.nodeType === Node.TEXT_NODE) range.setStart(child, at);
-            else if (at === 0) range.setStartBefore(child);
-            else range.setStartAfter(child);
-            break;
+export function flagOverflow(el: HTMLElement) {
+    const measure = () => el.toggleAttribute("data-overflow", el.scrollWidth > el.clientWidth);
+    const resize = new ResizeObserver(measure), content = new MutationObserver(measure);
+    resize.observe(el);
+    content.observe(el, { childList: true, subtree: true, characterData: true });
+    measure();
+    return { destroy() {
+        resize.disconnect(); content.disconnect();
+    } };
+}
+
+export function chipSpans(input: HTMLElement) {
+    let start = 0;
+    return Array.from(input.childNodes).flatMap(node => {
+        const end = start + editorText(node).length;
+        const span = { node, start, end };
+        start = end;
+        return node instanceof HTMLElement && node.dataset.ref ? [span] : [];
+    });
+}
+
+export function editorSelection(el: HTMLElement, anchor: number, focus = anchor) {
+    function point(at: number): [Node, number] {
+        for (const [i, child] of Array.from(el.childNodes).entries()) {
+            const length = editorText(child).length;
+            if (at <= length) return child.nodeType === Node.TEXT_NODE ? [child, at] : [el, i + Number(at > 0)];
+            at -= length;
         }
-        at -= length;
+        return [el, el.childNodes.length];
     }
-    range.collapse(true);
-    const selection = el.ownerDocument.getSelection()!;
-    selection.removeAllRanges(); selection.addRange(range);
+    el.ownerDocument.getSelection()?.setBaseAndExtent(...point(anchor), ...point(focus));
 }
 
 export function numericCaret(input: HTMLElement) {
     const wrapper = input.parentElement!;
     function update() {
         const selection = input.ownerDocument.getSelection();
-        let x: number | undefined;
+        const [start, end] = selectionOffsets(input);
+        for (const chip of chipSpans(input)) if (chip.node instanceof HTMLElement)
+            chip.node.toggleAttribute("data-selected", chip.start >= start && chip.end <= end);
+        let x: number | undefined, y = input.getBoundingClientRect().top;
         if (selection?.isCollapsed && selection.rangeCount && document.activeElement === input && input.contains(selection.anchorNode)) {
             const range = selection.getRangeAt(0).cloneRange(), rect = range.getBoundingClientRect();
-            if (rect.height) x = rect.left;
+            if (rect.height) {
+                x = rect.left; y = rect.top + (rect.height - 18) / 2;
+            }
             else {
                 // Chromium returns an empty rectangle at element boundaries beside noneditable chips.
                 const parent = range.startContainer, offset = range.startOffset;
@@ -135,6 +155,7 @@ export function numericCaret(input: HTMLElement) {
                     range.selectNode(next ?? previous);
                     const edge = range.getBoundingClientRect();
                     x = next ? edge.left : edge.right;
+                    y = edge.top + (edge.height - 18) / 2;
                 }
                 else {
                     const box = input.getBoundingClientRect();
@@ -143,7 +164,11 @@ export function numericCaret(input: HTMLElement) {
             }
         }
         wrapper.style.setProperty("--caret-display", x === undefined ? "none" : "block");
-        if (x !== undefined) wrapper.style.setProperty("--caret-x", x - wrapper.getBoundingClientRect().left + "px");
+        if (x !== undefined) {
+            const box = wrapper.getBoundingClientRect();
+            wrapper.style.setProperty("--caret-x", x - box.left + "px");
+            wrapper.style.setProperty("--caret-y", y - box.top + "px");
+        }
     }
     const resize = new ResizeObserver(update); resize.observe(input);
     const controller = new AbortController(), options = { signal: controller.signal };

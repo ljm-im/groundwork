@@ -24,34 +24,53 @@ export function parseDesign(text: unknown, allowBrokenReferences = false): Desig
     function rejectRetired(value: object, path: string, names: string[]) {
         for (const name of names) check(!Object.hasOwn(value, name), path + name + " 已从 v5 移除");
     }
-    rejectRetired(d, "", ["levels", "levelControls", "coast", "ridges", "peaks", "zones", "erosion", "yards", "seed"]);
+    rejectRetired(d, "", ["levels", "levelControls", "coast", "ridges", "peaks", "zones", "erosion", "yards", "seed", "variables", "labels"]);
     if (d.grid && d.grid.step === undefined) d.grid.step = 1;
     check(positive(d.grid?.step), "网格参数无效");
     rejectRetired(d.grid, "grid.", ["xMin", "xMax", "yMin", "yMax"]);
 
-    for (const key of ["geoNodes", "buildings", "nodes", "edges", "sections"] as const) {
+    function validateLabel(item: object, path: string, optional = false) {
+        rejectRetired(item, path + ".", ["name"]);
+        check(typeof Reflect.get(item, "label") === "string" || optional && !Object.hasOwn(item, "label"), path + ".label 无效");
+        check(!Object.hasOwn(item, "showLabel") || typeof Reflect.get(item, "showLabel") === "boolean", path + ".showLabel 无效");
+    }
+    for (const key of ["geoNodes", "buildings", "nodes", "edges", "sections", "marks"] as const) {
         const list = d[key];
         check(Array.isArray(list), key + " 缺失");
         const seen = new Set<string>();
         list.forEach((item, i) => {
-            check(item && typeof item.id === "string" && item.id && typeof item.name === "string" && !seen.has(item.id), key + "[" + i + "].id 缺失或重复");
+            const path = key + "[" + i + "]";
+            check(item && typeof item.id === "string" && item.id && !seen.has(item.id), path + ".id 缺失或重复");
+            validateLabel(item, path);
             seen.add(item.id);
         });
     }
-    check(Array.isArray(d.labels), "labels 缺失");
-    for (const [i, label] of d.labels.entries()) {
-        const pos = "labels[" + i + "]";
-        check(label && typeof label === "object", pos + " 无效");
-        rejectRetired(label, pos + ".", ["level"]);
-        check(label.minZoom === undefined || Number.isFinite(label.minZoom), pos + ".minZoom 无效");
-        for (const key of ["point", "offset"] as const) check(label[key] === undefined || point(label[key]), pos + "." + key + " 只能填写数字坐标");
+    for (const [i, mark] of d.marks.entries()) {
+        const pos = "marks[" + i + "]";
+        check(point(mark.point), pos + ".point 只能填写数字坐标");
+        check(mark.kind === "text" || mark.kind === "scale", pos + ".kind 无效");
+        if (mark.kind === "text") {
+            rejectRetired(mark, pos + ".", ["level", "var"]);
+            check(mark.building === undefined || typeof mark.building === "string", pos + ".building 无效");
+            check(mark.offset === undefined || point(mark.offset), pos + ".offset 只能填写数字坐标");
+            check(mark.minZoom === undefined || Number.isFinite(mark.minZoom), pos + ".minZoom 无效");
+            for (const key of ["showElevation", "spot", "titleOnly"] as const)
+                check(mark[key] === undefined || typeof mark[key] === "boolean", pos + "." + key + " 无效");
+        }
     }
-    for (const [i, b] of d.buildings.entries()) rejectRetired(b, "buildings[" + i + "].", ["zone"]);
+    for (const [i, b] of d.buildings.entries()) {
+        const pos = "buildings[" + i + "]";
+        rejectRetired(b, pos + ".", ["zone", "showTitle"]);
+        check(Array.isArray(b.doors) && b.doors.every(door => door && typeof door.id === "string") && new Set(b.doors.map(door => door.id)).size === b.doors.length,
+            pos + " “" + b.label + "”的门列表无效");
+        b.doors.forEach((door, j) => validateLabel(door, pos + ".doors[" + j + "]", true));
+    }
     for (const [i, n] of d.nodes.entries()) rejectRetired(n, "nodes[" + i + "].", ["yard", "at"]);
-    check(d.variables && typeof d.variables === "object" && !Array.isArray(d.variables), "variables 缺失");
+    check(d.inputs && typeof d.inputs === "object" && !Array.isArray(d.inputs), "inputs 缺失");
     check(d.fields && typeof d.fields === "object" && !Array.isArray(d.fields), "fields 缺失");
     for (const [i, node] of d.geoNodes.entries()) {
         const f = node.function;
+        if (f?.type === "flat") rejectRetired(f, "geoNodes[" + i + "].function.", ["value"]);
         if (f?.type === "slope" && f.kind === "path" && f.line)
             check(!Object.hasOwn(f.line, "heightStops"), "geoNodes[" + i + "].function.line.heightStops 是计算结果");
     }
@@ -64,6 +83,8 @@ export function parseDesign(text: unknown, allowBrokenReferences = false): Desig
     }
     const numeric = resolveDesign(d, slots);
     validateGeo(numeric, allowBrokenReferences);
+    for (const [i, mark] of numeric.marks.entries())
+        if (mark.kind === "scale") check(positive(mark.length), "marks[" + i + "].length 无效");
     const routing = numeric.routing;
     check(routing && (["sampleStep", "gradeWindow", "overlapLength"] as const).every(k => positive(routing[k])) &&
     (["landing", "clearLead", "viaTolerance"] as const).every(k => routing[k] == null || Number.isFinite(routing[k]) && routing[k] >= 0) &&
@@ -100,36 +121,34 @@ export function parseDesign(text: unknown, allowBrokenReferences = false): Desig
         check(point(b.center), pos + ".center 只能填写数字坐标");
         check(b.titleOffset == null || point(b.titleOffset), pos + ".titleOffset 只能填写数字坐标");
         check(["rect", "ring", "circle"].includes(b.shape) && (b.shape === "rect" ?
-            point(b.size) && b.size.every(positive) && Number.isFinite(b.angle) : positive(b.radius)), pos + " “" + b.name + "”的占地无效");
-        check(typeof b.name === "string" && positive(b.height) &&
-      (b.showTitle == null || typeof b.showTitle === "boolean") && (b.angle == null || Number.isFinite(b.angle)), pos + " “" + b.name + "”的建筑属性无效");
-        check(Array.isArray(b.doors) && b.doors.every(door => door && typeof door.id === "string") && new Set(b.doors.map(door => door.id)).size === b.doors.length, pos + " “" + b.name + "”的门列表无效");
-        if (b.shape === "ring") check(b.inner! > 0 && b.inner! < b.radius!, pos + " “" + b.name + "”的回廊半径无效");
+            point(b.size) && b.size.every(positive) && Number.isFinite(b.angle) : positive(b.radius)), pos + " “" + b.label + "”的占地无效");
+        check(positive(b.height) && (b.angle == null || Number.isFinite(b.angle)), pos + " “" + b.label + "”的建筑属性无效");
+        if (b.shape === "ring") check(b.inner! > 0 && b.inner! < b.radius!, pos + " “" + b.label + "”的回廊半径无效");
         for (const door of b.doors) check(b.shape === "rect" ? Number.isInteger(door.wall) && door.wall! >= 0 && door.wall! < 4 &&
-      Number.isFinite(door.t) && door.t! >= 0 && door.t! <= 1 : Number.isFinite(door.angle), pos + " “" + b.name + "”的门位无效");
+      Number.isFinite(door.t) && door.t! >= 0 && door.t! <= 1 : Number.isFinite(door.angle), pos + " “" + b.label + "”的门位无效");
     }
     for (const [i, n] of numeric.nodes.entries()) {
         const pos = "nodes[" + i + "]";
         if (n.point !== undefined) check(point(n.point), pos + ".point 只能填写数字坐标");
-        check(["door", "junction", "endpoint", "viewpoint"].includes(n.type) && (n.directionMode === undefined || ["manual", "auto"].includes(n.directionMode)) && Number.isFinite(n.direction), pos + " “" + n.name + "”的节点类型或朝向无效");
+        check(["door", "junction", "endpoint", "viewpoint"].includes(n.type) && (n.directionMode === undefined || ["manual", "auto"].includes(n.directionMode)) && Number.isFinite(n.direction), pos + " “" + n.label + "”的节点类型或朝向无效");
         for (const pair of [n.through, ...(n.otherThrough ?? [])].filter((pair): pair is RoadPair => !!pair)) {
             const [before, after] = pair;
             check(n.type === "junction" && Array.isArray(pair) && pair.length === 2 && before !== after &&
-        d.edges.some(e => e.id === before && e.to === n.id) && d.edges.some(e => e.id === after && e.from === n.id), pos + " “" + n.name + "”的直通记录无效");
+        d.edges.some(e => e.id === before && e.to === n.id) && d.edges.some(e => e.id === after && e.from === n.id), pos + " “" + n.label + "”的直通记录无效");
         }
         try {
             check(point(nodePose(numeric, n).point), "坐标无效");
         }
         catch {
-            throw new Error(pos + " “" + n.name + "”的坐标或入口引用无效");
+            throw new Error(pos + " “" + n.label + "”的坐标或入口引用无效");
         }
     }
     for (const [i, e] of numeric.edges.entries()) {
         const pos = "edges[" + i + "]";
         check(validPoints(e.via, 0), pos + ".via 只能填写数字坐标");
-        check((e.mode == null || roadModes.includes(e.mode)) && (e.segments == null || Array.isArray(e.segments) && e.segments.length === e.via.length + 1 && e.segments.every(seg => seg == null || typeof seg === "object" && (seg.mode == null || roadModes.includes(seg.mode)) && (seg.exactEnd == null || typeof seg.exactEnd === "boolean"))), pos + " “" + e.name + "”的分段设置无效");
-        check(e.from !== e.to && [e.from, e.to].every(id => d.nodes.some(n => n.id === id)), pos + " “" + e.name + "”的端点无效");
-        check(d.roadClasses![e.grade] && [e.width, e.comfort, e.maxGrade, e.corridor].every(v => Number.isFinite(v) && v > 0) && validPoints(e.via, 0), pos + " “" + e.name + "”的选线参数无效");
+        check((e.mode == null || roadModes.includes(e.mode)) && (e.segments == null || Array.isArray(e.segments) && e.segments.length === e.via.length + 1 && e.segments.every(seg => seg == null || typeof seg === "object" && (seg.mode == null || roadModes.includes(seg.mode)) && (seg.exactEnd == null || typeof seg.exactEnd === "boolean"))), pos + " “" + e.label + "”的分段设置无效");
+        check(e.from !== e.to && [e.from, e.to].every(id => d.nodes.some(n => n.id === id)), pos + " “" + e.label + "”的端点无效");
+        check(d.roadClasses![e.grade] && [e.width, e.comfort, e.maxGrade, e.corridor].every(v => Number.isFinite(v) && v > 0) && validPoints(e.via, 0), pos + " “" + e.label + "”的选线参数无效");
     }
     for (const s of d.sections) check(validPoints(s.points) && s.points.length === 2 && distance(...s.points) > 0, "剖面线长度无效");
     return d;
@@ -137,4 +156,11 @@ export function parseDesign(text: unknown, allowBrokenReferences = false): Desig
 export const roadModes: RoadMode[] = ["route", "smooth", "straight"];
 export const segmentMode = (edge: Pick<Edge, "segments" | "mode">, i: number) => edge.segments?.[i]?.mode ?? edge.mode ?? "route";
 export const throughPairs = (node: Pick<RoadNode, "through" | "otherThrough">) => [node.through, ...(node.otherThrough ?? [])].filter((pair): pair is RoadPair => !!pair);
-export const serializeDesign = (d: unknown) => JSON.stringify(d, (key, value: unknown) => (key === "prompt" && value === "" || key === "disabled" && value === false) ? undefined : value, 2);
+export function serializeDesign(d: Design | null) {
+    const terrain = new Set<object>(d?.geoNodes);
+    return JSON.stringify(d, function (this: object, key: string, value: unknown) {
+        if (key === "prompt" && value === "" || key === "disabled" && value === false ||
+            key === "showLabel" && value === !terrain.has(this)) return undefined;
+        return value;
+    }, 2);
+}

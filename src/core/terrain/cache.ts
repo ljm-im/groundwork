@@ -14,7 +14,7 @@ interface Writer { id: string; field: string; ground: boolean; box: Box; revisio
 
 function inputs(node: GeoNode<number>) {
     const fields = new Set<string>(), f = node.function, field = node.field ?? "height";
-    if (!["flat", "ground", "slope", "coast"].includes(f.type)) fields.add(field);
+    if (f.type !== "ground") fields.add(field);
     const input = f.type === "noise" ? f.amplitude : f.type === "coast" ? f.roughness : f.type === "erosion" ? f.strength :
         f.type === "cliff" ? f.factor : f.type === "islets" ? f.density : undefined;
     if (input !== undefined) for (const ref of references(input)) fields.add(ref.slice(6));
@@ -57,7 +57,7 @@ export class TerrainCache {
     }
 
     private terrainKey(d: Design) {
-        return JSON.stringify([d.grid.step, d.fields, d.variables, d.geoNodes.map(n => [n.id, n.disabled, n.construction, n.field, n.function])]);
+        return JSON.stringify([d.grid.step, d.fields, d.inputs, d.geoNodes.map(n => [n.id, n.disabled, n.construction, n.field, n.function])]);
     }
 
     inputAt(d: ResolvedDesign, terrain: Terrain, owner: string, field: string, p: Point) {

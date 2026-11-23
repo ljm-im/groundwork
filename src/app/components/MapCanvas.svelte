@@ -1,5 +1,5 @@
-<section class="map-wrap" aria-label="全岛平面图" class:create={editor.tool !== "select"} class:empty={!editor.island}>
-    <canvas bind:this={canvas} id="map" tabindex={editor.island ? 0 : -1} aria-label="可编辑的海岛地形与路网平面图"></canvas>
+<section class="map-wrap" aria-label="全图平面图" class:create={editor.tool !== "select"} class:empty={!editor.island}>
+    <canvas bind:this={canvas} id="map" tabindex={editor.island ? 0 : -1} aria-label="可编辑的地形与路网平面图"></canvas>
     <Toolbar {editor} />
     {#if !editor.island}
         <div class="empty-state">
@@ -12,9 +12,6 @@
     {/if}
     <div class="legend"><span><i class="key"></i>建筑门</span><span><i class="key junction"></i>路口</span><span><i
         class="key via"></i>途经点</span><span><i class="key issue"></i>校验</span><span class="tree-key"><i class="forest"></i>林木</span><span class="tree-key"><i class="avenue"></i>行道树</span><span class="tree-key"><i class="small"></i>小乔木</span><span class="tree-key"><i class="shrub"></i>灌木</span></div>
-    <div class="north" aria-label="正北">
-        N<svg viewBox="0 0 16 28"><path d="m8 1 7 24-7-6-7 6z" fill="#365d5b"/><path d="m8 3 5.4 19-5.4-4z" fill="#e6f0e5"/></svg></div>
-    <div class="scale mono"><span id="scale-bar"></span><span id="scale-text"></span></div>
     <div class="zoom-tools">
         <button id="minus" aria-label="缩小" data-tip="缩小" onclick={() => editor.island && editor.map.zoomAt(1 / 1.4)}><Icon name="minus" /></button>
         <output id="zoom-value">100%</output>
@@ -39,7 +36,7 @@
         .map-wrap.empty {
             background: var(--light);
         }
-        .map-wrap.empty :is(.legend, .north, .scale, .zoom-tools), .map-wrap.empty .coords:has(#busy[hidden]) {
+        .map-wrap.empty :is(.legend, .zoom-tools), .map-wrap.empty .coords:has(#busy[hidden]) {
             display: none;
         }
         .empty-state {
@@ -74,7 +71,7 @@
         .map-wrap.create #map {
             cursor: crosshair;
         }
-        .map-tools, .zoom-tools, .scale, .north, .legend, .coords {
+        .map-tools, .zoom-tools, .legend, .coords {
             position: absolute;
             z-index: 1;
         }
@@ -124,36 +121,6 @@
         }
         .zoom-tools .divider {
             margin: 0 2px;
-        }
-        .north {
-            right: 25px;
-            top: 18px;
-            text-align: center;
-            color: #234b4a;
-            font: bold 11px/1.2 Consolas, monospace;
-            pointer-events: none;
-        }
-        .north svg {
-            display: block;
-            margin: 3px auto;
-            width: 15px;
-            height: 26px;
-        }
-        .scale {
-            left: 18px;
-            bottom: 39px;
-            display: flex;
-            align-items: flex-end;
-            gap: 7px;
-            color: #244c4e;
-            font-size: 11px;
-            pointer-events: none;
-        }
-        #scale-bar {
-            border: solid #315759;
-            border-width: 0 1.5px 2px;
-            height: 6px;
-            margin-bottom: 4px;
         }
         .coords {
             bottom: 0;

@@ -72,7 +72,7 @@ function surfaceIssues(route: Route, terrain: Pick<Terrain, "buildings">, emit: 
                     hit = building.signedDistance(p[0] + nx * offset, p[1] + ny * offset) < -.015;
                 }
             }
-            contact(key, hit, i, "building", "路面穿过“" + building.data.name + "”", "error", { building: building.data.id });
+            contact(key, hit, i, "building", "路面穿过“" + building.data.label + "”", "error", { building: building.data.id });
         }
 
     }
@@ -95,7 +95,7 @@ function overlapIssues(design: Design, routes: Route[], issues: Issue[]) {
                     road: a.id,
                     other: b.id,
                     point, spans,
-                    message: "“" + ea.name + "”与“" + eb.name + "”间距不足 " + rules.clearance + " m，持续至少 " + rules.overlapLength + " m"
+                    message: "“" + ea.label + "”与“" + eb.label + "”间距不足 " + rules.clearance + " m，持续至少 " + rules.overlapLength + " m"
                 });
             }
         }
@@ -155,10 +155,10 @@ export function validateRoads(design: Design, terrain: Parameters<typeof surface
             }
         }
         for (const bend of sharpBends(line, r.s)) {
-            emit("sharp-bend", "急弯 · 3 m 内方向变化 " + (bend.angle / radians).toFixed(1) + "°，超过 45°", bend.point, "notice", span(bend.from, bend.to));
+            emit("sharp-bend", "急弯：3 m 内方向变化 " + (bend.angle / radians).toFixed(1) + "°，超过 45°", bend.point, "notice", span(bend.from, bend.to));
         }
         for (const hit of (r.selfOverlaps?.length === 0 ? [] : selfOverlaps(line, r.edge.width, r.s, true))) {
-            emit("self-overlap", "自身重叠 · 沿路相隔超过两倍路宽的路面净距不足 1 m", hit.point, "error", { spans: hit.ranges.map(([from, to]) => ({ road: r.id, from, to })) });
+            emit("self-overlap", "自身重叠：沿路相隔超过两倍路宽的路面净距不足 1 m", hit.point, "error", { spans: hit.ranges.map(([from, to]) => ({ road: r.id, from, to })) });
         }
     }
     overlapIssues(design, routes.filter(r => !r.offCanvas), issues);
@@ -186,7 +186,7 @@ export function summitHeights(grid: Grid, heights: Float32Array, point: Point, d
 
 export function validateDesign(d: Design, terrain: Pick<Terrain, "grid" | "buildings" | "defined">, heights: Float32Array, routes: Route[]): Issue[] {
     const issues: Issue[] = [];
-    for (const n of d.nodes.filter(n => n.detachedDoor)) issues.push({ kind: "detached-door", severity: "notice", node: n.id, point: n.point!, label: n.name, message: "端点未接建筑（“" + n.detachedDoor + "”）" });
+    for (const n of d.nodes.filter(n => n.detachedDoor)) issues.push({ kind: "detached-door", severity: "notice", node: n.id, point: n.point!, label: n.label, message: "端点未接建筑（“" + n.detachedDoor + "”）" });
     for (const n of d.nodes.filter(n => n.through)) {
         const pairs = throughPairs(n), mains = new Set(pairs.flat());
         const branches = routes.filter(r => !mains.has(r.id) && (r.edge.from === n.id || r.edge.to === n.id));
@@ -196,13 +196,13 @@ export function validateDesign(d: Design, terrain: Pick<Terrain, "grid" | "build
             for (const r of branches) {
                 const out = armBearing(r, n.id), angle = Math.min(...main.map(trunk => angleDiff(armBearing(trunk!, n.id), out))) / radians;
                 if (angle < 30 - 1e-7) issues.push({ kind: "branch-angle", severity: "notice", node: n.id, road: r.id, point: nodePose(d, n).point,
-                    label: n.name, message: "支路与主路夹角 " + angle.toFixed(1) + "°，需至少 30°" });
+                    label: n.label, message: "支路与主路夹角 " + angle.toFixed(1) + "°，需至少 30°" });
             }
         }
     }
     for (const b of d.buildings.filter(b => b.summit)) {
         const { ground, highest } = summitHeights(terrain.grid, heights, b.center, terrain.defined);
-        if (ground !== undefined && highest - ground > .5) issues.push({ kind: "summit", severity: "error", building: b.id, point: b.center, label: b.name,
+        if (ground !== undefined && highest - ground > .5) issues.push({ kind: "summit", severity: "error", building: b.id, point: b.center, label: b.label,
             message: "基座 " + ground.toFixed(1) + " m，25 m 内最高 " + highest.toFixed(1) + " m，高差超过 0.5 m" });
     }
     return issues;

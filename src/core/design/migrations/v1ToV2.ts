@@ -26,7 +26,7 @@ export function migrateDesign(d: ImportDesign) {
         const point = pointAt(road.data.points, road.s, station).slice() as Point;
         node ??= d.nodes.find(n => n.point && distance(n.point, point) < .06);
         if (!node) {
-            node = { id: unique(road.data.id + "-" + suffix), name: road.data.name + "·" + suffix, type: "endpoint", point };
+            node = { id: unique(road.data.id + "-" + suffix), name: road.data.name + " " + suffix, type: "endpoint", point };
             d.nodes.push(node);
         }
         node.point = point;

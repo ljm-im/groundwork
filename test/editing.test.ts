@@ -36,13 +36,13 @@ test("History capacity, undo and redo branches", () => {
     const moved = syntheticDesign();
     const hist = new History(moved, 50);
     for (let i = 0; i < 55; i++) {
-        moved.variables.seed.value = i;
+        moved.inputs.seed.value = i;
         hist.record(moved);
     }
     for (let i = 0; i < 50; i++) assert(hist.step(false));
     assert(!hist.canUndo);
-    assert.equal(hist.step(true)!.variables.seed.value, 5);
-    moved.variables.seed.value = 900;
+    assert.equal(hist.step(true)!.inputs.seed.value, 5);
+    moved.inputs.seed.value = 900;
     hist.record(moved);
     assert(!hist.canRedo);
 });
@@ -114,9 +114,9 @@ test("Building footprints, door connections, removal and undo", () => {
     moveHandle(editedTown, { kind: "building", id: cottage.id, role: "body" }, [5, 7]);
     moveHandle(editedTown, { kind: "building", id: cottage.id, role: "title" }, [5, 13]);
     assert.deepEqual(cottage.titleOffset, [0, 6]);
-    cottage.name = "B";
+    cottage.label = "B";
     cottage.height = 5;
-    cottage.showTitle = false;
+    cottage.showLabel = false;
     const doorEnd = addDoor(editedTown, cottage, 1), doorData = cottage.doors[0];
     moveHandle(editedTown, { kind: "node", id: doorEnd.id }, [13, 9]);
     assert.equal(doorData.wall, 1);
@@ -152,7 +152,7 @@ test("Building footprints, door connections, removal and undo", () => {
 
 test("Creating, converting and removing doors preserves roads", () => {
     const town = syntheticDesign(), junction = town.nodes[0], rect = town.buildings[0];
-    town.buildings.push({ id: "B", name: "B", shape: "circle", center: [14, 0], radius: 3,
+    town.buildings.push({ id: "B", label: "B", shape: "circle", center: [14, 0], radius: 3,
         height: 2, color: "gray", doors: [] });
     const wall = nearbyWall(town, [-13, -5.4])!;
     assert.equal(wall.building.id, rect.id);

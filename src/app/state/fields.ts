@@ -1,6 +1,7 @@
 import { type Building } from "../../core/design/v5.ts";
 import { setShape } from "../../core/edit/buildings.ts";
 import { setSegment } from "../../core/edit/topology.ts";
+import { type GridDisplay } from "./layers.ts";
 import * as session from "./session.svelte.ts";
 import { checked, type Editable, type Layer } from "../types.ts";
 
@@ -11,12 +12,16 @@ export function changeField(editor: session.Editor, input: Editable) {
         editor.layer(key.layer as Layer, checked(input));
         return;
     }
+    if (key.gridSetting) {
+        const setting = key.gridSetting as keyof GridDisplay;
+        if (!editor.setGrid(setting, input.value)) input.value = String(editor.displayGrid[setting]);
+        return;
+    }
     if (!h) return;
     if (h.kind === "building" && key.buildingParam) {
         editor.edit(d => {
             const b = d.buildings.find(item => item.id === h.id)!;
             if (key.buildingParam === "shape") setShape(d, b, input.value as Building["shape"]);
-            else if (key.buildingParam === "showTitle") b.showTitle = checked(input);
         });
         return;
     }

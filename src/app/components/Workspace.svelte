@@ -37,7 +37,7 @@
         .bottom-pane { display: grid; grid-template-rows: 31px minmax(0, 1fr); background: var(--paper); min-height: 0; }
         .bottom-pane[hidden], .plot-pane[hidden] { display: none; }
         .plot-pane { min-width: 0; min-height: 0; }
-        .bottom-tabs { display: flex; align-items: stretch; border-bottom: 1px solid var(--line); padding: 0 13px; gap: 8px; }
+        .bottom-tabs { display: flex; align-items: stretch; padding: 0 13px; gap: 8px; }
         .bottom-tabs button { border: 0; border-radius: 0; border-bottom: 2px solid transparent; background: transparent; min-height: 0; font-size: 12px; }
         .bottom-tabs button[aria-pressed="true"] { border-color: var(--teal); color: var(--teal); font-weight: 650; }
         .bottom-tabs small { margin: auto 0 auto auto; color: var(--muted); }

@@ -7,7 +7,7 @@ import * as session from "./session.svelte.ts";
 
 const draftKey = "terrain-editor/unsaved-v1";
 import { newDesign } from "../../core/design/newDesign.ts";
-const types = [{ description: "海岛设计 JSON", accept: { "application/json": [".json"] } }];
+const types = [{ description: "项目设计 JSON", accept: { "application/json": [".json"] } }];
 const permissionWarning = "未获得写入权限，修改不会写入文件";
 
 interface DesignHandle extends WriteHandle {
@@ -35,7 +35,7 @@ export class DesignFiles {
     private handle: DesignHandle | null = null;
     private writable = false;
     private original: string | null = null;
-    private suggestedName = "island.json";
+    private suggestedName = "project.json";
     private choosingSaveFor: History | null = null;
     private writes = new FileWrites();
 
@@ -100,7 +100,7 @@ export class DesignFiles {
         const e = this.editor, draft = e.draft;
         if (!draft || !this.supported) return;
         return e.working("正在恢复草稿…", () => {
-            this.install(parseDesign(draft.text, true), draft.filename || "island.json", { recovered: true });
+            this.install(parseDesign(draft.text, true), draft.filename || "project.json", { recovered: true });
             e.draft = null;
             e.message("已恢复未保存的草稿");
         });
@@ -114,7 +114,7 @@ export class DesignFiles {
             this.handle = source.handle ?? null;
             this.writable = source.writable ?? false;
             this.original = source.original ?? null;
-            this.suggestedName = source.recovered ? filename : "island.json";
+            this.suggestedName = source.recovered ? filename : "project.json";
             this.choosingSaveFor = null;
             e.history = history;
             e.filename = filename;
@@ -130,7 +130,7 @@ export class DesignFiles {
             e.fileRequest = action;
             return;
         }
-        e.busy = action === "new" ? "正在新建设计…" : "正在打开海岛设计…";
+        e.busy = action === "new" ? "正在新建设计…" : "正在打开项目设计…";
         try {
             if (action === "new") {
                 this.install(newDesign(), "未命名");
@@ -142,7 +142,7 @@ export class DesignFiles {
             }
         }
         catch (error) {
-            if (!cancelled(error)) e.message((action === "new" ? "新建失败 · " : "打开失败 · ") + errorText(error));
+            if (!cancelled(error)) e.message((action === "new" ? "新建失败：" : "打开失败：") + errorText(error));
         }
         finally {
             e.busy = null;
@@ -162,7 +162,7 @@ export class DesignFiles {
         // Keep a UTF-8 BOM, original whitespace and line endings for an untouched design.
         const text = new TextDecoder("utf-8", { ignoreBOM: true }).decode(await file.arrayBuffer());
         const json = text.replace(/^\uFEFF/, ""), design = parseDesign(json, true);
-        const source = JSON.parse(json) as { version: number };
+        const source = JSON.parse(json) as Design;
         const original = serializeDesign(source) === JSON.stringify(source, null, 2) &&
             JSON.stringify(source) === JSON.stringify(design) ? text : null;
         this.install(design, file.name, { handle, writable, original });
@@ -179,7 +179,7 @@ export class DesignFiles {
             }
             if (!result.ok) {
                 this.status("保存失败");
-                e.message("保存失败 · " + errorText(result.error));
+                e.message("保存失败：" + errorText(result.error));
                 return;
             }
             if (!handle) {
@@ -193,7 +193,7 @@ export class DesignFiles {
             else if (history.dirty) void this.writeTo(target, manual);
             else {
                 this.status("已保存");
-                if (manual || e.toast?.text === permissionWarning || e.toast?.text.startsWith("保存失败 ·")) e.message("已保存“" + e.filename + "”");
+                if (manual || e.toast?.text === permissionWarning || e.toast?.text.startsWith("保存失败：")) e.message("已保存“" + e.filename + "”");
             }
         });
     }
@@ -224,7 +224,7 @@ export class DesignFiles {
         catch (error) {
             if (history === e.history && !cancelled(error)) {
                 this.status("保存失败");
-                e.message("保存失败 · " + errorText(error));
+                e.message("保存失败：" + errorText(error));
             }
         }
         finally {

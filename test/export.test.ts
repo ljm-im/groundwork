@@ -18,18 +18,19 @@ function loadExample() {
     design.prompt = prompt;
     for (const key of ["buildings", "edges", "nodes"] as const) design[key][0].prompt = key + prompt;
     const original = design.buildings[0];
-    for (const shape of ["circle", "ring"] as const) design.buildings.push({ id: shape, name: shape, shape, radius: 3, inner: shape === "ring" ? 1 : undefined,
+    for (const shape of ["circle", "ring"] as const) design.buildings.push({ id: shape, label: shape, shape, radius: 3, inner: shape === "ring" ? 1 : undefined,
         center: [shape === "ring" ? 28 : 15, -15], color: original.color, height: 4, doors: [{ id: "D", angle: 32 }] });
-    design.nodes.push({ id: "D", name: "D", type: "door", building: original.id, door: original.doors[0].id });
-    design.labels.push({ name: "B", point: [2, 3], var: "A" });
+    design.nodes.push({ id: "D", label: "D", type: "door", building: original.id, door: original.doors[0].id });
+    design.marks.push({ id: "B", label: "B", kind: "text", point: [2, 3], elevation: "{input:A}" },
+        { id: "C", label: "C", kind: "scale", point: [5, 6], length: 10 });
     const c = design.geoNodes[0].construction;
     if (c.type === "free") {
         const hole = polygon([[6, 5], [12, 5], [12, 10], [6, 10]]);
         for (const node of hole.nodes) node.id = "H" + node.id;
         c.paths.push(hole);
     }
-    design.geoNodes.push(layer("S", rect(-40, 6, -20, 10), { type: "flat", value: -1 }),
-        layer("B", rect(-40, 10, -20, 18), { type: "flat", value: 1 }));
+    design.geoNodes.push(layer("S", rect(-40, 6, -20, 10), { type: "flat", amount: -5 }),
+        layer("B", rect(-40, 10, -20, 18), { type: "flat", amount: -3 }));
     const input = serializeDesign(design), source = provenance(input);
     const island = new Island(design), result = exportIsland(island, source);
     return { design, input, source, island, result };
@@ -66,14 +67,16 @@ exportTest("independent exports have identical formatted bytes and preserve auth
     const json = JSON.parse(bytes);
     assert.deepEqual(json.source, source);
     assert.equal(json.format, "groundwork-export");
-    assert.equal(json.version, 3);
+    assert.equal(json.version, 4);
+    assert(!Object.hasOwn(json, "labels"));
+    assert.deepEqual(result.marks.map(m => [m.id, m.label, m.type]), [["B", "B", "mark.text"]]);
     assert.equal(json.prompt, prompt);
     for (const [parents, elements] of [[design.buildings, result.buildings], [design.edges, result.roads], [design.nodes, result.nodes]] as const) {
         assert.equal(elements.find(e => e.id === parents[0].id)!.prompt, parents[0].prompt);
         if (elements[1]) assert.equal(Object.hasOwn(elements[1], "prompt"), false);
     }
-    for (const elements of [result.buildings, ...result.buildings.map(b => b.doors), result.roads, result.walls, result.hedges, result.areas, result.nodes, result.trees, result.labels, result.issues])
-        for (const e of elements) assert(e.id && e.name && e.type);
+    for (const elements of [result.buildings, ...result.buildings.map(b => b.doors), result.roads, result.walls, result.hedges, result.areas, result.nodes, result.trees, result.marks, result.issues])
+        for (const e of elements) assert(e.id && e.label && e.type && !Object.hasOwn(e, "name"));
     assert.match(bytes, /^\{\n  "format"/);
     assert.doesNotMatch(bytes, /\[\n\s+[-\d.]/);
     for (const field of ["routing", "erosion", "levelControls", "angle", "direction", "via", "zones", "radialSlope"])
@@ -160,20 +163,20 @@ exportTest("building foundations, outer and inner footprints, and authored door 
     }
 });
 
-exportTest("door nodes and labels retain their authored locations and suspended outlines are empty", ({ design, result }) => {
+exportTest("door nodes and marks retain their authored locations and suspended outlines are empty", ({ design, result }) => {
     assert.deepEqual([result.areas, result.walls, result.hedges], [[], [], []]);
     const node = result.nodes.find(n => n.type === "node.door")!;
     const door = result.buildings.find(b => b.id === node.building)!.doors.find(d => d.id === node.door)!;
     assert.deepEqual(node.position, door.position);
     assert.deepEqual(node.normal, door.normal);
-    assert.deepEqual(plan(result.labels[0].position), design.labels[0].point);
+    assert.deepEqual(plan(result.marks[0].position), design.marks[0].point);
 });
 
 test("Both arms share the exported junction elevation across a one-metre terrain break", () => {
     const design = syntheticDesign();
     design.nodes = [
-        { id: "A", name: "A", type: "endpoint", point: [-12, 0] }, { id: "B", name: "B", type: "junction", point: [0, 0] },
-        { id: "C", name: "C", type: "endpoint", point: [12, 0] }, { id: "D", name: "D", type: "endpoint", point: [4, 4] }
+        { id: "A", label: "A", type: "endpoint", point: [-12, 0] }, { id: "B", label: "B", type: "junction", point: [0, 0] },
+        { id: "C", label: "C", type: "endpoint", point: [12, 0] }, { id: "D", label: "D", type: "endpoint", point: [4, 4] }
     ];
     const edge = { ...design.edges[0], from: "A", to: "B", mode: "straight" as const };
     design.edges = [edge, { ...edge, id: "F", from: "B", to: "C" }];
@@ -191,7 +194,7 @@ test("Both arms share the exported junction elevation across a one-metre terrain
 
 test("Level decks preserve each submerged terrain and surface cell", () => {
     const design = syntheticDesign();
-    design.geoNodes.push(layer("W", rect(35, -7, 48, 7), { type: "flat", value: -2 }));
+    design.geoNodes.push(layer("W", rect(35, -7, 48, 7), { type: "flat", amount: -6 }));
     design.nodes[0].point = [32.25, .25];
     design.nodes[1].point = [46.25, .25];
     Object.assign(design.edges[0], { mode: "straight", levelDeck: true });
@@ -209,8 +212,8 @@ test("Level decks preserve each submerged terrain and surface cell", () => {
 
 test("A deck split across edges shares its shore elevation with a selectively rerouted path", () => {
     const design = syntheticDesign();
-    design.geoNodes.push(layer("H", rect(31, 2, 41, 11), { type: "flat", value: 8 }));
-    design.nodes = Array.from({ length: 4 }, (_, i) => ({ id: String(i), name: String(i), type: "endpoint", point: [24 + 6 * i, .5] }));
+    design.geoNodes.push(layer("H", rect(31, 2, 41, 11), { type: "flat", amount: 8 }));
+    design.nodes = Array.from({ length: 4 }, (_, i) => ({ id: String(i), label: String(i), type: "endpoint", point: [24 + 6 * i, .5] }));
     const span = { ...design.edges[0], grade: "path", mode: "straight" as const, levelDeck: true };
     design.edges = [{ ...span, id: "A", from: "0", to: "1" }, { ...span, id: "B", from: "2", to: "1" },
         { ...span, id: "C", from: "2", to: "3", levelDeck: false }];

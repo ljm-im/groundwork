@@ -51,11 +51,10 @@ function insert(d: Design, node: GeoNode, above?: string) {
 }
 function identity(d: Design) {
     const id = nextId(d.geoNodes.map(n => n.id), "geo-");
-    return { id, name: "地件 " + id.slice(4) };
+    return { id, label: "地件 " + id.slice(4) };
 }
-export function createFree(d: Design, path: Path, field: string, t: Terrain, above?: string) {
-    const value = tenth(sampleField(t, field, pathCenter(path, d.grid.step / 8)));
-    return insert(d, { ...identity(d), field, construction: { type: "free", paths: [path] }, function: { type: "flat", value } }, above);
+export function createFree(d: Design, path: Path, field: string, above?: string) {
+    return insert(d, { ...identity(d), field, construction: { type: "free", paths: [path] }, function: { type: "flat", ...functionDefaults.flat } }, above);
 }
 export function stripConstruction(d: Design, ids: string[], range?: Strip["range"]): Strip<number> {
     const refs = d.geoNodes.filter(n => ids.includes(n.id)).reverse();
@@ -80,7 +79,7 @@ export function createStrip(d: Design, ids: string[], field: string, range?: Str
 export function copyGeo(d: Design, original: GeoNode) {
     const copy = structuredClone(original), id = nodeIds(d);
     copy.id = identity(d).id;
-    copy.name += " 副本";
+    copy.label += " 副本";
     for (const path of pathsOf(copy)) for (const v of path.nodes) v.id = id();
     return insert(d, copy, original.id);
 }
@@ -117,23 +116,20 @@ export function rangeUsers(d: Design, owner: string, nodes: string[]) {
     });
 }
 
-export function declarationUses(d: Design, kind: "variable" | "field", id: string) {
-    const uses = referenceUses(d, kind === "variable" ? "var" : kind, id);
-    for (const n of d.geoNodes) if (kind === "field" && n.field === id) uses.push("“" + n.name + "” · 输出到");
-    if (kind === "variable") d.labels.forEach(l => {
-        if (l.var === id) uses.push("“" + l.name + "” · 标注");
-    });
+export function declarationUses(d: Design, kind: "input" | "field", id: string) {
+    const uses = referenceUses(d, kind, id);
+    for (const n of d.geoNodes) if (kind === "field" && n.field === id) uses.push("“" + n.label + "”的输出场");
     return uses;
 }
-export function removeDeclaration(d: Design, kind: "variable" | "field", id: string) {
+export function removeDeclaration(d: Design, kind: "input" | "field", id: string) {
     if (kind === "field" && id === "height") throw Error("高度是内置场");
     const uses = declarationUses(d, kind, id);
     if (uses.length) throw Error("仍被引用：\n" + uses.join("\n"));
-    delete (kind === "variable" ? d.variables : d.fields)[id];
+    delete (kind === "input" ? d.inputs : d.fields)[id];
 }
-export function addVariable(d: Design, value = 0) {
-    const id = nextId(Object.keys(d.variables), "v");
-    d.variables[id] = { label: "变量 " + id.slice(1), value, range: [Math.min(0, Math.floor(value)), Math.max(10, Math.ceil(value) + 5), .1] };
+export function addInput(d: Design, value = 0) {
+    const id = nextId(Object.keys(d.inputs), "v");
+    d.inputs[id] = { label: "自定义输入 " + id.slice(1), value, range: [Math.min(0, Math.floor(value)), Math.max(10, Math.ceil(value) + 5), .1] };
     return id;
 }
 export function addField(d: Design) {
@@ -141,7 +137,7 @@ export function addField(d: Design) {
     d.fields[id] = { label: "场 " + id.slice(5), default: 0 };
     return id;
 }
-export const bindHeight = (id: string, offset = 0) => "{var:" + id + "}" + (offset ? (offset < 0 ? " - " : " + ") + Math.abs(offset) : "");
+export const bindHeight = (id: string, offset = 0) => "{input:" + id + "}" + (offset ? (offset < 0 ? " - " : " + ") + Math.abs(offset) : "");
 export const bindField = (id: string, scale = 1, offset = 0) => "{field:" + id + "}" + (scale === 1 ? "" : " * " + scale) + (offset ? (offset < 0 ? " - " : " + ") + Math.abs(offset) : "");
 export function resolved(v: Expression, d: Design, readField: (field: string) => number | undefined) {
     return sampleValue(evaluate(v, expressionGraph(d).get), readField) ?? 0;
@@ -153,18 +149,18 @@ export function allowedFunctions(n: GeoNode) {
     return functions.filter(type => (n.construction.type === "strip" ? type !== "ground" : !["split", "blend", "batter"].includes(type)) &&
         ((n.field ?? "height") === "height" || fieldFunctions.includes(type)));
 }
-export function defaultFunction(type: GeoFunction["type"], value = 0, geometry?: { shore?: Path; line?: Polyline }): GeoFunction | undefined {
+export function defaultFunction(type: GeoFunction["type"], geometry?: { shore?: Path; line?: Polyline }): GeoFunction | undefined {
     switch (type) {
         case "ground": return { type, ...functionDefaults.ground };
-        case "coast": return geometry?.shore && { type, seed: "{var:seed}", shore: geometry.shore, ...functionDefaults.coast };
-        case "mountain": return { type, seed: "{var:seed}", ridges: [], peaks: [], ...functionDefaults.mountain };
-        case "cliff": return { type, seed: "{var:seed}", ...functionDefaults.cliff };
-        case "erosion": return { type, seed: "{var:seed}", ...functionDefaults.erosion };
-        case "islets": return { type, seed: "{var:seed}", ...functionDefaults.islets };
-        case "flat": return { type, value };
+        case "coast": return geometry?.shore && { type, seed: "{input:seed}", shore: geometry.shore, ...functionDefaults.coast };
+        case "mountain": return { type, seed: "{input:seed}", ridges: [], peaks: [], ...functionDefaults.mountain };
+        case "cliff": return { type, seed: "{input:seed}", ...functionDefaults.cliff };
+        case "erosion": return { type, seed: "{input:seed}", ...functionDefaults.erosion };
+        case "islets": return { type, seed: "{input:seed}", ...functionDefaults.islets };
+        case "flat": return { type, ...functionDefaults.flat };
         case "slope": return geometry?.line && { type, kind: "path", line: geometry.line };
         case "add": return { type, ...functionDefaults.add };
-        case "noise": return { type, seed: "{var:seed}", ...functionDefaults.noise };
+        case "noise": return { type, seed: "{input:seed}", ...functionDefaults.noise };
         case "blend": case "split": return { type };
         case "batter": return { type, ...functionDefaults.batter };
     }

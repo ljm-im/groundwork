@@ -6,7 +6,7 @@
 {#if editor.menu && editor.selection}
     {@const h = editor.selection}
     <div class="context-menu" role="group" aria-label="对象菜单" bind:this={menu} style:left={Math.min(editor.menu.x, innerWidth - 148) + "px"}
-        style:top={Math.min(editor.menu.y, innerHeight - (editor.menu.segment ? 308 : h.kind === "geoNode" ? 148 : 50)) + "px"}>
+        style:top={Math.min(editor.menu.y, innerHeight - (editor.menu.segment ? 308 : h.kind === "geoNode" ? 148 : h.kind === "mark" ? 80 : 50)) + "px"}>
         {#if h.kind === "geoNode"}
             {@const node = editor.island.design.geoNodes.find(n => n.id === h.id)!}
             {#if editor.menu.map && node.construction.type === "free"}
@@ -16,11 +16,12 @@
                 {/if}
             {/if}
             {#if editor.menu.segment}
-                {#each modes as [type, name] (type)}<button onclick={() => run(() => editor.segment(type))}>{name}</button>{/each}<hr />
+                {#each modes as [type, name] (type)}<button onclick={() => run(() => editor.segment(type))}>{name}</button>{/each}
             {/if}
             <button onclick={() => run(() => editor.duplicate(h.id))}>复制</button>
-            <button onclick={() => run(() => editor.toggle(h.id))}>{node.disabled ? "启用" : "禁用"}</button>
+            <button aria-pressed={!!node.disabled} onclick={() => run(() => editor.toggle(h.id))}><Icon name="exclude" />{node.disabled ? "启用" : "禁用"}</button>
         {/if}
+        {#if h.kind === "mark"}<button onclick={() => run(() => editor.copyMark(h.id))}><Icon name="copy" />复制</button>{/if}
         <button class="danger" onclick={() => run(() => {
             if (h.kind === "geoNode") editor.removeGeo(h.id); else if (h.kind === "building" && h.role?.startsWith("door:")) {
                 const b = editor.island.design.buildings.find(b => b.id === h.id)!; editor.removePart(b, b.doors.find(v => v.id === h.role!.slice(5)));
@@ -32,11 +33,11 @@
 
 <style>
     .context-menu { position: fixed; z-index: 5; display: grid; min-width: 132px; padding: 5px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); box-shadow: 0 4px 18px #264f522b; }
-    .context-menu button { border: 0; justify-content: flex-start; }
-    hr { width: 100%; border: 0; border-top: 1px solid var(--line); margin: 2px 0; }
+    .context-menu button { border: 0; justify-content: flex-start; gap: 5px; }
 </style>
 
 <script lang="ts">
+    import Icon from "./Icon.svelte";
     import * as session from "../state/session.svelte.ts";
     let { editor }: { editor: session.Editor } = $props();
     let menu = $state<HTMLElement>();

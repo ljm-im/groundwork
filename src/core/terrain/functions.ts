@@ -46,19 +46,20 @@ export function evaluateLayer(n: GeoNode<number>, region: Region, state: FieldSt
     type Cell = (k: number, x: number, y: number) => number | undefined;
     function prepare(): Cell {
         switch (f.type) {
-            case "ground": case "flat": {
+            case "ground": {
                 const value = f.value;
                 return () => value;
             }
+            case "flat": return k => source[k] + f.amount;
             case "slope": {
                 if (f.kind === "radial") {
                     const base = f.value;
-                    return (_, x, y) => base + f.rate * (Math.hypot(x - f.center[0], y - f.center[1]) - f.radius);
+                    return (k, x, y) => source[k] + base + f.rate * (Math.hypot(x - f.center[0], y - f.center[1]) - f.radius);
                 }
                 const line = numericProfile(f.line);
-                return (_, x, y) => {
+                return (k, x, y) => {
                     const hit = nearest(x, y, line.points);
-                    return line.value(line.station(hit.segment, hit.t), f.ease);
+                    return source[k] + line.value(line.station(hit.segment, hit.t), f.ease);
                 };
             }
             case "add": {
@@ -91,7 +92,7 @@ export function evaluateLayer(n: GeoNode<number>, region: Region, state: FieldSt
                     land[k] = +(dc + perturbation > 0);
                 }
                 const shore = shoreDistance(grid, land, heightDefined);
-                return k => land[k] ? Math.min(shore[k] * .28, 3.5) : -1 - Math.min(-shore[k] * .09, 5);
+                return k => source[k] + (land[k] ? Math.min(shore[k] * .28, 3.5) : -1 - Math.min(-shore[k] * .09, 5));
             }
             case "mountain": {
                 const n3 = noise(seed + 202);
@@ -138,7 +139,7 @@ export function evaluateLayer(n: GeoNode<number>, region: Region, state: FieldSt
                 };
             }
             case "blend": case "split": case "batter": {
-                if (n.construction.type !== "strip") throw new Error("“" + n.name + "”需要条带");
+                if (n.construction.type !== "strip") throw new Error("“" + n.label + "”需要条带");
                 const [w1, w2] = n.construction.widths;
                 return (k, x, y) => {
                     const { s, first, normal: [nx, ny], at: [ax, ay] } = region.shape.cross!([x, y])!;

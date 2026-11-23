@@ -158,6 +158,8 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         if (alt && selected && nodes.length) index = (nodes.findIndex(n => n.id === selected.id) + 1) % nodes.length;
         const geo = selected && control ? { kind: "geo" as const, id: selected.id, control } : nodes[index] ?
             { kind: "geo" as const, id: nodes[index].id, control: { role: "body", path: 0, index: 0, point: p } as GeoControl } : null;
+        const mark = !alt && map.hitMark(...screen);
+        if (mark && !control) return { kind: "handle" as const, h: mark };
         const handle = h && { kind: "handle" as const, h };
         const body = building && { kind: "handle" as const, h: building };
         const edge = road && { kind: "road" as const, road };
@@ -211,6 +213,11 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             beginPan(ev, screen, () => insertWaypoint(screen)); return;
         }
         const h = map.hitHandle(...screen);
+        if (editor.tool === "textMark" || editor.tool === "scaleMark") {
+            const kind = editor.tool === "scaleMark" ? "scale" : "text";
+            beginPan(ev, screen, () => editor.addMark(kind, p));
+            return;
+        }
         if (editor.tool === "building") {
             beginPan(ev, screen, () => {
                 if (!canPlaceBuilding(editor.island, p)) {
@@ -278,7 +285,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
                 editor.selection = { kind: "node", id: junction.id };
                 editor.tab = "network";
                 editor.reroute(new Set(junction.through));
-                editor.hint = "拖出或单击支路终点 · 单击空白新建终点 · Esc 完成拆分";
+                editor.hint = "拖出或单击支路终点，单击空白新建终点，Esc 完成拆分";
             }
             else if (h?.id !== editor.linkFrom) {
                 if (h?.kind === "node") completeLink(d, h, p, true);
@@ -311,7 +318,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             const building = editor.selection?.kind === "building" && editor.selection.id;
             const linkedDoor = h.kind === "node" && d.nodes.find(n => n.id === h.id && n.type === "door" && n.building === building);
             if (!linkedDoor) editor.select(h.kind === "door" ? { kind: "building", id: h.id } : h);
-            const offset = h.kind === "building" && ["center", "body", "title"].includes(h.role) ? [h.point[0] - p[0], h.point[1] - p[1]] : [0, 0];
+            const offset = h.kind === "mark" || h.kind === "building" && ["center", "body", "title"].includes(h.role) ? [h.point[0] - p[0], h.point[1] - p[1]] : [0, 0];
             editor.gesture = { handle: h, offset, screen, pointer: ev.pointerId, changed: false, hits: [] };
             canvas.setPointerCapture(ev.pointerId);
             return;
@@ -386,6 +393,9 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         }
         const h = editor.gesture.handle;
         const target: Point = [p[0] + editor.gesture.offset[0], p[1] + editor.gesture.offset[1]];
+        if (h.kind === "mark") {
+            map.dragMark = { id: h.id, point: target }; map.draw(); return;
+        }
         const { grid, defined } = editor.island.terrain;
         if (!onCanvas(grid, defined, ...target)) return;
         moveHandle(d, h, target);
@@ -449,6 +459,12 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             if (g.changed && copy && ev.type === "pointerup") editor.editNode(copy.id, n => Object.assign(n, copy));
             else map.draw();
             return;
+        }
+        if (g.handle.kind === "mark") {
+            const drag = map.dragMark;
+            map.dragMark = undefined;
+            if (drag && ev.type === "pointerup") return editor.edit(d => moveHandle(d, g.handle, drag.point));
+            map.draw(); return;
         }
         if (!g.changed) {
             if (g.hits?.length && ev.type === "pointerup") editor.pickMarkers(g.hits);

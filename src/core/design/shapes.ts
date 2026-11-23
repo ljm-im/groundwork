@@ -3,6 +3,8 @@ import { type Box, type Grid } from "../math/geometry.ts";
 import { type Boundary } from "./gates.ts";
 
 export type NodeAnchor = Pick<RoadNode, "type" | "point" | "yard" | "at" | "building" | "door" | "direction">;
+type Footprint = Pick<Building, "shape" | "center" | "size" | "angle" | "radius" | "inner">;
+type DoorDesign = { buildings: (Footprint & Pick<Building, "id" | "doors">)[] };
 export interface Pose { point: Point; angle: number | null; normal?: number | null }
 
 import { advance, bearing, bounds, distance, mixPoint, nearest, radians, spline } from "../math/geometry.ts";
@@ -61,7 +63,7 @@ export function zonePolygon(shape: Shape): Point[] {
     return points;
 }
 
-export function corners(b: Building): Point[] {
+export function corners(b: Footprint): Point[] {
     const [w, h] = b.size!, a = b.angle! * radians, c = Math.cos(a), s = Math.sin(a);
     return [
         [-w / 2, -h / 2],
@@ -71,7 +73,7 @@ export function corners(b: Building): Point[] {
     ].map(([x, y]) => [b.center[0] + x * c - y * s, b.center[1] + x * s + y * c]);
 }
 
-export function buildingShape<B extends Building>(b: B) {
+export function buildingShape<B extends Footprint>(b: B) {
     const polygon = b.shape === "rect" ? corners(b) : null;
     const [x, y] = b.center, r = b.radius!;
     const box: Box = polygon ? bounds(polygon) : [x - r, y - r, x + r, y + r];
@@ -106,7 +108,7 @@ function attachedPose(design: Pick<Design, "zones" | "yards" | "buildings">, nod
     return doorPose(design, node);
 }
 
-export function doorPose(design: Pick<Design, "buildings">, node: Pick<NodeAnchor, "type" | "point" | "building" | "door">): Pose {
+export function doorPose(design: DoorDesign, node: Pick<NodeAnchor, "type" | "point" | "building" | "door">): Pose {
     if (node.type !== "door") return { point: node.point!, angle: null };
     const b = design.buildings.find(b => b.id === node.building)!,
         door = b.doors.find(d => d.id === node.door)!;
@@ -133,7 +135,7 @@ export function moveNode(design: Design, node: NodeAnchor, p: Point) {
     moveDoorOrPoint(design, node, p);
 }
 
-export function moveDoorOrPoint(design: Pick<Design, "buildings">, node: Pick<NodeAnchor, "type" | "point" | "building" | "door">, p: Point) {
+export function moveDoorOrPoint(design: DoorDesign, node: Pick<NodeAnchor, "type" | "point" | "building" | "door">, p: Point) {
     if (node.type !== "door") {
         node.point = p;
         return;

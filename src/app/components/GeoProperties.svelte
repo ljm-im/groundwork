@@ -9,14 +9,14 @@
     </div>
     {#if heightAt && active && vertex?.role === "parameter" && vertex.path === index && vertex.index < count}
         <section class="vertex"><h5>顶点 {vertex.index + 1}</h5>
-            {@render param(icon === "point" ? [...heightAt, "h"] : [...heightAt, vertex.index, "h"], "高度 / m")}
+            {@render param(icon === "point" ? [...heightAt, "h"] : [...heightAt, vertex.index, "h"], (n.function.type === "slope" ? "增量" : "高度") + (height ? " / m" : ""))}
         </section>
     {/if}
 {/snippet}
 {#snippet action(label: string, icon: "plus" | "delete", click: () => void)}
     <button class="small-icon" class:danger={icon === "delete"} aria-label={label} data-tip={label} onclick={click}><Icon name={icon} /></button>
 {/snippet}
-<PropertyTitle name={n.name} label="地件名称" rename={name => editor.editNode(n.id, item => item.name = name)} disabled={!!n.disabled}
+<PropertyTitle name={n.label} showLabel={n.showLabel ?? false} setLabelVisibility={visible => editor.editNode(n.id, item => item.showLabel = visible)} rename={name => editor.editNode(n.id, item => item.label = name)} disabled={!!n.disabled}
     toggle={() => editor.toggle(n.id)} copy={() => editor.duplicate(n.id)} remove={() => editor.removeGeo(n.id)} />
 <Prompt {editor} target={{ group: "geoNodes", id: n.id }} />
 {#if c.type === "free"}
@@ -45,7 +45,8 @@
             const id = addField(d); if (fieldFunctions.includes(f.type)) geoAt(d, n.id).field = id;
         })} />
     <h4 class="parameters-heading">参数</h4>
-    {#if f.type === "flat" || f.type === "ground"}{@render param(["value"], "数值" + (height ? " / m" : ""))}
+    {#if f.type === "flat"}{@render param(["amount"], "增量" + (height ? " / m" : ""))}
+    {:else if f.type === "ground"}{@render param(["value"], "数值 / m")}
     {:else if f.type === "coast"}
         {@render geometry("海岸线", "path", -1, "closedPath", f.shore.nodes.length, undefined, "shore")}
         {@render param(["roughness"], "海岸粗糙度 / m", true)}
@@ -105,7 +106,7 @@
             <option value="path">沿路径</option><option value="radial">径向</option></select></label>
         {#if f.kind === "path"}
             {@render geometry("坡线", "parameter", 0, "polyline", f.line.points.length, ["line", "points"], "slopeLine")}
-            {#each [["smooth", "平滑折线"], ["ease", "平滑高度过渡"]] as [key, label] (key)}
+            {#each [["smooth", "平滑折线"], ["ease", "平滑增量过渡"]] as [key, label] (key)}
                 <label class="toggle">{label}<input type="checkbox" checked={key === "ease" ? !!f.ease : !!f.line.smooth} onchange={e => {
                     const value = e.currentTarget.checked; editor.editNode(n.id, v => {
                         if (v.function.type === "slope" && v.function.kind === "path") {
@@ -116,7 +117,7 @@
             {/each}
         {:else}
             {@render geometry("圆心", "parameter", 0, "point", 1, undefined, "center")}
-            {@render param(["radius"], "半径 / m")}{@render param(["value"], "基准值")}{@render param(["rate"], "径向变化率 / m")}
+            {@render param(["radius"], "半径 / m")}{@render param(["value"], "增量" + (height ? " / m" : ""))}{@render param(["rate"], "径向变化率 / m")}
         {/if}
     {:else if f.type === "add"}{@render param(["amount"], "增量")}{@render param(["feather"], "羽化宽度 / m")}
     {:else if f.type === "noise"}
@@ -131,7 +132,7 @@
 <style>
     h4, h5 { margin: 0; font-size: 12px; }
     .parameters-heading { margin: 12px 0 6px; color: var(--muted); }
-    .mountain-group { border-top: 1px solid var(--line); margin: 9px 0; padding-top: 5px; }
+    .mountain-group { margin: 11px 0; }
     .group-head, .geometry { display: flex; align-items: center; gap: 4px; }
     .group-head { justify-content: space-between; }
     .member { margin: 4px 0 9px 3px; padding-left: 8px; border-left: 2px solid var(--line); }
@@ -168,7 +169,7 @@
         });
     }
     function nameOf(id: string) {
-        return geoAt(d, id)?.name ?? id;
+        return geoAt(d, id)?.label ?? id;
     }
     const erosion = [["droplets", "水滴数"], ["inertia", "惯性"], ["capacity", "携沙能力"], ["minCapacity", "最小携沙量"], ["deposition", "沉积率"],
         ["erosion", "侵蚀率"], ["evaporation", "蒸发率"], ["gravity", "重力"], ["lifetime", "寿命 / 步"], ["radius", "笔刷半径 / 格"]];

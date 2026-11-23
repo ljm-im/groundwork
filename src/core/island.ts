@@ -38,7 +38,7 @@ export class Island {
             const c = n?.construction;
             const ref = c?.type === "strip" ? design.geoNodes.findLast(v => c.of.some(id => id === v.id))?.construction : c;
             const point: Point = ref?.type === "free" ? ref.paths[0].nodes[0].p : [0, 0];
-            return { kind: "geo-reference", severity: "error", point, geoNode: n?.id, label: n?.name, message };
+            return { kind: "geo-reference", severity: "error", point, geoNode: n?.id, label: n?.label, message };
         });
         return broken.size ? { ...design, geoNodes: design.geoNodes.map((n, i) => broken.has(i) ? { ...n, disabled: true as const } : n) } : design;
     }
@@ -63,7 +63,7 @@ export class Island {
 
     viewBelow(id: string): IslandView {
         const design = { ...this.resolved, geoNodes: this.resolved.geoNodes.slice(0, this.resolved.geoNodes.findIndex(n => n.id === id)),
-            buildings: [], nodes: [], edges: [], labels: [], vegetation: { ...this.design.vegetation, rooms: [], yardTree: { center: [0, 0] as Point, radius: 0 } } };
+            buildings: [], nodes: [], edges: [], marks: [], vegetation: { ...this.design.vegetation, rooms: [], yardTree: { center: [0, 0] as Point, radius: 0 } } };
         const broken = new Set(this.structural.map(i => i.geoNode));
         const terrain = this.cache.preview({ ...design, geoNodes: design.geoNodes.map(n => broken.has(n.id) ? { ...n, disabled: true } : n) });
         return { design, terrain, graded: { heights: terrain.heights, weight: new Float32Array(terrain.grid.size) }, routes: [], issues: [], trees: [] };
@@ -87,7 +87,7 @@ export class Island {
         this.finish();
     }
 
-    variables(release = false) {
+    inputs(release = false) {
         this.resolved = resolveDesign(this.design);
         this.terrain = this.cache.generateResolved(this.evaluated(this.resolved));
         this.padKey = this.buildingGeometry(this.resolved);

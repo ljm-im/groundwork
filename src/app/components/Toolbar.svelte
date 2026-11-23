@@ -12,7 +12,8 @@
     const groups = {
         terrain: [["pen", "pen", "钢笔"], ["rect", "rect", "矩形"], ["circle", "circle", "圆"], ["sector", "sector", "扇形"], ["strip", "strip", "条带"]],
         network: [["node", "node", "新建节点"], ["edge", "edge", "连线"], ["via", "via", "途经点"], ["fork", "fork", "分岔"], ["door", "door", "门"]],
-        buildings: [["building", "building", "建筑"]], layers: [], issues: [], variables: []
+        buildings: [["building", "building", "建筑"]],
+        marks: [["textMark", "textMark", "文字标记"], ["scaleMark", "scaleMark", "比例尺"]], layers: [], issues: [], inputs: []
     } as const;
     let tools = $derived([["select", "cursor", "选择"] as const, ...groups[editor.tab]]);
 </script>

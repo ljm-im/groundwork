@@ -1,7 +1,7 @@
 import { type Expression } from "./v5.ts";
 
 export const literalPattern = /^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/;
-const tokenPattern = /\s+|\{(?:var|field|geo|building|node|edge):[^{}]+\}|(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?|[-+*/()]/gy;
+const tokenPattern = /\s+|\{(?:input|field|geo|building|node|edge):[^{}]+\}|(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?|[-+*/()]/gy;
 export interface Token { text: string; start: number; end: number }
 export function tokens(source: string): Token[] {
     const result: Token[] = [];
@@ -50,7 +50,7 @@ export function evaluate(value: Expression, ref: (key: string) => Value): Value 
     const peek = () => parts[i]?.text;
     function atom(): Value {
         const part = parts[i++];
-        if (!part) throw Error("缺少数字或引用");
+        if (!part) throw Error("缺少数字或变量");
         if (part.text === "-") return scaled(atom(), -1);
         if (part.text === "(") {
             const v = sum();
@@ -58,7 +58,7 @@ export function evaluate(value: Expression, ref: (key: string) => Value): Value 
             return v;
         }
         if (part.text.startsWith("{")) return ref(part.text.slice(1, -1));
-        if (!literalPattern.test(part.text)) throw Error("第 " + (part.start + 1) + " 个字符需要数字或引用");
+        if (!literalPattern.test(part.text)) throw Error("第 " + (part.start + 1) + " 个字符需要数字或变量");
         return checked(Number(part.text));
     }
     function product(): Value {

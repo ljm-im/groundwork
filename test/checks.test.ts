@@ -6,7 +6,7 @@ import { fixtureOptions, readFixture } from "../configs/read-fixture.ts";
 import { advance, nearest, pointAt, radians, stations } from "../src/core/math/geometry.ts";
 import { Island } from "../src/core/island.ts";
 import { parseDesign, buildingShape } from "../src/core/design/model.ts";
-import { labelReading } from "../src/render/map.ts";
+import { markReading } from "../src/render/map.ts";
 import { selfOverlaps, sharpBends, overlappingLocations } from "../src/core/roads/proximity.ts";
 import { summitHeights, validateRoads } from "../src/core/checks/validation.ts";
 import { issueShapes, objectIssues } from "../src/core/checks/issues.ts";
@@ -92,17 +92,21 @@ test("Grade windows and steps on streets", () => {
     assert(validateRoads(synthetic, flat, [steep]).some(i => i.kind === "stair-grade"));
 });
 
-test("Summit survey and variable labels use the finished terrain", () => {
+test("Summit survey and height marks use the finished terrain", () => {
     const design = syntheticDesign(), b = design.buildings[0];
     b.summit = true;
-    design.variables.A.value = 9;
-    const island = new Island(design), label = { name: "A", building: b.id, var: "A" };
+    design.inputs.A.value = 9;
+    design.marks.push({ id: "A", label: "A", kind: "text", point: b.center, building: b.id, elevation: "{input:A}", showElevation: true, spot: true });
+    const island = new Island(design), mark = island.resolved.marks[0];
+    assert(mark.kind === "text");
     const summit = summitHeights(island.terrain.grid, island.graded.heights, b.center);
     assert(summit.ground !== undefined);
     assert.equal(summit.highest, summit.ground);
-    assert.equal(labelReading(island.view(), label).difference, "");
-    design.variables.A.value = summit.ground + 2;
-    assert.match(labelReading(island.view(), label).difference!, /设计/);
+    assert.equal(markReading(island.view(), mark).difference, "");
+    design.inputs.A.value = summit.ground + 2;
+    const changed = new Island(design).resolved.marks[0];
+    assert(changed.kind === "text");
+    assert.match(markReading(island.view(), changed).difference!, /设计/);
 });
 
 

@@ -1,6 +1,11 @@
-<section class="part"><div class="part-title"><h3>{title}</h3><span class="number">{count}</span></div>{@render children()}</section>
+<section class="part"><div class="part-title"><h3>{#if icon}<Icon name={icon} />{/if}{title}</h3>{#if count !== ""}<span class="number">{count}</span>{/if}</div>{@render children()}</section>
+
+<style>
+    h3 { display: flex; align-items: center; gap: 5px; }
+</style>
 
 <script lang="ts">
     import { type Snippet } from "svelte";
-    let { title, count = "", children }: { title: string; count?: number | string; children: Snippet } = $props();
+    import Icon from "./Icon.svelte";
+    let { title, icon, count = "", children }: { title: string; icon?: "inputs" | "field"; count?: number | string; children: Snippet } = $props();
 </script>

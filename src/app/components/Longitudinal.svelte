@@ -3,9 +3,9 @@
 {:else}
     <div class="profile">
         <div class="profile-summary">
-            <strong>{route.edge.name}</strong><span>长度 {fmt(route.length)} m</span><span>落差 {fmt(route.drop)} m</span>
+            <strong>{route.edge.label}</strong><span>长度 {fmt(route.length)} m</span><span>落差 {fmt(route.drop)} m</span>
             <span>最陡 {pct(route.maxGrade)} / 上限 {pct(route.edge.maxGrade)}</span>
-            <span>台阶 {data.flights.length} 段 · {data.flights.reduce((n, f) => n + f.steps, 0)} 级</span><span>纵向放大 {Math.round(sy / sx)} 倍</span>
+            <span>台阶 {data.flights.length} 段，{data.flights.reduce((n, f) => n + f.steps, 0)} 级</span><span>纵向放大 {Math.round(sy / sx)} 倍</span>
             <span class="profile-legend">━ 路面　┄ 地面</span>
         </div>
         <div class="profile-chart" bind:clientWidth={w} bind:clientHeight={h} role="img" aria-label="道路纵断面图" onpointermove={hover} onpointerleave={leave}>
@@ -22,13 +22,13 @@
                 {#each [route.edge.from, route.edge.to] as id, i (i)}
                     {@const px = i ? w - right : left}
                     <line x1={px} x2={px} y1={top} y2={h - bottom} class="end" />
-                    <text x={px + (i ? -4 : 4)} y={12} text-anchor={i ? "end" : "start"}>{editor.island.design.nodes.find(n => n.id === id)?.name ?? id}</text>
+                    <text x={px + (i ? -4 : 4)} y={12} text-anchor={i ? "end" : "start"}>{editor.island.design.nodes.find(n => n.id === id)?.label ?? id}</text>
                 {/each}
                 {#if reading}<line x1={x(reading.s)} x2={x(reading.s)} y1={top} y2={h - bottom} class="cursor-line" />{/if}
             </svg>
             {#if reading}<output class="profile-reading" style:left={Math.max(3, Math.min(w - 166, x(reading.s) + 10)) + "px"}>
-                里程 {fmt(reading.s)} m · 坡度 {pct(reading.grade)}<br />
-                路面 {fmt(reading.road)} m · 地面 {fmt(reading.ground)} m<br />差值 {fmt(reading.gap)} m
+                里程 {fmt(reading.s)} m，坡度 {pct(reading.grade)}<br />
+                路面 {fmt(reading.road)} m，地面 {fmt(reading.ground)} m<br />差值 {fmt(reading.gap)} m
             </output>{/if}
         </div>
     </div>

@@ -1,4 +1,4 @@
-import { type Section, type Point } from "../core/design/types.ts";
+import { type Section, type Point } from "../core/design/v5.ts";
 import { type Terrain } from "../core/design/results.ts";
 import { type IslandView } from "../core/island.ts";
 import { clamp, distance, mixPoint, sampleDefined } from "../core/math/geometry.ts";
@@ -46,7 +46,7 @@ export function drawSections(container: HTMLElement, island: IslandView) {
         const id = section.id + "—" + section.id + "′";
         const label = figure.querySelector("b")!, name = figure.querySelector("span")!;
         if (label.textContent !== id) label.textContent = id;
-        if (name.textContent !== section.name) name.textContent = section.name;
+        if (name.textContent !== section.label) name.textContent = section.label;
         const canvas = figure.lastElementChild as HTMLCanvasElement,
             w = canvas.clientWidth,
             h = canvas.clientHeight;

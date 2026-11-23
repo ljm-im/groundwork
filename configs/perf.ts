@@ -16,7 +16,7 @@ function time<T>(name: string, fn: () => T) {
 
 const model = time("首次生成（含侵蚀、植被、路网及校验）", () => new Island(design));
 console.table(model.routes.map(r => ({
-    道路: r.edge.name,
+    道路: r.edge.label,
     "长度 m": +r.length.toFixed(1),
     "落差 m": +r.drop.toFixed(1),
     "最陡 %": +(r.maxGrade * 100).toFixed(1),
@@ -27,8 +27,8 @@ console.table(model.routes.map(r => ({
 })));
 time("全部重新选线", () => model.reroute());
 const edge = design.edges.find(e => e.id === perfEdge);
-if (!edge || !Object.hasOwn(design.variables, variable)) throw Error("Unknown performance scenario in .local/fixtures/regressions.json");
-time(`单条边重算（${edge.name}）`, () => model.reroute(new Set([edge.id])));
-design.variables[variable].value = Number(design.variables[variable].value) + .5;
-time("变量预览（保持线形）", () => model.variables());
+if (!edge || !Object.hasOwn(design.inputs, variable)) throw Error("Unknown performance scenario in .local/fixtures/regressions.json");
+time(`单条边重算（${edge.label}）`, () => model.reroute(new Set([edge.id])));
+design.inputs[variable].value = Number(design.inputs[variable].value) + .5;
+time("自定义输入预览（保持线形）", () => model.inputs());
 console.table(timings);

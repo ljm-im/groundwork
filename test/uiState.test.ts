@@ -2,15 +2,18 @@ import { test } from "node:test";
 import "../configs/register-svelte.ts";
 import assert from "node:assert/strict";
 import { fixtureOptions, readFixture } from "../configs/read-fixture.ts";
-import { distance } from "../src/core/math/geometry.ts";
+import { createGrid, distance } from "../src/core/math/geometry.ts";
 import { handles } from "../src/core/edit/controls.ts";
 import { resolveDesign } from "../src/core/design/parameters.ts";
 import { History } from "../src/core/edit/history.ts";
 import { Island } from "../src/core/island.ts";
 import { parseDesign } from "../src/core/design/model.ts";
+import { pixelGridSpacing } from "../src/app/state/layers.ts";
+import { geoLabelPoint } from "../src/render/labelLayout.ts";
+import { makeShape, rasterRegion } from "../src/core/terrain/regions.ts";
 import { IslandMap } from "../src/render/map.ts";
 import { render } from "svelte/server";
-import { syntheticDesign } from "./scenarios.ts";
+import { polygon, rect, syntheticDesign } from "./scenarios.ts";
 
 test("Map focus, hit radius and the selected inspector issue", fixtureOptions("round14-land.json"), async () => {
     const original = await readFixture("round14-land.json");
@@ -49,10 +52,10 @@ test("Map focus, hit radius and the selected inspector issue", fixtureOptions("r
 
 test("Variable preview keeps the alignment and release matches a freshly opened design", () => {
     const design = syntheticDesign(), preview = new Island(design), line = preview.routes[0].points;
-    design.variables.A.value++;
-    preview.variables();
+    design.inputs.A.value++;
+    preview.inputs();
     assert.equal(preview.routes[0].points, line);
-    preview.variables(true);
+    preview.inputs(true);
     const full = new Island(structuredClone(design));
     assert.deepEqual(preview.graded.heights, full.graded.heights);
     assert.deepEqual(preview.routes, full.routes);
@@ -128,11 +131,11 @@ test("Terrain work runs synchronously on a hit and defers cold history steps for
     assert.equal(frames.length, 0);
     await hot;
 
-    editor.island.design.variables.A.value = Number(editor.island.design.variables.A.value) + 1;
+    editor.island.design.inputs.A.value = Number(editor.island.design.inputs.A.value) + 1;
     await finishCold(editor.rebuild(), "正在更新地件…", 1);
     await finishCold(editor.navigate(false), "正在更新地件…", 2);
     assert.equal(editor.history.index, 1);
-    editor.island.design.variables.seed.value = Number(editor.island.design.variables.seed.value) + 1;
+    editor.island.design.inputs.seed.value = Number(editor.island.design.inputs.seed.value) + 1;
     await finishCold(editor.rebuild(), "正在更新地件…", 1);
     assert.equal(editor.history.index, 2);
     assert.equal(editor.canRedo, false);
@@ -222,7 +225,7 @@ test("Drawing or canceling a parameter keeps its owner and activates only the co
 
 test("Isolating a building centre, route, waypoint or section exposes only its own map handles", () => {
     const d = syntheticDesign();
-    d.sections = [{ id: "S", name: "S", points: [[0, 0], [0, 5]], marks: [] }];
+    d.sections = [{ id: "S", label: "S", points: [[0, 0], [0, 5]], marks: [] }];
     d.edges[0].via = [[2, 3], [3, 4]];
     const design = resolveDesign(d), only = (kind: string, id: string, index = 0) =>
         handles(design, {}, null, { kind, id, index }).map(h => [h.kind, h.id, h.role, h.index]);
@@ -231,4 +234,48 @@ test("Isolating a building centre, route, waypoint or section exposes only its o
     assert.deepEqual(only("via", "E", 1), [["via", "E", "vertex", 1]]);
     assert.deepEqual(only("edge", "E"), [["node", "a", "endpoint", 0], ["via", "E", "vertex", 0], ["via", "E", "vertex", 1], ["node", "b", "endpoint", 0]]);
     assert.deepEqual(only("section", "S"), [["section", "S", "vertex", 0], ["section", "S", "vertex", 1]]);
+});
+
+test("Fixed pixel grids choose the closest nice spacing at each zoom", () => {
+    const nice = Array.from({ length: 19 }, (_, i) => [1, 2, 5].map(n => n * 10 ** (i - 9))).flat();
+    for (const reference of [.2, 1, 4.13, 85]) for (const zoom of [.05, .09, .4, 1, 2.4, 9, 30]) {
+        const scale = reference * zoom;
+        for (const target of [17, 80, 103]) {
+            const step = pixelGridSpacing(scale, target);
+            assert(nice.includes(step));
+            assert(nice.every(other => Math.abs(step * scale - target) <= Math.abs(other * scale - target) + 1e-9));
+        }
+    }
+});
+
+test("Zoom stays between 5 and 3000 percent and keeps its anchor fixed", () => {
+    const map = Object.assign(Object.create(IslandMap.prototype) as IslandMap, { center: [0, 0], width: 800, height: 450, scale: 3, referenceScale: 3,
+        draw() {} });
+    const anchor = map.world(200, 300);
+    map.zoomAt(.001, 200, 300);
+    assert(Math.abs(map.zoomFactor() - .05) < 1e-12);
+    const min = map.scale;
+    map.zoomAt(.9, 200, 300);
+    assert.equal(map.scale, min);
+    assert(distance(map.world(200, 300), anchor) < 1e-9);
+    map.zoomAt(10000, 200, 300);
+    assert.equal(map.zoomFactor(), 30);
+    map.zoomAt(1.4, 200, 300);
+    assert.equal(map.zoomFactor(), 30);
+    assert(distance(map.world(200, 300), anchor) < 1e-9);
+});
+
+test("Terrain labels use the even-odd centroid, the nearest cell in a hole and the strip midpoint", () => {
+    const grid = createGrid({ xMin: -12, xMax: 12, yMin: -12, yMax: 12, step: 1 });
+    const make = (paths: ReturnType<typeof polygon>[]) => makeShape({ id: "A", label: "A", construction: { type: "free", paths }, function: { type: "ground", value: 0 } }, new Map(), .125);
+    const outer = rect(-8, -6, 8, 6).paths[0], hole = rect(-2, -2, 2, 2).paths[0];
+    const holed = make([outer, hole]), point = geoLabelPoint(rasterRegion(grid, holed), grid)!;
+    assert(holed.contains(point));
+    assert.equal(Math.hypot(...point), Math.hypot(2.5, .5));
+    const crossing = make([rect(-9, -3, 0, 3).paths[0], rect(-3, -1, 4, 1).paths[0]]);
+    const centroid = geoLabelPoint(rasterRegion(grid, crossing), grid)!;
+    assert(distance(centroid, [-109 / 28, 0]) < 1e-9);
+    const shape = makeShape({ id: "B", label: "B", function: { type: "blend" },
+        construction: { type: "strip", of: ["A"], widths: [1, 2], range: { from: "0", to: "2" } } }, new Map([["A", make([outer])]]), .125);
+    assert.deepEqual(geoLabelPoint(rasterRegion(grid, shape), grid), [6, -6]);
 });

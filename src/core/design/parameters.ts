@@ -5,7 +5,7 @@ import { evaluate, fieldValue, references, type Value } from "./expression.ts";
 import { type Design, type Expression, type GeoNode, type Polyline, type ResolvedDesign } from "./v5.ts";
 
 export type Address = (string | number)[];
-export type Owner = "var" | "geo" | "edge" | "node" | "building" | "setting";
+export type Owner = "input" | "geo" | "edge" | "node" | "building" | "mark" | "setting";
 interface DerivedDefault { keys: string[]; compute: (...values: number[]) => number }
 export type Slot = { key: string; owner: Owner; id: string; name: string; label: string; field: boolean; path: Address; location: string; value: Expression; derived?: DerivedDefault };
 export const randomFunctions = ["coast", "mountain", "cliff", "erosion", "islets", "noise"];
@@ -16,7 +16,7 @@ const keys: Record<string, string> = {
     droplets: "水滴数", inertia: "惯性", capacity: "携沙能力", minCapacity: "最小携沙量", deposition: "沉积率", erosion: "侵蚀率",
     evaporation: "蒸发率", gravity: "重力", lifetime: "寿命", noise: "半径起伏", h: "高度", width: "路面宽度", comfort: "舒适坡度",
     maxGrade: "最大坡度", corridor: "走廊半宽", stairUntil: "强制台阶终点", direction: "手动朝向", height: "高度", angle: "转角",
-    inner: "内半径", pad: "台基范围", blockMargin: "避让距离", treeRadius: "避树半径", wall: "墙面编号", t: "门的位置"
+    inner: "内半径", pad: "台基范围", blockMargin: "避让距离", treeRadius: "避树半径", wall: "墙面编号", t: "门的位置", length: "长度", elevation: "高度"
 };
 const fieldKeys = ["amplitude", "roughness", "factor", "strength", "density"];
 export function readAt(root: object, path: Address): unknown {
@@ -45,7 +45,8 @@ export function parameterLabel(path: Address, node?: GeoNode): string {
     }
     const group = parts.at(-2);
     let name = keys[last] ?? last;
-    if (node?.function.type === "slope" && last === "value") name = "基准值";
+    if (node?.function.type === "slope" && last === "value") name = "增量";
+    if (node?.function.type === "slope" && last === "h") name = "增量";
     if (node?.function.type === "erosion" && last === "radius") name = "笔刷半径";
     if (parts.includes("peaks") && last === "h") name = "峰顶高度";
     if (parts.includes("doors") && last === "angle") name = "门的转角";
@@ -57,7 +58,7 @@ export function parameterLabel(path: Address, node?: GeoNode): string {
     }
     if (group === "widthNoise" || group === "heightNoise") name = (group === "widthNoise" ? "宽度" : "高度") + "起伏" + (last === "amount" ? "幅度" : "波长");
     if (parts.includes("harbor")) prefix.push("港湾");
-    return [...prefix, name].join(" · ");
+    return [...prefix, name].join(" ");
 }
 export function parameters(d: Design) {
     const slots = new Map<string, Slot>();
@@ -71,12 +72,12 @@ export function parameters(d: Design) {
             slots.set(key, { key, owner: kind, id, name, label: parameterLabel(property, node), location: location(path), path, field, derived, value: value as Expression });
         };
     }
-    for (const [id, v] of Object.entries(d.variables)) owner("var", id, v?.label ?? id, ["variables", id])(["value"], [], false, 0);
+    for (const [id, v] of Object.entries(d.inputs)) owner("input", id, v?.label ?? id, ["inputs", id])(["value"], [], false, 0);
     for (const [id, f] of Object.entries(d.fields)) owner("setting", "field." + id, f?.label ?? id, ["fields", id])(["default"], ["default"], false, 0);
     if (d.routing) for (const [key, value] of Object.entries({ ...routingDefaults, ...d.routing }))
         owner("setting", "routing", "选线参数", ["routing"])([key], [key], false, value);
     d.geoNodes.forEach((n, i) => {
-        const add = owner("geo", n.id, n.name, ["geoNodes", i], n), f = n.function;
+        const add = owner("geo", n.id, n.label, ["geoNodes", i], n), f = n.function;
         if (!f) throw Error("geoNodes[" + i + "].function 缺失");
         const fn = (p: Address, fallback?: Expression, field = false) => add(["function", ...p], p, field, fallback);
         if (f.type !== "slope" || f.kind === "radial")
@@ -121,7 +122,7 @@ export function parameters(d: Design) {
         }
     });
     d.buildings.forEach((b, i) => {
-        const add = owner("building", b.id, b.name, ["buildings", i]);
+        const add = owner("building", b.id, b.label, ["buildings", i]);
         const prefix = "building:" + b.id + ".", rect = b.shape === "rect";
         add(["height"], ["height"], false, 4);
         if (rect) {
@@ -147,16 +148,21 @@ export function parameters(d: Design) {
             for (const [k, fallback] of Object.entries(defaults)) add(["doors", j, k], ["doors", j, k], false, fallback);
         });
     });
-    d.nodes.forEach((n, i) => owner("node", n.id, n.name, ["nodes", i])(["direction"], ["direction"], false, 0));
+    d.nodes.forEach((n, i) => owner("node", n.id, n.label, ["nodes", i])(["direction"], ["direction"], false, 0));
     d.edges.forEach((e, i) => {
-        const add = owner("edge", e.id, e.name, ["edges", i]);
+        const add = owner("edge", e.id, e.label, ["edges", i]);
         for (const k of ["width", "comfort", "maxGrade", "corridor"] as const) add([k], [k], false, d.roadClasses?.[e.grade]?.[k]);
         add(["stairUntil"], ["stairUntil"], false, 0);
+    });
+    d.marks.forEach((m, i) => {
+        const add = owner("mark", m.id, m.label, ["marks", i]);
+        if (m.kind === "text") add(["elevation"], ["elevation"], false, 0);
+        else add(["length"], ["length"], false, 10);
     });
     return slots;
 }
 const dependencies = (s: Slot) => s.derived?.keys ?? references(s.value);
-export const slotName = (s: Slot) => "“" + s.name + "”" + (s.owner === "var" ? "" : "." + s.label);
+export const slotName = (s: Slot) => "“" + s.name + "”" + (s.owner === "input" ? "" : "." + s.label);
 export function canReference(slots: Map<string, Slot>, from: string | undefined, to: string) {
     const seen = new Set<string>();
     function reaches(key: string): boolean {
@@ -175,19 +181,19 @@ export function referenceUses(d: Design, kind: Owner | "field", id: string) {
         const target = slots.get(k);
         return target?.owner === kind && target.id === id;
     }))
-        .map(s => slotName(s) + " · " + s.location);
+        .map(s => slotName(s) + "（" + s.location + "）");
 }
 
 export function expressionGraph(d: Design, slots = parameters(d)) {
     const values = new Map<string, Value>(), visiting: string[] = [];
     function get(key: string): Value {
         if (key.startsWith("field:")) {
-            const id = key.slice(6);
+            const id = key.slice("field:".length);
             if (id !== "height" && !Object.hasOwn(d.fields, id)) throw Error("找不到场“" + id + "”");
             return fieldValue(id);
         }
         const s = slots.get(key);
-        if (!s) throw Error((key.startsWith("var:") ? "找不到变量“" : "找不到数类型属性“") + key.slice(key.indexOf(":") + 1) + "”");
+        if (!s) throw Error((key.startsWith("input:") ? "找不到自定义输入“" : "找不到数类型属性“") + key.slice(key.indexOf(":") + 1) + "”");
         if (s.field && visiting.length) throw Error(slotName(s) + " 是场类型参数，不能引用");
         const found = values.get(key);
         if (found !== undefined) return found;
@@ -254,9 +260,6 @@ export function resolveDesign(source: Design, slots = parameters(source)): Resol
     });
     for (const [id, rule] of Object.entries(source.roadClasses ?? {}))
         if (rule.rampLimit == null) replace(["roadClasses", id, "rampLimit"], unrestrictedRampGrade);
-    source.labels.forEach((l, i) => {
-        if (l.var !== undefined && !Object.hasOwn(source.variables, l.var)) errors.add("labels[" + i + "].var 找不到变量“" + l.var + "”");
-    });
     if (errors.size) throw Error([...errors].join("\n"));
     return design as ResolvedDesign;
 }

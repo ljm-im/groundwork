@@ -5,9 +5,9 @@
         {#each options as item (item.id)}<button aria-pressed={item.id === value} onclick={() => {
             open = false; if (item.id !== value) choose(item.id);
         }}><Icon name={icon} />{item.name}</button>{/each}
-        <button onclick={() => {
-            open = false; create();
-        }}><Icon name="plus" />{newLabel}</button>
+        {#if create}<button onclick={() => {
+            open = false; create?.();
+        }}><Icon name="plus" />{newLabel}</button>{/if}
     </div>{/if}
 </div>
 <svelte:window onkeydowncapture={e => {
@@ -30,6 +30,6 @@
     import { anchoredPopup } from "../state/popup.ts";
     import Icon from "./Icon.svelte";
     let { label, group, icon, value, options, newLabel, choose, create }: { label: string; group: string; icon: "function" | "field";
-        value: string; options: { id: string; name: string }[]; newLabel: string; choose: (v: string) => void; create: () => void } = $props();
+        value: string; options: { id: string; name: string }[]; newLabel?: string; choose: (v: string) => void; create?: () => void } = $props();
     let anchor = $state<HTMLButtonElement>(null!), open = $state(false);
 </script>

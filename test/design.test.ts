@@ -7,7 +7,9 @@ import { migrateDesign } from "../src/core/design/migrations/v1ToV2.ts";
 import { upgradeLandscape } from "../src/core/design/migrations/v2ToV3.ts";
 import { upgradeWoodlands } from "../src/core/design/migrations/v3ToV4.ts";
 import { parseDesign, serializeDesign } from "../src/core/design/model.ts";
-import { type Point } from "../src/core/design/v5.ts";
+import { markPoint, type Design, type Point } from "../src/core/design/v5.ts";
+import { newDesign } from "../src/core/design/newDesign.ts";
+import { resolveDesign } from "../src/core/design/parameters.ts";
 import { distance } from "../src/core/math/geometry.ts";
 import { simpleBoundary } from "../src/core/math/polygon.ts";
 import { syntheticDesign, rect, layer } from "./scenarios.ts";
@@ -76,16 +78,16 @@ test("Every installed top-level design matches the version five declaration", fi
 });
 
 test("Geo references report their location and reject invalid field writers", () => {
-    const d = syntheticDesign(), p = rect(0, 0, 4, 4), n = layer("N", p, { type: "flat", value: 1 });
+    const d = syntheticDesign(), p = rect(0, 0, 4, 4), n = layer("N", p, { type: "flat", amount: 1 });
     d.geoNodes.push(n);
     n.field = "missing";
     assert.throws(() => parseDesign(d), /geoNodes\[2\].*field.*找不到/);
     n.field = "f"; d.fields.f = { default: 2 };
     n.function = { type: "ground", value: 0 };
     assert.throws(() => parseDesign(d), /geoNodes\[2\].*field/);
-    n.function = { type: "add", feather: 0, amount: "{var:absent}" };
-    assert.throws(() => parseDesign(d), /amount.*找不到变量/);
-    n.function = { type: "flat", value: 1 }; n.construction = { type: "strip", of: ["N"], widths: [1, 1] };
+    n.function = { type: "add", feather: 0, amount: "{input:absent}" };
+    assert.throws(() => parseDesign(d), /amount.*找不到自定义输入/);
+    n.function = { type: "flat", amount: 1 }; n.construction = { type: "strip", of: ["N"], widths: [1, 1] };
     assert.throws(() => parseDesign(d), /of.*找不到下方/);
     n.construction = p; p.paths.push(structuredClone(p.paths[0]));
     assert.throws(() => parseDesign(d), /nodes\[0\].id 重复/);
@@ -101,7 +103,7 @@ test("Noise validates its inputs and rejects the retired inline noise parameter"
         node.function = { ...fn, [key]: value };
         assert.throws(() => parseDesign(d), error => error instanceof Error && error.message.includes("geoNodes[1].function." + key));
     }
-    for (const surface of [{ type: "ground", value: 1 }, { type: "flat", value: 1 },
+    for (const surface of [{ type: "ground", value: 1 }, { type: "flat", amount: 1 },
         { type: "slope", kind: "radial", value: 1, center: [0, 0], radius: 2, rate: .1 },
         { type: "slope", kind: "path", line: { points: [{ p: [0, 0], h: 1 }, { p: [2, 0], h: 2 }] } }]) {
         Object.assign(node, { function: { ...surface, noise: { amplitude: 1 } } });
@@ -109,13 +111,13 @@ test("Noise validates its inputs and rejects the retired inline noise parameter"
     }
 });
 
-test("Removing a referenced variable lists every layer and label location", () => {
+test("Removing a referenced custom input lists every layer and mark location", () => {
     const d = syntheticDesign();
-    delete d.variables.A;
-    d.labels = [{ name: "B", point: [1, 1], var: "A" }];
-    d.geoNodes.push(layer("C", rect(2, 2, 5, 5), { type: "add", amount: "{var:A}", feather: 0 }));
+    delete d.inputs.A;
+    d.marks = [{ id: "B", label: "B", kind: "text", point: [1, 1], elevation: "{input:A}", showElevation: true }];
+    d.geoNodes.push(layer("C", rect(2, 2, 5, 5), { type: "add", amount: "{input:A}", feather: 0 }));
     assert.throws(() => parseDesign(d), error => error instanceof Error &&
-        ["geoNodes[1].function.value", "geoNodes[2].function.amount", "labels[0].var"].every(p => error.message.includes(p)));
+        ["geoNodes[1].function.amount", "geoNodes[2].function.amount", "marks[0].elevation"].every(p => error.message.includes(p)));
     assert.throws(() => parseDesign({ ...syntheticDesign(), zones: [] }), /zones.*v5/);
 });
 
@@ -129,4 +131,51 @@ test("Supported owners preserve optional prompts, whitespace and empty prompt om
     assert.deepEqual(parseDesign(serializeDesign(d)), d);
     for (const owner of owners) owner.prompt = "";
     assert.equal(serializeDesign(parseDesign(d)), before);
+});
+
+test("Retired input, label and increment spellings fail at their source", () => {
+    const d = syntheticDesign();
+    d.sections.push({ id: "S", label: "S", points: [[0, 0], [1, 1]], marks: [] });
+    d.marks.push({ id: "M", kind: "scale", label: "M", point: [1, 1] });
+    assert.throws(() => parseDesign({ ...d, variables: {} }), /variables.*移除/);
+    assert.throws(() => parseDesign({ ...d, labels: [] }), /labels.*移除/);
+    assert.throws(() => parseDesign({ ...d, inputs: { A: { value: "{var:A}" } } }), /inputs.A.value.*无法识别/);
+    assert.throws(() => parseDesign({ ...d, geoNodes: [d.geoNodes[0], { ...d.geoNodes[1], function: { type: "flat", value: 2 } }] }), /function.value.*移除/);
+    for (const key of ["geoNodes", "buildings", "nodes", "edges", "sections", "marks"] as const) {
+        const invalid = structuredClone(d);
+        Object.assign(invalid[key][0], { name: "A" });
+        assert.throws(() => parseDesign(invalid), new RegExp(key + "\\[0\\]\\.name.*移除"));
+    }
+    Object.assign(d.buildings[0].doors[0], { name: "A" });
+    assert.throws(() => parseDesign(d), /doors\[0\].name.*移除/);
+    assert.equal(parseDesign(syntheticDesign()).roadClasses.path.name, "A");
+});
+
+test("Labels omit their defaults and marks round-trip with expressions and anchors", () => {
+    const d: Design = syntheticDesign(), building = d.buildings[0];
+    d.sections.push({ id: "S", label: "S", points: [[0, 0], [1, 1]], marks: [] });
+    d.marks.push({ id: "M", kind: "scale", label: "M", point: [1, 1], length: "{input:A} + 3" },
+        { id: "T", kind: "text", label: "T", point: [3, 2], building: building.id, offset: [1, 0], spot: true, minZoom: .5,
+            titleOnly: false, elevation: "{geo:T.amount} + 1", showElevation: true });
+    const others = [building, building.doors[0], ...d.nodes, ...d.edges, ...d.sections, ...d.marks];
+    // Unset and explicit defaults produce identical bytes for every kind.
+    const defaults = serializeDesign(d);
+    d.geoNodes.forEach(n => n.showLabel = false);
+    others.forEach(item => item.showLabel = true);
+    assert.equal(serializeDesign(d), defaults);
+    d.geoNodes[0].showLabel = true;
+    others.forEach(item => item.showLabel = false);
+    const bytes = serializeDesign(d), saved = parseDesign(bytes), numeric = resolveDesign(saved);
+    assert.equal(serializeDesign(parseDesign(saved)), bytes);
+    assert.equal(saved.geoNodes[0].showLabel, true);
+    assert.equal(saved.geoNodes[1].showLabel, undefined);
+    assert([saved.buildings[0], saved.buildings[0].doors[0], ...saved.nodes, ...saved.edges, ...saved.sections, ...saved.marks].every(item => item.showLabel === false));
+    const [scale, text] = numeric.marks;
+    assert(scale.kind === "scale" && text.kind === "text");
+    assert.equal(scale.length, 10);
+    assert.equal(text.elevation, 4);
+    assert.deepEqual(markPoint(text, numeric.buildings), [building.center[0] + 1, building.center[1]]);
+    assert.deepEqual(newDesign().marks, [{ id: "mark-1", kind: "scale", label: "比例尺", point: [-25.6, -25.6], length: 10 }]);
+    assert.throws(() => parseDesign({ ...saved, marks: [{ ...saved.marks[0], length: "0 - 1" }] }), /marks\[0\].length/);
+    assert.throws(() => parseDesign({ ...saved, marks: [{ ...saved.marks[1], showLabel: "false" }] }), /marks\[0\].showLabel/);
 });

@@ -79,6 +79,12 @@ export function moveHandle(d: Design, h: Selection, p: Point) {
         else if (node) node.point = p;
         else d.edges.find(e => e.id === id)!.via[index] = p;
     }
+    if (h.kind === "mark") {
+        const mark = d.marks.find(m => m.id === id)!;
+        const building = mark.kind === "text" && d.buildings.find(b => b.id === mark.building);
+        mark.point = p;
+        if (building && mark.kind === "text") mark.offset = [p[0] - building.center[0], p[1] - building.center[1]];
+    }
     if (h.kind === "section") {
         const ends = d.sections.find(s => s.id === id)!.points;
         if (distance(p, ends[1 - index]) >= 1) ends[index] = p;

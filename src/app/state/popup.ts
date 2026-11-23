@@ -7,8 +7,8 @@ export function popupBounds(box: AnchorBounds, top: number, bottom: number, desi
     return { left: box.left, top: upwards ? box.top - 2 - height : box.bottom + 2, width: box.width, height, upwards };
 }
 
-export function anchoredPopup(menu: HTMLElement, config: { anchor: HTMLElement; close: () => void }) {
-    const { anchor, close } = config, panel = anchor.closest(".panel-content");
+export function anchoredPopup(menu: HTMLElement, config: { anchor: HTMLElement; close: () => void; viewport?: boolean }) {
+    const { anchor, close } = config, panel = config.viewport ? null : anchor.closest(".panel-content");
     menu.showPopover();
     function position() {
         const box = anchor.getBoundingClientRect(), bounds = panel?.getBoundingClientRect();

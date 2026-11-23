@@ -5,7 +5,7 @@ import { syntheticDesign, rect, layer, syntheticRoads } from "./scenarios.ts";
 import { type Design, type GeoFunction, type Path, type Point } from "../src/core/design/v5.ts";
 import { parseDesign, serializeDesign } from "../src/core/design/model.ts";
 import { History } from "../src/core/edit/history.ts";
-import { addField, addVariable, bindField, bindHeight, copyGeo, createStrip, declarationUses, defaultFunction, deleteGeo, dependentStrips, enableGeo,
+import { addField, addInput, bindField, bindHeight, copyGeo, createStrip, declarationUses, defaultFunction, deleteGeo, dependentStrips, enableGeo,
     nodeIds, rangeUsers, removeDeclaration, reorderGeo, resolved, stripRange } from "../src/core/edit/geoNodes.ts";
 import { arcHandle, moveHandle, penNode, setSegment, translateGeo } from "../src/core/edit/paths.ts";
 import { flattenPath } from "../src/core/design/path.ts";
@@ -32,7 +32,7 @@ function draft(d: Design, tool: DrawTool, options: Partial<GeoDraft> = {}): GeoD
     return { tool, field: "height", ids: [], nodes: [], anchors: [], reverse: false, nextId: nodeIds(d), ...options };
 }
 
-test("Closed tools sample the chosen field and insert above the selection with one history step", () => {
+test("Closed tools add one unit to the chosen field and insert above the selection with one history step", () => {
     for (const tool of ["rect", "circle", "sector", "pen"] as const) {
         const d = syntheticDesign(), [ground, terrace] = d.geoNodes, field = addField(d);
         d.fields[field].default = 2.74;
@@ -41,7 +41,7 @@ test("Closed tools sample the chosen field and insert above the selection with o
         historyEdit(d, () => {
             const n = finishDraft(d, t, make), path = geometryPath(n, 0)!;
             assert.deepEqual(d.geoNodes, [ground, n, terrace]);
-            assert.equal(n.field, field); assert.deepEqual(n.function, { type: "flat", value: 2.7 });
+            assert.equal(n.field, field); assert.deepEqual(n.function, { type: "flat", amount: 1 });
             assert(path.closed);
             assert.deepEqual(path.nodes.map(v => v.next ?? "curve"), { rect: ["line", "line", "line", "line"], circle: ["arc", "arc"], sector: ["line", "arc", "line"], pen: ["curve", "curve", "curve"] }[tool]);
             if (tool === "circle") assert.deepEqual(path.nodes.map(v => v.bulge), [1, 1]);
@@ -51,7 +51,7 @@ test("Closed tools sample the chosen field and insert above the selection with o
             assert.equal(new Set(path.nodes.map(v => v.id)).size, path.nodes.length);
         });
         const off = finishDraft(d, t, draft(d, "rect", { start: [100, 100], cursor: [110, 111] }));
-        assert.equal(d.geoNodes.at(-1), off); assert.deepEqual(off.function, { type: "flat", value: 0 });
+        assert.equal(d.geoNodes.at(-1), off); assert.deepEqual(off.function, { type: "flat", amount: 1 });
     }
 });
 
@@ -81,26 +81,26 @@ test("Strip direction, whole outlines, shared edges, ordering and cascading dele
     });
 });
 
-test("Declarations report all writers, nested inputs and labels, and bindings retain their effective values", () => {
+test("Declarations report all writers, nested inputs and marks, and bindings retain their effective values", () => {
     const d = syntheticDesign();
     let variable = "", field = "";
     historyEdit(d, () => {
-        variable = addVariable(d, 8);
+        variable = addInput(d, 8);
     });
     historyEdit(d, () => {
         field = addField(d); d.fields[field].default = 3;
     });
     const n = d.geoNodes[1];
     historyEdit(d, () => {
-        n.function = { type: "flat", value: bindHeight(variable) };
+        n.function = { type: "flat", amount: bindHeight(variable) };
     });
     historyEdit(d, () => {
-        n.function = { type: "flat", value: bindHeight(variable, -2) };
+        n.function = { type: "flat", amount: bindHeight(variable, -2) };
     });
     const fieldInput = (field: string) => new Island(d).inputAt(n.id, field, [0, 0]);
     historyEdit(d, () => {
         assert(n.function.type === "flat");
-        n.function.value = resolved(n.function.value, d, fieldInput); assert.equal(n.function.value, 6);
+        n.function.amount = resolved(n.function.amount, d, fieldInput); assert.equal(n.function.amount, 6);
     });
     historyEdit(d, () => {
         n.function = { type: "noise", amplitude: bindField(field), scale: 4 };
@@ -108,7 +108,7 @@ test("Declarations report all writers, nested inputs and labels, and bindings re
     historyEdit(d, () => {
         assert(n.function.type === "noise"); n.function.amplitude = bindField(field, .5, 2);
     });
-    const cover = layer("Q", rect(-5, -5, 5, 5), { type: "flat", value: 20 }); cover.field = field;
+    const cover = layer("Q", rect(-5, -5, 5, 5), { type: "flat", amount: 17 }); cover.field = field;
     d.geoNodes.push(cover);
     assert.equal(new Island(d).terrain.fields[field].includes(20), true);
     historyEdit(d, () => {
@@ -116,16 +116,16 @@ test("Declarations report all writers, nested inputs and labels, and bindings re
     });
     d.geoNodes.pop();
     d.geoNodes.push(layer("B", rect(1, 1, 8, 8), { type: "mountain", ridges: [], peaks: [{ at: { p: [2, 2], h: bindHeight(variable) }, radius: 3, scale: 1, noise: 0 }], floor: bindHeight(variable) }));
-    d.labels.push({ name: "C", point: [2, 2], var: variable });
+    d.marks.push({ id: "C", label: "C", kind: "text", point: [2, 2], elevation: bindHeight(variable), showElevation: true });
     n.function = { type: "noise", amplitude: bindField(field), scale: 3 }; n.field = field;
-    for (const [kind, id, count] of [["variable", variable, 3], ["field", field, 2]] as const) {
+    for (const [kind, id, count] of [["input", variable, 3], ["field", field, 2]] as const) {
         const uses = declarationUses(d, kind, id), before = serializeDesign(d);
         assert.equal(uses.length, count); assert.equal(new Set(uses).size, count);
         assert.throws(() => removeDeclaration(d, kind, id), e => e instanceof Error && uses.every(v => e.message.includes(v)));
         assert.equal(serializeDesign(d), before);
     }
-    const other = addVariable(d);
-    historyEdit(d, () => removeDeclaration(d, "variable", other));
+    const other = addInput(d);
+    historyEdit(d, () => removeDeclaration(d, "input", other));
     assert.throws(() => removeDeclaration(d, "field", "height"), /内置/);
 });
 
@@ -134,7 +134,7 @@ test("Copies regenerate paths and preserve references, geometry moves together a
     const strip = createStrip(d, [n.id], "height", { from: path.nodes[0].id, to: path.nodes[2].id });
     historyEdit(d, () => {
         const copy = copyGeo(d, n), originalIds = d.geoNodes.filter(v => v !== copy).flatMap(v => geometryPath(v, 0)?.nodes.map(v => v.id) ?? []);
-        assert.notEqual(copy.id, n.id); assert.deepEqual(copy.function, n.function); assert.equal(copy.name, n.name + " 副本");
+        assert.notEqual(copy.id, n.id); assert.deepEqual(copy.function, n.function); assert.equal(copy.label, n.label + " 副本");
         assert(geometryPath(copy, 0)!.nodes.every(v => !originalIds.includes(v.id))); assert.equal(d.geoNodes[d.geoNodes.indexOf(n) + 1], copy);
         assert.deepEqual(dependentStrips(d, n.id), [strip]); assert.deepEqual(dependentStrips(d, copy.id), []);
     });
@@ -158,10 +158,10 @@ test("Copies regenerate paths and preserve references, geometry moves together a
 test("Function defaults preserve construction, mandatory geometry commits only on completion", () => {
     const d = syntheticDesign(), n = d.geoNodes[1], construction = structuredClone(n.construction), t = generateTerrain(d);
     const defaults: GeoFunction[] = [{ type: "ground", value: 0 }, { type: "mountain", peaks: [], ridges: [], floor: -1000 }, { type: "cliff", factor: .6, seaLevel: 0 },
-        { type: "islets", density: .5, reach: 12, threshold: .45, seaLevel: 0 }, { type: "flat", value: 3.4 }, { type: "add", amount: 1, feather: 3 },
+        { type: "islets", density: .5, reach: 12, threshold: .45, seaLevel: 0 }, { type: "flat", amount: 1 }, { type: "add", amount: 1, feather: 3 },
         { type: "noise", amplitude: 1, scale: 24, octaves: 5, feather: 0 }];
     for (const f of defaults) historyEdit(d, () => {
-        n.function = defaultFunction(f.type, 3.4)!; assert.deepEqual(n.function, ["mountain", "cliff", "islets", "noise"].includes(f.type) ? { ...f, seed: "{var:seed}" } : f); assert.deepEqual(n.construction, construction);
+        n.function = defaultFunction(f.type)!; assert.deepEqual(n.function, ["mountain", "cliff", "islets", "noise"].includes(f.type) ? { ...f, seed: "{input:seed}" } : f); assert.deepEqual(n.construction, construction);
     });
     for (const f of [{ type: "blend" }, { type: "split" }, { type: "batter", grade: .5 } ] as const) assert.deepEqual(defaultFunction(f.type), f);
     const erosion = defaultFunction("erosion"); assert(erosion?.type === "erosion" && erosion.strength === 1 && Number(erosion.droplets) > 0 && erosion.floor === -1000);
@@ -175,6 +175,11 @@ test("Function defaults preserve construction, mandatory geometry commits only o
         finishDraft(d, t, { ...pending, tool: "slopeLine" });
         assert(n.function.type === "slope" && n.function.kind === "path");
         assert.deepEqual(n.function.line.points.map(v => v.h !== undefined), [true, false, false, true]);
+        assert.deepEqual(n.function.line.points.map(v => v.h), [0, undefined, undefined, 2]);
+    });
+    historyEdit(d, () => {
+        finishDraft(d, t, { ...pending, tool: "center" });
+        assert.deepEqual(n.function, { type: "slope", kind: "radial", center: pending.nodes[0].p, radius: 5, value: 2, rate: -.2 });
     });
 });
 
@@ -274,15 +279,15 @@ test("Profile spans share exported steps, omit stair grades and measure the fina
 test("Removing a mountain member keeps references to siblings and reports references to the removed member", () => {
     const d = syntheticDesign(), m = d.geoNodes[1];
     m.function = { type: "mountain", ridges: [], peaks: [2, 4, 6].map(h => ({ at: { p: [h, 3], h }, radius: 2, scale: 3, noise: 0 })) };
-    d.variables.B = { value: 1 };
+    d.inputs.B = { value: 1 };
     const v: Design = d;
-    v.variables.B.value = "{geo:T.peaks.2.at.h} - {geo:T.peaks.0.radius}";
+    v.inputs.B.value = "{geo:T.peaks.2.at.h} - {geo:T.peaks.0.radius}";
     const before = serializeDesign(d);
-    assert.throws(() => removeGeometryItem(d, m, ["peaks"], 0), /variables.B.value/);
+    assert.throws(() => removeGeometryItem(d, m, ["peaks"], 0), /inputs.B.value/);
     assert.equal(serializeDesign(d), before);
     removeGeometryItem(d, m, ["peaks"], 1);
-    assert.equal(v.variables.B.value, "{geo:T.peaks.1.at.h} - {geo:T.peaks.0.radius}");
-    assert.equal(new Island(d).resolved.variables.B.value, 4);
+    assert.equal(v.inputs.B.value, "{geo:T.peaks.1.at.h} - {geo:T.peaks.0.radius}");
+    assert.equal(new Island(d).resolved.inputs.B.value, 4);
 });
 
 test("An arc with omitted bulge uses the editor's quarter-turn in sampling and handles", () => {

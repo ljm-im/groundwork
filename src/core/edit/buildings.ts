@@ -49,13 +49,13 @@ export function canPlaceBuilding(island: { terrain: Terrain; routes: Route[] }, 
 
 export function placeBuilding(d: Design, point: Point): Building {
     const id = newId(d.buildings, "building");
-    const b: Building = { id, name: "新建筑 " + id.split("-").at(-1), shape: "rect", center: point.slice() as Point, size: [8, 6], angle: 0, height: 4, color: "#c78b69", doors: [], showTitle: true };
+    const b: Building = { id, label: "新建筑 " + id.split("-").at(-1), shape: "rect", center: point.slice() as Point, size: [8, 6], angle: 0, height: 4, color: "#c78b69", doors: [] };
     d.buildings.push(b);
     return b;
 }
 
 export function titlePoint(d: Design, b: Building<Expression>): Point {
-    const offset = b.titleOffset ?? d.labels.find(l => l.building === b.id)?.offset ?? [0, 0];
+    const offset = b.titleOffset ?? [0, 0];
     return [b.center[0] + offset[0], b.center[1] + offset[1]];
 }
 
@@ -111,14 +111,14 @@ export function resizeRadius(b: Building<Expression>, radius: number, before: Bu
 export function doorNode(d: Design, b: Building<Expression>, door: Door<Expression>) {
     let node = d.nodes.find(n => n.type === "door" && n.building === b.id && n.door === door.id);
     if (!node) {
-        node = { id: newId(d.nodes, "door-node"), type: "door", name: b.name + "·" + (door.name ?? door.id), building: b.id, door: door.id };
+        node = { id: newId(d.nodes, "door-node"), type: "door", label: b.label + " " + (door.label ?? door.id), building: b.id, door: door.id };
         d.nodes.push(node);
     }
     return node;
 }
 
 export function addDoor(d: Design, b: Building<Expression>, wall = 0) {
-    const id = newId(b.doors, "door"), door: Door = { id, name: "门 " + id.split("-").at(-1) };
+    const id = newId(b.doors, "door"), door: Door = { id, label: "门 " + id.split("-").at(-1) };
     if (b.shape === "rect")
         Object.assign(door, { wall, t: .5 });
     else
@@ -154,7 +154,7 @@ export function openDoorAt(design: Design, hit: NonNullable<ReturnType<typeof ne
     let door = b.doors.find(door => distance(nodePose(numeric, { type: "door", building: b.id, door: door.id }).point, hit.point) < .35);
     if (!door) {
         const id = newId(b.doors, "door");
-        door = { id, name: "门 " + id.split("-").at(-1), ...hit.pose };
+        door = { id, label: "门 " + id.split("-").at(-1), ...hit.pose };
         b.doors.push(door);
     }
     if (!node)
@@ -180,7 +180,7 @@ export function removeBuildingPart(d: Design, b: Building<Expression>, door?: Do
         if (connected.has(n.id)) {
             n.point = nodePose(resolveDesign(d), n.id).point.slice() as Point;
             n.type = "endpoint";
-            n.detachedDoor = b.name;
+            n.detachedDoor = b.label;
             delete n.building;
             delete n.door;
             delete n.direction;
@@ -194,5 +194,5 @@ export function removeBuildingPart(d: Design, b: Building<Expression>, door?: Do
         return;
     }
     d.buildings = d.buildings.filter(item => item.id !== b.id);
-    d.labels = d.labels.filter(l => l.building !== b.id);
+    d.marks = d.marks.filter(m => m.kind !== "text" || m.building !== b.id);
 }

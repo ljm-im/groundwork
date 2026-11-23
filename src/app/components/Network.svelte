@@ -1,6 +1,6 @@
 {#snippet roadRow(r: Route)}
     <button class="route-row" data-edge={r.id} aria-pressed={editor.selection?.id === r.id && ["edge", "via"].includes(editor.selection.kind)} onclick={() => editor.focus("edge", r.id)}>
-        <span class={"road-symbol " + r.edge.grade}>{r.edge.grade === "stair" ? "≋" : r.edge.grade === "street" ? "═" : "∿"}</span><span>{r.edge.name}</span>
+        <span class={"road-symbol " + r.edge.grade}>{r.edge.grade === "stair" ? "≋" : r.edge.grade === "street" ? "═" : "∿"}</span><span>{r.edge.label}</span>
         {#if m.issues.some(i => (i.road === r.id || i.other === r.id) && i.severity === "error")}<i class="route-dot" aria-label="有校验问题"></i>{/if}
         <span class="length mono">{r.length.toFixed(1)} m</span><span class="chev">›</span>
     </button>
@@ -14,13 +14,15 @@
     {@const cl = m.resolved.roadClasses[e.grade]}
     {@const via = h.kind === "via"}
     {@const index = h.index ?? 0}
-    <PropertyTitle name={e.name} label="道路名称" rename={name => editor.edit(d => {
-        d.edges[edgeIndex].name = name;
+    <PropertyTitle name={e.label} showLabel={e.showLabel} setLabelVisibility={visible => editor.edit(d => {
+        d.edges[edgeIndex].showLabel = visible;
+    })} rename={name => editor.edit(d => {
+        d.edges[edgeIndex].label = name;
     })} remove={() => {
         if (via) editor.select({ kind: "edge", id: e.id });
         editor.removeSelected();
     }} />
-    <Prompt {editor} target={{ group: "edges", id: e.id }} /><div class="sub">{d.nodes.find(n => n.id === e.from)?.name} → {d.nodes.find(n => n.id === e.to)?.name}</div>
+    <Prompt {editor} target={{ group: "edges", id: e.id }} /><div class="sub">{d.nodes.find(n => n.id === e.from)?.label} → {d.nodes.find(n => n.id === e.to)?.label}</div>
     <ObjectProblems {editor} />
     <dl class="stat-grid">
         {@render stat("路线长度", route.length.toFixed(1) + " m")}{@render stat("端点落差", route.drop.toFixed(1) + " m")}
@@ -33,7 +35,7 @@
             <NumberInput {editor} label={name} {unit} displayFactor={unit === "%" ? 100 : 1} address={["edges", edgeIndex, key]} self={"edge:" + e.id + "." + key} />
         {/each}
     </Part>
-    <div class="sub">等级校验 · {cl.rampLimit != null ? "坡道上限 " + pct(cl.rampLimit) + " · " : ""}{cl.allowStairs ? "台阶上限 " + pct(cl.stairLimit) : "仅设坡道"}</div>
+    <div class="sub">等级校验：{cl.rampLimit != null ? "坡道上限 " + pct(cl.rampLimit) + "，" : ""}{cl.allowStairs ? "台阶上限 " + pct(cl.stairLimit) : "仅设坡道"}</div>
     <Part title="路段">
         <label class="field">整条边默认模式{@render mode("edge", e.mode ?? "route")}</label>
         <label class="field">编辑路段<select data-part-index value={index}>{#each Array.from({ length: e.via.length + 1 }, (_, i) => i) as i (i)}<option value={i}>第 {i + 1} 段</option>{/each}</select></label>
@@ -53,8 +55,10 @@
 {:else if node}
     {@const pose = nodePose(m.resolved, node.id) as { normal?: number }}
     {@const linked = m.routes.filter(r => r.edge.from === node.id || r.edge.to === node.id)}
-    <PropertyTitle name={node.name} label="节点名称" rename={name => editor.edit(d => {
-        d.nodes[nodeIndex].name = name;
+    <PropertyTitle name={node.label} showLabel={node.showLabel} setLabelVisibility={visible => editor.edit(d => {
+        d.nodes[nodeIndex].showLabel = visible;
+    })} rename={name => editor.edit(d => {
+        d.nodes[nodeIndex].label = name;
     })} remove={() => editor.removeSelected()} />
     <Prompt {editor} target={{ group: "nodes", id: node.id }} /><div class="sub">{nodeType(node)}</div><ObjectProblems {editor} />
     <GeometryInput label="位置" active={editor.map?.objectGeometry?.kind === "node"} onclick={() => editor.focusObjectGeometry({ kind: "node", id: node.id })} />
@@ -62,7 +66,7 @@
 
         {#if node.type === "door"}
             {@const b = d.buildings.find(b => b.id === node.building)!}
-            <div class="field">所属建筑<b>{b.name}</b></div><div class="field">外法线<span class="mono">{(pose.normal! / radians).toFixed(1)}°</span></div><div class="sub">拖动门可沿建筑外墙移动。</div>
+            <div class="field">所属建筑<b>{b.label}</b></div><div class="field">外法线<span class="mono">{(pose.normal! / radians).toFixed(1)}°</span></div><div class="sub">拖动门可沿建筑外墙移动。</div>
             {#if b.summit}
                 {@const heights = summitHeights(m.terrain.grid, m.graded.heights, b.center, m.terrain.defined)}
                 <dl class="stat-grid">{@render stat("基座实测", heights.ground === undefined ? "—" : heights.ground.toFixed(2) + " m")}{@render stat("25 m 内最高", Number.isFinite(heights.highest) ? heights.highest.toFixed(2) + " m" : "—")}</dl>
@@ -83,9 +87,9 @@
             {@const arms = main.map(r => armBearing(r, node.id))}
             <div class="field">直通方向差<span class="mono">{(180 - angleDiff(arms[0], arms[1]) / radians).toFixed(1)}°</span></div>
             {#each linked.filter(r => !throughPairs(node).flat().includes(r.id)) as r (r.id)}
-                <div class="field">“{r.edge.name}”夹角<span class="mono">{(Math.min(...arms.map(a => angleDiff(a, armBearing(r, node.id)))) / radians).toFixed(1)}°</span></div>
+                <div class="field">“{r.edge.label}”夹角<span class="mono">{(Math.min(...arms.map(a => angleDiff(a, armBearing(r, node.id)))) / radians).toFixed(1)}°</span></div>
             {/each}
-            <div class="sub">直通道路 · {main.map(r => "“" + r.edge.name + "”").join(" / ")}</div>
+            <div class="sub">直通道路：{main.map(r => "“" + r.edge.label + "”").join(" / ")}</div>
         {/each}
     </Part>
     <Part title="相连的边" count={linked.length}>{#each linked as r (r.id)}{@render roadRow(r)}{/each}</Part>
@@ -93,11 +97,11 @@
 {:else}
     {@const errors = m.issues.filter(i => i.severity === "error").length}
     <div class="row-between"><h2>路网总览</h2><button class="flat" data-action="reroute-all" onclick={() => editor.rerouteAll()}>重新选线</button></div>
-    <div class="sub">{d.nodes.length} 个节点 · {d.edges.length} 条边</div>
+    <div class="sub">{d.nodes.length} 个节点，{d.edges.length} 条边</div>
     <Search id="search" label="查找道路或节点" bind:value={editor.filter} />
     <Part title="道路" count={routes.length}>{#each routes as r (r.id)}{@render roadRow(r)}{:else}<div class="sub">无匹配道路</div>{/each}</Part>
-    <details open={!!q}><summary>节点（{nodes.length}）</summary>{#each nodes as n (n.id)}<button class="object-row" data-node={n.id} aria-pressed={editor.selection?.kind === "node" && editor.selection.id === n.id} onclick={() => editor.focus("node", n.id)}>{n.name}<small>{nodeType(n)}</small></button>{/each}</details>
-    <Part title="设计校验"><button class="object-row" data-action="issues" onclick={() => editor.changeTab("issues")}><i class="diamond"></i>{errors} 处问题 · {m.issues.length - errors} 处提示<small>查看 ›</small></button></Part>
+    <details open={!!q}><summary>节点（{nodes.length}）</summary>{#each nodes as n (n.id)}<button class="object-row" data-node={n.id} aria-pressed={editor.selection?.kind === "node" && editor.selection.id === n.id} onclick={() => editor.focus("node", n.id)}>{n.label}<small>{nodeType(n)}</small></button>{/each}</details>
+    <Part title="设计校验"><button class="object-row" data-action="issues" onclick={() => editor.changeTab("issues")}><i class="diamond"></i>{errors} 处问题，{m.issues.length - errors} 处提示<small>查看 ›</small></button></Part>
 {/if}
 
 <script lang="ts">
@@ -123,7 +127,7 @@
     let node = $derived(h?.kind === "node" && d.nodes.find(n => n.id === h!.id));
     let nodeIndex = $derived(d.nodes.findIndex(n => n.id === h?.id)), edgeIndex = $derived(d.edges.findIndex(e => e.id === h?.id));
     let q = $derived((editor.filter ?? "").trim().toLowerCase());
-    let routes = $derived(m.routes.filter(r => r.edge.name.toLowerCase().includes(q)));
-    let nodes = $derived(d.nodes.filter(n => n.name.toLowerCase().includes(q)));
+    let routes = $derived(m.routes.filter(r => r.edge.label.toLowerCase().includes(q)));
+    let nodes = $derived(d.nodes.filter(n => n.label.toLowerCase().includes(q)));
     const nodeType = (n: Pick<RoadNode, "type">) => types[n.type];
 </script>

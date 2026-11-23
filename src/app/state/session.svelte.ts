@@ -2,32 +2,33 @@ import { tick } from "svelte";
 import { Island } from "../../core/island.ts";
 import { TerrainCache } from "../../core/terrain/cache.ts";
 import { History, promptOwner, type PromptTarget } from "../../core/edit/history.ts";
-import { layerDefaults } from "./layers.ts";
+import { readDisplaySettings, saveDisplaySettings, type GridDisplay } from "./layers.ts";
 import { nodePose } from "../../core/design/model.ts";
 import { bounds } from "../../core/math/geometry.ts";
 import { addDoor, doorNode, doorRoads, openDoorAt, removeBuildingPart } from "../../core/edit/buildings.ts";
 import { removeVia, removeLinks } from "../../core/edit/topology.ts";
-import { type Expression, type GeoNode, type GeoFunction } from "../../core/design/v5.ts";
+import { type Expression, type GeoNode, type GeoFunction, markPoint } from "../../core/design/v5.ts";
 import { randomFunctions, referenceUses, type Owner } from "../../core/design/parameters.ts";
 import { parseDesign } from "../../core/design/model.ts";
 import { type GeoControl, type GeometryTarget, geometryPath, removeParameterPoint } from "../../core/edit/geoControls.ts";
-import { addVariable, addField, copyGeo, defaultFunction, deleteGeo, dependentStrips, enableGeo, pathCenter, declarationUses, rangeUsers, removeDeclaration, sampleField, tenth } from "../../core/edit/geoNodes.ts";
+import { addInput, addField, copyGeo, defaultFunction, deleteGeo, dependentStrips, enableGeo, nextId, pathCenter, declarationUses, rangeUsers, removeDeclaration } from "../../core/edit/geoNodes.ts";
 import { setSegment } from "../../core/edit/paths.ts";
 import { drawingTools, finishDraft, geoAt, startDrawing, updatePreview, type DrawTool } from "./geoTools.ts";
 import { objectIssues } from "../../core/checks/issues.ts";
 import { drawSections } from "../../render/sections.ts";
 import { IslandMap } from "../../render/map.ts";
 import { DesignFiles, type FileAction, type SaveState } from "./files.ts";
-import { errorText, type Building, type Design, type Door, type Gesture, type IslandModel, type Issue, type Layer, type MapView, type Point, type RoadNode, type Selection, type Tab, type Tool } from "../types.ts";
+import { errorText, type Building, type Design, type Door, type Gesture, type IslandModel, type Issue, type Layer, type Mark, type MapView, type Point, type RoadNode, type Selection, type Tab, type Tool } from "../types.ts";
 
 export const hints: Record<Tool, string> = {
-    pen: "单击放点 · 拖出控制柄 · 回车或单击首点闭合", rect: "拖动到矩形的对角", circle: "从圆心拖出半径",
-    sector: "从圆心拖出半径，再单击确定终止角", strip: "点选起止节点 · Tab 交换 · 回车确认 · Esc 放弃",
-    addPath: "绘制闭合路径 · 回车完成", shore: "绘制海岸线 · 回车闭合 · Esc 放弃",
-    ridge: "单击添加山脊顶点 · 回车完成", peak: "单击放置山峰 · 回车完成 · Esc 放弃", slopeLine: "单击添加坡线顶点 · 回车完成", center: "单击选择圆心 · 回车完成 · Esc 放弃",
-    door: "单击建筑外墙开门", select: "左键选择与编辑 · 中键拖动平移 · 滚轮缩放",
+    pen: "单击放点，拖出控制柄，回车或单击首点闭合", rect: "拖动到矩形的对角", circle: "从圆心拖出半径",
+    sector: "从圆心拖出半径，再单击确定终止角", strip: "点选起止节点，Tab 交换，回车确认，Esc 放弃",
+    addPath: "绘制闭合路径，回车完成", shore: "绘制海岸线，回车闭合，Esc 放弃",
+    ridge: "单击添加山脊顶点，回车完成", peak: "单击放置山峰，回车完成，Esc 放弃", slopeLine: "单击添加坡线顶点，回车完成", center: "单击选择圆心，回车完成，Esc 放弃",
+    door: "单击建筑外墙开门", select: "左键选择与编辑，中键拖动平移，滚轮缩放",
     node: "单击空地放置节点，或单击建筑外墙开门", edge: "单击起点节点或建筑外墙",
     fork: "单击道路插入分岔，或从建筑外墙起步",
+    textMark: "单击放置文字标记，Esc 返回选择", scaleMark: "单击放置比例尺，Esc 返回选择",
     building: "单击空地放置建筑，Esc 返回选择", via: "单击道路插入途经点，可连续添加，Esc 返回选择"
 };
 
@@ -46,7 +47,9 @@ export class Editor {
     selection = $state.raw<Selection | null>(null);
     issue = $state.raw<Issue | null>(null);
     candidates = $state.raw<Issue[] | null>(null);
-    layers = $state({ ...layerDefaults });
+    private readonly display = readDisplaySettings();
+    layers = $state(this.display.layers);
+    displayGrid = $state(this.display.grid);
     filter = $state("");
     buildingFilter = $state("");
     terrainFilter = $state("");
@@ -88,7 +91,7 @@ export class Editor {
     private toastTimer?: ReturnType<typeof setTimeout>;
 
     attach(canvas: HTMLCanvasElement) {
-        this.map = new IslandMap(canvas, this.layers);
+        this.map = new IslandMap(canvas, this.layers, this.displayGrid);
     }
     dispose() {
         cancelAnimationFrame(this.frame);
@@ -137,7 +140,8 @@ export class Editor {
             if (h.kind === "geoNode") this.tab = "terrain";
             if (["edge", "node", "via"].includes(h.kind)) this.tab = "network";
             if (h.kind === "building") this.tab = "buildings";
-            if (["variable", "field"].includes(h.kind)) this.tab = "variables";
+            if (h.kind === "mark") this.tab = "marks";
+            if (["input", "field"].includes(h.kind)) this.tab = "inputs";
         }
         this.revision++;
         this.map.draw();
@@ -153,7 +157,7 @@ export class Editor {
         if (this.displayField !== "height" && !Object.hasOwn(this.island.design.fields, this.displayField)) this.displayField = "height";
         this.map.displayField = this.displayField;
         this.map.geoSelection = this.geoSelection;
-        this.map.setIsland(this.viewport ? this.island.viewBelow(this.viewport) : this.island.view(), reset, this.island.terrain);
+        this.map.setIsland(this.viewport ? this.island.viewBelow(this.viewport) : this.island.view(), reset, this.island.terrain, this.island.resolved);
         this.map.draw();
         this.sections();
         if (sidebar) this.revision++;
@@ -191,6 +195,7 @@ export class Editor {
             }
         }
         if (["node", "edge", "fork", "door", "via"].includes(mode)) this.layers.network = true;
+        if (mode === "textMark" || mode === "scaleMark") this.layer("marks", true);
         this.map.linkPreview = null;
         this.map.draw();
     }
@@ -201,8 +206,24 @@ export class Editor {
         if (this.panel) this.panel.scrollTop = 0;
     }
     layer(key: Layer, value: boolean) {
+        if (this.layers[key] === value) return;
         this.layers[key] = value;
+        saveDisplaySettings(this.layers, this.displayGrid);
         this.map.draw();
+    }
+    setGrid(key: keyof GridDisplay, value: string) {
+        if (key === "mode") {
+            if (value !== "meters" && value !== "pixels") return false;
+            this.displayGrid.mode = value;
+        }
+        else {
+            const spacing = Number(value);
+            if (!Number.isFinite(spacing) || spacing <= 0) return false;
+            this.displayGrid[key] = spacing;
+        }
+        saveDisplaySettings(this.layers, this.displayGrid);
+        this.map.draw();
+        return true;
     }
     flush() {
         cancelAnimationFrame(this.frame);
@@ -210,7 +231,7 @@ export class Editor {
         if (this.pendingLevels.size) {
             this.pendingLevels = new Set();
             timed("terrain-editor:level-preview", () => {
-                this.island.variables();
+                this.island.inputs();
                 this.refresh(false, false);
             });
         }
@@ -276,7 +297,7 @@ export class Editor {
         if (this.frame) cancelAnimationFrame(this.frame);
         this.frame = 0; this.pendingLevels.clear();
         this.island.design = design;
-        this.island.variables(true); this.refresh(); this.record();
+        this.island.inputs(true); this.refresh(); this.record();
     }
     rebuild() {
         const design = this.island.design;
@@ -321,8 +342,8 @@ export class Editor {
         if (this.busy) return;
         try {
             const d = structuredClone(this.island.design), selected = fn(d);
-            if (!d.variables.seed && d.geoNodes.some(n => randomFunctions.includes(n.function.type) && n.function.seed === "{var:seed}"))
-                d.variables.seed = { label: "种子", value: 1 };
+            if (!d.inputs.seed && d.geoNodes.some(n => randomFunctions.includes(n.function.type) && n.function.seed === "{input:seed}"))
+                d.inputs.seed = { label: "种子", value: 1 };
             parseDesign(d, true);
             return this.terrainWork(d, () => {
                 const next = new Island(d, this.terrainCache);
@@ -377,9 +398,8 @@ export class Editor {
         if (type === "coast" || type === "slope") {
             this.setTool(type === "coast" ? "shore" : "slopeLine", n.id); this.revision++; return;
         }
-        const value = tenth(sampleField(this.map.island.terrain, n.field ?? "height", this.geoCenter(n.id)));
         this.edit(d => {
-            geoAt(d, n.id).function = defaultFunction(type, value)!;
+            geoAt(d, n.id).function = defaultFunction(type)!;
         }, () => {
             this.map.geometry = undefined;
         });
@@ -405,13 +425,13 @@ export class Editor {
     toggle(id: string) {
         this.editNode(id, n => enableGeo(n, !!n.disabled));
     }
-    addDeclaration(kind: "variable" | "field") {
-        this.edit(d => ({ kind, id: kind === "variable" ? addVariable(d) : addField(d) }));
+    addDeclaration(kind: "input" | "field") {
+        this.edit(d => ({ kind, id: kind === "input" ? addInput(d) : addField(d) }));
     }
     blockRemoval(targets: [Owner, string][], name: string) {
         const items = [...new Set(targets.flatMap(([kind, id]) => referenceUses(this.island.design, kind, id)))];
         if (!items.length) return false;
-        this.removal = { title: "无法删除“" + name + "”", detail: "请先修改以下表达式引用。", items };
+        this.removal = { title: "无法删除“" + name + "”", detail: "请先修改以下表达式。", items };
         return true;
     }
     removePath(id: string, index: number) {
@@ -424,7 +444,7 @@ export class Editor {
                 if (v.construction.type === "free") v.construction.paths.splice(index, 1);
             });
         };
-        if (affected.length) this.removal = { title: "删除这条路径？", detail: "以下条带将找不到范围节点。", items: affected.map(v => v.name), action: "删除路径", perform };
+        if (affected.length) this.removal = { title: "删除这条路径？", detail: "以下条带将找不到范围节点。", items: affected.map(v => v.label), action: "删除路径", perform };
         else perform();
     }
     removeGeo(id: string, vertex?: GeoControl) {
@@ -448,18 +468,18 @@ export class Editor {
             const perform = () => {
                 this.map.vertex = undefined; this.editNode(id, v => geometryPath(v, vertex.path)!.nodes.splice(vertex.index, 1));
             };
-            if (refs.length) this.removal = { title: "删除路径节点？", detail: "以下条带的范围将报告找不到节点。", action: "删除节点", items: refs.map(r => r.name), perform };
+            if (refs.length) this.removal = { title: "删除路径节点？", detail: "以下条带的范围将报告找不到节点。", action: "删除节点", items: refs.map(r => r.label), perform };
             else perform();
             return;
         }
         const refs = dependentStrips(d, id);
-        if (this.blockRemoval([["geo", id], ...refs.map((r): [Owner, string] => ["geo", r.id])], n.name)) return;
+        if (this.blockRemoval([["geo", id], ...refs.map((r): [Owner, string] => ["geo", r.id])], n.label)) return;
         const perform = () => {
             this.edit(d => {
                 deleteGeo(d, id, true); return null;
             });
         };
-        if (refs.length) this.removal = { title: "删除“" + n.name + "”？", detail: "以下条带引用了这个地件。", action: "一并删除这些条带", items: refs.map(r => r.name), perform };
+        if (refs.length) this.removal = { title: "删除“" + n.label + "”？", detail: "以下条带引用了这个地件。", action: "一并删除这些条带", items: refs.map(r => r.label), perform };
         else perform();
     }
     segment(type: "line" | "curve" | "arc" | "tangent") {
@@ -473,6 +493,11 @@ export class Editor {
         if (kind === "edge") this.map.focusBounds(bounds(this.island.routes.find(r => r.id === id)!.points));
         else if (kind === "node") this.map.focus(nodePose(this.island.resolved, id).point, 2.3);
         else if (kind === "building") this.map.focus(d.buildings.find(b => b.id === id)!.center, 3);
+        else if (kind === "mark") {
+            const point = markPoint(d.marks.find(m => m.id === id)!, d.buildings);
+            const [x, y] = this.map.screen(point);
+            if (x < 0 || y < 0 || x > this.map.width || y > this.map.height) this.map.focus(point, this.map.zoomFactor());
+        }
         else if (kind === "geoNode") {
             const box = this.island.terrain.regions.get(id)!.shape.box;
             if (box.every(Number.isFinite)) this.map.focusBounds(box);
@@ -504,6 +529,23 @@ export class Editor {
         if (hits.length === 1) this.issueAt(hits[0]);
         else this.map.draw();
     }
+    addMark(kind: Mark["kind"], point: Point) {
+        return this.edit(d => {
+            const id = nextId(d.marks.map(m => m.id), "mark-"), p: Point = [+point[0].toFixed(2), +point[1].toFixed(2)];
+            d.marks.push(kind === "scale" ? { id, kind, label: "比例尺", point: p, length: 10 }
+                : { id, kind, label: "文字标记 " + id.slice(5), point: p });
+            return { kind: "mark", id };
+        }, () => this.setTool("select"));
+    }
+    copyMark(id: string) {
+        return this.edit(d => {
+            const copy = structuredClone(d.marks.find(m => m.id === id)!);
+            copy.id = nextId(d.marks.map(m => m.id), "mark-");
+            copy.label += " 副本";
+            d.marks.push(copy);
+            return { kind: "mark", id: copy.id };
+        });
+    }
     addDoor(building: Building<Expression>, wall: number) {
         addDoor(this.island.design, building, wall);
         this.select({ kind: "building", id: building.id });
@@ -525,7 +567,7 @@ export class Editor {
         for (const n of d.nodes.filter(n => n.building === b.id && (!door || n.door === door.id))) {
             if (!d.edges.some(edge => edge.from === n.id || edge.to === n.id)) affected.push(["node", n.id]);
         }
-        if (this.blockRemoval(affected, door?.name ?? b.name)) return;
+        if (this.blockRemoval(affected, door?.label ?? b.label)) return;
         const perform = () => this.edit(draft => {
             const target = draft.buildings.find(item => item.id === b.id)!;
             removeBuildingPart(draft, target, door && target.doors.find(v => v.id === door.id));
@@ -535,11 +577,11 @@ export class Editor {
             perform();
             return;
         }
-        this.removal = { title: "删除“" + (door ? door.name ?? door.id : b.name) + "”？", items: edges.map(e => e.name), perform };
+        this.removal = { title: "删除“" + (door ? door.label ?? door.id : b.label) + "”？", items: edges.map(e => e.label), perform };
     }
     offerConversion(node: RoadNode<Expression>, wall: NonNullable<ReturnType<typeof import("../../core/edit/buildings.ts").nearbyWall>>, edges: EdgeLike[]) {
         this.conversion = {
-            text: "将“" + node.name + "”吸附到“" + wall.building.name + "”外墙。连接此节点的 " + edges.length + " 条道路会保留。",
+            text: "将“" + node.label + "”吸附到“" + wall.building.label + "”外墙。连接此节点的 " + edges.length + " 条道路会保留。",
             finish: (convert) => {
                 if (convert) {
                     openDoorAt(this.island.design, wall, node);
@@ -559,22 +601,26 @@ export class Editor {
         if (h.kind === "geoNode") {
             this.removeGeo(h.id, this.map.vertex); return;
         }
-        if (h.kind === "variable" || h.kind === "field") {
+        if (h.kind === "input" || h.kind === "field") {
             const kind = h.kind, uses = declarationUses(d, kind, h.id);
             if (uses.length) {
-                this.removal = { title: "无法删除“" + ((kind === "variable" ? d.variables : d.fields)[h.id]?.label ?? h.id) + "”", detail: "请先修改以下引用。", items: uses }; return;
+                this.removal = { title: "无法删除“" + ((kind === "input" ? d.inputs : d.fields)[h.id]?.label ?? h.id) + "”", detail: "请先修改以下引用位置。", items: uses }; return;
             }
             this.edit(d => {
                 removeDeclaration(d, kind, h.id); return null;
             }); return;
         }
+        if (h.kind === "mark") return this.edit(d => {
+            d.marks = d.marks.filter(mark => mark.id !== h.id);
+            return null;
+        });
         if (h.kind === "building") {
             this.removePart(d.buildings.find(b => b.id === h.id)!);
             return;
         }
         const node = h.kind === "node" && d.nodes.find(n => n.id === h.id);
-        if (node && this.blockRemoval([["node", node.id], ...d.edges.filter(e => node.type !== "door" && (e.from === node.id || e.to === node.id)).map((e): [Owner, string] => ["edge", e.id])], node.name)) return;
-        if (h.kind === "edge" && this.blockRemoval([["edge", h.id]], d.edges.find(e => e.id === h.id)!.name)) return;
+        if (node && this.blockRemoval([["node", node.id], ...d.edges.filter(e => node.type !== "door" && (e.from === node.id || e.to === node.id)).map((e): [Owner, string] => ["edge", e.id])], node.label)) return;
+        if (h.kind === "edge" && this.blockRemoval([["edge", h.id]], d.edges.find(e => e.id === h.id)!.label)) return;
         if (node && node.type === "door") {
             const b = d.buildings.find(b => b.id === node.building)!;
             this.removePart(b, b.doors.find(door => door.id === node.door));
@@ -596,4 +642,4 @@ export class Editor {
         this.reroute(ids);
     }
 }
-type EdgeLike = { id: string; name: string };
+type EdgeLike = { id: string; label: string };

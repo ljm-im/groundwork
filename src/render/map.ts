@@ -1,16 +1,17 @@
-import { type GeoNode, type Label, type Point } from "../core/design/v5.ts";
+import { type GeoNode, type TextMark, type Point, markPoint } from "../core/design/v5.ts";
 import { type Issue, type Terrain, type Tree } from "../core/design/results.ts";
 import { type Handle, type Selection } from "../core/edit/types.ts";
 import { type IslandView } from "../core/island.ts";
-import { type layerDefaults } from "../app/state/layers.ts";
+import { type GridDisplay, type layerDefaults, pixelGridSpacing } from "../app/state/layers.ts";
 import { type Box } from "../core/math/geometry.ts";
-import { advance, bearing, clamp, distance, mixPoint, nearest, onCanvas, sampleDefined } from "../core/math/geometry.ts";
+import { advance, bearing, clamp, distance, mixPoint, nearest, onCanvas, pointAt, sampleDefined } from "../core/math/geometry.ts";
 import { buildingShape, nodePose } from "../core/design/model.ts";
 import { titlePoint } from "../core/edit/buildings.ts";
 import { issueShapes, issueView, objectIssues } from "../core/checks/issues.ts";
 import { type GeoDraft } from "../app/state/geoTools.ts";
 import { type GeoControl, type GeometryTarget } from "../core/edit/geoControls.ts";
 import { fieldContours } from "./fieldContours.ts";
+import { geoLabelPoint } from "./labelLayout.ts";
 import { drawGeoOverlay } from "./geoOverlay.ts";
 import { treeStyles } from "../core/vegetation/vegetation.ts";
 import { handles } from "../core/edit/controls.ts";
@@ -124,11 +125,13 @@ export class IslandMap {
     declare canvas: HTMLCanvasElement;
     declare ctx: Context;
     declare layers: typeof layerDefaults;
+    declare gridDisplay: GridDisplay;
     scale = 1;
     referenceScale = 1;
     declare selection: Selection | null;
     declare island: IslandView;
     declare frameTerrain: Terrain;
+    private markDesign!: Pick<IslandView["design"], "marks" | "buildings">;
     emptyCanvas = false;
     displayField = "height";
     geoSelection: string[] = [];
@@ -137,6 +140,7 @@ export class IslandMap {
     objectGeometry?: Selection;
     vertex?: GeoControl;
     dragNode?: GeoNode;
+    dragMark?: { id: string; point: Point };
     draft?: GeoDraft;
     profilePoint?: Point;
     private contours?: ReturnType<typeof fieldContours>;
@@ -153,14 +157,18 @@ export class IslandMap {
     declare controls: Handle[];
     declare titleBoxes: { id: string; x: number; y: number; width: number; height: number; point: Point }[];
 
-    constructor(canvas: HTMLCanvasElement, layers: typeof layerDefaults) {
+    private markBoxes: { mark: Handle; box: Box }[] = [];
+
+    constructor(canvas: HTMLCanvasElement, layers: typeof layerDefaults, gridDisplay: GridDisplay) {
         this.canvas = canvas;
         this.ctx = canvas.getContext("2d")!;
         this.layers = layers;
+        this.gridDisplay = gridDisplay;
         this.selection = null;
     }
-    setIsland(island: IslandView, reset = false, frameTerrain = island.terrain) {
+    setIsland(island: IslandView, reset = false, frameTerrain = island.terrain, markDesign = island.design) {
         this.island = island;
+        this.markDesign = markDesign;
         this.cache = relief(island);
         this.emptyCanvas = !island.terrain.defined.some(Boolean);
         this.frame(frameTerrain, reset);
@@ -203,7 +211,7 @@ export class IslandMap {
     }
     zoomAt(factor: number, x = this.width / 2, y = this.height / 2) {
         const before = this.world(x, y);
-        this.scale = this.referenceScale * clamp(this.zoomFactor() * factor, .5, 14);
+        this.scale = this.referenceScale * clamp(this.zoomFactor() * factor, .05, 30);
         const after = this.world(x, y);
         this.center[0] += before[0] - after[0];
         this.center[1] += before[1] - after[1];
@@ -285,21 +293,8 @@ export class IslandMap {
         ctx.scale(1, -1);
         ctx.drawImage(this.cache.raster, 0, 0, g.xMax - g.xMin + 2 * margin, g.yMax - g.yMin + 2 * margin);
         ctx.restore();
-        const corner = this.world(0, this.height),
-            opposite = this.world(this.width, 0);
-        ctx.beginPath();
-        for (let x = Math.ceil(corner[0] / 25) * 25; x <= opposite[0]; x += 25) {
-            ctx.moveTo(x, corner[1]);
-            ctx.lineTo(x, opposite[1]);
-        }
-        for (let y = Math.ceil(corner[1] / 25) * 25; y <= opposite[1]; y += 25) {
-            ctx.moveTo(corner[0], y);
-            ctx.lineTo(opposite[0], y);
-        }
-        ctx.lineWidth = .6 / scale;
-        ctx.strokeStyle = "rgba(54,99,104,.13)";
-        ctx.stroke();
-        if (this.displayField !== "height" && t.fields[this.displayField]) {
+        if (this.layers.grid) this.drawGrid(ctx, scale);
+        if (this.layers.contours && this.displayField !== "height" && t.fields[this.displayField]) {
             if (this.contourValues !== t.fields[this.displayField]) {
                 this.contourValues = t.fields[this.displayField];
                 this.contours = fieldContours(t, this.displayField);
@@ -313,7 +308,7 @@ export class IslandMap {
             ctx.lineWidth = (i === 3 ? .36 : .2);
             ctx.stroke(p);
         });
-        if (this.layers.trees) Object.entries(this.cache.woods).forEach(([species, p]) => {
+        Object.entries(this.cache.woods).forEach(([species, p]) => {
             ctx.fillStyle = treeStyles[species as Tree["species"]][0];
             ctx.fill(p);
             ctx.lineWidth = .18;
@@ -354,12 +349,12 @@ export class IslandMap {
                 stroke(ctx, part.points, "#277d78", Math.min(.26, width * .15));
             if (this.layers.issues)
                 for (const part of r.parts)
-                    if (part.failed) stroke(ctx, part.points, "#bf342c", Math.max(.6, width * .48), [1.5, .9]);
+                    if (part.failed) stroke(ctx, part.points, "#bf342c", Math.max(.6, width * .48), [6 / scale, 4 / scale]);
             ctx.restore();
         }
         for (const room of d.vegetation.rooms) {
             const [x, y] = room.center;
-            ctx.setLineDash([.9, .65]);
+            ctx.setLineDash([4 / scale, 3 / scale]);
             circle(ctx, x, y, room.radius, "#b5d49a", "#4f7a3a", .45);
             ctx.setLineDash([]);
             for (let i = 0; i < 3; i++) {
@@ -368,7 +363,7 @@ export class IslandMap {
             }
         }
         const tree = d.vegetation.yardTree;
-        if (this.layers.trees && tree && onCanvas(g, t.defined, ...tree.center)) circle(ctx, ...tree.center, tree.radius, "#9cc584", "#4f7a3a", .22);
+        if (tree && onCanvas(g, t.defined, ...tree.center)) circle(ctx, ...tree.center, tree.radius, "#9cc584", "#4f7a3a", .22);
         for (const b of d.buildings) {
             const [x, y] = b.center;
             if (b.shape === "rect") polygon(ctx, buildingShape(b).polygon!, b.color, "#4b453a", .27);
@@ -376,7 +371,7 @@ export class IslandMap {
                 circle(ctx, x, y, (b.radius! + b.inner!) / 2, null, b.color, b.radius! - b.inner!);
                 circle(ctx, x, y, b.radius!, null, "#485453", .25);
                 circle(ctx, x, y, b.inner!, null, "#485453", .25);
-                ctx.setLineDash([1.3, 1]);
+                ctx.setLineDash([5 / scale, 4 / scale]);
                 circle(ctx, x, y, (b.radius! + b.inner!) / 2, null, "#485453", .18);
                 ctx.setLineDash([]);
             }
@@ -401,49 +396,136 @@ export class IslandMap {
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         this.titleBoxes = [];
-        if (this.layers.labels)
-            for (const lab of [...d.labels.filter(l => !l.building), ...d.buildings.filter(b => b.showTitle !== false).map(b => {
-                const old = d.labels.find(l => l.building === b.id);
-                const pos = titlePoint(d, b);
-                return { ...old, name: b.name, building: b.id, point: pos, offset: [pos[0] - b.center[0], pos[1] - b.center[1]] as Point, titleOnly: !old };
-            })]) {
-                if (this.zoomFactor() < (lab.minZoom ?? 0)) continue;
-                const { point, text, difference, actual } = labelReading(this.island, lab);
-                const [x, y] = this.screen(point), size = actual == null ? 12 : (this.zoomFactor() >= 2.1 ? 12 : 10);
-                ctx.save();
-                if (lab.building) {
-                    ctx.font = size + "px \"Microsoft YaHei UI\",sans-serif";
-                    const width = ctx.measureText(text + (difference ?? "")).width;
-                    this.titleBoxes.push({ id: lab.building, x, y, width, height: size + 4, point });
-                }
-                if (lab.spot) {
-                    circle(ctx, x, y, 2.1, "#574a37", paper, .8);
-                    ctx.textAlign = "left";
-                    mapText(ctx, text, x + 6, y, size, "#574a37");
-                }
-                else if (difference) {
-                    ctx.font = "500 " + size + "px \"Microsoft YaHei UI\", sans-serif";
-                    const left = x - ctx.measureText(text + difference).width / 2;
-                    ctx.textAlign = "left";
-                    mapText(ctx, text, left, y, size);
-                    mapText(ctx, difference, left + ctx.measureText(text).width, y, size, "#aa3026");
-                }
-                else mapText(ctx, text, x, y, size, "#2d3a2d", actual == null);
-                ctx.restore();
-            }
         this.drawOverlays();
         drawGeoOverlay(this);
-        if (this.displayField !== "height" && this.contours) {
+        if (this.layers.labels) this.drawLabels(ctx, d, t);
+        this.drawMarks(ctx);
+        if (this.layers.contours && this.displayField !== "height" && this.contours) {
             for (const { label, value } of this.contours.lines) if (label) mapText(ctx, String(+value.toPrecision(5)), ...this.screen(label), 11, "#294964");
             if (this.contours.constant !== undefined) {
                 ctx.textAlign = "right";
                 mapText(ctx, "该场在画布内处处为 " + +this.contours.constant.toPrecision(6), this.width - 16, 87, 12);
             }
         }
-        const unit = [1, 2, 5, 10, 20, 50, 100].filter(n => n * scale <= 86).at(-1) ?? 1;
-        document.getElementById("scale-bar")!.style.width = (unit * scale) + "px";
-        document.getElementById("scale-text")!.textContent = unit + " m";
         document.getElementById("zoom-value")!.textContent = Math.round(this.zoomFactor() * 100) + "%";
+    }
+    private drawGrid(ctx: Context, scale: number) {
+        const { mode, meters, pixels } = this.gridDisplay;
+        const step = mode === "meters" ? meters : pixelGridSpacing(scale, pixels);
+        const [left, bottom] = this.world(0, this.height), [right, top] = this.world(this.width, 0);
+        const lines = (spacing: number, color: string, fine = false) => {
+            // Subpixel lines cannot show useful spacing and could require millions of strokes.
+            if (spacing * scale < 2 || !Number.isFinite(spacing)) return;
+            const firstX = Math.ceil(left / spacing), lastX = Math.floor(right / spacing);
+            const firstY = Math.ceil(bottom / spacing), lastY = Math.floor(top / spacing);
+            if (![firstX, lastX, firstY, lastY].every(Number.isSafeInteger)) return;
+            ctx.beginPath();
+            for (let i = firstX; i <= lastX; i++) {
+                if (fine && i % 5 === 0) continue;
+                ctx.moveTo(i * spacing, bottom);
+                ctx.lineTo(i * spacing, top);
+            }
+            for (let i = firstY; i <= lastY; i++) {
+                if (fine && i % 5 === 0) continue;
+                ctx.moveTo(left, i * spacing);
+                ctx.lineTo(right, i * spacing);
+            }
+            ctx.lineWidth = .65 / scale;
+            ctx.strokeStyle = color;
+            ctx.stroke();
+        };
+        if (this.layers.fineGrid) lines(step / 5, "rgba(54,99,104,.10)", true);
+        lines(step, "rgba(54,99,104,.23)");
+    }
+    private drawLabels(ctx: Context, d: IslandView["design"], terrain: Terrain) {
+        const near = (label: string, point: Point) => {
+            const [x, y] = this.screen(point);
+            ctx.save();
+            ctx.textAlign = "left";
+            mapText(ctx, label, x + 7, y - 8, 11);
+            ctx.restore();
+        };
+        for (const n of d.geoNodes) if (n.showLabel && !n.disabled) {
+            const region = terrain.regions.get(n.id), point = region && geoLabelPoint(region, terrain.grid);
+            if (point) mapText(ctx, n.label, ...this.screen(point));
+        }
+        for (const section of d.sections) if (section.showLabel !== false) near(section.label, section.points[0]);
+        for (const route of this.island.routes) if (!route.offCanvas && route.edge.showLabel !== false)
+            mapText(ctx, route.edge.label, ...this.screen(pointAt(route.points, route.s, route.length / 2)));
+        for (const b of d.buildings) {
+            if (b.showLabel !== false) {
+                const point = titlePoint(d, b), [x, y] = this.screen(point);
+                mapText(ctx, b.label, x, y, 12, "#2d3a2d", true);
+                this.titleBoxes.push({ id: b.id, x, y, width: ctx.measureText(b.label).width, height: 16, point });
+            }
+            for (const door of b.doors) if (door.showLabel !== false && door.label)
+                near(door.label, nodePose(d, { type: "door", building: b.id, door: door.id }).point);
+        }
+        const occupied: Box[] = [];
+        for (const node of d.nodes) if (node.showLabel !== false) {
+            const [x, y] = this.screen(nodePose(d, node).point);
+            if (x < -60 || x > this.width + 60 || y < -12 || y > this.height + 60) continue;
+            const active = this.selection?.kind === "node" && this.selection.id === node.id;
+            ctx.font = "600 11px \"Microsoft YaHei UI\", sans-serif";
+            const w = ctx.measureText(node.label).width + 12;
+            let top = y - 23;
+            while (occupied.some(b => x + w / 2 > b[0] && x - w / 2 < b[2] && top < b[3] && top + 16 > b[1])) top -= 17;
+            occupied.push([x - w / 2, top, x + w / 2, top + 16]);
+            ctx.fillStyle = active ? ink : "rgba(248,251,239,.95)";
+            ctx.beginPath();
+            ctx.roundRect(x - w / 2, top, w, 16, 3);
+            ctx.fill();
+            ctx.fillStyle = active ? "#fff" : ink;
+            ctx.fillText(node.label, x, top + 8);
+        }
+    }
+    private drawMarks(ctx: Context) {
+        this.markBoxes = [];
+        if (!this.layers.marks) return;
+        const design = this.markDesign;
+        for (const mark of design.marks) {
+            if (mark.kind === "text" && this.zoomFactor() < (mark.minZoom ?? 0)) continue;
+            const point = this.dragMark?.id === mark.id ? this.dragMark.point : markPoint(mark, design.buildings);
+            const [x, y] = this.screen(point);
+            const selected = this.selection?.kind === "mark" && this.selection.id === mark.id;
+            const handle: Handle = { kind: "mark", id: mark.id, role: "body", point };
+            const color = selected ? aqua : ink;
+            ctx.save();
+            if (mark.kind === "scale") {
+                const length = mark.length ?? 10, right = x + length * this.scale;
+                ctx.textAlign = "left";
+                stroke(ctx, [[x, y - 4], [x, y], [right, y], [right, y - 4]], paper, 4);
+                stroke(ctx, [[x, y - 4], [x, y], [right, y], [right, y - 4]], color, 1.7);
+                const text = length + " m";
+                mapText(ctx, text, right + 6, y - 2, 11, color);
+                this.markBoxes.push({ mark: handle, box: [x - 5, y - 10, right + 10 + ctx.measureText(text).width, y + 7] });
+            }
+            else {
+                const { text, actual, difference } = markReading({ ...this.island, design }, mark);
+                const spot = mark.spot && !mark.titleOnly && actual !== undefined;
+                const size = spot && this.zoomFactor() < 2.1 ? 10 : 12;
+                const caption = text + (difference ?? "");
+                const prefix = spot ? 6 : 0;
+                ctx.font = "600 " + size + "px \"Microsoft YaHei UI\", sans-serif";
+                const width = Math.max(10, ctx.measureText(caption).width), left = spot ? x + prefix : x - width / 2;
+                if (spot) circle(ctx, x, y, 2.1, "#574a37", paper, .8);
+                if (selected) {
+                    ctx.fillStyle = "rgba(248,251,239,.95)";
+                    ctx.beginPath();
+                    ctx.roundRect(left - 4, y - 9, width + 8, 18, 3);
+                    ctx.fill();
+                }
+                ctx.textAlign = "left";
+                mapText(ctx, text, left, y, size, color, !spot);
+                if (difference) mapText(ctx, difference, left + ctx.measureText(text).width, y, size, "#aa3026");
+                this.markBoxes.push({ mark: handle, box: [Math.min(left - 5, x - 4), y - 10, left + width + 5, y + 10] });
+            }
+            if (selected && mark.kind === "scale") circle(ctx, x, y, 3.5, paper, aqua, 1.5);
+            ctx.restore();
+        }
+    }
+    hitMark(x: number, y: number): Handle | undefined {
+        return this.markBoxes.findLast(({ box: [l, t, r, b] }) => x >= l && x <= r && y >= t && y <= b)?.mark;
     }
     drawOverlays() {
         const ctx = this.ctx,
@@ -463,7 +545,6 @@ export class IslandMap {
                 ctx.restore();
             }
         this.controls = this.geometry && active?.kind === "geoNode" ? [] : handles(d, this.layers, active, this.objectGeometry);
-        const occupied: Box[] = [];
         for (const h of this.controls) {
             const [x, y] = this.screen(h.point);
             if (x < -12 || y < -12 || x > this.width + 12 || y > this.height + 12) continue;
@@ -473,12 +554,8 @@ export class IslandMap {
                 circle(ctx, x, y, 10, "rgba(251,252,238,.62)", aqua, 1.5);
             }
             if (h.kind === "section") {
-                const text = h.id + (h.index ? "′" : "");
                 ctx.fillStyle = "#597f80";
-                ctx.fillRect(x - 7, y - 7, 14, 14);
-                ctx.font = "bold 10px sans-serif";
-                ctx.fillStyle = "white";
-                ctx.fillText(text, x, y + .5);
+                ctx.fillRect(x - 4, y - 4, 8, 8);
             }
             else if (h.kind === "node") {
                 const n = d.nodes.find(n => n.id === h.id)!,
@@ -509,19 +586,6 @@ export class IslandMap {
                     ctx.restore();
                 }
                 else circle(ctx, x, y, n.type === "junction" ? 5 : 3.8, n.type === "junction" ? ink : paper, ink, 1.6);
-                if (this.zoomFactor() >= 2.1 || selected || active ?.kind === "edge" && [this.island.routes.find(r => r.id === active.id) ?.edge.from, this.island.routes.find(r => r.id === active.id) ?.edge.to].includes(h.id)) {
-                    ctx.font = "600 11px \"Microsoft YaHei UI\", sans-serif";
-                    const w = ctx.measureText(n.name).width + 12;
-                    let top = y - 23;
-                    while (occupied.some(b => x + w / 2 > b[0] && x - w / 2 < b[2] && top < b[3] && top + 16 > b[1])) top -= 17;
-                    occupied.push([x - w / 2, top, x + w / 2, top + 16]);
-                    ctx.fillStyle = selected ? ink : "rgba(248,251,239,.95)";
-                    ctx.beginPath();
-                    ctx.roundRect(x - w / 2, top, w, 16, 3);
-                    ctx.fill();
-                    ctx.fillStyle = selected ? "#fff" : ink;
-                    ctx.fillText(n.name, x, top + 8);
-                }
             }
             else {
                 const size = h.kind === "via" ? 5.5 : 5;
@@ -583,15 +647,14 @@ export class IslandMap {
     }
 }
 
-export function labelReading(island: Pick<IslandView, "design" | "terrain" | "graded">, label: Label): { point: Point; text: string; actual?: number; difference?: string } {
-    const d = island.design, b = label.building && d.buildings.find(b => b.id === label.building);
-    const anchor = b ? b.center : label.point!;
-    const point = b && label.offset ? anchor.map((v, i) => v + label.offset![i]) as Point : anchor;
-    if (label.titleOnly) return { point, text: label.name };
-    const target = label.var ? d.variables[label.var]?.value : undefined;
-    if (target === undefined && !label.spot) return { point, text: label.name };
-    const actual = sampleDefined(island.terrain.grid, island.graded.heights, island.terrain.defined, ...anchor);
-    if (actual === undefined) return { point, text: label.name };
-    return { point, actual, text: [label.name, actual.toFixed(1) + "m"].filter(Boolean).join(" "),
-        difference: target != null && Math.abs(actual - target) > .5 ? "（设计 " + +target.toFixed(1) + "m）" : "" };
+export function markReading(island: Pick<IslandView, "terrain" | "graded"> & { design: Pick<IslandView["design"], "buildings"> }, mark: TextMark<number>) {
+    const text = mark.label;
+    if (mark.titleOnly) return { text };
+    const target = mark.showElevation ? mark.elevation ?? 0 : undefined;
+    const anchor = island.design.buildings.find(b => b.id === mark.building)?.center ?? mark.point;
+    const actual = mark.spot ? sampleDefined(island.terrain.grid, island.graded.heights, island.terrain.defined, ...anchor) : undefined;
+    const height = actual ?? target;
+    if (height === undefined) return { text };
+    return { actual, text: [text, +height.toFixed(1) + " m"].filter(Boolean).join(" "),
+        difference: actual !== undefined && target !== undefined && Math.abs(actual - target) > .5 ? "（设计 " + +target.toFixed(1) + " m）" : "" };
 }
