@@ -8,6 +8,7 @@ import { startChromium } from "./chromium.ts";
 import { test } from "node:test";
 import { fixtureOptions, readFixture } from "../../configs/read-fixture.ts";
 
+import { syntheticDesign } from "../../test/scenarios.ts";
 import { installPickers, type Probe } from "./pickers.ts";
 
 test("Editor file workflows in Chromium", fixtureOptions("round14-coast.json", "round14-land.json"), async () => {
@@ -38,6 +39,7 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
         const url = baseUrl + "?test=" + ++visit;
         await cdp("Page.navigate", { url });
         await wait(url => location.href === url && !!document.querySelector(".empty-state"), url);
+        assert.equal(await evaluate(() => document.querySelectorAll("[title]").length), 0);
     }
     const set = (values: Partial<Probe>) => evaluate(values => Object.assign(window.probe, values) && true, values);
     const disk = (name: string) => evaluate(name => window.disk(name), name);
@@ -384,6 +386,32 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
         assert.equal(await prop("writes"), 1);
         report.checks.older = { active: "land.json", message: await evaluate(() => document.querySelector("#toast")!.textContent) };
 
+        check("Show omitted numbers and edit point geometry on the map");
+        const sparse = syntheticDesign();
+        Reflect.deleteProperty(sparse.geoNodes[1].function, "value");
+        sparse.fields.F = { default: 0 }; Reflect.deleteProperty(sparse.fields.F, "default");
+        sparse.edges[0].via = [[2, 20]];
+        await navigate();
+        await seed("sparse.json", JSON.stringify(sparse));
+        await set({ openName: "sparse.json" }); await click("#open"); await filename("sparse.json");
+        await click("[data-tab=terrain]");
+        assert.match(await evaluate(() => document.querySelector("[data-geo-node=\"T\"]")!.textContent!), /flat\s*=\s*0\b/);
+        await click("[data-geo-node=\"T\"]");
+        assert.match(await evaluate(() => document.querySelector("[data-parameter$=\".function.value\"] .numeric-face")!.textContent!.trim()), /^0(?:\.0+)?$/);
+        await click("[data-tab=variables]");
+        assert.equal(await evaluate(() => document.querySelector("[data-select-field=\"F\"] small")!.textContent), "0");
+        for (const [tab, row, geometry] of [["buildings", "[data-building=\"A\"]", "中心"], ["network", "[data-edge=\"E\"]", "路线控制点"], ["network", "[data-node=\"a\"]", "位置"]]) {
+            await click("[data-tab=" + tab + "]");
+            if (row.startsWith("[data-node")) await click("#panel details > summary");
+            await click(row);
+            const control = "#properties .geometry-row[aria-label=\"" + geometry + "\"]";
+            await click(control);
+            assert.equal(await evaluate(s => document.querySelector(s)!.getAttribute("aria-pressed"), control), "true");
+            assert.equal(await evaluate(() => [...document.querySelectorAll("#properties .number-label")].filter(n => /^(中心 )?[XY]$/.test(n.textContent!)).length), 0);
+            assert.equal(await evaluate(() => document.querySelectorAll("[title]").length), 0);
+        }
+        assert.equal(await prop("writes"), 0);
+        report.checks.sparseGeometry = { flat: 0, field: 0, geometryRows: 3 };
         check("Unsupported browser");
         await cdp("Page.addScriptToEvaluateOnNewDocument", { source: "window.showSaveFilePicker = undefined" });
         await navigate();

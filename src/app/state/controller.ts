@@ -152,7 +152,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
     function pick(screen: Point, alt = false) {
         const p = map.world(...screen), h = map.hitHandle(...screen), building = map.hitBuilding(...screen), road = map.hitRoad(p);
         const selected = editor.selection?.kind === "geoNode" && map.island.design.geoNodes.find(n => n.id === editor.selection!.id);
-        const control = selected && hitControl(selected, p, map.scale, map.island.design.grid.step / 8);
+        const control = selected && hitControl(selected, p, map.scale, map.island.design.grid.step / 8, map.geometry);
         const nodes = map.geoHits(p);
         let index = 0;
         if (alt && selected && nodes.length) index = (nodes.findIndex(n => n.id === selected.id) + 1) % nodes.length;
@@ -162,6 +162,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         const body = building && { kind: "handle" as const, h: building };
         const edge = road && { kind: "road" as const, road };
         const hits = map.issueHits(screen), markers = hits.length ? { kind: "issues" as const, hits } : null;
+        if (map.objectGeometry && handle) return handle;
         if (editor.tab === "terrain" && geo) return geo;
         if (editor.tab === "buildings" && (h?.kind === "building" || h?.kind === "door" || body)) return h?.kind === "building" || h?.kind === "door" ? handle : body;
         if (editor.tab === "network" && (h?.kind === "node" || h?.kind === "via" || edge)) return h?.kind === "node" || h?.kind === "via" ? handle : edge;
@@ -175,7 +176,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
     }
     canvas.addEventListener("contextmenu", ev => {
         ev.preventDefault();
-        if (!editor.island || editor.busy) return;
+        if (!editor.island || editor.busy || map.draft) return;
         const hit = pick(localPoint(ev));
         editor.menu = null;
         if (!hit || hit.kind === "issues") return;
@@ -489,7 +490,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
                 ev.preventDefault(); editor.setTool("select"); return;
             }
             if (ev.key === "Enter") {
-                ev.preventDefault(); if (!["rect", "circle", "sector", "center", "peak"].includes(draft.tool)) editor.completeDrawing(); return;
+                ev.preventDefault(); if (!["rect", "circle", "sector"].includes(draft.tool)) editor.completeDrawing(); return;
             }
             if (ev.key === "Backspace") {
                 ev.preventDefault(); draft.nodes.pop(); draft.anchors.pop(); updatePreview(editor, draft); return;

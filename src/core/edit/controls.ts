@@ -6,9 +6,32 @@ import { advance, bearing, clamp, distance, projection, radians } from "../math/
 import { corners, moveNode, nodePose } from "../design/model.ts";
 import { resizeRadius, rotateBuilding } from "./buildings.ts";
 
-export function handles(design: ResolvedDesign, layers: Partial<Record<"sections" | "buildings" | "network", boolean>>, selected?: Selection | null) {
+export function handles(design: ResolvedDesign, layers: Partial<Record<"sections" | "buildings" | "network", boolean>>, selected?: Selection | null, focus?: Selection) {
     const out: Handle[] = [];
     const add = (kind: string, id: string, point: Point, role: string, index = 0) => out.push({ kind, id, point, role, index });
+    if (focus) {
+        const nodeHandle = (id: string) => {
+            const n = design.nodes.find(n => n.id === id);
+            if (n) add("node", id, nodePose(design, n).point, n.type);
+        };
+        if (focus.kind === "building") {
+            const b = design.buildings.find(b => b.id === focus.id);
+            if (b) add("building", b.id, b.center, "center");
+        }
+        else if (focus.kind === "section")
+            design.sections.find(s => s.id === focus.id)?.points.forEach((p, i) => add("section", focus.id, p, "vertex", i));
+        else if (focus.kind === "node") nodeHandle(focus.id);
+        else {
+            const e = design.edges.find(e => e.id === focus.id);
+            if (e && focus.kind === "via" && e.via[focus.index!]) add("via", e.id, e.via[focus.index!], "vertex", focus.index);
+            if (e && focus.kind === "edge") {
+                nodeHandle(e.from);
+                e.via.forEach((p, i) => add("via", e.id, p, "vertex", i));
+                nodeHandle(e.to);
+            }
+        }
+        return out;
+    }
     if (layers.sections)
         for (const s of design.sections) s.points.forEach((p, i) => add("section", s.id, p, "vertex", i));
     for (const b of design.buildings) if (layers.buildings || selected?.kind === "building" && selected.id === b.id) {

@@ -6,29 +6,28 @@
 {/snippet}
 <div class="number-row" data-parameter={address.join(".")} bind:this={root}>
     <div class="number-line"><span class="number-label">{label}</span>
-        <div class="number-box" class:invalid={!!error} class:warning={outside} title={tip}>
-            <button class="step" aria-label={"减小" + label} title={"减小 " + step} onpointerdown={e => beginGesture(e, -1)} onclick={e => keyboardStep(e, -1)}>‹</button>
+        <div class="number-box" class:invalid={!!error} class:warning={outside} bind:this={box}>
+            <button class="step" aria-label={"减小" + label} data-tip="减小" onpointerdown={e => beginGesture(e, -1)} onclick={e => keyboardStep(e, -1)}>‹</button>
             {#if editing}
-                <div class="numeric-edit" role="textbox" aria-label={label} aria-invalid={!!error} contenteditable="true" spellcheck="false" tabindex="0"
+                <div class="edit-face"><div class="numeric-edit" use:numericCaret role="textbox" aria-label={label} aria-invalid={!!error} data-tip={tip} contenteditable="true" spellcheck="false" tabindex="0"
                     bind:this={input} oninput={onInput} onkeydown={key} onblur={() => {
                         if (editing) finish(true);
                     }}
                     onpaste={e => {
                         e.preventDefault(); insertText(e.clipboardData?.getData("text/plain") ?? "");
-                    }}></div>
+                    }}></div></div>
                 <div hidden bind:this={mirror}>{@render formatted(draft, false)}</div>
             {:else}
-                <button class="numeric-face" aria-label={label} title={tip + " · 左右拖动改值，单击编辑"} onpointerdown={e => beginGesture(e, 0)}
+                <button class="numeric-face" aria-label={label} data-tip={tip} onpointerdown={e => beginGesture(e, 0)}
                     onclick={e => {
                         if (!e.detail) startEdit();
                     }}>
-                    {#if shown === undefined}<span class="placeholder">未设置</span>
-                    {:else if typeof shown === "number"}{displayNumber(shown * displayFactor, step)}
+                    {#if typeof shown === "number"}{displayNumber(shown * displayFactor, step)}
                     {:else}{@render formatted(shown, true)}{/if}
                 </button>
             {/if}
-            <button class="step" aria-label={"增大" + label} title={"增大 " + step} onpointerdown={e => beginGesture(e, 1)} onclick={e => keyboardStep(e, 1)}>›</button>
-            {#if kind !== "literal"}<button class="reference-toggle" title="插入引用" aria-label={"为" + label + "插入引用"} aria-expanded={opened}
+            <button class="step" aria-label={"增大" + label} data-tip="增大" onpointerdown={e => beginGesture(e, 1)} onclick={e => keyboardStep(e, 1)}>›</button>
+            {#if kind !== "literal"}<button class="reference-toggle" data-tip="插入引用" aria-label={"为" + label + "插入引用"} aria-expanded={opened}
                 onpointerdown={e => e.preventDefault()} onclick={() => {
                     if (opened) closeMenu(); else showMenu();
                 }}>▾</button>{/if}
@@ -37,7 +36,7 @@
     </div>
     {#if error}<div class="number-error" role="alert">{error}</div>{/if}
     {#if opened}
-        <div class="reference-menu" role="listbox" tabindex="-1" aria-label="可用引用" style:left={popup.x + "px"} style:top={popup.y + "px"} style:max-height={popup.h + "px"} onpointerdown={e => e.preventDefault()}>
+        <div class="reference-menu" role="listbox" tabindex="-1" aria-label="可用引用" popover="manual" use:anchoredPopup={{ anchor: box, close: closeMenu }} onpointerdown={e => e.preventDefault()}>
             {#if parent}<button class="ref-back" onclick={() => {
                 parent = ""; active = 0;
             }}>‹ 返回</button>{/if}
@@ -54,10 +53,6 @@
         </div>
     {/if}
 </div>
-<svelte:window onpointerdown={outsidePointer} onresize={() => {
-    if (opened) positionMenu();
-}} />
-
 <style>
     .number-row { margin: 5px 0; }
     .number-line { display: flex; align-items: center; gap: 5px; min-height: 27px; }
@@ -71,12 +66,15 @@
     .number-box button:hover { background: var(--light); }
     .number-box .step, .number-box .reference-toggle { flex: 0 0 17px; color: var(--muted); touch-action: none; }
     .number-box .reference-toggle { border-left: 1px solid var(--line); }
-    .numeric-face, .numeric-edit { display: block; flex: 1; min-width: 0; text-align: center; white-space: nowrap; font: inherit; font-size: 12px; line-height: 25px; }
+    .numeric-face, .numeric-edit { display: block; flex: 1; min-width: 0; text-align: center; white-space: nowrap; font: inherit; font-size: 12px; line-height: 18px; }
     .numeric-face { cursor: ew-resize; user-select: none; overflow: hidden; text-overflow: ellipsis; touch-action: none; }
-    .numeric-edit { padding: 0 2px; outline: none; overflow-x: auto; scrollbar-width: none; white-space: pre; }
-    .unit, .placeholder { color: var(--muted); font-size: 11px; }
+    .edit-face { position: relative; align-self: center; min-width: 0; flex: 1; overflow: hidden; --caret-height: 18px; }
+    .edit-face::after { content: ""; display: var(--caret-display, none); position: absolute; left: var(--caret-x); top: 0; height: var(--caret-height); width: 1px; background: currentColor; pointer-events: none; animation: blink 1.1s steps(1) infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
+    .numeric-edit { caret-color: transparent; line-height: var(--caret-height); min-height: var(--caret-height); padding: 0 2px; outline: none; overflow-x: auto; scrollbar-width: none; white-space: pre; }
+    .unit { color: var(--muted); font-size: 11px; }
     .number-error { color: var(--red); font-size: 11px; margin: 3px 0; }
-    .reference-menu { position: fixed; z-index: 8; width: min(255px, 85vw); overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 5px; box-shadow: 0 5px 22px #163e342e; padding: 4px; }
+    .reference-menu { position: fixed; z-index: 8; inset: auto; margin: 0; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 5px; box-shadow: 0 5px 22px #163e342e; padding: 4px; }
     .ref-group + .ref-group { border-top: 1px solid var(--line); }
     .group-name { font-size: 10px; color: var(--muted); margin: 4px 6px; }
     .ref-group button, .ref-back { display: flex; width: 100%; align-items: center; gap: 6px; justify-content: flex-start; border: none; background: transparent; min-height: 24px; font-size: 12px; }
@@ -93,25 +91,28 @@
     import { parseDesign } from "../../core/design/model.ts";
     import { addVariable, addField } from "../../core/edit/geoNodes.ts";
     import { offsetBuildingParts } from "../../core/edit/buildings.ts";
-    import { adjustNumber, caretAt, displayNumber, editorText, NumberDrag, numericText, repeatButton, selectionOffsets, type Range } from "../state/numbers.ts";
+    import { adjustNumber, caretAt, displayNumber, editorText, NumberDrag, numericCaret, numericText, repeatButton, selectionOffsets, type Range } from "../state/numbers.ts";
+    import { anchoredPopup } from "../state/popup.ts";
     import Icon from "./Icon.svelte";
     import ReferenceChip from "./ReferenceChip.svelte";
-    let { editor, address, label, kind = "number", step = .1, range, unit = "", optional = false, self, owner, displayFactor = 1 }: {
+    let { editor, address, label, kind = "number", step = .1, range, unit = "", self, owner, displayFactor = 1 }: {
         editor: session.Editor; address: Address; label: string; kind?: "number" | "field" | "literal"; step?: number;
-        range?: Range; unit?: string; optional?: boolean; self?: string; owner?: string; displayFactor?: number;
+        range?: Range; unit?: string; self?: string; owner?: string; displayFactor?: number;
     } = $props();
-    let root: HTMLElement, input = $state<HTMLElement>(null!), mirror = $state<HTMLElement>(null!);
-    let base = $derived(editor.island.design), value = $derived(readAt(base, address) as Expression | undefined);
+    let root: HTMLElement, box = $state<HTMLElement>(null!), input = $state<HTMLElement>(null!), mirror = $state<HTMLElement>(null!);
+    let base = $derived(editor.island.design), authored = $derived(readAt(base, address) as Expression | undefined);
+    let value = $derived(authored ?? (readAt(editor.island.resolved, address) as number | undefined) ??
+        (self ? expressionGraph(base).get(self) as number : 0));
     let editing = $state(false), draft = $state(""), error = $state(""), opened = $state(false), parent = $state(""), query = $state("");
     let queryStart = 0, queryEnd = 0;
-    let active = $state(0), popup = $state({ x: 0, y: 0, h: 250 });
+    let active = $state(0);
     let catalogDraft = $state.raw<Design>(), catalog = $derived(catalogDraft ?? base), slots = $derived(parameters(catalog));
-    let gesturing = $state(false), live = $state<Expression>(), shown = $derived(gesturing ? live : value);
+    let gesturing = $state(false), live = $state<Expression>(0), shown = $derived(gesturing ? live : value);
     let outside = $derived(typeof shown === "number" && range && (shown < range[0] || shown > range[1]));
     let tip = $derived.by(() => {
-        if (outside && range) return "超出范围 [" + range[0] + ", " + range[1] + "]";
+        if (typeof shown !== "string") return;
         const result = currentResult(shown);
-        return result === undefined ? "当前位置未定义" : "计算结果 " + (result * displayFactor) + (unit ? " " + unit : "");
+        return result === undefined ? "= 未定义" : "= " + Number(displayNumber(result * displayFactor, step)) + (unit ? " " + unit : "");
     });
     let origin: Design | undefined, cleanup: (() => void) | undefined, version = 0;
     type IconName = "variables" | "field" | "terrain" | "edge" | "node" | "building" | "property" | "plus";
@@ -149,11 +150,11 @@
             return undefined;
         }
     }
-    function candidate(v: Expression | undefined, from = catalog) {
+    function candidate(v: Expression, from = catalog) {
         const d = structuredClone(from);
         writeAt(d, address, v);
         const [group, index, key] = address;
-        if (group === "buildings" && typeof index === "number" && (key === "angle" || key === "radius") && v !== undefined) {
+        if (group === "buildings" && typeof index === "number" && (key === "angle" || key === "radius")) {
             const b = d.buildings[index], slot = "building:" + b.id + "." + key;
             const before = from.buildings[index][key] === undefined ? 0 : expressionGraph(from).get(slot);
             const after = expressionGraph(d).get(slot);
@@ -162,7 +163,6 @@
         return parseDesign(d, true);
     }
     function parseDraft() {
-        if (optional && !draft.trim()) return undefined;
         const value = numericText(draft, kind === "literal");
         return typeof value === "number" ? value / displayFactor : value;
     }
@@ -177,36 +177,28 @@
     function closeMenu() {
         opened = false; parent = query = ""; queryStart = queryEnd = 0; active = 0;
     }
-    function positionMenu() {
-        const b = root.getBoundingClientRect(), below = innerHeight - b.bottom - 8, above = b.top - 8;
-        const h = Math.max(80, Math.min(320, Math.max(above, below)));
-        popup = { x: Math.max(4, Math.min(innerWidth - 263, b.right - 255)), y: below >= h ? b.bottom + 2 : Math.max(4, b.top - h - 2), h };
-    }
-    function outsidePointer(e: PointerEvent) {
-        if (opened && !root.contains(e.target as Node)) closeMenu();
-    }
     async function paint(at: number) {
         const paintId = ++version;
         await tick();
         if (!editing || paintId !== version || !input) return;
         // The browser owns the editable subtree. Svelte only renders the read-only chip template.
         // eslint-disable-next-line svelte/no-dom-manipulating
-        input.replaceChildren(...Array.from(mirror.childNodes, n => n.cloneNode(true)));
+        input.replaceChildren(...Array.from(mirror.childNodes).filter(n => n.nodeType === Node.ELEMENT_NODE || n.nodeType === Node.TEXT_NODE && n.textContent).map(n => n.cloneNode(true)));
         input.focus({ preventScroll: true });
         caretAt(input, at);
     }
     async function startEdit() {
         if (editing) return;
-        editing = true; draft = String(typeof value === "number" ? value * displayFactor : value ?? ""); error = "";
+        editing = true; draft = String(typeof value === "number" ? value * displayFactor : value); error = "";
         await paint(draft.length);
     }
     async function showMenu() {
-        await startEdit(); closeMenu(); opened = true; positionMenu();
+        await startEdit(); closeMenu(); opened = true;
     }
     function finish(save: boolean) {
         if (!editing) return;
         let next: Design | undefined;
-        if (save) {
+        if (save && (catalogDraft || draft !== String(typeof value === "number" ? value * displayFactor : value))) {
             try {
                 next = candidate(parseDraft());
             }
@@ -251,7 +243,7 @@
         const word = prefix.match(/([a-zA-Z\u3400-\u9fff][\w\u3400-\u9fff-]*)$/)?.[1];
         const exponent = word && /^[eE]\d*$/.test(word) && /\d/.test(prefix.at(-word.length - 1) ?? "");
         if (kind !== "literal" && word && !exponent && prefix.lastIndexOf("{") <= prefix.lastIndexOf("}")) {
-            queryStart = at - word.length; queryEnd = at; query = word; opened = true; active = 0; positionMenu();
+            queryStart = at - word.length; queryEnd = at; query = word; opened = true; active = 0;
         }
         else if (query) closeMenu();
         validate();
@@ -286,7 +278,7 @@
         }
     }
     function advance(n: number) {
-        const next = adjustNumber(live ?? 0, n, step / displayFactor, range);
+        const next = adjustNumber(live, n, step / displayFactor, range);
         if (next === live) return;
         try {
             const d = candidate(next, origin); live = next; error = ""; editor.previewNumber(d);
@@ -298,7 +290,7 @@
     function keyboardStep(e: MouseEvent, direction: number) {
         if (e.detail) return;
         try {
-            editor.commitNumber(candidate(adjustNumber(value ?? 0, direction, step / displayFactor, range)));
+            editor.commitNumber(candidate(adjustNumber(value, direction, step / displayFactor, range)));
         }
         catch (e) {
             error = (e as Error).message;
@@ -308,7 +300,8 @@
         if (e.button !== 0 || cleanup) return;
         e.preventDefault();
         if (editing) finish(false);
-        origin = base; live = value; gesturing = true;
+        const initial = value;
+        origin = base; live = initial; gesturing = true;
         const button = e.currentTarget as HTMLButtonElement, drag = new NumberDrag(), id = e.pointerId;
         button.setPointerCapture(id);
         const stop = direction ? repeatButton(() => advance(direction)) : undefined;
@@ -334,7 +327,7 @@
             cleanup(); cleanup = undefined;
             if (document.pointerLockElement === button) document.exitPointerLock();
             if (button.hasPointerCapture(id)) button.releasePointerCapture(id);
-            const changed = live !== readAt(origin!, address);
+            const changed = live !== initial;
             gesturing = false; error = "";
             if (changed || direction || drag.moved) editor.commitNumber(cancel ? origin! : candidate(live, origin));
             else if (!cancel && !direction && !drag.moved) void startEdit();

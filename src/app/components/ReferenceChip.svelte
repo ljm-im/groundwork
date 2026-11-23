@@ -1,9 +1,9 @@
 <span class="ref-chip" data-ref={refKey} contenteditable="false"><Icon name={info.icon} /><span>{info.name}</span>{#if info.property}<span class="dot">·</span><Icon name="property" /><span>{info.property}</span>{/if}</span>
 
 <style>
-    .ref-chip { display: inline-flex; align-items: center; vertical-align: middle; gap: 3px; border-radius: 3px; padding: 1px 4px; background: #e6eee8; color: #265453; white-space: nowrap; font-size: 11px; line-height: 16px; }
-    .ref-chip :global(.icon) { width: 13px; height: 13px; }
-    .dot { opacity: .7; }
+    .ref-chip { display: inline; vertical-align: baseline; border-radius: 3px; padding: 0 4px; background: #e6eee8; color: #265453; white-space: nowrap; font: inherit; line-height: inherit; }
+    .ref-chip :global(.icon) { display: inline-block; width: 12px; height: 12px; vertical-align: -.1em; margin-right: 2px; }
+    .dot { margin: 0 2px; opacity: .7; }
 </style>
 
 <script lang="ts">

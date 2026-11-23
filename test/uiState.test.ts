@@ -3,6 +3,8 @@ import "../configs/register-svelte.ts";
 import assert from "node:assert/strict";
 import { fixtureOptions, readFixture } from "../configs/read-fixture.ts";
 import { distance } from "../src/core/math/geometry.ts";
+import { handles } from "../src/core/edit/controls.ts";
+import { resolveDesign } from "../src/core/design/parameters.ts";
 import { History } from "../src/core/edit/history.ts";
 import { Island } from "../src/core/island.ts";
 import { parseDesign } from "../src/core/design/model.ts";
@@ -170,4 +172,63 @@ test("Opening, creating and recovering a design each starts with empty terrain c
         assert.equal(new Set(surfaces.map(s => s[field])).size, 4, field);
     assert.equal(editor.draft, null);
     assert.equal(editor.dirty, true);
+});
+
+test("Attached menus open within the inspector and keep the control's edges", async () => {
+    const { popupBounds } = await import("../src/app/state/popup.ts");
+    const box = { left: 37, width: 184, top: 390, bottom: 418 };
+    assert.deepEqual(popupBounds(box, 180, 430, 160), { left: 37, top: 228, width: 184, height: 160, upwards: true });
+    assert.deepEqual(popupBounds(box, 375, 780, 160), { left: 37, top: 420, width: 184, height: 160, upwards: false });
+    assert.equal(popupBounds(box, 360, 429, 200).height, 28);
+});
+
+test("Drawing or canceling a parameter keeps its owner and activates only the completed line", async t => {
+    const { Editor } = await import("../src/app/state/session.svelte.ts");
+    const { draftPointer } = await import("../src/app/state/geoTools.ts");
+    const { geoControls } = await import("../src/core/edit/geoControls.ts");
+    const editor = new Editor(), design = syntheticDesign(), n = design.geoNodes[1];
+    n.function = { type: "mountain", ridges: [], peaks: [] };
+    Object.assign(editor, { map: { clearIssue() {}, draw() {} } });
+    t.mock.method(editor, "refresh", () => {});
+    t.mock.method(editor.files, "remember", () => {});
+    t.mock.method(editor, "terrainWork", async (_d: unknown, fn: () => void) => {
+        fn();
+    });
+    editor.replace(design); editor.map.island = editor.island.view(); editor.history = new History(design);
+    const selected = { kind: "geoNode", id: n.id };
+    editor.select(selected);
+    for (const cancel of [true, false]) {
+        editor.setTool("ridge", n.id); assert.deepEqual(editor.selection, selected);
+        for (const p of [[2, 4], [6, 5], [7, 8]] as [number, number][]) {
+            for (const phase of ["down", "up"] as const) draftPointer(editor, phase, p, { ctrlKey: true } as PointerEvent);
+            assert.deepEqual(editor.selection, selected);
+        }
+        if (cancel) editor.setTool("select"); else await editor.completeDrawing();
+        assert.equal(editor.tool, "select"); assert.deepEqual(editor.selection, selected);
+        assert.equal(editor.history.index, cancel ? 0 : 1);
+    }
+    const owner = editor.island.design.geoNodes[1], target = editor.map.geometry;
+    assert.deepEqual(target, { kind: "parameter", index: 0 });
+    const handles = geoControls(owner, target);
+    assert.equal(handles.length, 3); assert(handles.every(c => c.role === "parameter" && c.path === 0));
+    editor.setTool("peak", n.id);
+    for (const p of [[4, 4], [5, 5]] as [number, number][]) {
+        for (const phase of ["down", "up"] as const) draftPointer(editor, phase, p, { ctrlKey: true } as PointerEvent);
+        assert.deepEqual(editor.selection, selected); assert.equal(editor.history.index, 1);
+    }
+    assert.equal(editor.map.draft!.nodes.length, 1); await editor.completeDrawing();
+    assert.equal(geoControls(editor.island.design.geoNodes[1], editor.map.geometry).length, 1);
+});
+
+test("Isolating a building centre, route, waypoint or section exposes only its own map handles", () => {
+    const d = syntheticDesign();
+    d.sections = [{ id: "S", name: "S", points: [[0, 0], [0, 5]], marks: [] }];
+    d.edges[0].via = [[2, 3], [3, 4]];
+    const design = resolveDesign(d), only = (kind: string, id: string, index = 0) =>
+        handles(design, {}, null, { kind, id, index }).map(h => [h.kind, h.id, h.role, h.index]);
+    assert.deepEqual(only("building", "A"), [["building", "A", "center", 0]]);
+    assert.deepEqual(only("node", "a"), [["node", "a", "endpoint", 0]]);
+    assert.deepEqual(only("via", "E", 1), [["via", "E", "vertex", 1]]);
+    assert.deepEqual(only("edge", "E"), [["node", "a", "endpoint", 0], ["via", "E", "vertex", 0], ["via", "E", "vertex", 1], ["node", "b", "endpoint", 0]]);
+    assert.deepEqual(only("section", "S"), [["section", "S", "vertex", 0], ["section", "S", "vertex", 1]]);
 });

@@ -41,7 +41,7 @@ export function validateGeo(d: Design, allowBrokenReferences = false) {
                 valid(["auto", "corner", "manual"].includes(v.mode) && ["curve", "arc", "line"].includes(v.next ?? "curve"), pos);
                 valid([v.in, v.out].every(h => h === undefined || point(h)) && (v.mode !== "auto" || !v.in && !v.out), pos + ".mode");
                 if (v.mode === "manual") valid(v.in && v.out && Math.abs(v.in[0] * v.out[1] - v.in[1] * v.out[0]) < 1e-8, pos + ".manual");
-                if (v.next === "arc") valid(finite(v.bulge) && v.bulge !== 0, pos + ".bulge");
+                if (v.next === "arc" && v.bulge !== undefined) valid(finite(v.bulge) && v.bulge !== 0, pos + ".bulge");
             }
         }
         const height = (h: number, key: string) => valid(finite(h), key);

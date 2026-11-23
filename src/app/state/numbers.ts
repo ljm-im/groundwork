@@ -118,3 +118,38 @@ export function caretAt(el: HTMLElement, at: number) {
     const selection = el.ownerDocument.getSelection()!;
     selection.removeAllRanges(); selection.addRange(range);
 }
+
+export function numericCaret(input: HTMLElement) {
+    const wrapper = input.parentElement!;
+    function update() {
+        const selection = input.ownerDocument.getSelection();
+        let x: number | undefined;
+        if (selection?.isCollapsed && selection.rangeCount && document.activeElement === input && input.contains(selection.anchorNode)) {
+            const range = selection.getRangeAt(0).cloneRange(), rect = range.getBoundingClientRect();
+            if (rect.height) x = rect.left;
+            else {
+                // Chromium returns an empty rectangle at element boundaries beside noneditable chips.
+                const parent = range.startContainer, offset = range.startOffset;
+                const next = parent.childNodes[offset], previous = parent.childNodes[offset - 1];
+                if (next || previous) {
+                    range.selectNode(next ?? previous);
+                    const edge = range.getBoundingClientRect();
+                    x = next ? edge.left : edge.right;
+                }
+                else {
+                    const box = input.getBoundingClientRect();
+                    x = box.left + box.width / 2;
+                }
+            }
+        }
+        wrapper.style.setProperty("--caret-display", x === undefined ? "none" : "block");
+        if (x !== undefined) wrapper.style.setProperty("--caret-x", x - wrapper.getBoundingClientRect().left + "px");
+    }
+    const resize = new ResizeObserver(update); resize.observe(input);
+    const controller = new AbortController(), options = { signal: controller.signal };
+    document.addEventListener("selectionchange", update, options);
+    for (const event of ["focus", "blur", "input", "scroll"]) input.addEventListener(event, update, options);
+    return { destroy() {
+        resize.disconnect(); controller.abort();
+    } };
+}

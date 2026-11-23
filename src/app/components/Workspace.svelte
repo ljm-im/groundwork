@@ -1,7 +1,7 @@
 <main class="workspace" bind:this={main} style:--right={layout.right + "px"} style:--bottom={layout.bottomClosed ? "0px" : layout.bottom * 100 + "%"}>
     <div class="map-column" class:closed={layout.bottomClosed}>
         <MapCanvas {editor} />
-        <button class="split horizontal" data-split="bottom" aria-label="调整左下面板" title="调整左下面板，双击收起或展开"
+        <button class="split horizontal" data-split="bottom" aria-label="调整左下面板" data-tip="调整左下面板"
             onpointerdown={e => begin(e, "bottom")} ondblclick={() => toggle("bottomClosed")} onkeydown={e => keyboard(e, "bottom")} ></button>
         <div class="bottom-pane" hidden={layout.bottomClosed}>
             <nav class="bottom-tabs" aria-label="剖面类型">
@@ -16,7 +16,7 @@
             {#if editor.bottomTab === "profile"}<Longitudinal {editor} />{/if}
         </div>
     </div>
-    <button class="split vertical" data-split="right" aria-label="调整右栏宽度" title="调整右栏宽度"
+    <button class="split vertical" data-split="right" aria-label="调整右栏宽度" data-tip="调整右栏宽度"
         onpointerdown={e => begin(e, "right")} onkeydown={e => keyboard(e, "right")}></button>
     <Sidebar {editor} {layout} onresize={e => begin(e, "upper")} ontoggle={() => toggle("propertiesClosed")} onkey={e => keyboard(e, "upper")} />
 </main>

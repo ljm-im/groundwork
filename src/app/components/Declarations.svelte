@@ -13,7 +13,7 @@
     <Part title="场" count={Object.keys(d.fields).length + 1}>
         {#each ["height", ...Object.keys(d.fields)] as id (id)}
             <button class="object-row" data-select-field={id} aria-pressed={h?.kind === "field" && h.id === id} onclick={() => editor.select({ kind: "field", id })}>
-                <Icon name="field" />{id === "height" ? "高度" : d.fields[id].label ?? id}{#if id !== "height"}<small>{d.fields[id].default}</small>{/if}
+                <Icon name="field" />{id === "height" ? "高度" : d.fields[id].label ?? id}{#if id !== "height"}<small>{d.fields[id].default ?? editor.island.resolved.fields[id].default}</small>{/if}
             </button>
         {/each}
         <button data-add="field" onclick={() => editor.addDeclaration("field")}>新建场</button>

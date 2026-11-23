@@ -1,6 +1,6 @@
 <Part title="选线参数">
     {#each settings as [key, label, unit] (key)}
-        <NumberInput {editor} {label} unit={unit.replace(" / ", "")} address={["routing", key]} optional={key === "landing" || key === "clearLead" || key === "viaTolerance"}
+        <NumberInput {editor} {label} unit={unit.replace(" / ", "")} address={["routing", key]}
             step={["relaxPasses", "profilePasses", "profileRadius"].includes(key) ? 1 : .1} />
     {/each}
 </Part>

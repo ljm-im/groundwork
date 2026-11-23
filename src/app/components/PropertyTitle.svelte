@@ -2,9 +2,9 @@
     <input class="wide" aria-label={label} value={name} readonly={!rename} onchange={e => {
         const text = e.currentTarget.value.trim(); if (text && text !== name) rename?.(text); else e.currentTarget.value = name;
     }} />
-    {#if toggle}<button title={toggleTitle} aria-label={toggleTitle} aria-pressed={!disabled} onclick={toggle}><Icon name={disabled ? "disabled" : "eye"} /></button>{/if}
-    {#if copy}<button title={"复制“" + name + "”"} aria-label={"复制“" + name + "”"} onclick={copy}><Icon name="copy" /></button>{/if}
-    {#if remove}<button class="danger" data-action="delete" title={"删除“" + name + "”"} aria-label={"删除“" + name + "”"} onclick={remove}><Icon name="delete" /></button>{/if}
+    {#if toggle}<button data-tip={toggleTitle} aria-label={toggleTitle} aria-pressed={!disabled} onclick={toggle}><Icon name={disabled ? "disabled" : "eye"} /></button>{/if}
+    {#if copy}<button data-tip={"复制“" + name + "”"} aria-label={"复制“" + name + "”"} onclick={copy}><Icon name="copy" /></button>{/if}
+    {#if remove}<button class="danger" data-action="delete" data-tip={"删除“" + name + "”"} aria-label={"删除“" + name + "”"} onclick={remove}><Icon name="delete" /></button>{/if}
 </div>
 
 <style>

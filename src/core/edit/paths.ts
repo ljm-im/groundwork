@@ -1,7 +1,7 @@
 import { type GeoNode, type Path, type PathNode, type Point } from "../design/v5.ts";
 import { advance, bearing, distance, mixPoint, projection } from "../math/geometry.ts";
 import { type Segment } from "../design/regions.ts";
-import { pathHandle } from "../design/path.ts";
+import { defaultArcBulge, pathHandle } from "../design/path.ts";
 
 export type ShapeTool = "pen" | "rect" | "circle" | "sector";
 export function penNode(id: string, p: Point, drag?: Point): PathNode {
@@ -42,7 +42,7 @@ export function setSegment(path: Path, i: number, type: "line" | "curve" | "arc"
     const nodes = path.nodes, node = nodes[i], next = nodes[(i + 1) % nodes.length], prev = nodes[(i + nodes.length - 1) % nodes.length];
     if (type === "tangent") {
         let tangent = bearing(prev.p, node.p);
-        if (prev.next === "arc") tangent += 2 * Math.atan(prev.bulge!);
+        if (prev.next === "arc") tangent += 2 * Math.atan(prev.bulge ?? defaultArcBulge);
         else if (prev.next !== "line") {
             const handle = pathHandle(path, i, "in");
             const start = pathHandle(path, (i + nodes.length - 1) % nodes.length, "out");
@@ -56,7 +56,7 @@ export function setSegment(path: Path, i: number, type: "line" | "curve" | "arc"
         else node.bulge = bulge;
     }
     node.next = type === "tangent" ? "arc" : type;
-    if (node.next === "arc") node.bulge ??= .4142135624;
+    if (node.next === "arc") node.bulge ??= defaultArcBulge;
     else delete node.bulge;
 }
 export function setBulge(a: PathNode, b: Point, at: Point) {

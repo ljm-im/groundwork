@@ -8,7 +8,8 @@ import { History } from "../src/core/edit/history.ts";
 import { addField, addVariable, bindField, bindHeight, copyGeo, createStrip, declarationUses, defaultFunction, deleteGeo, dependentStrips, enableGeo,
     nodeIds, rangeUsers, removeDeclaration, reorderGeo, resolved, stripRange } from "../src/core/edit/geoNodes.ts";
 import { arcHandle, moveHandle, penNode, setSegment, translateGeo } from "../src/core/edit/paths.ts";
-import { geometryPath, insertPathNode } from "../src/core/edit/geoControls.ts";
+import { flattenPath } from "../src/core/design/path.ts";
+import { geoControls, geometryPath, insertPathNode, removeGeometryItem } from "../src/core/edit/geoControls.ts";
 import { finishDraft, snapPoint, type GeoDraft, type DrawTool } from "../src/app/state/geoTools.ts";
 import { TerrainCache } from "../src/core/terrain/cache.ts";
 import { generateTerrain } from "../src/core/terrain/terrain.ts";
@@ -268,4 +269,34 @@ test("Profile spans share exported steps, omit stair grades and measure the fina
     assert(Math.abs(profileReading(r, 3.25, t, h, 1).grade - .25) < 1e-9);
     const reading = profileReading(r, 3.5, t, h, 1); assert.equal(reading.ground, sample(grid, h, 3.5, 0)); assert.equal(reading.gap, reading.road - reading.ground!);
     assert.deepEqual([.01, .22, 1.1, 2.3, 5.1, 23].map(niceStep), [.01, .25, 2, 2.5, 10, 25]);
+});
+
+test("Removing a mountain member keeps references to siblings and reports references to the removed member", () => {
+    const d = syntheticDesign(), m = d.geoNodes[1];
+    m.function = { type: "mountain", ridges: [], peaks: [2, 4, 6].map(h => ({ at: { p: [h, 3], h }, radius: 2, scale: 3, noise: 0 })) };
+    d.variables.B = { value: 1 };
+    const v: Design = d;
+    v.variables.B.value = "{geo:T.peaks.2.at.h} - {geo:T.peaks.0.radius}";
+    const before = serializeDesign(d);
+    assert.throws(() => removeGeometryItem(d, m, ["peaks"], 0), /variables.B.value/);
+    assert.equal(serializeDesign(d), before);
+    removeGeometryItem(d, m, ["peaks"], 1);
+    assert.equal(v.variables.B.value, "{geo:T.peaks.1.at.h} - {geo:T.peaks.0.radius}");
+    assert.equal(new Island(d).resolved.variables.B.value, 4);
+});
+
+test("An arc with omitted bulge uses the editor's quarter-turn in sampling and handles", () => {
+    const d = syntheticDesign(), n = d.geoNodes[0], construction = n.construction;
+    assert(construction.type === "free");
+    const path = construction.paths[0], v = path.nodes[0];
+    v.next = "arc";
+    const omitted = flattenPath(path, .02), control = geoControls(n).find(h => h.role === "arc");
+    assert(control);
+    setSegment(path, 0, "arc");
+    assert.deepEqual(flattenPath(path, .02), omitted);
+    assert.deepEqual(geoControls(n).find(h => h.role === "arc"), control);
+    delete v.bulge;
+    assert.doesNotThrow(() => parseDesign(d));
+    v.bulge = 0;
+    assert.throws(() => parseDesign(d), /bulge/);
 });

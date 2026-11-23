@@ -103,7 +103,9 @@ export function finishDraft(d: Design, terrain: Terrain, draft: GeoDraft) {
         return n!;
     }
     if (tool === "peak" || tool === "center") {
-        const p = draft.nodes[0].p, h = tenth(sampleField(terrain, "height", p));
+        const p = draft.nodes[0]?.p;
+        if (!p) throw Error("请先在地图上选择一个点");
+        const h = tenth(sampleField(terrain, "height", p));
         if (tool === "peak" && n?.function.type === "mountain") n.function.peaks.push({ at: { p, h }, radius: 5, noise: 0, scale: 12 });
         if (tool === "center" && n) {
             if (n.function.type === "slope" && n.function.kind === "radial") n.function.center = p;
@@ -154,11 +156,12 @@ export function draftPointer(e: Editor, phase: "down" | "move" | "up", raw: Poin
     else if (tool === "sector") {
         draft.radius = at; e.hint = "单击确定终止角 · Esc 放弃";
     }
-    else if (penTools.includes(tool) && draft.nodes.length >= 3 && distance(down, draft.nodes[0].p) * e.map.scale < 7) e.completeDrawing();
+    else if ((tool === "pen" || tool === "addPath") && draft.nodes.length >= 3 && distance(down, draft.nodes[0].p) * e.map.scale < 7) e.completeDrawing();
     else {
         const drag = penTools.includes(tool) && distance(down, raw) * e.map.scale > 3 ? raw : undefined;
-        draft.nodes.push(penNode(draft.nextId(), down, drag));
-        if (tool === "peak" || tool === "center") e.completeDrawing();
+        const node = penNode(draft.nextId(), down, drag);
+        if (tool === "peak" || tool === "center") draft.nodes = [node];
+        else draft.nodes.push(node);
     }
     if (e.map.draft === draft) updatePreview(e, draft);
     return true;

@@ -16,13 +16,13 @@
         N<svg viewBox="0 0 16 28"><path d="m8 1 7 24-7-6-7 6z" fill="#365d5b"/><path d="m8 3 5.4 19-5.4-4z" fill="#e6f0e5"/></svg></div>
     <div class="scale mono"><span id="scale-bar"></span><span id="scale-text"></span></div>
     <div class="zoom-tools">
-        <button id="minus" aria-label="缩小" title="缩小" onclick={() => editor.island && editor.map.zoomAt(1 / 1.4)}><Icon name="minus" /></button>
+        <button id="minus" aria-label="缩小" data-tip="缩小" onclick={() => editor.island && editor.map.zoomAt(1 / 1.4)}><Icon name="minus" /></button>
         <output id="zoom-value">100%</output>
-        <button id="plus" aria-label="放大" title="放大" onclick={() => editor.island && editor.map.zoomAt(1.4)}><Icon name="plus" /></button>
+        <button id="plus" aria-label="放大" data-tip="放大" onclick={() => editor.island && editor.map.zoomAt(1.4)}><Icon name="plus" /></button>
         <i class="divider"></i>
-        <button id="fit" aria-label="全图视图" title="全图视图" onclick={() => editor.island && editor.map.fit()}><Icon name="fit" /></button>
+        <button id="fit" aria-label="全图视图" data-tip="全图视图" onclick={() => editor.island && editor.map.fit()}><Icon name="fit" /></button>
     </div>
-    <div class="coords"><span id="mode-hint">{editor.hint}</span><span id="position" class="mono">{editor.position}</span></div>
+    <div class="coords"><span id="busy" role="status" hidden={!editor.busy}>{editor.busy ?? ""}</span><span id="mode-hint" hidden={!!editor.busy}>{editor.hint}</span><span id="position" class="mono">{editor.position}</span></div>
     {#if editor.hint === "先选中一个或两个地件"}<div class="tool-help">{editor.hint}</div>{/if}
     <Messages {editor} />
 </section>
@@ -39,7 +39,7 @@
         .map-wrap.empty {
             background: var(--light);
         }
-        .map-wrap.empty :is(.legend, .north, .scale, .zoom-tools, .coords) {
+        .map-wrap.empty :is(.legend, .north, .scale, .zoom-tools), .map-wrap.empty .coords:has(#busy[hidden]) {
             display: none;
         }
         .empty-state {

@@ -9,7 +9,7 @@ import { buildingShape, nodePose } from "../core/design/model.ts";
 import { titlePoint } from "../core/edit/buildings.ts";
 import { issueShapes, issueView, objectIssues } from "../core/checks/issues.ts";
 import { type GeoDraft } from "../app/state/geoTools.ts";
-import { type GeoControl } from "../core/edit/geoControls.ts";
+import { type GeoControl, type GeometryTarget } from "../core/edit/geoControls.ts";
 import { fieldContours } from "./fieldContours.ts";
 import { drawGeoOverlay } from "./geoOverlay.ts";
 import { treeStyles } from "../core/vegetation/vegetation.ts";
@@ -133,6 +133,8 @@ export class IslandMap {
     displayField = "height";
     geoSelection: string[] = [];
     highlights: string[] = [];
+    geometry?: GeometryTarget;
+    objectGeometry?: Selection;
     vertex?: GeoControl;
     dragNode?: GeoNode;
     draft?: GeoDraft;
@@ -405,7 +407,7 @@ export class IslandMap {
                 const pos = titlePoint(d, b);
                 return { ...old, name: b.name, building: b.id, point: pos, offset: [pos[0] - b.center[0], pos[1] - b.center[1]] as Point, titleOnly: !old };
             })]) {
-                if (lab.minZoom && this.zoomFactor() < lab.minZoom) continue;
+                if (this.zoomFactor() < (lab.minZoom ?? 0)) continue;
                 const { point, text, difference, actual } = labelReading(this.island, lab);
                 const [x, y] = this.screen(point), size = actual == null ? 12 : (this.zoomFactor() >= 2.1 ? 12 : 10);
                 ctx.save();
@@ -460,7 +462,7 @@ export class IslandMap {
                 ctx.strokeRect(-2.8, -2.8, 5.6, 5.6);
                 ctx.restore();
             }
-        this.controls = handles(d, this.layers, active);
+        this.controls = this.geometry && active?.kind === "geoNode" ? [] : handles(d, this.layers, active, this.objectGeometry);
         const occupied: Box[] = [];
         for (const h of this.controls) {
             const [x, y] = this.screen(h.point);

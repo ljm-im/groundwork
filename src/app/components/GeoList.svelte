@@ -3,18 +3,18 @@
 <div class="geo-stack">
     {#each rows as row (row.key)}
         {#if !row.node}
-            <div class="viewport-row" class:insert-before={mark === row.key + "-before"} class:insert-after={mark === row.key + "-after"} role="group" aria-label="视口"
-                draggable="true" ondragstart={e => start(e, null)} ondragend={clear} ondragover={e => over(e, row.key)} ondrop={e => drop(e, row.key)}>
+            <div class="viewport-row" class:insert-before={mark === row.key + "-before"} class:insert-after={mark === row.key + "-after"} role="group" data-stack-row={row.key} aria-label="视口"
+                draggable="true" ondragstart={e => start(e, null)} ondragend={clear}>
                 <Icon name="eye" /><span>{anchor ? "视口 · 上方 " + hiddenCount + " 个未显示" : "视口"}</span>
-                {#if anchor}<button class="flat" title="视口回到顶部" aria-label="视口回到顶部" onclick={() => editor.showThrough(null)}><Icon name="up" /></button>{/if}
+                {#if anchor}<button class="flat" data-tip="视口回到顶部" aria-label="视口回到顶部" onclick={() => editor.showThrough(null)}><Icon name="up" /></button>{/if}
             </div>
         {:else}
             {@const n = row.node}
             {@const c = n.construction}
-            <div class="geo-row" role="group" aria-label={n.name} draggable="true" class:disabled={n.disabled} class:outside={anchor && stack.indexOf(n) < hiddenCount}
+            <div class="geo-row" role="group" data-stack-row={row.key} aria-label={n.name} draggable="true" class:disabled={n.disabled} class:outside={anchor && stack.indexOf(n) < hiddenCount}
                 class:referenced={editor.hoverRefs.includes(n.id)} class:selected={editor.geoSelection.includes(n.id)} class:strip={c.type === "strip"}
                 class:insert-before={mark === row.key + "-before"} class:insert-after={mark === row.key + "-after"}
-                ondragstart={e => start(e, n.id)} ondragend={clear} ondragover={e => over(e, row.key)} ondrop={e => drop(e, row.key)}
+                ondragstart={e => start(e, n.id)} ondragend={clear}
                 onmouseenter={() => editor.hover(c.type === "strip" ? [...c.of] : [])} onmouseleave={() => editor.hover([])}>
                 <button class="object-row" data-geo-node={n.id} aria-pressed={editor.geoSelection.includes(n.id)}
                     onclick={e => editor.select({ kind: "geoNode", id: n.id }, true, e.shiftKey)}
@@ -22,12 +22,12 @@
                         e.preventDefault(); editor.select({ kind: "geoNode", id: n.id }); editor.menu = { x: e.clientX, y: e.clientY };
                     }}>
                     <span class="geo-name">{n.name}</span>
-                    {#if problems.includes(n.id)}<span class="danger" title="结构错误"><Icon name="issues" /></span>{/if}
-                    <small>{n.function.type}{#if n.function.type === "flat"} = {displayExpression(n.function.value, d)}{/if}</small>
+                    {#if problems.includes(n.id)}<span class="danger" data-tip="结构错误"><Icon name="issues" /></span>{/if}
+                    <small>{n.function.type}{#if n.function.type === "flat"} = {displayExpression(n.function.value ?? functionDefaults.flat.value, d)}{/if}</small>
                     {#if c.type === "strip"}<span class="along">沿 {c.of.map(id => "“" + (d.geoNodes.find(n => n.id === id)?.name ?? id) + "”").join("、")}</span>{/if}
                     {#if n.field && n.field !== "height"}<span class="badge"><Icon name="field" />{d.fields[n.field]?.label ?? n.field}</span>{/if}
                 </button>
-                <input type="checkbox" aria-label={(n.disabled ? "启用“" : "禁用“") + n.name + "”"} title={(n.disabled ? "启用“" : "禁用“") + n.name + "”"} checked={!n.disabled} onchange={() => editor.toggle(n.id)} />
+                <input type="checkbox" aria-label={(n.disabled ? "启用“" : "禁用“") + n.name + "”"} data-tip={(n.disabled ? "启用“" : "禁用“") + n.name + "”"} checked={!n.disabled} onchange={() => editor.toggle(n.id)} />
             </div>
         {/if}
     {/each}
@@ -55,9 +55,10 @@
 </style>
 
 <script lang="ts">
-    import { onDestroy } from "svelte";
+    import { onDestroy, onMount } from "svelte";
     import * as session from "../state/session.svelte.ts";
     import { displayExpression } from "../state/numbers.ts";
+    import { functionDefaults } from "../../core/design/defaults.ts";
     import { reorderGeo } from "../../core/edit/geoNodes.ts";
     import { type GeoNode } from "../../core/design/v5.ts";
     import Icon from "./Icon.svelte";
@@ -73,30 +74,72 @@
     });
     let rows = $derived(order.filter(r => !r.node || [r.node.name, r.node.function.type, r.node.id, d.fields[r.node.field ?? ""]?.label].some(x => x?.toLowerCase().includes(editor.terrainFilter.trim().toLowerCase()))));
     let mark = $state("");
+    let dragged: string | null | undefined;
+    let insertion: { index: number; viewport: string | null; at: number } | undefined;
+    const mime = "application/x-groundwork-stack";
     function start(e: DragEvent, id: string | null) {
-        e.dataTransfer!.setData("application/x-groundwork-stack", JSON.stringify(id)); e.dataTransfer!.effectAllowed = "move";
+        dragged = id; e.dataTransfer!.setData(mime, JSON.stringify(id)); e.dataTransfer!.effectAllowed = "move";
+    }
+    function clearMark() {
+        mark = ""; insertion = undefined;
     }
     function clear() {
-        mark = "";
+        clearMark(); dragged = undefined;
     }
-    function after(e: DragEvent) {
-        const b = (e.currentTarget as HTMLElement).getBoundingClientRect(); return e.clientY > b.y + b.height / 2;
-    }
-    function over(e: DragEvent, key: string) {
-        if (!e.dataTransfer?.types.includes("application/x-groundwork-stack")) return;
-        e.preventDefault(); e.dataTransfer.dropEffect = "move"; mark = key + (after(e) ? "-after" : "-before");
-    }
-    function drop(e: DragEvent, key: string) {
-        e.preventDefault(); clear();
-        const data = e.dataTransfer?.getData("application/x-groundwork-stack");
-        if (!data) return;
-        const id: string | null = JSON.parse(data);
-        const above = order.slice(0, order.findIndex(r => r.key === key) + +after(e)).flatMap(r => r.node && r.node.id !== id ? [r.node.id] : []);
-        if (id === null) editor.showThrough(above.at(-1) ?? null);
-        else editor.edit(d => {
-            reorderGeo(d, id, d.geoNodes.length - 1 - above.length);
-        });
-    }
+    onMount(() => {
+        const panel = editor.panel;
+        function over(e: DragEvent) {
+            if (dragged === undefined || !e.dataTransfer?.types.includes(mime)) return;
+            const bounds = panel.getBoundingClientRect();
+            if (e.clientX < bounds.left || e.clientX >= bounds.right || e.clientY < bounds.top || e.clientY >= bounds.bottom) {
+                clearMark(); return;
+            }
+            e.preventDefault();
+            const elements = [...panel.querySelectorAll<HTMLElement>("[data-stack-row]")];
+            const before = elements.find(el => {
+                const b = el.getBoundingClientRect(); return e.clientY < b.top + b.height / 2;
+            });
+            const key = (before ?? elements.at(-1))?.dataset.stackRow;
+            if (!key) return;
+            const line = key + (before ? "-before" : "-after");
+            const at = e.clientY < elements[0].getBoundingClientRect().top ? 0 :
+                e.clientY >= elements.at(-1)!.getBoundingClientRect().bottom ? order.length : order.findIndex(r => r.key === key) + (before ? 0 : 1);
+            if (line !== mark || insertion?.at !== at) {
+                const list = order.map(r => r.key);
+                const item = dragged === null ? "viewport" : "n:" + dragged;
+                const next = list.filter(k => k !== item);
+                next.splice(at - Number(list.indexOf(item) < at), 0, item);
+                const v = next.indexOf("viewport"), viewport = v ? next[v - 1].slice(2) : null;
+                const index = next.filter(k => k !== "viewport").reverse().indexOf(item);
+                try {
+                    if (dragged !== null) reorderGeo({ ...d }, dragged, index);
+                    insertion = { index, viewport, at }; mark = line;
+                }
+                catch {
+                    clearMark();
+                }
+            }
+            e.dataTransfer.dropEffect = insertion ? "move" : "none";
+        }
+        function drop(e: DragEvent) {
+            const target = insertion, id = dragged;
+            if (!target || id === undefined) return;
+            e.preventDefault(); clear();
+            if (id === null) editor.showThrough(target.viewport);
+            else editor.edit(d => {
+                reorderGeo(d, id, target.index);
+            }, () => {
+                editor.viewport = target.viewport;
+            });
+        }
+        function leave(e: DragEvent) {
+            if (!(e.relatedTarget instanceof Node) || !panel.contains(e.relatedTarget)) clearMark();
+        }
+        panel.addEventListener("dragover", over); panel.addEventListener("drop", drop); panel.addEventListener("dragleave", leave);
+        return () => {
+            panel.removeEventListener("dragover", over); panel.removeEventListener("drop", drop); panel.removeEventListener("dragleave", leave);
+        };
+    });
     onDestroy(() => {
         if (editor.map?.highlights?.length) editor.hover([]);
     });

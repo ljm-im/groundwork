@@ -1,7 +1,7 @@
 <aside class="inspector" style:--upper={layout.upper * 100 + "%"}>
     <nav class="side-tabs" aria-label="检查器">
         {#each tabs as [tab, label, icon] (tab)}
-            <button data-tab={tab} title={label} aria-label={label} aria-pressed={editor.tab === tab} onclick={() => editor.changeTab(tab)}>
+            <button data-tab={tab} data-tip={label} aria-label={label} aria-pressed={editor.tab === tab} onclick={() => editor.changeTab(tab)}>
                 <Icon name={icon} />{#if tab === "issues" && errors}<i class="count-dot" id="issue-dot"></i>{/if}
             </button>
         {/each}
@@ -17,7 +17,7 @@
                 {:else}<Layers {editor} />{/if}
             {/key}{/if}
         </div>
-        <button class="split horizontal" data-split="upper" title="调整属性区，双击收起或展开" aria-label="调整属性区" onpointerdown={onresize} ondblclick={ontoggle} onkeydown={onkey}></button>
+        <button class="split horizontal" data-split="upper" data-tip="调整属性区" aria-label="调整属性区" onpointerdown={onresize} ondblclick={ontoggle} onkeydown={onkey}></button>
         <div bind:this={editor.properties} id="properties" class="panel-content" hidden={layout.propertiesClosed}>
             {#if editor.island}{#key editor.revision}
                 {#if editor.selection?.kind === "geoNode"}<GeoProperties {editor} />
@@ -26,7 +26,7 @@
                 {:else if editor.selection?.kind === "section"}
                     {@const section = editor.island.design.sections.find(s => s.id === editor.selection!.id)}
                     {#if section}<h2>{section.name}</h2>
-                        {#each section.points as p, i (i)}<div class="field">{i ? "剖面终点" : "剖面起点"}<span class="mono">{p.map(v => +v.toFixed(2)).join(", ")} m</span></div>{/each}
+                        <GeometryInput label="剖面线" icon="polyline" count={section.points.length} active={editor.map?.objectGeometry?.kind === "section"} onclick={() => editor.focusObjectGeometry({ kind: "section", id: section.id })} />
                     {/if}
                 {:else if editor.selection && ["edge", "via", "node"].includes(editor.selection.kind)}<Network {editor} />
                 {:else}
@@ -66,6 +66,7 @@
     import Layers from "./Layers.svelte";
     import Icon from "./Icon.svelte";
     import GeoList from "./GeoList.svelte";
+    import GeometryInput from "./GeometryInput.svelte";
     import GeoProperties from "./GeoProperties.svelte";
     import Declarations from "./Declarations.svelte";
     import Routing from "./Routing.svelte";

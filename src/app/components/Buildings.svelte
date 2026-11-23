@@ -1,5 +1,5 @@
-{#snippet field(label: string, path: (string | number)[], unit = "m", literal = false, optional = false)}
-    <NumberInput {editor} {label} {unit} address={["buildings", index, ...path]} kind={literal ? "literal" : "number"} {optional}
+{#snippet field(label: string, path: (string | number)[], unit = "m")}
+    <NumberInput {editor} {label} {unit} address={["buildings", index, ...path]}
         self={"building:" + editor.selection!.id + "." + path.join(".")} step={path.at(-1) === "wall" ? 1 : .1} />
 {/snippet}
 {#snippet walls()}{#each [0, 1, 2, 3] as i (i)}<option value={i}>墙 {i + 1}</option>{/each}{/snippet}
@@ -10,11 +10,11 @@
     <Prompt {editor} target={{ group: "buildings", id: b.id }} /><ObjectProblems {editor} />
     <Part title="建筑属性">
         <label class="field">形状<select data-building-param="shape" value={b.shape}>{#if b.shape === "ring"}<option value="ring">环形</option>{/if}<option value="rect">矩形</option><option value="circle">圆形</option></select></label>
-        {@render field("中心 X", ["center", 0], "m", true)}{@render field("中心 Y", ["center", 1], "m", true)}
+        <GeometryInput label="中心" active={editor.map?.objectGeometry?.kind === "building"} onclick={() => editor.focusObjectGeometry({ kind: "building", id: b.id })} />
         {#if b.shape === "rect"}{@render field("长", ["size", 0])}{@render field("宽", ["size", 1])}
         {:else}{@render field("半径", ["radius"])}{#if b.shape === "ring"}{@render field("内半径", ["inner"])}{/if}{/if}
-        {@render field("转角", ["angle"], "°", false, b.shape !== "rect")}{@render field("高度", ["height"])}
-        {@render field("台基范围", ["pad"], "m", false, true)}{@render field("避让距离", ["blockMargin"], "m", false, true)}{@render field("避树半径", ["treeRadius"], "m", false, true)}
+        {@render field("转角", ["angle"], "°")}{@render field("高度", ["height"])}
+        {@render field("台基范围", ["pad"])}{@render field("避让距离", ["blockMargin"])}{@render field("避树半径", ["treeRadius"])}
         <label class="toggle">显示标题<input type="checkbox" data-building-param="showTitle" checked={b.showTitle !== false} /></label>
     </Part>
     <Part title="门" count={b.doors.length}>
@@ -57,6 +57,7 @@
     import * as session from "../state/session.svelte.ts";
     import PropertyTitle from "./PropertyTitle.svelte";
     import NumberInput from "./NumberInput.svelte";
+    import GeometryInput from "./GeometryInput.svelte";
     import Part from "./Part.svelte";
     import Prompt from "./Prompt.svelte";
     import ObjectProblems from "./ObjectProblems.svelte";

@@ -10,7 +10,7 @@ import { removeVia, removeLinks } from "../../core/edit/topology.ts";
 import { type Expression, type GeoNode, type GeoFunction } from "../../core/design/v5.ts";
 import { randomFunctions, referenceUses, type Owner } from "../../core/design/parameters.ts";
 import { parseDesign } from "../../core/design/model.ts";
-import { type GeoControl, geometryPath, removeParameterPoint } from "../../core/edit/geoControls.ts";
+import { type GeoControl, type GeometryTarget, geometryPath, removeParameterPoint } from "../../core/edit/geoControls.ts";
 import { addVariable, addField, copyGeo, defaultFunction, deleteGeo, dependentStrips, enableGeo, pathCenter, declarationUses, rangeUsers, removeDeclaration, sampleField, tenth } from "../../core/edit/geoNodes.ts";
 import { setSegment } from "../../core/edit/paths.ts";
 import { drawingTools, finishDraft, geoAt, startDrawing, updatePreview, type DrawTool } from "./geoTools.ts";
@@ -24,7 +24,7 @@ export const hints: Record<Tool, string> = {
     pen: "单击放点 · 拖出控制柄 · 回车或单击首点闭合", rect: "拖动到矩形的对角", circle: "从圆心拖出半径",
     sector: "从圆心拖出半径，再单击确定终止角", strip: "点选起止节点 · Tab 交换 · 回车确认 · Esc 放弃",
     addPath: "绘制闭合路径 · 回车完成", shore: "绘制海岸线 · 回车闭合 · Esc 放弃",
-    ridge: "单击添加山脊顶点 · 回车完成", peak: "单击添加山峰", slopeLine: "单击添加坡线顶点 · 回车完成", center: "单击选择圆心",
+    ridge: "单击添加山脊顶点 · 回车完成", peak: "单击放置山峰 · 回车完成 · Esc 放弃", slopeLine: "单击添加坡线顶点 · 回车完成", center: "单击选择圆心 · 回车完成 · Esc 放弃",
     door: "单击建筑外墙开门", select: "左键选择与编辑 · 中键拖动平移 · 滚轮缩放",
     node: "单击空地放置节点，或单击建筑外墙开门", edge: "单击起点节点或建筑外墙",
     fork: "单击道路插入分岔，或从建筑外墙起步",
@@ -125,6 +125,9 @@ export class Editor {
         const selected = h?.kind === "geoNode" ? h.id : undefined;
         this.geoSelection = selected ? extend ? this.geoSelection.includes(selected) ? this.geoSelection.filter(id => id !== selected) : [selected, ...this.geoSelection] : [selected] : [];
         if (selected) h = this.geoSelection.length ? { kind: "geoNode", id: this.geoSelection[0] } : null;
+        if (h?.kind !== this.selection?.kind || h?.id !== this.selection?.id) this.map.geometry = undefined;
+        const focus = this.map.objectGeometry;
+        if (focus && (focus.kind !== h?.kind || focus.id !== h.id || focus.kind === "via" && focus.index !== h.index)) this.map.objectGeometry = undefined;
         this.map.geoSelection = this.geoSelection;
         this.selection = h;
         this.map.selection = h;
@@ -158,7 +161,18 @@ export class Editor {
     sections() {
         if (this.plots && this.map?.island) drawSections(this.plots, this.map.island);
     }
+    focusObjectGeometry(target: Selection) {
+        this.setTool("select");
+        this.select(target);
+        this.map.objectGeometry = target;
+        this.map.draw();
+    }
+    focusGeometry(target?: GeometryTarget) {
+        this.setTool("select"); this.map.geometry = target;
+        this.map.draw(); this.revision++;
+    }
     setTool(mode: Tool, owner?: string) {
+        this.map.objectGeometry = undefined;
         this.menu = null;
         this.map.draft = undefined;
         this.map.vertex = undefined;
@@ -167,6 +181,7 @@ export class Editor {
         this.tool = mode;
         this.hint = hints[mode];
         if (drawingTools.includes(mode as DrawTool)) {
+            if (owner && (this.selection?.kind !== "geoNode" || this.selection.id !== owner)) this.select({ kind: "geoNode", id: owner });
             try {
                 this.map.draft = startDrawing(this, mode as DrawTool, owner);
                 updatePreview(this, this.map.draft);
@@ -246,7 +261,7 @@ export class Editor {
             if (this.properties) this.properties.scrollTop = 0;
             if (this.panel) this.panel.scrollTop = 0;
         }
-        this.geoSelection = []; this.hoverRefs = []; this.map.highlights = [];
+        this.geoSelection = []; this.hoverRefs = []; this.map.highlights = []; this.map.geometry = undefined;
         this.island = new Island(design, this.terrainCache);
         this.selection = this.issue = this.candidates = null;
         this.map.clearIssue();
@@ -302,7 +317,7 @@ export class Editor {
         });
         this.message("全部道路已重新选线");
     }
-    edit(fn: (d: Design) => Selection | null | void) {
+    edit(fn: (d: Design) => Selection | null | void, after?: () => void) {
         if (this.busy) return;
         try {
             const d = structuredClone(this.island.design), selected = fn(d);
@@ -313,6 +328,7 @@ export class Editor {
                 const next = new Island(d, this.terrainCache);
                 this.island = next;
                 if (selected !== undefined) this.select(selected);
+                after?.();
                 this.refresh();
                 this.record();
             });
@@ -331,8 +347,15 @@ export class Editor {
         if (!draft) return;
         return this.edit(d => {
             const n = finishDraft(d, this.map.island.terrain, draft);
-            this.setTool("select");
             return { kind: "geoNode", id: n.id };
+        }, () => {
+            this.setTool("select");
+            const n = geoAt(this.island.design, this.selection!.id), f = n.function;
+            if (draft.tool === "ridge" && f.type === "mountain") this.map.geometry = { kind: "parameter", index: f.ridges.length - 1 };
+            else if (draft.tool === "peak" && f.type === "mountain") this.map.geometry = { kind: "parameter", index: f.ridges.length + f.peaks.length - 1 };
+            else if (draft.tool === "center" || draft.tool === "slopeLine") this.map.geometry = { kind: "parameter", index: 0 };
+            else if (draft.tool === "shore") this.map.geometry = { kind: "path", index: -1 };
+            else if (n.construction.type === "free") this.map.geometry = { kind: "path", index: n.construction.paths.length - 1 };
         });
     }
     geoCenter(id: string): Point {
@@ -355,7 +378,11 @@ export class Editor {
             this.setTool(type === "coast" ? "shore" : "slopeLine", n.id); this.revision++; return;
         }
         const value = tenth(sampleField(this.map.island.terrain, n.field ?? "height", this.geoCenter(n.id)));
-        this.editNode(n.id, node => node.function = defaultFunction(type, value)!);
+        this.edit(d => {
+            geoAt(d, n.id).function = defaultFunction(type, value)!;
+        }, () => {
+            this.map.geometry = undefined;
+        });
     }
     hover(ids: string[]) {
         this.hoverRefs = ids; this.map.highlights = ids; this.map.draw();
@@ -403,8 +430,13 @@ export class Editor {
     removeGeo(id: string, vertex?: GeoControl) {
         const d = this.island.design, n = geoAt(d, id);
         if (vertex?.role === "parameter") {
-            this.map.vertex = undefined;
-            this.editNode(id, v => removeParameterPoint(v, vertex)); return;
+            this.edit(d => {
+                removeParameterPoint(d, geoAt(d, id), vertex);
+            }, () => {
+                this.map.vertex = undefined;
+                if (n.function.type === "mountain" && vertex.path >= n.function.ridges.length) this.map.geometry = undefined;
+            });
+            return;
         }
         if (vertex?.role === "vertex") {
             const path = geometryPath(n, vertex.path)!;

@@ -11,7 +11,7 @@
 {/snippet}
 {#if route && h}
     {@const e = route.edge}
-    {@const cl = d.roadClasses[e.grade]}
+    {@const cl = m.resolved.roadClasses[e.grade]}
     {@const via = h.kind === "via"}
     {@const index = h.index ?? 0}
     <PropertyTitle name={e.name} label="道路名称" rename={name => editor.edit(d => {
@@ -30,7 +30,7 @@
     <Part title="选线参数">
         <label class="field">等级<select data-param="grade" value={e.grade}>{#each Object.entries(d.roadClasses) as [k, v] (k)}<option value={k}>{v.name}</option>{/each}</select></label>
         {#each [["路面宽度", "width", "m"], ["舒适坡度", "comfort", "%"], ["最大坡度", "maxGrade", "%"], ["走廊半宽", "corridor", "m"], ["强制台阶终点", "stairUntil", "m"]] as [name, key, unit] (key)}
-            <NumberInput {editor} label={name} {unit} displayFactor={unit === "%" ? 100 : 1} address={["edges", edgeIndex, key]} self={"edge:" + e.id + "." + key} optional={key === "stairUntil"} />
+            <NumberInput {editor} label={name} {unit} displayFactor={unit === "%" ? 100 : 1} address={["edges", edgeIndex, key]} self={"edge:" + e.id + "." + key} />
         {/each}
     </Part>
     <div class="sub">等级校验 · {cl.rampLimit != null ? "坡道上限 " + pct(cl.rampLimit) + " · " : ""}{cl.allowStairs ? "台阶上限 " + pct(cl.stairLimit) : "仅设坡道"}</div>
@@ -40,24 +40,24 @@
         <label class="field">本段模式{@render mode("segment", e.segments?.[index]?.mode ?? "", true)}</label>
         <div class="field">实际模式<b>{modes[segmentMode(e, index)]}</b></div>
     </Part>
+    <GeometryInput label="路线控制点" icon="polyline" count={e.via.length + 2} active={editor.map?.objectGeometry?.kind === "edge"} onclick={() => editor.focusObjectGeometry({ kind: "edge", id: e.id })} />
     {#if via}
         <label class="toggle">精确经过此点<input type="checkbox" data-exact-via checked={!!e.segments?.[index]?.exactEnd} /></label>
-        <Part title={"途经点 " + (index + 1)}>{#each ["X", "Y"] as axis, i (axis)}
-            <NumberInput {editor} label={axis} unit="m" kind="literal" address={["edges", edgeIndex, "via", index, i]} />{/each}
+        <Part title={"途经点 " + (index + 1)}>
+            <GeometryInput label="位置" active={editor.map?.objectGeometry?.kind === "via"} onclick={() => editor.focusObjectGeometry({ kind: "via", id: e.id, index })} />
             <button class="flat danger" onclick={() => editor.removeSelected()}>删除途经点</button>
         </Part>
     {:else}
         <div class="sub">途经点 {e.via.length} 个</div>
     {/if}
 {:else if node}
-    {@const pose = nodePose(m.resolved, node.id) as { point: number[]; normal?: number }}
+    {@const pose = nodePose(m.resolved, node.id) as { normal?: number }}
     {@const linked = m.routes.filter(r => r.edge.from === node.id || r.edge.to === node.id)}
     <PropertyTitle name={node.name} label="节点名称" rename={name => editor.edit(d => {
         d.nodes[nodeIndex].name = name;
     })} remove={() => editor.removeSelected()} />
     <Prompt {editor} target={{ group: "nodes", id: node.id }} /><div class="sub">{nodeType(node)}</div><ObjectProblems {editor} />
-    {#if node.type === "door"}<dl class="stat-grid">{@render stat("东向 X", pose.point[0].toFixed(2) + " m")}{@render stat("北向 Y", pose.point[1].toFixed(2) + " m")}</dl>
-    {:else}{#each ["X", "Y"] as axis, i (axis)}<NumberInput {editor} label={axis} kind="literal" unit="m" address={["nodes", nodeIndex, "point", i]} />{/each}{/if}
+    <GeometryInput label="位置" active={editor.map?.objectGeometry?.kind === "node"} onclick={() => editor.focusObjectGeometry({ kind: "node", id: node.id })} />
     <Part title="节点属性">
 
         {#if node.type === "door"}
@@ -70,7 +70,14 @@
         {:else}
             <label class="field">类型<select data-node-param="type" value={node.type}>{#each ["junction", "endpoint", "viewpoint"] as key (key)}<option value={key}>{types[key]}</option>{/each}</select></label>
         {/if}
-        <NumberInput {editor} label="手动朝向" unit="°" address={["nodes", nodeIndex, "direction"]} self={"node:" + node.id + ".direction"} optional />
+        {@const manual = m.resolved.nodes[nodeIndex].directionMode !== "auto"}
+        <label class="toggle">手动朝向<input type="checkbox" checked={manual} onchange={e => {
+            const mode = e.currentTarget.checked ? "manual" : "auto";
+            editor.edit(d => {
+                d.nodes[nodeIndex].directionMode = mode;
+            });
+        }} /></label>
+        {#if manual}<NumberInput {editor} label="朝向" unit="°" address={["nodes", nodeIndex, "direction"]} self={"node:" + node.id + ".direction"} />{/if}
         {#each throughPairs(node) as pair (pair)}
             {@const main = (pair as string[]).map(id => linked.find(r => r.id === id)!)}
             {@const arms = main.map(r => armBearing(r, node.id))}
@@ -100,6 +107,7 @@
     import { angleDiff, radians } from "../../core/math/geometry.ts";
     import { armBearing, summitHeights } from "../../core/checks/validation.ts";
     import NumberInput from "./NumberInput.svelte";
+    import GeometryInput from "./GeometryInput.svelte";
     import PropertyTitle from "./PropertyTitle.svelte";
     import Part from "./Part.svelte";
     import Prompt from "./Prompt.svelte";

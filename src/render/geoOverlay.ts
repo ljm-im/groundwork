@@ -19,10 +19,14 @@ export function drawGeoOverlay(map: IslandMap) {
     };
     function controls(n: GeoNode) {
         for (const [i, path] of pathEntries(n)) {
-            if (i === -1 || map.dragNode) edges(flattenPath(path, .6 / scale), i === -1 ? "#894a86" : "#12696a", 2, i === -1 ? [6, 4] : []);
+            if (i === -1 || map.dragNode || draft?.owner === n.id) edges(flattenPath(path, .6 / scale), i === -1 ? "#894a86" : "#12696a", 2, i === -1 ? [6, 4] : []);
         }
-        for (const pts of linePoints(n)) edges(pts.slice(1).map((b, i) => ({ a: pts[i], b })), "#894a86", 2.5, [6, 4]);
-        for (const c of geoControls(n)) {
+        for (const pts of linePoints(n)) {
+            if (pts.length === 1) dot(pts[0], "#894a86", true, 2);
+            else edges(pts.slice(1).map((b, i) => ({ a: pts[i], b })), "#894a86", 2.5, [6, 4]);
+        }
+        if (draft) return;
+        for (const c of geoControls(n, map.geometry)) {
             const param = c.role === "parameter" || c.path === -1;
             if (c.role === "in" || c.role === "out") edges([{ a: geometryPath(n, c.path)!.nodes[c.index].p, b: c.point }], "#377973", 1);
             const active = map.vertex && (["path", "role", "index"] as (keyof GeoControl)[]).every(k => map.vertex![k] === c[k]);
@@ -31,7 +35,7 @@ export function drawGeoOverlay(map: IslandMap) {
     }
     ctx.save();
     const owner = map.selection?.kind === "geoNode" ? d.geoNodes.find(n => n.id === map.selection!.id) : undefined;
-    if (owner && !draft) controls(map.dragNode ?? owner);
+    if (owner && (!draft || draft.owner === owner.id)) controls(map.dragNode ?? owner);
     if (draft) {
         if (draft.tool === "strip") {
             edges(draft.spine ?? [], "#d37627", 3);
@@ -40,7 +44,10 @@ export function drawGeoOverlay(map: IslandMap) {
                 dot(v.p, "#855021", draft.anchors.includes(v.id), 4.5);
         }
         else {
-            if (draft.path) edges(flattenPath(draft.path, .5 / scale), "#12696a", 2, [5, 3]);
+            if (draft.tool === "peak" || draft.tool === "center") {
+                if (!draft.nodes.length && draft.cursor) dot(draft.cursor, "#894a86");
+            }
+            else if (draft.path) edges(flattenPath(draft.path, .5 / scale), "#12696a", 2, [5, 3]);
             else {
                 const pts = [...(draft.start ? [draft.start] : []), ...draft.nodes.map(v => v.p), ...(draft.cursor ? [draft.cursor] : [])];
                 edges(pts.slice(1).map((b, i) => ({ a: pts[i], b })), "#894a86", 2, [5, 3]);

@@ -3,12 +3,12 @@
     <h1>Groundwork</h1>
     <div class="file-info">
         {#if editor.island}<i id="dirty-dot" class="dot" class:dirty={editor.saveState === "未保存"} class:saving={editor.saveState === "正在保存"} class:failed={editor.saveState === "保存失败"}></i>{/if}
-        <span class="mono" id="filename" title={editor.filename}>{editor.filename}</span>
+        <span class="mono" id="filename" data-tip={editor.filename}>{editor.filename}</span>
         {#if editor.island}<span class="saved-text" id="save-state" aria-live="polite">{editor.saveState}</span>{/if}
     </div>
     <div class="header-actions">
-        <button class="icon flat" id="undo" title="撤销（Ctrl+Z）" aria-label="撤销" disabled={!editor.canUndo || !!editor.busy} onclick={() => editor.navigate(false)}><Icon name="undo" /></button>
-        <button class="icon flat" id="redo" title="重做（Ctrl+Shift+Z）" aria-label="重做" disabled={!editor.canRedo || !!editor.busy} onclick={() => editor.navigate(true)}><Icon name="redo" /></button>
+        <button class="icon flat" id="undo" data-tip="撤销" aria-label="撤销" disabled={!editor.canUndo} onclick={() => editor.navigate(false)}><Icon name="undo" /></button>
+        <button class="icon flat" id="redo" data-tip="重做" aria-label="重做" disabled={!editor.canRedo} onclick={() => editor.navigate(true)}><Icon name="redo" /></button>
         <i class="divider"></i>
         <button id="new" class="flat" disabled={unavailable} onclick={() => editor.files.choose("new")}><Icon name="new" />新建</button>
         <button id="open" class="flat" disabled={unavailable} onclick={() => editor.files.choose("open")}><Icon name="open" />打开</button>
@@ -119,5 +119,5 @@
     import Icon from "./Icon.svelte";
     import * as session from "../state/session.svelte.ts";
     let { editor }: { editor: session.Editor } = $props();
-    let unavailable = $derived(!editor.files.supported || !!editor.busy || !!editor.draft);
+    let unavailable = $derived(!editor.files.supported || !!editor.draft);
 </script>

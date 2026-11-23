@@ -4,6 +4,8 @@ import { distance, mixPoint, projection } from "../math/geometry.ts";
 import { type Segment } from "./regions.ts";
 export { type Segment } from "./regions.ts";
 
+export const defaultArcBulge = .4142135624;
+
 function flattenCurve(a: Point, b: Point, c: Point, d: Point, tolerance: number, out: Point[]) {
     const gap = (p: Point) => distance(p, mixPoint(a, d, projection(...p, a, d)));
     // The cubic lies in its control hull. Measuring against the finite chord also catches loops.
@@ -42,7 +44,7 @@ export function flattenPath(path: Path, tolerance: number) {
     const { nodes } = path, count = nodes.length, segments: Segment[] = [];
     for (let i = 0; i < count; i++) {
         const v = nodes[i], next = nodes[(i + 1) % count], points = [v.p];
-        if (v.next === "arc") flattenArc(v.p, next.p, v.bulge!, tolerance, points);
+        if (v.next === "arc") flattenArc(v.p, next.p, v.bulge ?? defaultArcBulge, tolerance, points);
         else if (v.next === "line") points.push(next.p);
         else flattenCurve(v.p, pathHandle(path, i, "out"), pathHandle(path, (i + 1) % count, "in"), next.p, tolerance, points);
         const start = segments.length;
