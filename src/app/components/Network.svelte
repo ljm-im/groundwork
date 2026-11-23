@@ -55,7 +55,7 @@
             <div class="field">所属建筑<b>{b.name}</b></div><div class="field">外法线<span class="mono">{(pose.normal! / radians).toFixed(1)}°</span></div><div class="sub">拖动门可沿建筑外墙移动。</div>
             {#if b.summit}
                 {@const heights = summitHeights(m.terrain.grid, m.graded.heights, b.center, m.terrain.defined)}
-                <dl class="stat-grid">{@render stat("基座实测", heights.ground.toFixed(2) + " m")}{@render stat("25 m 内最高", heights.highest.toFixed(2) + " m")}</dl>
+                <dl class="stat-grid">{@render stat("基座实测", heights.ground === undefined ? "—" : heights.ground.toFixed(2) + " m")}{@render stat("25 m 内最高", Number.isFinite(heights.highest) ? heights.highest.toFixed(2) + " m" : "—")}</dl>
             {/if}
         {:else}
             <label class="field">类型<select data-node-param="type" value={node.type}>{#each ["junction", "endpoint", "viewpoint"] as key (key)}<option value={key}>{types[key]}</option>{/each}</select></label>

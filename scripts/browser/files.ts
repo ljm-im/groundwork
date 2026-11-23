@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createServer } from "vite";
-import { serializeDesign } from "../../src/core/design/model.ts";
+import { parseDesign, serializeDesign } from "../../src/core/design/model.ts";
 import { startChromium } from "./chromium.ts";
 import { test } from "node:test";
 import { fixtureOptions, readFixture } from "../../configs/read-fixture.ts";
@@ -86,14 +86,14 @@ function installPickers() {
     window.fetch = (resource, options) => {
         if (new URL(resource instanceof Request ? resource.url : resource, location.href).pathname === "/examples/island.json") {
             state.exampleReads++;
-            return fetchFile("/.local/fixtures/round6.json", options);
+            return fetchFile("/.local/fixtures/round14-coast.json", options);
         }
         return fetchFile(resource, options);
     };
 }
 
-test("Editor file workflows in Chromium", fixtureOptions("round6.json"), async () => {
-    const fixture = await readFixture("round6.json");
+test("Editor file workflows in Chromium", fixtureOptions("round14-coast.json", "round14-land.json"), async () => {
+    const fixture = await readFixture("round14-coast.json");
     const server = await createServer({ configFile: "configs/vite.config.ts", server: { host: "127.0.0.1", port: 0 } });
     try {
         await server.listen();
@@ -105,7 +105,7 @@ test("Editor file workflows in Chromium", fixtureOptions("round6.json"), async (
 });
 
 async function checkFileWorkflows(baseUrl: string, fixture: string) {
-    const artifactDir = ".local/browser/files";
+    const artifactDir = process.env.GROUNDWORK_BROWSER_OUTPUT ?? ".local/browser/files";
     const sha = (text: string) => createHash("sha256").update(text).digest("hex");
     await mkdir(artifactDir, { recursive: true });
     const browser = await startChromium();
@@ -146,13 +146,13 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
         await cdp("Input.insertText", { text });
         if (blur) await key("Tab");
     }
-    async function seed(name: string) {
+    async function seed(name: string, raw = fixture) {
         await evaluate(async ([name, text]) => {
             const root = await navigator.storage.getDirectory(), handle = await root.getFileHandle(name, { create: true });
             const writer = await handle.createWritable();
             await writer.write(text);
             await writer.close();
-        }, [name, fixture]);
+        }, [name, raw]);
     }
     try {
         await cdp("Page.addScriptToEvaluateOnNewDocument", { source: "(" + installPickers.toString() + ")()" });
@@ -196,14 +196,13 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
 
         const a = "海岛 A.json", b = "新岛 B.json", c = "恢复 C.json";
         await seed(a);
-        // Use the browser's migrated coordinates as the pre-edit reference. Different JS
-        // engines can round the last bit of a trigonometric migration result differently.
+        // Compare persisted edits with the exact v5 representation shown to the editor.
         const canonical = await evaluate(async text => {
             const module = "/src/core/design/model.ts";
             const { parseDesign, serializeDesign } = await import(module) as typeof import("../../src/core/design/model.ts");
             return serializeDesign(parseDesign(text));
         }, fixture);
-        check("Open pristine v3");
+        check("Open pristine v5");
         await click(".empty-actions button:last-child");
         await filename(a);
         assert.deepEqual(await prop("events"), ["open", "permission:readwrite", "read"]);
@@ -244,7 +243,7 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
         assert.equal(await draft(), null);
         const redoDigest = await fileDigest(a);
         assert.deepEqual(redoDigest, movedDigest);
-        report.checks.move = { building: expected.buildings[0].id, before, after, movedSha256: movedDigest.sha256, undoV4Sha256: undoDigest.sha256, redoSha256: redoDigest.sha256 };
+        report.checks.move = { building: expected.buildings[0].id, before, after, movedSha256: movedDigest.sha256, undoSha256: undoDigest.sha256, redoSha256: redoDigest.sha256 };
 
         check("Persist a description on blur");
         await prompt("描述 A 已更新。", false);
@@ -257,7 +256,7 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
         check("New, cancellation and discard confirmation");
         await click("#new");
         await filename("未命名");
-        assert.equal(await prop("exampleReads"), 1);
+        assert.equal(await prop("exampleReads"), 0);
         assert.equal(await draft(), null);
         assert.equal(await unload(), false);
         assert(await evaluate(() => document.querySelector<HTMLButtonElement>("#undo")!.disabled && document.querySelector<HTMLButtonElement>("#redo")!.disabled));
@@ -415,6 +414,48 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
         assert.deepEqual(await prop("suggestions"), ["island.json", "island.json"]);
         assert.deepEqual(await storage(), cleanStorage);
         report.checks.firstSave = { failedBeforeBinding: true, editsDuringFirstWrite: 2, successfulWrites: await prop("closes") };
+
+        check("Inspect both v5 maps and sections, select a layer and save a variable change");
+        for (const [key, raw] of [["coast", fixture], ["land", await readFixture("round14-land.json")]]) {
+            const name = key + ".json", design = parseDesign(raw);
+            await navigate();
+            await seed(name, raw);
+            await set({ openName: name });
+            await click("#open");
+            await filename(name);
+            await click("[data-tab=terrain]");
+            assert.deepEqual(await evaluate(() => [...document.querySelectorAll<HTMLElement>("[data-geo-node]")].map(b => b.dataset.geoNode)),
+                design.geoNodes.toReversed().map(n => n.id));
+            const layer = design.geoNodes.at(-1)!;
+            await click("[data-geo-node]");
+            await wait(id => document.querySelector<HTMLElement>("[data-geo-node][aria-pressed=true]")?.dataset.geoNode === id, layer.id);
+            assert.equal(await evaluate(() => document.querySelectorAll("#plots canvas").length), design.sections.length);
+            const screenshot = await cdp("Page.captureScreenshot", { format: "png", fromSurface: true });
+            await writeFile(join(artifactDir, key + ".png"), Buffer.from(screenshot.data, "base64"));
+            const [variable, rule] = Object.entries(design.variables).find(([, v]) => v.range)!;
+            const [min, max, step] = rule.range!, value = rule.value + (rule.value + step <= max ? step : -step);
+            assert(value >= min);
+            const selector = "[data-variable=" + JSON.stringify(variable) + "]";
+            await evaluate(({ selector, value }) => {
+                const input = document.querySelector<HTMLInputElement>(selector)!;
+                input.value = String(value);
+                input.dispatchEvent(new Event("input", { bubbles: true }));
+            }, { selector, value });
+            await wait(({ selector, value }) => document.querySelector(selector)?.closest("label")?.querySelector("output")?.textContent === String(value), { selector, value });
+            await evaluate(selector => document.querySelector(selector)!.dispatchEvent(new Event("change", { bubbles: true })), selector);
+            await saved(1);
+            assert.equal(parseDesign(await disk(name)).variables[variable].value, value);
+            report.checks[key] = { layers: design.geoNodes.length, selected: layer.id, sections: design.sections.length, variable, value };
+        }
+        check("Reject an older file without replacing the active v5 design");
+        const older = "earlier.json";
+        await seed(older, JSON.stringify({ version: 4 }));
+        await set({ openName: older });
+        await click("#open");
+        await wait(() => document.querySelector("#toast")?.textContent?.includes("暂不支持 v4 设计，等待迁移"));
+        await filename("land.json");
+        assert.equal(await prop("writes"), 1);
+        report.checks.older = { active: "land.json", message: await evaluate(() => document.querySelector("#toast")!.textContent) };
 
         check("Unsupported browser");
         await cdp("Page.addScriptToEvaluateOnNewDocument", { source: "window.showSaveFilePicker = undefined" });

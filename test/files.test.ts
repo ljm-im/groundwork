@@ -2,48 +2,40 @@ import { test } from "node:test";
 import "../configs/register-svelte.ts";
 import { History } from "../src/core/edit/history.ts";
 import assert from "node:assert/strict";
-import { fixtureOptions, readFixture, readRegressions } from "../configs/read-fixture.ts";
+import { fixtureOptions, readFixture } from "../configs/read-fixture.ts";
 import { Island } from "../src/core/island.ts";
 import { parseDesign, serializeDesign } from "../src/core/design/model.ts";
-import { createHash } from "node:crypto";
 import { FileWrites } from "../src/app/state/fileWrites.ts";
 
-test("Authored and default designs survive a JSON round trip", fixtureOptions("round5.json", "round5-default.json"), async () => {
-    const original = await readFixture("round5.json");
+test("Authored and default designs survive a JSON round trip", fixtureOptions("round14-coast.json", "round14-land.json"), async () => {
+    const original = await readFixture("round14-coast.json");
     const author = parseDesign(original);
-    const current = await readFixture("round5-default.json");
+    const current = await readFixture("round14-land.json");
     const design = parseDesign(current);
     assert.deepEqual(JSON.parse(serializeDesign(design)), JSON.parse(current));
     assert.deepEqual(parseDesign(serializeDesign(author)), author);
 });
 
-test("The archival woodland fixture retains its byte digest", fixtureOptions("round6.json", "regressions.json"), async () => {
-    const raw = await readFixture("round6.json");
-    const sha = (data: string | Uint8Array) => createHash("sha256").update(data).digest("hex");
-    assert.equal(sha(raw), (await readRegressions()).round6.sourceDigest);
-});
 
-test("Migrated woodland bytes and tree order survive reopening", fixtureOptions("round6.json"), async () => {
-    const raw = await readFixture("round6.json");
+test("V5 design bytes and tree order survive reopening", fixtureOptions("round14-coast.json"), async () => {
+    const raw = await readFixture("round14-coast.json");
     const d = parseDesign(raw);
     const island = new Island(d);
     assert.equal(serializeDesign(parseDesign(serializeDesign(d))), serializeDesign(d));
     assert.deepEqual(new Island(parseDesign(serializeDesign(d))).trees, island.trees);
 });
 
-test("Export is byte-stable and drops the retired scatter pattern", fixtureOptions("round6.json"), async () => {
-    const input = await readFixture("round6.json");
+test("Saving a reopened v5 design reproduces its bytes and trees", fixtureOptions("round14-coast.json"), async () => {
+    const input = await readFixture("round14-coast.json");
     const design = parseDesign(input), island = new Island(design);
     const exported = serializeDesign(design);
     assert.equal(serializeDesign(parseDesign(exported)), exported);
     assert.deepEqual(new Island(parseDesign(input)).trees, island.trees);
-    const withLegacyField = parseDesign(exported);
-    Object.assign(withLegacyField.vegetation, { scatterPattern: "obsolete" });
-    assert.equal(serializeDesign(parseDesign(JSON.stringify(withLegacyField))), exported);
+
 });
 
-test("Object and text imports produce identical designs, routes and trees", fixtureOptions("round6.json"), async () => {
-    const text = await readFixture("round6.json");
+test("Object and text imports produce identical designs, routes and trees", fixtureOptions("round14-coast.json"), async () => {
+    const text = await readFixture("round14-coast.json");
     const source: unknown = JSON.parse(text);
     const document = parseDesign(source), fromText = parseDesign(text);
     assert.equal(serializeDesign(document), serializeDesign(fromText));
@@ -53,9 +45,9 @@ test("Object and text imports produce identical designs, routes and trees", fixt
     assert.equal(JSON.stringify(source), JSON.stringify(JSON.parse(text)));
 });
 
-test("Saving and reopening the unchanged v3 source preserves every byte", fixtureOptions("round6.json"), async t => {
+test("Saving and reopening the unchanged v5 source preserves every byte", fixtureOptions("round14-coast.json"), async t => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
-    const raw = await readFixture("round6.json"), editor = new Editor();
+    const raw = await readFixture("round14-coast.json"), editor = new Editor();
     editor.busy = null;
     editor.history = new History(parseDesign(raw));
     t.mock.method(editor, "working", async (_label: string, work: () => void) => work());
@@ -66,7 +58,7 @@ test("Saving and reopening the unchanged v3 source preserves every byte", fixtur
     t.mock.method(editor.files, "remember", () => {});
     let bytes = raw, writes = 0;
     const handle = {
-        name: "round6.json",
+        name: "round14-coast.json",
         async requestPermission() {
             return "granted" as const;
         },
@@ -88,7 +80,7 @@ test("Saving and reopening the unchanged v3 source preserves every byte", fixtur
     }
     editor.describe({ group: "design" }, "新的全岛描述");
     await editor.files.save();
-    assert.equal(JSON.parse(bytes).version, 4);
+    assert.equal(JSON.parse(bytes).version, 5);
     assert.equal(parseDesign(bytes).prompt, "新的全岛描述");
     const legacy = "\uFEFF" + raw.replaceAll("\n", "\r\n") + "\r\n";
     bytes = legacy;

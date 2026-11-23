@@ -1,6 +1,6 @@
 import { type Alignment, type Route, type RoutePart, type RoutingSurface, type SmallCorner } from "../design/results.ts";
 import { type Design, type Edge, type RoadNode, type RoadClass, type Routing, type Point } from "../design/v5.ts";
-import { advance, angleDiff, bearing, canvasSegment, clamp, onCanvas, distance, eachCell, nearest, pointAt, radians, resample, sample, stations } from "../math/geometry.ts";
+import { advance, angleDiff, bearing, canvasSegment, clamp, onCanvas, distance, eachCell, nearest, pointAt, radians, resample, sampleDefined, stations } from "../math/geometry.ts";
 import { nodePose, segmentMode, throughPairs } from "../design/model.ts";
 import { biarc, fairAlignment, fillet, tangent, turnLimit } from "./alignment.ts";
 import { selfOverlaps, sharpBends } from "./proximity.ts";
@@ -75,6 +75,11 @@ function searchContext(t: RoutingSurface) {
     return t.search;
 }
 
+function surveyRise(t: RoutingSurface, a: Point, b: Point) {
+    const start = sampleDefined(t.grid, t.heights, t.defined, ...a), end = sampleDefined(t.grid, t.heights, t.defined, ...b);
+    return start === undefined || end === undefined ? Infinity : end - start;
+}
+
 function segmentDomain(a: Point, b: Point, edge: Edge, t: RoutingSurface, rules: SearchRules, ends: Point[], penalty: Float32Array | undefined, stairRule: RoadClass | false) {
     const dx = b[0] - a[0],
         dy = b[1] - a[1],
@@ -86,10 +91,10 @@ function segmentDomain(a: Point, b: Point, edge: Edge, t: RoutingSurface, rules:
     const g = t.grid,
         radius = edge.width / 2;
     const clear = (x: number, y: number) => onCanvas(g, t.defined, x, y) && corridor(x, y) &&
-    sample(g, t.clearance, x, y) >= radius && sample(g, t.heights, x, y) >= rules.minHeight;
+    (sampleDefined(g, t.clearance, t.defined, x, y) ?? -Infinity) >= radius && (sampleDefined(g, t.heights, t.defined, x, y) ?? -Infinity) >= rules.minHeight;
     const landing = rules.landing ?? 3;
     const atEnd = (x: number, y: number) => landing > 0 && ends.some(p => (x - p[0]) ** 2 + (y - p[1]) ** 2 <= landing ** 2);
-    const grade = (p: Point, q: Point) => (sample(g, t.heights, ...q) - sample(g, t.heights, ...p)) / (distance(p, q) || 1);
+    const grade = (p: Point, q: Point) => surveyRise(t, p, q) / (distance(p, q) || 1);
     const platform = (a: Point, b: Point, c: Point) => !!stairRule && Math.abs(grade(a, b)) >= stairRule.enter && Math.abs(grade(b, c)) >= stairRule.enter;
     return { corridor, crosses: (a: Point, b: Point) => canvasSegment(g, t.defined, a, b), clear, atEnd, grade, platform, penalty: penalty && ((x: number, y: number) => penalty[g.index(x, y)]) };
 }
@@ -217,7 +222,7 @@ function astar(a: Point, b: Point, entry: Heading, exit: Heading, edge: Edge, t:
             if (!domain.crosses([x, y], [vx, vy]) || !domain.clear(vx, vy) || !domain.clear((x + vx) / 2, (y + vy) / 2)) continue;
             if (coarse && resample([[x, y], [vx, vy]], Math.min(step, rules.sampleStep)).some(p => !domain.clear(...p))) continue;
             const length = stride;
-            const grade = Math.abs(sample(g, t.heights, vx, vy) - sample(g, t.heights, x, y)) / length;
+            const grade = Math.abs(surveyRise(t, [x, y], [vx, vy])) / length;
             const candidate = cost[state] + travel(length, grade, turn, platform, edge, rules, limit) + length * (domain.penalty?.(vx, vy) ?? 0);
             if (seen[next] !== stamp || candidate < cost[next]) {
                 seen[next] = stamp;
@@ -410,16 +415,16 @@ function routeOnce(design: Design, t: RoutingSurface, edge: Edge, entry?: EndCon
             if (landings.some(q => distance(q, p) <= landing)) continue;
             const turn = angleDiff(bearing(points[i - 1], p), bearing(p, points[i + 1]));
             const step = (s[i + 1] - s[i - 1]) / 2, enter = design.roadClasses.stair.enter;
-            const grade = (a: Point, b: Point) => Math.abs(sample(t.grid, t.heights, ...b) - sample(t.grid, t.heights, ...a)) / (distance(a, b) || 1);
+            const grade = (a: Point, b: Point) => Math.abs(surveyRise(t, a, b)) / (distance(a, b) || 1);
             if (turn > Math.max(turnLimit(rules.minRadius, step), Math.PI / 4) && grade(points[i - 1], p) >= enter && grade(p, points[i + 1]) >= enter) platforms.push(s[i]);
         }
     }
     const geometry = fairAlignment(design, t, edge, controls, parts, landings, platforms, from.angle, to.angle);
-    const offCanvas = parts.some(part => {
-        if (part.points.every((p, i) => canvasSegment(t.grid, t.defined, part.points[Math.max(0, i - 1)], p))) return false;
-        part.failed = true;
-        return true;
-    });
+    const traversable = (line: Point[]) => line.every((p, i) => i === 0 ? onCanvas(t.grid, t.defined, ...p) : canvasSegment(t.grid, t.defined, line[i - 1], p));
+    let offCanvas = !traversable(geometry.points);
+    for (const part of parts) if (!traversable(part.points)) {
+        part.failed = true; offCanvas = true;
+    }
     const branches = [startNode, endNode].map(n => !!n.through && !throughPairs(n).some(pair => pair.includes(edge.id)));
     return { id: edge.id, edge, controls, parts, landings, branches, smallCorners, offCanvas, ...geometry };
 }

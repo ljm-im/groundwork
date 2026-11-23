@@ -1,86 +1,194 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { type Point, type Design } from "../src/core/design/types.ts";
-import { fixtureOptions, readFixture, readRegressions } from "../configs/read-fixture.ts";
-import { distance, sample } from "../src/core/math/geometry.ts";
+import { type Path, type Point, type GeoNode } from "../src/core/design/v5.ts";
+import { parseDesign } from "../src/core/design/model.ts";
+import { distance, nearest, sampleDefined, spline } from "../src/core/math/geometry.ts";
+import { signedBoundaryDistance } from "../src/core/terrain/regions.ts";
+import { flattenPath } from "../src/core/terrain/path.ts";
+import { evaluateStack, generateTerrain } from "../src/core/terrain/terrain.ts";
+import { terrainIssues } from "../src/core/checks/terrain.ts";
+import { terrainSurface } from "../src/core/terrain/surface.ts";
 import { Island } from "../src/core/island.ts";
-import { parseDesign, serializeDesign } from "../src/core/design/model.ts";
-import { routeAll } from "../src/core/roads/routing.ts";
-import { generateTerrain } from "../src/core/terrain/terrain.ts";
-import { createHash } from "node:crypto";
-import { referenceDesign, originalWoodland, syntheticDesign } from "./scenarios.ts";
+import { exportIsland } from "../src/core/export.ts";
+import { erosion, layer, rect, syntheticDesign } from "./scenarios.ts";
+
+function design(nodes: GeoNode[], step = 1) {
+    const d = syntheticDesign();
+    d.grid.step = step;
+    d.geoNodes = nodes;
+    d.nodes = []; d.edges = []; d.buildings = [];
+    return d;
+}
+const base = () => layer("G", rect(-30, -30, 30, 30), { type: "ground", value: 2 });
+const circle = (r: number): Path => ({ closed: true, nodes: [-r, r].map((x, i) => ({ id: "c" + i, p: [x, 0], next: "arc", mode: "corner", bulge: 1 })) });
 
 test("A seed reproduces terrain and graded heights", () => {
-    const design = syntheticDesign();
-    const model = new Island(design);
-    const again = new Island(syntheticDesign());
-    assert.deepEqual(model.terrain.heights, again.terrain.heights);
-    assert.deepEqual(model.graded.heights, again.graded.heights);
-    const changed = structuredClone(design);
-    changed.seed++;
-    assert.notDeepEqual(generateTerrain(changed).heights, model.terrain.heights);
+    const g = base();
+    g.function = { type: "ground", value: 3, noise: { amplitude: 1.5, scale: 1 }, seed: 7 };
+    const d = design([g]);
+    const initial = new Island(d);
+    assert.deepEqual(new Island(structuredClone(d)).graded.heights, initial.graded.heights);
+    d.seed++;
+    assert.notDeepEqual(generateTerrain(d).heights, initial.terrain.heights);
+    g.function.seed = 6;
+    assert.deepEqual(generateTerrain(d).heights, initial.terrain.heights);
 });
 
-test("Half-metre grid, routing and eastern shoreline", fixtureOptions("round4.json", "regressions.json"), async () => {
-    const again = new Island(await referenceDesign());
-    const design = again.design;
-    const half = structuredClone(design);
-    half.grid.step = .5;
-    const fine = generateTerrain(half);
-    assert.equal(fine.grid.size, 4 * again.terrain.grid.size);
-    assert(fine.heights.every(Number.isFinite));
-    assert(Number.isFinite(sample(fine.grid, fine.heights, half.grid.xMax, half.grid.yMax)));
-    assert(routeAll(half, fine).every(r => r.parts.every(p => !p.failed)));
-    const { shoreline, shoreDistance: [min, max] } = (await readRegressions()).round4;
-    for (const [x, y] of shoreline) {
-        let shore = x;
-        while (shore < design.grid.xMax && again.terrain.land[again.terrain.grid.index(shore, y)]) shore++;
-        assert(shore - x >= min && shore - x <= max, "Shoreline outside the survey range");
-    }
+test("Adaptive auto cubic vertices lie on the v4 Catmull-Rom curve", () => {
+    const p: Point[] = [[-11, -4], [1, -12], [14, 5], [0, 6]];
+    const path: Path = { closed: true, nodes: p.map((v, i) => ({ id: String(i), p: v, mode: "auto" })) };
+    const segments = flattenPath(path, .0625), sampled = spline(p, true, 256);
+    for (const s of segments) assert(sampled.some(v => distance(v, s.a) < 1e-9));
+    const vertices = segments.map(s => s.a);
+    for (const v of sampled) assert(nearest(...v, vertices, true).distance <= .0625);
 });
 
-test("Street end rise fades radially while distant heights stay fixed", fixtureOptions("round6.json", "regressions.json"), async () => {
-    const raw = await readFixture("round6.json");
-    const sha = (data: string | Uint8Array) => createHash("sha256").update(data).digest("hex");
-    const legacy = originalWoodland(raw);
-    // Replay the historical engine input before the v3-to-v4 defaults are applied.
-    const original = new Island(legacy as Design);
-    const d = parseDesign(raw), island = new Island(d), terrain = island.terrain, grid = terrain.grid;
-    const rise = d.zones.find(z => z.height.endRise)!.height.endRise!;
-    const { center, fade, level } = rise;
-    assert.deepEqual(fade, [4, 13]);
-    const expected = (await readRegressions()).round6;
-    let outer = 0, inner = 0, maxBefore = 0, maxAfter = 0;
-    const far = [];
-    for (let j = 0; j < grid.height; j++)
-        for (let i = 0; i < grid.width; i++) {
-            const k = j * grid.width + i, p: Point = [grid.x(i), grid.y(j)], r = distance(center, p);
-            if (r >= fade[1]) {
-                assert.equal(terrain.heights[k], original.terrain.heights[k]);
-                far.push(terrain.heights[k]);
-                outer++;
-            }
-            if (r <= fade[0]) {
-                assert.equal(terrain.coefficients[level][k], 0);
-                inner++;
-            }
-            if (r > expected.nearRadius)
-                continue;
-            for (const [u, v] of [[i + 1, j], [i, j + 1]]) {
-                if (distance(center, [grid.x(u), grid.y(v)]) > expected.nearRadius)
-                    continue;
-                const n = v * grid.width + u;
-                maxBefore = Math.max(maxBefore, Math.abs(original.terrain.heights[n] - original.terrain.heights[k]));
-                maxAfter = Math.max(maxAfter, Math.abs(terrain.heights[n] - terrain.heights[k]));
-            }
-        }
-    assert.equal(inner, expected.innerSamples);
-    assert.equal(outer, expected.outerSamples);
-    assert.equal(sha(Buffer.from(Float32Array.from(far).buffer)), expected.farDigest);
-    assert(maxBefore > expected.minOriginalRise && maxAfter <= expected.maxMigratedRise);
-    for (const fade of [[-1, 13], [8, 8], [14, 4]] as Point[]) {
-        const invalid = structuredClone(d);
-        invalid.zones.find(z => z.height.endRise)!.height.endRise!.fade = fade;
-        assert.throws(() => parseDesign(serializeDesign(invalid)), /半径/);
+test("Two bulge semicircles cover the disk area and even-odd paths cut a hole", () => {
+    const g = base(); g.construction = { type: "free", paths: [circle(20)] };
+    const d = design([g], .5), full = evaluateStack(d);
+    const area = full.defined.reduce((a, b) => a + b, 0) * d.grid.step ** 2;
+    assert(Math.abs(area / (Math.PI * 400) - 1) < .01);
+    g.construction.paths.push({ ...circle(7), nodes: circle(7).nodes.map(v => ({ ...v, id: "hole" + v.id })) });
+    const hole = evaluateStack(d);
+    assert.equal(hole.defined[hole.grid.index(0, 0)], 0);
+    assert.equal(hole.defined[hole.grid.index(12, 0)], 1);
+    assert.equal(sampleDefined(hole.grid, hole.fields.height, hole.defined, 0, 0), undefined);
+});
+
+test("Shared strips match touching and overlapping rectangles and ranges survive unrelated vertex edits", () => {
+    const left = layer("A", rect(-12, -5, 0, 5), { type: "flat", value: 3 });
+    const right = rect(0, -10, 12, 10);
+    const b = layer("B", right, { type: "flat", value: 7 });
+    const band = layer("C", { type: "strip", of: ["A", "B"], widths: [2, 3] }, { type: "blend" });
+    const d = design([base(), left, b, band]);
+    const mask = () => evaluateStack(parseDesign(d)).regions.get("C")!.mask;
+    const signed = signedBoundaryDistance(evaluateStack(d).regions.get("A")!.shape);
+    assert.equal(signed(-2, 0), 2);
+    assert.equal(signed(2, 0), -2);
+    const before = mask();
+    const { grid } = evaluateStack(d);
+    for (let k = 0; k < grid.size; k++) {
+        const [x, y] = grid.point(k), endDistance = Math.max(0, Math.abs(y) - 5);
+        const inUnion = x >= 0 ? x < 12 && Math.abs(y) < 10 : x >= -12 && Math.abs(y) < 5;
+        assert.equal(before[k], +(inUnion && Math.hypot(x, endDistance) <= (x >= 0 ? 3 : 2)));
     }
+    left.construction = rect(-12, -5, 2, 5);
+    assert.deepEqual(mask(), before);
+    const single = { type: "strip" as const, of: ["B"] as [string], widths: [1, 2] as Point, range: { from: "3", to: "0" } };
+    band.construction = single;
+    const selected = mask(), p = right.paths[0];
+    delete (band.construction as { range?: unknown }).range;
+    assert(mask().reduce((a, b) => a + b) > selected.reduce((a, b) => a + b));
+    single.range = { from: "3", to: "0" };
+    p.nodes.splice(2, 0, { id: "extra", p: [12, 0], mode: "corner", next: "line" });
+    assert.deepEqual(mask(), selected);
+    p.nodes.splice(2, 1);
+    assert.deepEqual(mask(), selected);
+    p.nodes.pop();
+    assert.throws(() => parseDesign(d), /range.*找不到/);
+});
+
+test("Blend is monotone, split holds both side values, and a batter measures its grade and residual", () => {
+    const plateau = layer("A", rect(-20, -10, 0, 10), { type: "flat", value: 7 });
+    const strip = layer("B", { type: "strip", of: ["A"], widths: [2, 6], range: { from: "1", to: "2" } }, { type: "blend" });
+    const d = design([base(), plateau, strip], .5);
+    const across = (t: ReturnType<typeof generateTerrain>, xs: number[]) => xs.map(x => t.heights[t.grid.index(x, 0)]);
+    const xs = Array.from({ length: 16 }, (_, i) => -1.75 + i * .5);
+    const blend = across(generateTerrain(d), xs);
+    assert(blend[0] > 6.9 && blend.at(-1)! < 2.1 && blend.every((v, i) => !i || v < blend[i - 1]));
+    strip.function = { type: "split" };
+    assert.deepEqual(across(generateTerrain(d), xs), xs.map(x => x < 0 ? 7 : 2));
+    strip.function = { type: "batter", grade: .5 };
+    assert(strip.construction.type === "strip");
+    strip.construction.widths = [0, 6];
+    const terrain = generateTerrain(d), fill = across(terrain, [.25, 1.25, 2.25, 3.25]);
+    for (let i = 1; i < fill.length; i++) assert(Math.abs((fill[i - 1] - fill[i]) / .5 - 1) < .02);
+    const issues = terrainIssues(d, terrain, terrain.heights).filter(i => i.kind === "short-batter");
+    assert.equal(issues.length, 1);
+    assert.match(issues[0].message, /放坡不到底.*2\.00/);
+    strip.construction.widths = [0, 12];
+    assert.equal(generateTerrain(d).batterResiduals.size, 0);
+});
+
+test("Zero-width batter edges through grid centres take the input from the high side", () => {
+    const top = layer("A", rect(-12, -10, .5, 10), { type: "flat", value: 8 });
+    const strip = layer("B", { type: "strip", of: ["A"], widths: [0, 8], range: { from: "1", to: "2" } }, { type: "batter", grade: 1 });
+    const t = generateTerrain(design([base(), top, strip]));
+    assert.equal(t.heights[t.grid.index(1.5, .5)], 7);
+    assert.equal(t.heights[t.grid.index(2.5, .5)], 6);
+});
+
+test("Height diagnostics count uncovered cardinal pairs once and ignore non-height strips", () => {
+    const top = layer("A", rect(-3, -2, 3, 2), { type: "flat", value: 5 });
+    const band = layer("B", { type: "strip", of: ["A"], widths: [1, 1] }, { type: "split" }, "f");
+    const d = design([base(), top, band]); d.fields.f = { default: 1 };
+    const issues = () => {
+        const t = generateTerrain(d); return terrainIssues(d, t, t.heights).filter(i => i.kind === "untreated-height");
+    };
+    const raw = issues();
+    assert.equal(raw.length, 1);
+    assert.equal(raw[0].geoNode, "A");
+    assert.match(raw[0].message, /20 处.*3\.00/);
+    delete band.field;
+    assert.equal(issues().length, 0);
+    d.geoNodes.pop(); top.function = { type: "flat", value: 2.5 };
+    assert.equal(issues().length, 0);
+});
+
+test("Canvas and ordinary height writes respect ground order, holes and other field defaults", () => {
+    const g = base(), c = rect(-50, -50, 50, 50);
+    const hole = rect(2, 2, 8, 8).paths[0];
+    assert(g.construction.type === "free");
+    g.construction.paths.push({ ...hole, nodes: hole.nodes.map(v => ({ ...v, id: "h" + v.id })) });
+    const d = design([layer("early", c, { type: "flat", value: 19 }), layer("color", c, { type: "add", amount: 2, feather: 0 }, "f"), g,
+        layer("T", rect(-50, -2, 2, 2), { type: "flat", value: 12 })]);
+    d.fields.f = { default: 3 };
+    const t = generateTerrain(parseDesign(d));
+    assert.equal(t.grid.width, 60);
+    assert.equal(t.fields.f[t.grid.index(0, 0)], 5);
+    assert.equal(t.heights[t.grid.index(10, 10)], 2);
+    assert.equal(t.heights[t.grid.index(0, 0)], 12);
+    assert.equal(sampleDefined(t.grid, t.heights, t.defined, -40, 0), undefined);
+    const i = t.grid.index(4, 4);
+    assert.deepEqual([t.defined[i], t.heights[i], t.fields.f[i], t.shore[i]], [0, 0, 0, 0]);
+    assert.equal(terrainSurface(t, t.heights)(i), undefined);
+});
+
+test("A zero strength disk protects every cell of an eroded slope", () => {
+    const all = rect(-24, -24, 24, 24);
+    const d = design([base(), layer("S", all, { type: "slope", kind: "radial", center: [0, 0], value: 16, radius: 0, rate: -.3 }),
+        layer("P", { type: "free", paths: [circle(6)] }, { type: "flat", value: 0 }, "f")]);
+    d.fields.f = { default: 1 };
+    const before = evaluateStack(d);
+    d.geoNodes.push(layer("E", all, { ...erosion, droplets: 2400, strength: { field: "f" } }));
+    const after = evaluateStack(d);
+    assert(after.fields.height.some((v, k) => v !== before.fields.height[k]));
+    for (const k of after.regions.get("P")!.cells) assert.equal(after.fields.height[k], before.fields.height[k]);
+});
+
+test("All functions operate on a design with no declared fields", () => {
+    const all = rect(-20, -20, 20, 20), nodes = [base(),
+        layer("C", all, { type: "coast", shore: circle(12), roughness: 2 }),
+        layer("M", all, { type: "mountain", ridges: [], peaks: [], floor: 0 }), layer("K", all, { type: "cliff", factor: .7 }),
+        layer("E", all, erosion), layer("I", all, { type: "islets", density: 1, reach: 5 }), layer("F", all, { type: "flat", value: 5 }),
+        layer("A", all, { type: "add", amount: 1, feather: 3 }), layer("S", all, { type: "slope", kind: "path", line: { points: [{ p: [-2, 0], h: 2 }, { p: [2, 0], h: 3 }] } })];
+    for (const type of ["blend", "batter", "split"] as const)
+        nodes.push(layer(type, { type: "strip", of: ["F"], widths: [2, 2] }, type === "batter" ? { type, grade: .4 } : { type }));
+    const d = parseDesign(design(nodes)), a = new Island(d), b = new Island(parseDesign(d));
+    assert.deepEqual(a.graded.heights, b.graded.heights);
+    assert(a.terrain.heights.every(Number.isFinite));
+    assert.deepEqual(Object.keys(a.terrain.fields), ["height"]);
+});
+
+test("A route cannot cross a canvas gap and a failed alignment leaves the ground intact", () => {
+    const d = syntheticDesign(), g = d.geoNodes[0];
+    g.construction = { type: "free", paths: [rect(-30, -30, -2, 30).paths[0],
+        { ...rect(2, -30, 30, 30).paths[0], nodes: rect(2, -30, 30, 30).paths[0].nodes.map(v => ({ ...v, id: "b" + v.id })) }] };
+    const i = new Island(parseDesign(d)), out = exportIsland(i, { commit: "", sha256: "" });
+    assert(i.routes[0].offCanvas && i.routes[0].parts.some(p => p.failed));
+    assert.equal(out.roads.length, 0);
+    assert(i.issues.some(issue => issue.kind === "no-route" && issue.message.includes("未定义")));
+    assert(!i.issues.some(issue => issue.kind.endsWith("-grade")));
+    assert.deepEqual(i.graded.heights, i.terrain.heights);
+    assert(i.trees.every(tree => i.terrain.defined[i.terrain.grid.index(...tree.point)]));
 });

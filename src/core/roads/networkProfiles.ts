@@ -2,20 +2,20 @@ import { type Alignment, type Route, type Terrain } from "../design/results.ts";
 import { nodePose } from "../design/model.ts";
 import { padCell } from "../design/shapes.ts";
 import { type Design } from "../design/v5.ts";
-import { sample } from "../math/geometry.ts";
+import { sampleDefined } from "../math/geometry.ts";
 import { profile } from "./profiles.ts";
 
 // Edges share their node's survey elevation even when a fillet moves a horizontal endpoint.
 function nodeElevations(design: Design, terrain: Terrain) {
-    const { grid, heights } = terrain;
+    const { grid, heights, defined } = terrain;
     const elevations = new Map<string, number>(), doors = new Set<string>();
     for (const node of design.nodes) {
         const building = node.type === "door" ? design.buildings.findIndex(b => b.id === node.building) : -1;
-        if (building >= 0) {
+        if (building >= 0 && terrain.pads[building].length) {
             doors.add(node.id);
             elevations.set(node.id, heights[padCell(grid, terrain.pads[building], design.buildings[building].center)]);
         }
-        else elevations.set(node.id, sample(grid, heights, ...nodePose(design, node).point));
+        else elevations.set(node.id, sampleDefined(grid, heights, defined, ...nodePose(design, node).point) ?? 0);
     }
 
     // Connected deck spans share one level, including ordinary roads at either end.

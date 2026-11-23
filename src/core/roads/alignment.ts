@@ -1,6 +1,6 @@
 import { type Alignment, type RoutePart, type RoutingSurface } from "../design/results.ts";
 import { type Design, type Edge, type Point } from "../design/v5.ts";
-import { canvasSegment, advance, angleDiff, bearing, clamp, distance, nearest, radians, resample, sample, stations } from "../math/geometry.ts";
+import { canvasSegment, advance, angleDiff, bearing, clamp, distance, nearest, radians, resample, sampleDefined, stations } from "../math/geometry.ts";
 
 export function radiusAt(a: Point, b: Point, c: Point) {
     const x = b[0] - a[0], y = b[1] - a[1], u = c[0] - b[0], v = c[1] - b[1];
@@ -186,7 +186,7 @@ export function fairAlignment(design: Design, terrain: RoutingSurface, edge: Edg
         if (nearest(...q, domains[part]).distance > edge.corridor + 1e-6)
             return;
         if ((edge.segments?.[part]?.mode ?? edge.mode ?? "route") === "route" &&
-      (sample(terrain.grid, terrain.clearance, ...q) < edge.width / 2 || sample(terrain.grid, terrain.heights, ...q) < design.routing.minHeight))
+      ((sampleDefined(terrain.grid, terrain.clearance, terrain.defined, ...q) ?? -Infinity) < edge.width / 2 || (sampleDefined(terrain.grid, terrain.heights, terrain.defined, ...q) ?? -Infinity) < design.routing.minHeight))
             return;
         if (!canvasSegment(terrain.grid, terrain.defined, points[i - 1], q) || !canvasSegment(terrain.grid, terrain.defined, q, points[i + 1])) return;
         points[i] = q;

@@ -85,7 +85,9 @@ export function drawSections(container: HTMLElement, island: Island) {
             ctx.stroke();
         }
         for (let i = 0; i <= n;) {
-            if (ground[i] === undefined) { i++; continue; }
+            if (ground[i] === undefined) {
+                i++; continue;
+            }
             const start = i;
             ctx.beginPath();
             ctx.moveTo(sx(len * i / n), sy(Math.max(ground[i]!, -3)));

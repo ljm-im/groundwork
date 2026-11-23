@@ -90,7 +90,9 @@ export function relief(island: Island) {
                 const k = j * width + i,
                     v = h[k],
                     at = k * 4;
-                if (!t.defined[k]) { data[at + 3] = 0; continue; }
+                if (!t.defined[k]) {
+                    data[at + 3] = 0; continue;
+                }
                 if (v < 0) {
                     const depth = clamp(-t.shore[k] * .09 / 5);
                     data[at] = 186 - 36 * depth;

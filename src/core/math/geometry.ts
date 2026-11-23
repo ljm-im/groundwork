@@ -170,8 +170,12 @@ export function canvasSegment(g: Grid, mask: Uint8Array, a: Point, b: Point) {
     let ty = sy ? (g.yMax - (j + (sy > 0 ? 1 : 0)) * g.step - a[1]) / dy : Infinity;
     while (i !== endI || j !== endJ) {
         const t = Math.min(i === endI ? Infinity : tx, j === endJ ? Infinity : ty);
-        if (i !== endI && tx <= t) { i += sx; tx += strideX; }
-        if (j !== endJ && ty <= t) { j += sy; ty += strideY; }
+        if (i !== endI && tx <= t) {
+            i += sx; tx += strideX;
+        }
+        if (j !== endJ && ty <= t) {
+            j += sy; ty += strideY;
+        }
         if (!mask[j * g.width + i]) return false;
     }
     return true;
@@ -185,6 +189,8 @@ export function sampleDefined(grid: Grid, field: ArrayLike<number>, mask: Uint8A
     const fx = clamp((x - grid.xMin) / grid.step - .5, 0, grid.width - 1);
     const fy = clamp((grid.yMax - y) / grid.step - .5, 0, grid.height - 1);
     const i = Math.floor(fx), j = Math.floor(fy);
+    const k = j * grid.width + i, right = i + 1 < grid.width ? 1 : 0, down = j + 1 < grid.height ? grid.width : 0;
+    if (!side && mask[k] && mask[k + right] && mask[k + down] && mask[k + right + down]) return sample(grid, field, x, y);
     let sum = 0, weight = 0;
     for (let row = j; row <= Math.min(j + 1, grid.height - 1); row++) {
         for (let col = i; col <= Math.min(i + 1, grid.width - 1); col++) {

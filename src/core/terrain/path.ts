@@ -44,8 +44,10 @@ export function flattenPath(path: Path, tolerance: number) {
         if (v.next === "arc") flattenArc(v.p, next.p, v.bulge!, tolerance, points);
         else if (v.next === "line") points.push(next.p);
         else flattenCurve(v.p, handle(i, "out"), handle(i + 1, "in"), next.p, tolerance, points);
+        const start = segments.length;
         for (let j = 1; j < points.length; j++)
             if (distance(points[j - 1], points[j]) > 0) segments.push({ a: points[j - 1], b: points[j], from: v.id });
+        if (segments.length === start) segments.push({ a: v.p, b: next.p, from: v.id });
     }
     return segments;
 }

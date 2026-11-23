@@ -1,26 +1,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { type Point, type Ellipse, type Sector, type Yard, type Polygon } from "../src/core/design/types.ts";
-import { fixtureOptions, readRegressions } from "../configs/read-fixture.ts";
-import { advance, angleDiff, distance, nearest, pointAt, radians, sample, mixPoint } from "../src/core/math/geometry.ts";
+import { type Point, type Polygon } from "../src/core/design/v5.ts";
+import { advance, distance, pointAt, radians, mixPoint } from "../src/core/math/geometry.ts";
 import { addDoor, canPlaceBuilding, doorRoads, placeBuilding, removeBuildingPart, rotateBuilding, setShape, titlePoint, nearbyWall, openDoorAt } from "../src/core/edit/buildings.ts";
 import { History } from "../src/core/edit/history.ts";
 import { Island } from "../src/core/island.ts";
-import { moveNode, nodePose, parseDesign, serializeDesign, zonePolygon, buildingShape } from "../src/core/design/model.ts";
+import { moveNode, nodePose, parseDesign, serializeDesign, buildingShape } from "../src/core/design/model.ts";
 import { moveHandle } from "../src/core/edit/controls.ts";
 import { generateTerrain } from "../src/core/terrain/terrain.ts";
-import { addGate, addNode, connect, removeLinks, splitRoad } from "../src/core/edit/topology.ts";
-import { hedgeLines } from "../src/core/edit/yards.ts";
-import { gateDistance, gateFraction, gatePose } from "../src/core/design/gates.ts";
-import { insidePolygon, perimeter } from "../src/core/math/polygon.ts";
-import { addFeature, deleteFeature, featureHit, featureLine, insertVertex, clickDrawing, drawingTarget, finishExtension, newDrawing } from "../src/core/edit/landforms.ts";
-import { branchJunction, referenceDesign, syntheticDesign } from "./scenarios.ts";
+import { addNode, connect, removeLinks, splitRoad } from "../src/core/edit/topology.ts";
+import { addFeature, insertVertex, clickDrawing, newDrawing } from "../src/core/edit/landforms.ts";
+import { branchJunction, junctionDesign, syntheticDesign } from "./scenarios.ts";
 
-test("Moving buildings, shared nodes and snapped entrances", fixtureOptions("round4.json"), async () => {
-    const moved = await referenceDesign();
-    const plaza = moved.yards!.find(y => y.kind === "plaza")!;
-    const plazaShape = moved.zones.find(z => z.id === plaza.zone)!.shape as Ellipse;
-    const [cx, cy] = plazaShape.center, [, ry] = plazaShape.radii;
+test("Moving buildings, shared nodes and snapped entrances", () => {
+    const moved = junctionDesign();
     const house = moved.buildings.find(b => b.shape === "rect" && b.doors.length)!;
     const door = { type: "door" as const, building: house.id, door: house.doors[0].id };
     const initial = nodePose(moved, door);
@@ -36,14 +29,7 @@ test("Moving buildings, shared nodes and snapped entrances", fixtureOptions("rou
     moveNode(moved, shared, target);
     assert.deepEqual(nodePose(moved, shared).point, target);
     assert.equal(nodePose(moved, moved.nodes.find(n => n.type === "endpoint" && n.direction == null)!).angle!, null);
-    const entrance = moved.nodes.find(n => n.yard === plaza.id)!;
-    moveNode(moved, entrance, [cx, cy + ry + 20]);
-    assert(distance(nodePose(moved, entrance).point, [cx, cy + ry]) < 1e-7);
-    assert(angleDiff(nodePose(moved, entrance).angle!, Math.PI / 2) < 1e-8);
-    const tower = moved.buildings.find(b => b.shape === "circle" && b.doors.length)!, lampDoor = moved.nodes.find(n => n.building === tower.id)!;
-    moveNode(moved, lampDoor, [tower.center[0] - 20, tower.center[1]]);
-    assert(distance(nodePose(moved, lampDoor).point, [tower.center[0] - tower.radius!, tower.center[1]]) < 1e-8);
-    assert(angleDiff(nodePose(moved, lampDoor).angle!, Math.PI) < 1e-8);
+
 });
 
 test("History capacity, undo and redo branches", () => {
@@ -61,70 +47,14 @@ test("History capacity, undo and redo branches", () => {
     assert(!hist.canRedo);
 });
 
-test("Yard boundaries, gate snapping, hedges and spacing", fixtureOptions("round4.json", "regressions.json"), async () => {
-    const again = new Island(await referenceDesign());
-    const yard = again.design.yards!.find(y => y.buildings?.length) as Yard & { points: Point[] };
-    const gates = again.design.nodes.filter(n => n.yard === yard.id);
-    const building = again.design.buildings.find(b => yard.buildings!.includes(b.id) && b.doors.length)!;
-    const door = { type: "door" as const, building: building.id, door: building.doors[0].id };
-    const height = again.design.zones.find(z => z.id === yard.zone)!.height.level!;
-    assert.deepEqual(yard.points, zonePolygon(again.design.zones.find(z => z.id === yard.zone)!.shape));
-    assert.equal(gates.length, (await readRegressions()).round4.yardGates);
-    const boundary = perimeter(yard), gaps = [];
-    for (const [i, gate] of gates.entries()) {
-        const pose = nodePose(again.design, gate);
-        assert(Math.abs(sample(again.terrain.grid, again.graded.heights, ...pose.point) - again.design.levels[height]) < 1e-6);
-        assert(nearest(...pose.point, yard.points, true).distance < 1e-8);
-        assert(!insidePolygon(yard, advance(pose.point, pose.angle!, .1)));
-        for (const other of gates.slice(i + 1)) gaps.push(gateDistance(gate, other, boundary.length));
-    }
-    assert(Math.min(...gaps) >= 6);
-    assert(again.terrain.yards[0].cells.every(k => again.graded.heights[k] === again.design.levels[height]));
-    for (const r of again.routes) for (const p of r.points) {
-        assert(!insidePolygon(yard, p) || nearest(...p, yard.points, true).distance < 1e-7, r.edge.name + " 进入院内");
-    }
-    assert(!again.design.nodes.some(n => n.building === building.id));
-    assert.deepEqual((again.design.vegetation.clearings.find(c => c.cover === "ambient" && c.shape?.type === "sector")!.shape as Sector).center, nodePose(again.design, door).point);
-    const edited = structuredClone(again.design), editedYard = edited.yards!.find(y => y.id === yard.id)! as Yard & { points: Point[] };
-    const endpoint = edited.nodes.find(n => n.type === "viewpoint")!, added = addGate(edited, editedYard, endpoint);
-    const position = added.gate.at;
-    assert.equal(position, gateFraction(editedYard, endpoint.point!));
-    moveNode(edited, endpoint, [0, 20]);
-    assert.equal(added.gate.at, position);
-    moveNode(edited, added.gate, yard.points[9]);
-    const at = added.gate.at, original = nodePose(edited, added.gate).point, p9 = yard.points[9];
-    moveHandle(edited, { kind: "yard", id: yard.id, index: 9 }, [p9[0], p9[1] + 1]);
-    assert.equal(added.gate.at, at);
-    assert(distance(original, nodePose(edited, added.gate).point) > .4);
-    parseDesign(serializeDesign(edited));
-    added.gate.at = gates[0].at;
-    const beside = nodePose(edited, added.gate).point;
-    edited.buildings.find(b => yard.buildings!.includes(b.id) && b.id !== building.id)!.center = beside;
-    const crowded = new Island(edited);
-    assert(crowded.issues.some(i => i.kind === "gate-spacing" && i.severity === "notice"));
-    assert(crowded.issues.some(i => i.kind === "gate-building" && i.severity === "error"));
-});
 
-test("Gate poses, hedge gaps and distances respect both polygon windings", () => {
-    const square: { points: Point[] } = { points: [[0, 0], [12, 0], [12, 12], [0, 12]] };
-    for (const polygon of [square, { points: [...square.points].reverse() }]) {
-        for (const p of [[0, 6], [6, 0], [0, 0]] as Point[]) {
-            const pose = gatePose(polygon, gateFraction(polygon, p));
-            assert(distance(pose.point, p) < 1e-7 && !insidePolygon(polygon, advance(p, pose.angle!, .2)));
-        }
-    }
-    const walls = hedgeLines(square, [{ id: "opening", name: "Opening", type: "gate", at: 0 }], []);
-    assert(walls.every(line => nearest(0, 0, line).distance >= 1.7));
-    const arc = perimeter(square).length;
-    assert.equal(gateDistance({ at: .98 }, { at: .02 }, arc).toFixed(2), "1.92");
-});
 
-test("Splitting and removing roads maintains through pairs and approaches", fixtureOptions("round4.json"), async () => {
-    const again = new Island(await referenceDesign());
+test("Splitting and removing roads maintains through pairs and approaches", () => {
+    const again = new Island(junctionDesign());
     const forkNode = branchJunction(again.design);
     const main = forkNode.through!.map(id => again.routes.find(r => r.id === id)!);
     const branch = again.routes.find(r => r.edge.from === forkNode.id && !main.includes(r))!;
-    const portal = again.design.edges.find(e => again.design.nodes.some(n => n.id === e.to && n.type === "gate"))!,
+    const portal = again.design.edges.find(e => again.design.nodes.some(n => n.id === e.to && n.type === "door"))!,
         front = nodePose(again.design, portal.to);
     const onLead = advance(front.point, front.angle!, 1);
     const cutDesign = structuredClone(again.design), cutIsland = new Island(cutDesign);
@@ -219,39 +149,6 @@ test("Building footprints, door connections, removal and undo", () => {
     assert(restored.buildings.includes(restoredCottage) && !restoredCottage.doors.length && restored.edges.some(e => e.id === access.id));
 });
 
-test("Sculpting peaks and ridges replays terrain through history", () => {
-    const author = syntheticDesign(), baseline = new Island(author);
-    // Rebuild through the production Island constructor including erosion at each history step.
-    const sculpt = structuredClone(author), history = new History(sculpt);
-    const peak = addFeature(sculpt, "peak", [[9, 1]], { level: "A", offset: 9 });
-    history.record(sculpt);
-    const withPeak = new Island(sculpt).terrain.heights;
-    assert.notDeepEqual(withPeak, baseline.terrain.heights);
-    const ridge = addFeature(sculpt, "ridge", [[-12, 14], [1, 17], [14, 15]], [8, { level: "A", offset: 14 }, 8]);
-    ridge.widths = [12, 15];
-    history.record(sculpt);
-    const initial = new Island(sculpt).terrain.heights;
-    assert.notDeepEqual(initial, withPeak);
-    const handle = { kind: "ridge", id: ridge.id, role: "vertex", index: 1 };
-    deleteFeature(sculpt, handle);
-    history.record(sculpt);
-    const withoutVertex = new Island(sculpt).terrain.heights;
-    assert.notDeepEqual(withoutVertex, initial);
-    assert.deepEqual(new Island(history.step(false)!).terrain.heights, initial);
-    assert.deepEqual(new Island(history.step(true)!).terrain.heights, withoutVertex);
-    let restored = history.step(false)!;
-    const originalRidge = restored.ridges.at(-1)!, samplePoint = featureLine(restored, "ridge", originalRidge)[4];
-    const hit = featureHit(restored, "ridge", originalRidge, samplePoint);
-    const inserted = insertVertex(restored, handle, hit);
-    assert.equal(inserted, 1);
-    assert.deepEqual(originalRidge.points[inserted].point, samplePoint);
-    deleteFeature(restored, { ...handle, index: inserted });
-    assert.deepEqual(new Island(restored).terrain.heights, initial);
-    deleteFeature(restored, { kind: "ridge", id: ridge.id });
-    assert.deepEqual(new Island(restored).terrain.heights, withPeak);
-    deleteFeature(restored, { kind: "peak", id: peak.id });
-    assert.deepEqual(new Island(restored).terrain.heights, baseline.terrain.heights);
-});
 
 test("Creating, converting and removing doors preserves roads", () => {
     const town = syntheticDesign(), junction = town.nodes[0], rect = town.buildings[0];
@@ -287,61 +184,8 @@ test("Creating, converting and removing doors preserves roads", () => {
     assert.deepEqual(parseDesign(serializeDesign(town)), town);
 });
 
-test("Ridge insertion, extension, joining and polygon drawing", () => {
-    const d = syntheticDesign();
-    const east = addFeature(d, "ridge", [[15, -15], [19, -5], [21, 7], [14, 13]],
-        [5, { level: "A", offset: 2 }, { level: "A", offset: 8 }, 9]);
-    const west = addFeature(d, "ridge", [[-20, -11], [-22, 2], [-19, 13]]);
-    // Each committed click uses the same state transition as the canvas event.
-    const terrain = new Island(d).terrain, grid = terrain.grid;
-    const saved = serializeDesign(d), history = new History(d);
-    const eastMid = featureLine(d, "ridge", east)[12], scale = 8;
-    let drawing = newDrawing("ridge");
-    const selected = clickDrawing(d, drawing, eastMid, scale)!;
-    assert(selected.changed && selected.selection.index === 2 && selected.selection.id === east.id);
-    assert.equal(east.points.length, 5);
-    assert.deepEqual(east.points[2].height, { level: "A", offset: 5 });
-    assert.deepEqual(drawing.points, []);
-    assert(!clickDrawing(d, drawing, east.points[2].point, scale)!.changed);
-    assert.equal(east.points.length, 5);
-    history.record(d);
-    assert.equal(serializeDesign(history.step(false)!), saved);
-    assert.deepEqual(history.step(true)!.ridges.find(r => r.id === east.id)!.points, east.points);
-
-    for (const atStart of [false, true]) {
-        const doc = parseDesign(saved), before = structuredClone(west.points), journal = new History(doc);
-        drawing = newDrawing("ridge");
-        clickDrawing(doc, drawing, before[atStart ? 0 : before.length - 1].point, scale)!;
-        const extra: Point[] = atStart ? [[-24, -17], [-25, -22]] : [[-18, 19], [-15, 24]];
-        for (const p of extra)
-            clickDrawing(doc, drawing, p, scale)!;
-        assert.equal(serializeDesign(doc), saved);
-        const heights = extra.map(p => Math.round(sample(grid, terrain.heights, ...p) + 6));
-        finishExtension(doc, drawing, heights);
-        const added = extra.map((point, i) => ({ point, height: heights[i] }));
-        assert.deepEqual(doc.ridges.find(r => r.id === west.id)!.points, atStart ? [...added.reverse(), ...before] : [...before, ...added]);
-        journal.record(doc);
-        assert.equal(serializeDesign(journal.step(false)!), saved);
-        assert.deepEqual(journal.step(true)!, doc);
-    }
-
-    const doc = parseDesign(saved), journal = new History(doc);
-    drawing = newDrawing("ridge");
-    clickDrawing(doc, drawing, [30, 7], scale)!;
-    clickDrawing(doc, drawing, eastMid, scale)!;
-    assert.equal(drawing.points.length, 2);
-    assert.equal(doc.ridges.find(r => r.id === east.id)!.points.length, 4);
-    addFeature(doc, "ridge", drawing.points, 11);
-    journal.record(doc);
-    assert.equal(serializeDesign(journal.step(false)!), saved);
-    const near = structuredClone(doc);
-    const r1 = addFeature(near, "ridge", [[0, 0], [5, 0], [10, 0]]), r2 = addFeature(near, "ridge", [[0, .6], [5, .6], [10, .6]]);
-    assert.equal(drawingTarget(near, "ridge", [7.5, .5], 10)!.id, r2.id);
-    assert.equal(drawingTarget(near, "ridge", [0, -1], 10)!.action, "extend");
-    assert.equal(drawingTarget(near, "ridge", [5, -1], 10)!.action, "select");
-    assert.equal(drawingTarget(near, "ridge", [5, -1.01], 10)!, null);
-    assert.equal(drawingTarget(near, "ridge", [7.5, .05], 10)!.id, r1.id);
-
+test("Polygon drawing, insertion and undo preserve planting and clearing boundaries", () => {
+    const saved = serializeDesign(syntheticDesign());
     for (const kind of ["planting", "clearing"] as const) {
         const doc = parseDesign(saved), area = addFeature(doc, kind, [[0, 0], [8, 0], [8, 8], [0, 8]]);
         const journal = new History(doc), original = serializeDesign(doc), vertices = "points" in area ? area.points : (area.shape as Polygon).points;

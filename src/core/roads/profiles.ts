@@ -1,6 +1,6 @@
 import { type Alignment, type Route, type Graded, type Terrain, type RoutingSurface } from "../design/results.ts";
 import { type RoadClass, type Design } from "../design/v5.ts";
-import { bounds, clamp, eachCell, pointAt, sample, smooth, stations } from "../math/geometry.ts";
+import { bounds, clamp, eachCell, pointAt, sampleDefined, smooth, stations } from "../math/geometry.ts";
 
 function valueAt(s: Float64Array, h: number[], d: number) {
     let lo = 0,
@@ -62,7 +62,7 @@ function stairSegments(grades: number[], s: Float64Array, rule: RoadClass) {
     return stairs;
 }
 
-function fitStairLandings(design: Design, terrain: Pick<RoutingSurface, "grid" | "heights">, route: Alignment, s: Float64Array, h: number[]) {
+function fitStairLandings(design: Design, terrain: Pick<RoutingSurface, "grid" | "heights" | "defined">, route: Alignment, s: Float64Array, h: number[]) {
     const { edge, points, platforms = [] } = route, length = s.at(-1)!;
     const flat = new Uint8Array(Math.max(0, s.length - 1));
     if (edge.grade !== "stair" || !length) return flat;
@@ -75,7 +75,8 @@ function fitStairLandings(design: Design, terrain: Pick<RoutingSurface, "grid" |
             const node = design.nodes.find(n => n.id === id);
             if (!apron || node?.type !== "door") continue;
             const anchor = start ? h[0] : h.at(-1)!;
-            const ground = sample(terrain.grid, terrain.heights, ...pointAt(points, s, start ? apron : length - apron));
+            const ground = sampleDefined(terrain.grid, terrain.heights, terrain.defined, ...pointAt(points, s, start ? apron : length - apron));
+            if (ground === undefined) continue;
             if (Math.abs(ground - anchor) <= limit * apron) continue;
             const grade = Math.max(limit - 1e-8, Math.abs(h.at(-1)! - h[0]) / length);
             for (let i = 1; i < h.length - 1; i++) {
@@ -122,9 +123,9 @@ function samplePlatformEdges(route: Alignment) {
     return result;
 }
 
-export function profile(design: Design, terrain: Pick<RoutingSurface, "grid" | "heights">, route: Alignment, elevations?: readonly [number, number]): Route {
+export function profile(design: Design, terrain: Pick<RoutingSurface, "grid" | "heights" | "defined">, route: Alignment, elevations?: readonly [number, number]): Route {
     const { edge } = route, points = samplePlatformEdges(route), s = stations(points), length = s.at(-1)!;
-    let h = points.map(p => sample(terrain.grid, terrain.heights, ...p));
+    let h = points.map(p => sampleDefined(terrain.grid, terrain.heights, terrain.defined, ...p) ?? 0);
     if (elevations) {
         h[0] = elevations[0];
         h[h.length - 1] = elevations[1];

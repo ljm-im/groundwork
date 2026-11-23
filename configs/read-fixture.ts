@@ -31,21 +31,15 @@ export async function designFixtures() {
     return Promise.all(names.map(async name => ({ name, text: await readFixture(name) })));
 }
 
+interface Edits { variables: string[]; move: string; swap: [string, string]; remove: string }
 interface Regressions {
     exportCommit: string;
-    round4: {
-        convertedRoads: string[]; circuit: string[]; yardGates: number; outgoingFraction: number;
-        shoreline: [number, number][]; shoreDistance: [number, number]; perfEdge: string; perfLevel: string;
-    };
-    round5: {
-        issues: Record<string, number>; nodes: number; edges: number; removedLabel: string;
-        plantingDensity: number; rowSpacing: number;
-    };
-    round6: {
-        sourceDigest: string; innerSamples: number; outerSamples: number; farDigest: string;
-        nearRadius: number; minOriginalRise: number; maxMigratedRise: number;
-        woodlandNames: string[]; woodlandTrees: number[]; scatter: number;
-    };
+    perfEdge: string;
+    fixtures: Record<string, Edits>;
+}
+
+export function readLegacyFixture(name: "round4.json" | "round6.json" | "street-v1.json") {
+    return readFile(new URL("v4/" + name, fixtures), "utf8");
 }
 
 export async function readRegressions(): Promise<Regressions> {

@@ -19,9 +19,10 @@ export function validateGeo(d: Design) {
     for (const [key, f] of Object.entries(d.fields))
         check(key && finite(f?.default) && (f.label == null || typeof f.label === "string"), "fields." + key + " 无效");
     const field = (name: string) => name === "height" || Object.hasOwn(d.fields, name);
+    const missingVariables: string[] = [];
     const upperPaths = new Map<string, Path[]>();
     for (const [i, n] of d.geoNodes.entries()) {
-        const at = `geoNodes[${i}] (${n.id})`;
+        const at = "geoNodes[" + i + "]";
         const valid = (ok: unknown, path: string) => check(ok, at + "." + path + " 无效");
         const ids = new Set<string>();
         function path(p: Path, key: string) {
@@ -40,7 +41,8 @@ export function validateGeo(d: Design) {
         function height(h: Height, key: string) {
             if (typeof h === "number") valid(finite(h), key);
             else {
-                check(h && typeof h.var === "string" && Object.hasOwn(d.variables, h.var), at + "." + key + " 找不到变量 " + h?.var);
+                valid(h && typeof h.var === "string", key);
+                if (!Object.hasOwn(d.variables, h.var)) missingVariables.push(at + "." + key + " 找不到变量 " + h.var);
                 valid(finite(h.offset ?? 0), key + ".offset");
             }
         }
@@ -127,5 +129,6 @@ export function validateGeo(d: Design) {
     }
     check(d.geoNodes.some(n => n.function.type === "ground"), "geoNodes 缺少确定画布的 ground");
     for (const [i, label] of d.labels.entries())
-        if (label.var !== undefined) check(Object.hasOwn(d.variables, label.var), "labels[" + i + "].var 找不到变量 " + label.var);
+        if (label.var !== undefined && !Object.hasOwn(d.variables, label.var)) missingVariables.push("labels[" + i + "].var 找不到变量 " + label.var);
+    check(!missingVariables.length, missingVariables.join("\n"));
 }

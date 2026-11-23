@@ -1,7 +1,7 @@
 import { type Design, type RoadNode, type Edge, type Point, type Segment, type RoadPair } from "../design/v5.ts";
 import { type Route } from "../design/results.ts";
 import { distance, nearest } from "../math/geometry.ts";
-import { nodePose, throughPairs } from "../design/model.ts";
+import { throughPairs } from "../design/model.ts";
 
 export function newId(list: { id: string }[], prefix: string) {
     let i = 1;

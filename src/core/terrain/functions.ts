@@ -4,7 +4,7 @@ import { distance, nearest, polygonField, sampleDefined, smooth, spline, station
 import { fbm, noise } from "../math/noise.ts";
 import { erode } from "./erosion.ts";
 import { flattenPath } from "./path.ts";
-import { boundaryDistance } from "./regions.ts";
+import { signedBoundaryDistance } from "./regions.ts";
 import { shoreDistance } from "./shore.ts";
 
 export interface FieldState {
@@ -70,8 +70,10 @@ export function evaluateLayer(d: Design, n: GeoNode, region: Region, state: Fiel
                 };
             }
             case "add": {
-                const edges = region.shape.boundary().flat(), amount = height(f.amount);
-                return (k, x, y) => source[k] + amount * (f.feather ? smooth(boundaryDistance(edges, x, y) / f.feather) : 1);
+                const amount = height(f.amount);
+                if (!f.feather) return k => source[k] + amount;
+                const distanceToEdge = signedBoundaryDistance(region.shape);
+                return (k, x, y) => source[k] + amount * smooth(distanceToEdge(x, y) / f.feather);
             }
             case "coast": {
                 const shoreline = flattenPath(f.shore, grid.step / 8).map(s => s.a);
@@ -140,8 +142,13 @@ export function evaluateLayer(d: Design, n: GeoNode, region: Region, state: Fiel
                 const [w1, w2] = n.construction.widths;
                 return (k, x, y) => {
                     const { s, first, normal: [nx, ny], at: [ax, ay] } = region.shape.cross!([x, y])!;
-                    const edge = (w: number, sign: number) => sampleDefined(grid, source, mask, ax + sign * nx * w, ay + sign * ny * w,
-                        w ? undefined : ([px, py]) => sign * ((px - ax) * nx + (py - ay) * ny) >= 0);
+                    const edge = (w: number, sign: number) => {
+                        if (w) return sampleDefined(grid, source, mask, ax + sign * nx * w, ay + sign * ny * w);
+                        // Take the one-sided limit even when the authored edge passes through a cell centre.
+                        const epsilon = grid.step * 1e-6;
+                        return sampleDefined(grid, source, mask, ax + sign * nx * epsilon, ay + sign * ny * epsilon,
+                            ([px, py]) => sign * ((px - ax) * nx + (py - ay) * ny) > epsilon / 2);
+                    };
                     if (f.type === "split") return first ? edge(w1, -1) : edge(w2, 1);
                     const a = edge(w1, -1), b = edge(w2, 1);
                     if (a === undefined || b === undefined) return;

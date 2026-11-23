@@ -3,8 +3,9 @@ import { readFixture, readRegressions } from "./read-fixture.ts";
 import { Island } from "../src/core/island.ts";
 import { parseDesign } from "../src/core/design/model.ts";
 
-const design = parseDesign(await readFixture("round4.json"));
-const { perfEdge, perfLevel } = (await readRegressions()).round4;
+const design = parseDesign(await readFixture("round14-coast.json"));
+const { perfEdge, fixtures } = await readRegressions();
+const variable = fixtures.coast.variables[0];
 const timings: Record<string, number> = {};
 
 function time<T>(name: string, fn: () => T) {
@@ -26,8 +27,8 @@ console.table(model.routes.map(r => ({
 })));
 time("全部重新选线", () => model.reroute());
 const edge = design.edges.find(e => e.id === perfEdge);
-if (!edge || !Object.hasOwn(design.levels, perfLevel)) throw Error("Unknown performance scenario in .local/fixtures/regressions.json");
+if (!edge || !Object.hasOwn(design.variables, variable)) throw Error("Unknown performance scenario in .local/fixtures/regressions.json");
 time(`单条边重算（${edge.name}）`, () => model.reroute(new Set([edge.id])));
-design.levels[perfLevel] += .5;
-time("标高预览（保持线形）", () => model.levels());
+design.variables[variable].value += .5;
+time("变量预览（保持线形）", () => model.variables());
 console.table(timings);

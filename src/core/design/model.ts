@@ -1,4 +1,4 @@
-import { type Design, type Edge, type Point, type RoadNode, type RoadMode, type RoadPair } from "./v5.ts";
+import { type Design, type Edge, type RoadNode, type RoadMode, type RoadPair } from "./v5.ts";
 import { distance, radians } from "../math/geometry.ts";
 import { doorPose } from "./shapes.ts";
 import { simpleBoundary } from "../math/polygon.ts";
@@ -18,7 +18,12 @@ export function parseDesign(text: unknown): Design {
     check(d && typeof d === "object", "不支持的版本");
     check(![1, 2, 3, 4].includes(d.version), "暂不支持 v4 设计，等待迁移");
     check(d.version === 5, "不支持的版本");
+    function rejectRetired(value: object, path: string, names: string[]) {
+        for (const name of names) check(!Object.hasOwn(value, name), path + name + " 已从 v5 移除");
+    }
+    rejectRetired(d, "", ["levels", "levelControls", "coast", "ridges", "peaks", "zones", "erosion", "yards"]);
     check(positive(d.grid?.step), "网格参数无效");
+    rejectRetired(d.grid, "grid.", ["xMin", "xMax", "yMin", "yMax"]);
     check(Number.isSafeInteger(d.seed), "种子无效");
     for (const key of ["geoNodes", "buildings", "nodes", "edges", "sections"] as const) {
         const list = d[key];
@@ -30,6 +35,9 @@ export function parseDesign(text: unknown): Design {
         });
     }
     check(Array.isArray(d.labels), "labels 缺失");
+    for (const [i, label] of d.labels.entries()) rejectRetired(label, "labels[" + i + "].", ["level"]);
+    for (const [i, b] of d.buildings.entries()) rejectRetired(b, "buildings[" + i + "].", ["zone"]);
+    for (const [i, n] of d.nodes.entries()) rejectRetired(n, "nodes[" + i + "].", ["yard", "at"]);
     validateGeo(d);
     const routing = d.routing;
     check(routing && (["sampleStep", "gradeWindow", "overlapLength"] as const).every(k => positive(routing[k])) &&
@@ -48,6 +56,8 @@ export function parseDesign(text: unknown): Design {
     check(v && v.density && fraction(v.density.natural) && Object.keys(v.density).length === 1, "vegetation.density 无效");
     check(Array.isArray(v.rooms) && [...v.rooms, v.yardTree].every(disk => disk && point(disk.center) && Number.isFinite(disk.radius) && disk.radius >= 0), "vegetation 圆形范围无效");
     for (const list of [v.plantings, v.clearings]) check(Array.isArray(list) && list.every(a => a.id && typeof a.name === "string") && new Set(list.map(a => a.id)).size === list.length, "植被区域 ID 或名称无效");
+    for (const [i, a] of v.plantings.entries()) rejectRetired(a, "vegetation.plantings[" + i + "].", ["zones"]);
+    for (const [i, c] of v.clearings.entries()) rejectRetired(c, "vegetation.clearings[" + i + "].", ["zone"]);
     for (const a of v.plantings) {
         check(typeof (a.natural ?? false) === "boolean" && Number.isFinite(a.feather ?? 0) && (a.feather ?? 0) >= 0, a.name + " 的地形或种植区域无效");
         check(validPoints(a.points, 3) && simpleBoundary(a.points) && fraction(a.density) && fraction(a.clump) && point(a.size) && positive(a.size[0]) && a.size[1] >= a.size[0] &&

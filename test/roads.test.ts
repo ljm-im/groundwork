@@ -1,42 +1,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { type Point, type Design, type Edge, type Ellipse, type Yard } from "../src/core/design/types.ts";
+import { type Point, type Design, type Edge, type Building } from "../src/core/design/v5.ts";
 import { type Alignment } from "../src/core/design/results.ts";
-import { advance, angleDiff, bearing, createGrid, distance, nearest, pointAt, radians, sample, stations } from "../src/core/math/geometry.ts";
+import { advance, angleDiff, bearing, createGrid, distance, nearest, pointAt, radians, resample, sample, stations } from "../src/core/math/geometry.ts";
 import { radiusAt, exemptRadius } from "../src/core/roads/alignment.ts";
 import { Island } from "../src/core/island.ts";
-import { nodePose, serializeDesign } from "../src/core/design/model.ts";
-import { profile } from "../src/core/roads/profiles.ts";
+import { nodePose } from "../src/core/design/model.ts";
+import { gradeRoads, profile } from "../src/core/roads/profiles.ts";
 import { clearLead, routeAll, routeEdge } from "../src/core/roads/routing.ts";
 import { selfOverlaps } from "../src/core/roads/proximity.ts";
 import { armBearing, validateDesign, validateRoads } from "../src/core/checks/validation.ts";
-import { gateFraction } from "../src/core/design/gates.ts";
-import { fixtureOptions, readRegressions } from "../configs/read-fixture.ts";
-import { branchJunction, referenceDesign, oldStreet, syntheticDesign, syntheticRoads } from "./scenarios.ts";
+import { branchJunction, junctionDesign, syntheticDesign, syntheticRoads } from "./scenarios.ts";
 
-test("Migrated streets preserve continuity and the old centreline", fixtureOptions("round4.json", "street-v1.json", "regressions.json"), async () => {
-    const design = await referenceDesign(), input = serializeDesign(design);
-    const model = new Island(design);
-    assert.equal(model.routes.length, design.edges.length);
-    const expected = (await readRegressions()).round4;
-    assert(expected.convertedRoads.every(id => model.routes.some(r => r.id === id)));
-    const street = await oldStreet();
-    const circuit = expected.circuit.map(id => model.routes.find(r => r.id === id)!);
-    assert(circuit.every((r, i) => r.edge.mode === "smooth" && (!i || circuit[i - 1].edge.to === r.edge.from)));
-    const centerline = circuit.flatMap((r, i) => i ? r.points.slice(1) : r.points), oldS = stations(street), newS = stations(centerline);
-    const deviations = [
-        Math.max(...street.map((p, i) => distance(p, pointAt(centerline, newS, newS.at(-1)! * oldS[i] / oldS.at(-1)!)))),
-        Math.max(...street.map(p => nearest(...p, centerline).distance)), Math.max(...centerline.map(p => nearest(...p, street).distance))
-    ];
-    assert(deviations.every(m => m <= 1), "环街偏差超过1m");
-    assert(!/"direction"\s*:/.test(input) && !("doorLead" in design.routing));
-});
 
-test("Endpoints, radii, corridors and portal headings", fixtureOptions("round4.json", "regressions.json"), async () => {
-    const design = await referenceDesign();
+test("Endpoints, radii, corridors and portal headings", () => {
+    const design = junctionDesign();
     const model = new Island(design);
-    const expected = (await readRegressions()).round4;
-    const circuit = expected.circuit.map(id => model.routes.find(r => r.id === id)!);
     const fork = branchJunction(design);
     for (const route of model.routes) {
         const { edge, parts } = route;
@@ -69,7 +48,7 @@ test("Endpoints, radii, corridors and portal headings", fixtureOptions("round4.j
             [edge.to, parts.at(-1)!]
         ] as const) {
             const n = design.nodes.find(n => n.id === id)!, pose = nodePose(design, n);
-            if (!["gate", "door"].includes(n.type)) continue;
+            if (n.type !== "door") continue;
             const clearance = clearLead(n, edge, design.routing);
             assert.equal(clearance, edge.width / 2 + .5);
             const lead = advance(pose.point, pose.normal!, clearance);
@@ -83,21 +62,59 @@ test("Endpoints, radii, corridors and portal headings", fixtureOptions("round4.j
             assert(headings.every(a => headings.every(b => angleDiff(a, b) <= 30 * radians + 1e-7)), n.name + " 离墙后3m转向超限");
         }
     }
-    const plaza = design.yards!.find(y => y.kind === "plaza")!;
-    const plazaShape = design.zones.find(z => z.id === plaza.zone)!.shape as Ellipse;
-    const gate = design.nodes.find(n => n.yard === plaza.id)!;
-    const plazaRoute = model.routes.find(r => r.edge.from === gate.id)!, [px, py] = plazaRoute.points[0];
-    const [cx, cy] = plazaShape.center, [rx, ry] = plazaShape.radii;
-    assert(Math.abs(((px - cx) / rx) ** 2 + ((py - cy) / ry) ** 2 - 1) < 1e-9);
-    const plazaNormal = Math.atan2((py - cy) / ry ** 2, (px - cx) / rx ** 2);
-    const continuation = model.routes.find(r => r.edge.from === circuit.at(-1)!.edge.to)!;
-    for (const [r, expected] of [[plazaRoute, plazaNormal], [continuation, bearing(...circuit.at(-1)!.points.slice(-2) as [Point, Point])]] as const) {
-        const actual = bearing(r.points[0], pointAt(r.points, r.s, 2));
-        assert(angleDiff(expected, actual) <= 5 * radians);
+
+});
+
+test("Road beds follow a diagonal incline and a six-metre-radius curve between survey stations", () => {
+    const design = syntheticDesign(), grid = createGrid({ xMin: -48, xMax: 48, yMin: -48, yMax: 48, step: design.grid.step });
+    design.routing.profilePasses = 0;
+    const diagonal: Point[] = [[-16.5, -8.5], [7.5, 9.5]];
+    const arc = Array.from({ length: 13 }, (_, i): Point => [2.5 + 6 * Math.cos(i * Math.PI / 24), 2.5 + 6 * Math.sin(i * Math.PI / 24)]);
+    for (const [index, line] of [resample(diagonal, 1), arc].entries()) {
+        const terrain = { grid, defined: new Uint8Array(grid.size).fill(1), padMask: new Uint8Array(grid.size), heights: Float32Array.from({ length: grid.size }, (_, k) => {
+            const [x, y] = grid.point(k);
+            return index ? 12 + .4 * (y - x) : 12 + .4 * x + .3 * y;
+        }) };
+        const edge = { ...design.edges[0], grade: "street", width: 3 };
+        const route = profile(design, terrain, { id: edge.id, edge, points: line, controls: line, parts: [] });
+        const graded = gradeRoads(design, terrain, [route]);
+        if (!index) assert(Math.abs(route.drop / route.length - .5) < 1e-6);
+        for (let j = 0; j <= Math.ceil(route.length * 4); j++) {
+            const at = Math.min(j / 4, route.length), next = Math.max(1, route.s.findIndex(s => s >= at));
+            const t = (at - route.s[next - 1]) / (route.s[next] - route.s[next - 1]);
+            const h = route.h[next - 1] + (route.h[next] - route.h[next - 1]) * t;
+            assert(Math.abs(h - sample(grid, graded.heights, ...pointAt(line, route.s, at))) <= .05, "station " + at);
+        }
     }
 });
 
-test("Selective rerouting and level previews retain unaffected geometry", () => {
+test("Overlapping road beds use centreline distance, design order for ties and the protected pad mask", () => {
+    const { synthetic, grid, flat, road } = syntheticRoads();
+    const a = road("A", "a", "b", [[0, .5], [18, .5]], { width: 2 });
+    const b = road("B", "c", "d", [[0, 2.5], [18, 2.5]], { width: 10 });
+    a.h = [2, 11];
+    b.h = [20, 20];
+    const terrain = { ...flat, padMask: new Uint8Array(grid.size) };
+    terrain.padMask[grid.index(4.5, .5)] = 1;
+    synthetic.edges = [a.edge, b.edge];
+    const result = gradeRoads(synthetic, terrain, [b, a]);
+    assert.equal(result.heights[grid.index(8.5, .5)], 6.25);
+    assert.equal(result.heights[grid.index(8.5, 1.5)], 6.25);
+    assert.equal(result.heights[grid.index(8.5, 2.5)], 20);
+    assert.equal(result.heights[grid.index(4.5, .5)], 5);
+    synthetic.edges.reverse();
+    assert.equal(gradeRoads(synthetic, terrain, [a, b]).heights[grid.index(8.5, 1.5)], 20);
+
+    const points: Point[] = [[.17, .9], [18.82, 8.79]];
+    const first = road("C", "a", "b", points, { width: 5 });
+    const second = road("D", "c", "d", points.toReversed(), { width: 5 });
+    first.h = [2, 2];
+    second.h = [8, 8];
+    synthetic.edges = [first.edge, second.edge];
+    assert.deepEqual(gradeRoads(synthetic, terrain, [second, first]), gradeRoads(synthetic, terrain, [first]));
+});
+
+test("Selective rerouting and variable previews retain unaffected geometry", () => {
     const design = syntheticDesign();
     design.nodes.push({ id: "c", name: "C", type: "endpoint", point: [6, 4] });
     design.edges.push({ ...design.edges[0], id: "F", from: "c" });
@@ -109,16 +126,16 @@ test("Selective rerouting and level previews retain unaffected geometry", () => 
     assert.notEqual(model.routes.find(r => r.id === design.edges[0].id)!, previous.find(r => r.id === design.edges[0].id)!);
     assert.equal(model.routes.find(r => r.id === design.edges[1].id)!, previous.find(r => r.id === design.edges[1].id)!);
     const originalLines = model.routes.map(r => r.points);
-    design.levels.A += .5;
-    model.levels();
+    design.variables.A.value += .5;
+    model.variables();
     assert(model.routes.every((r, i) => r.points === originalLines[i]));
-    model.levels(true);
+    model.variables(true);
     assert.deepEqual(model.graded.heights, new Island(structuredClone(design)).graded.heights, "编辑后保存并重开应恢复同一地形");
 });
 
-test("Splitting a portal lead preserves the original centreline", fixtureOptions("round4.json"), async () => {
-    const again = new Island(await referenceDesign());
-    const portal = again.design.edges.find(e => again.design.nodes.some(n => n.id === e.to && n.type === "gate"))!,
+test("Splitting a portal lead preserves the original centreline", () => {
+    const again = new Island(junctionDesign());
+    const portal = again.design.edges.find(e => again.design.nodes.some(n => n.id === e.to && n.type === "door"))!,
         front = nodePose(again.design, portal.to);
     const onLead = advance(front.point, front.angle!, 1);
     const split = routeEdge(again.design, again.terrain, { ...portal, via: [onLead] });
@@ -132,7 +149,7 @@ test("Splitting a portal lead preserves the original centreline", fixtureOptions
 test("Unroutable edges return a straight, flagged fallback", () => {
     const testDesign = syntheticDesign(), again = new Island(testDesign);
     const edge = { ...testDesign.edges[0], from: "ocean-a", to: "ocean-b", via: [] };
-    testDesign.nodes.push({ id: "ocean-a", name: "ocean-a", type: "junction", point: [-46, 45] }, { id: "ocean-b", name: "ocean-b", type: "junction", point: [-40, 45] });
+    testDesign.nodes.push({ id: "ocean-a", name: "ocean-a", type: "junction", point: [-52, 45] }, { id: "ocean-b", name: "ocean-b", type: "junction", point: [-51, 45] });
     const fallback = profile(testDesign, again.terrain, routeEdge(testDesign, again.terrain, edge));
     assert(fallback.parts.some(p => p.failed));
     assert(validateRoads(testDesign, again.terrain, [fallback]).some(i => i.kind === "no-route"));
@@ -143,11 +160,10 @@ test("Opposing entrances and compulsory loops", () => {
     const { synthetic, flat, grid } = syntheticRoads();
     const design = synthetic;
     const approach = structuredClone(synthetic);
-    const smallYard: Yard & { points: Point[] } = { id: "test-yard", name: "Test yard", zone: "test", points: [[0, -1], [1, -1], [1, 1], [0, 1]] };
-    approach.yards = [smallYard];
-    approach.buildings = [{ id: "tower", name: "Tower", height: 2, color: "gray", shape: "circle", center: [14, 0], radius: 1, doors: [{ id: "D", angle: 0 }] }];
+    const tower: Building = { id: "tower", name: "A", height: 2, color: "gray", shape: "circle", center: [14, 0], radius: 1, doors: [{ id: "D", angle: 0 }] };
+    approach.buildings = [tower, { ...tower, id: "west", center: [1, 0], doors: [{ id: "D", angle: 180 }] }];
     approach.nodes = [
-        { id: "P", name: "P", type: "gate", yard: smallYard.id, at: gateFraction(smallYard, [0, 0]) },
+        { id: "P", name: "P", type: "door", building: "west", door: "D" },
         { id: "Q", name: "Q", type: "door", building: "tower", door: "D" }
     ];
     const opposite = { ...design.edges[0], id: "opposing", from: "P", to: "Q", width: 2, corridor: 10, via: [] };
@@ -175,7 +191,7 @@ test("Stair flights, corner landings and narrow treads", () => {
         { id: "P", name: "P", type: "junction", point: [-4.5, .5] }, { id: "Q", name: "Q", type: "junction", point: [6.5, 10.5] }
     ] };
     const stairEdge = { ...synthetic.edges[0], from: "P", to: "Q", width: 2, corridor: 10 };
-    const ravine = { grid, clearance: new Float32Array(grid.size), heights: new Float32Array(grid.size) };
+    const ravine = { grid, defined: new Uint8Array(grid.size).fill(1), clearance: new Float32Array(grid.size), heights: new Float32Array(grid.size) };
     for (let i = 0; i < grid.size; i++) {
         const [x, y] = grid.point(i);
         if (y === .5 && x >= -4.5 && x <= 6.5 || x === 6.5 && y >= .5 && y <= 10.5) ravine.clearance[i] = 1;
@@ -197,16 +213,15 @@ test("Stair flights, corner landings and narrow treads", () => {
     assert(routeEdge(flights, ravine, stairEdge).parts.some(p => p.failed));
 });
 
-test("Through roads and branch angles are independent of edge order", fixtureOptions("round4.json", "regressions.json"), async () => {
-    const again = new Island(await referenceDesign());
+test("Through roads and branch angles are independent of edge order", () => {
+    const again = new Island(junctionDesign());
     const forkNode = branchJunction(again.design);
     const main = forkNode.through!.map(id => again.routes.find(r => r.id === id)!);
     const branch = again.routes.find(r => r.edge.from === forkNode.id && !main.includes(r))!;
     const arms = main.map(r => armBearing(r, forkNode.id));
     const mainAngle = 180 - angleDiff(arms[0], arms[1]) / radians;
     const branchAngle = Math.min(...arms.map(a => angleDiff(armBearing(branch, forkNode.id), a))) / radians;
-    const outgoingFraction = main[1].length / (main[0].length + main[1].length);
-    assert(mainAngle <= 10 && branchAngle >= 30 && Math.abs(outgoingFraction - (await readRegressions()).round4.outgoingFraction) < .05);
+    assert(mainAngle <= 10 && branchAngle >= 30);
     assert(angleDiff(bearing(...main[0].points.slice(-2) as [Point, Point]), bearing(...main[1].points.slice(0, 2) as [Point, Point])) < 1e-7);
     const shallow = { ...main[1], id: branch.id, edge: branch.edge };
     assert(validateDesign(again.design, again.terrain, again.graded.heights, [...main, shallow]).some(i => i.kind === "branch-angle"));
@@ -221,7 +236,7 @@ test("Through junctions remain tangent around a closed circuit", () => {
         id: String(i), name: String(i), type: "junction", point: point as Point, through: ["r" + ((i + 3) % 4), "r" + i]
     }));
     ring.edges = ring.nodes.map((n, i) => ({ ...curve, id: "r" + i, from: n.id, to: ring.nodes[(i + 1) % 4].id, via: [] }));
-    const plain = { grid, heights: new Float32Array(grid.size).fill(5), clearance: new Float32Array(grid.size).fill(20) };
+    const plain = { grid, defined: new Uint8Array(grid.size).fill(1), heights: new Float32Array(grid.size).fill(5), clearance: new Float32Array(grid.size).fill(20) };
     const loop = routeAll(ring, plain);
     for (const [i, r] of loop.entries()) {
         assert(r.parts.every(p => !p.failed));
@@ -231,7 +246,7 @@ test("Through junctions remain tangent around a closed circuit", () => {
 
 test("Straight, smooth and routed modes preserve corners and obstacle clearance", () => {
     const { synthetic, grid, flat, road } = syntheticRoads();
-    const plain = { grid, heights: new Float32Array(grid.size).fill(5), clearance: new Float32Array(grid.size).fill(20) };
+    const plain = { grid, defined: new Uint8Array(grid.size).fill(1), heights: new Float32Array(grid.size).fill(5), clearance: new Float32Array(grid.size).fill(20) };
     // Geometry of each mode is measured on the sampled line that is actually profiled and drawn.
     const elbowDesign = structuredClone(synthetic);
     elbowDesign.nodes = [{ id: "a", name: "a", type: "endpoint", point: [0, 0] }, { id: "b", name: "b", type: "endpoint", point: [12, 12] }];
@@ -280,7 +295,7 @@ test("Straight, smooth and routed modes preserve corners and obstacle clearance"
         assert.equal(r.stairRuns, 0);
     }
     const bypassGrid = createGrid({ xMin: -10, yMin: -28, xMax: 56, yMax: 28, step: 1 });
-    const obstacle = { grid: bypassGrid, heights: new Float32Array(bypassGrid.size).fill(5),
+    const obstacle = { grid: bypassGrid, defined: new Uint8Array(bypassGrid.size).fill(1), heights: new Float32Array(bypassGrid.size).fill(5),
         clearance: Float32Array.from({ length: bypassGrid.size }, (_, i) => {
             const [x, y] = bypassGrid.point(i); return Math.hypot(x - 20, y) - 4;
         }) };

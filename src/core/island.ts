@@ -6,6 +6,7 @@ import { plantTrees, visibleTrees } from "./vegetation/vegetation.ts";
 import { routeAll } from "./roads/routing.ts";
 import { gradeRoads } from "./roads/profiles.ts";
 import { networkProfiles } from "./roads/networkProfiles.ts";
+import { terrainIssues } from "./checks/terrain.ts";
 import { validateDesign, validateRoads } from "./checks/validation.ts";
 
 export class Island {
@@ -59,6 +60,7 @@ export class Island {
         this.graded = gradeRoads(this.design, this.terrain, this.routes);
         this.filterTrees();
         this.issues = validateRoads(this.design, this.terrain, this.routes);
+        this.issues.push(...terrainIssues(this.design, this.terrain, this.graded.heights));
         this.issues.push(...validateDesign(this.design, this.terrain, this.graded.heights, this.routes));
     }
 }

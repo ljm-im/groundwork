@@ -30,6 +30,8 @@ function check(value: unknown, type: ts.Type, path: string): string | undefined 
     if (typeof value === "boolean" && type.flags & ts.TypeFlags.BooleanLiteral && String(value) === checker.typeToString(type)) return;
     if (Array.isArray(value) && (checker.isTupleType(type) || checker.isArrayType(type))) {
         const elements = checker.getTypeArguments(type as ts.TypeReference);
+        if (checker.isTupleType(type) && value.length < ((type as ts.TypeReference).target as ts.TupleType).minLength)
+            return path + " is missing a tuple element";
         for (const [index, item] of value.entries()) {
             const entry = checker.isTupleType(type) ? elements[index] : elements[0];
             const child = path + "[" + index + "]";
@@ -41,6 +43,8 @@ function check(value: unknown, type: ts.Type, path: string): string | undefined 
     }
     if (value && typeof value === "object" && !Array.isArray(value) && (type.flags & ts.TypeFlags.Object || type.isIntersection())) {
         const index = checker.getIndexTypeOfType(type, ts.IndexKind.String);
+        for (const property of checker.getPropertiesOfType(type))
+            if (!(property.flags & ts.SymbolFlags.Optional) && !Object.hasOwn(value, property.name)) return path + "." + property.name + " is required";
         for (const [name, item] of Object.entries(value)) {
             const child = path + "." + name, property = checker.getPropertyOfType(type, name);
             const entry = property ? checker.getTypeOfSymbolAtLocation(property, declaration) : index;

@@ -3,7 +3,7 @@ import { type Design, type Point } from "../design/v5.ts";
 import { type Grid, type Box } from "../math/geometry.ts";
 type Emit = (kind: string, message: string, point: Point, severity?: Issue["severity"], geometry?: Partial<Issue>) => Issue;
 
-import { angleDiff, bearing, bounds, distance, eachCell, mixPoint, nearest, pointAt, radians, resample, sample } from "../math/geometry.ts";
+import { angleDiff, bearing, bounds, distance, eachCell, mixPoint, nearest, pointAt, radians, resample, sampleDefined, sample } from "../math/geometry.ts";
 import { exemptRadius, radiusAt } from "../roads/alignment.ts";
 import { nodePose, throughPairs } from "../design/model.ts";
 import { overlappingLocations, selfOverlaps, sharpBends } from "../roads/proximity.ts";
@@ -113,6 +113,13 @@ export function validateRoads(design: Design, terrain: Parameters<typeof surface
             const h = nearest(...p, r.points); return r.s[h.segment] + h.t * (r.s[h.segment + 1] - r.s[h.segment]);
         };
         const span = (from: number, to: number) => ({ spans: [{ road: r.id, from, to }] });
+        if (r.offCanvas) {
+            const failed = r.parts.filter(p => p.failed);
+            if (!failed.length) emit("no-route", "道路越出已定义地形，无法选线", r.points[Math.floor(r.points.length / 2)]);
+            for (const part of failed) emit("no-route", "道路穿过未定义地形，无法选线", part.points[Math.floor(part.points.length / 2)],
+                "error", span(at(part.points[0]), at(part.points.at(-1)!)));
+            continue;
+        }
         for (const part of r.parts) {
             if (part.failed) emit("no-route", "走廊内选线失败，已显示直线", part.points[Math.floor(part.points.length / 2)], "error", span(at(part.points[0]), at(part.points.at(-1)!)));
             const chord = r.controls.slice(part.index, part.index + 2);
@@ -154,7 +161,7 @@ export function validateRoads(design: Design, terrain: Parameters<typeof surface
             emit("self-overlap", "自身重叠 · 沿路相隔超过两倍路宽的路面净距不足 1 m", hit.point, "error", { spans: hit.ranges.map(([from, to]) => ({ road: r.id, from, to })) });
         }
     }
-    overlapIssues(design, routes, issues);
+    overlapIssues(design, routes.filter(r => !r.offCanvas), issues);
     return issues;
 }
 
@@ -166,8 +173,8 @@ export function armBearing(route: Route, nodeId: string) {
 }
 
 export function summitHeights(grid: Grid, heights: Float32Array, point: Point, defined?: Uint8Array) {
-    const [x, y] = point, ground = sample(grid, heights, x, y);
-    let highest = ground, highestAt = point;
+    const [x, y] = point, ground = defined ? sampleDefined(grid, heights, defined, x, y) : sample(grid, heights, x, y);
+    let highest = ground ?? -Infinity, highestAt = point;
     eachCell(grid, [x, y, x, y], 25, (k, px, py) => {
         if ((!defined || defined[k]) && (px - x) ** 2 + (py - y) ** 2 <= 625 && heights[k] > highest) {
             highest = heights[k];
@@ -195,7 +202,7 @@ export function validateDesign(d: Design, terrain: Pick<Terrain, "grid" | "build
     }
     for (const b of d.buildings.filter(b => b.summit)) {
         const { ground, highest } = summitHeights(terrain.grid, heights, b.center, terrain.defined);
-        if (highest - ground > .5) issues.push({ kind: "summit", severity: "error", building: b.id, point: b.center, label: b.name,
+        if (ground !== undefined && highest - ground > .5) issues.push({ kind: "summit", severity: "error", building: b.id, point: b.center, label: b.name,
             message: "基座 " + ground.toFixed(1) + " m，25 m 内最高 " + highest.toFixed(1) + " m，高差超过 0.5 m" });
     }
     return issues;

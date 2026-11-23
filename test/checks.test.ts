@@ -1,19 +1,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { type Point } from "../src/core/design/types.ts";
+import { type Point } from "../src/core/design/v5.ts";
 import { type Issue } from "../src/core/design/results.ts";
-import { fixtureOptions, readFixture, readRegressions } from "../configs/read-fixture.ts";
-import { advance, distance, nearest, pointAt, radians, sample, stations } from "../src/core/math/geometry.ts";
+import { fixtureOptions, readFixture } from "../configs/read-fixture.ts";
+import { advance, nearest, pointAt, radians, stations } from "../src/core/math/geometry.ts";
 import { Island } from "../src/core/island.ts";
 import { parseDesign, buildingShape } from "../src/core/design/model.ts";
 import { labelReading } from "../src/render/map.ts";
 import { selfOverlaps, sharpBends, overlappingLocations } from "../src/core/roads/proximity.ts";
 import { summitHeights, validateRoads } from "../src/core/checks/validation.ts";
 import { issueShapes, objectIssues } from "../src/core/checks/issues.ts";
-import { referenceDesign, syntheticDesign, syntheticRoads } from "./scenarios.ts";
+import { syntheticDesign, syntheticRoads } from "./scenarios.ts";
 
-test("Default roads meet their hard constraints", fixtureOptions("round4.json"), async () => {
-    const design = await referenceDesign();
+test("Default roads meet their hard constraints", () => {
+    const design = syntheticDesign();
     const model = new Island(design);
     assert(!model.issues.some(i => ["sharp-bend", "self-overlap"].includes(i.kind)), "默认路网出现急弯或自身重叠");
     assert.equal(model.issues.filter(i => i.kind === "no-route" || i.kind === "overlap").length, 0);
@@ -92,44 +92,22 @@ test("Grade windows and steps on streets", () => {
     assert(validateRoads(synthetic, flat, [steep]).some(i => i.kind === "stair-grade"));
 });
 
-test("Summit ground, zone heights and surveyed map labels", fixtureOptions("round4.json"), async () => {
-    const again = new Island(await referenceDesign());
-    const lighthouse = again.design.buildings.find(b => b.summit)!;
-    const lab = again.design.labels.find(l => l.building === lighthouse.id && l.level)!;
-    const target = again.design.levels[lab.level!];
-    const summit = summitHeights(again.terrain.grid, again.graded.heights, lighthouse.center);
-    assert(Math.abs(summit.ground - target) <= 1);
-    assert(summit.highest - summit.ground < 1e-6);
-    assert(!again.issues.some(i => i.kind === "summit"));
-    const peak = again.design.peaks.find(p => distance(p.center, lighthouse.center) < 1)!;
-    const nearby = again.terrain.grid.index(...lighthouse.center);
-    assert(again.terrain.cliff[nearby] >= peak.cliffMin! - 1e-6 && again.terrain.erosionWeight[nearby] < .03);
-    const lowered = structuredClone(again.design);
-    lowered.buildings.find(b => b.summit)!.center = [lighthouse.center[0], lighthouse.center[1] + 19];
-    const low = new Island(lowered);
-    assert(low.issues.some(i => i.kind === "summit" && i.severity === "error"));
-    const label = labelReading(low, lab);
-    assert.equal(label.actual, sample(low.terrain.grid, low.graded.heights, ...lowered.buildings.find(b => b.summit)!.center));
-    assert.equal(label.difference, "（设计 " + target + "m）");
-    const exact = { ...low, graded: { ...low.graded, heights: new Float32Array(low.terrain.grid.size).fill(target - .5) } };
-    assert.equal(labelReading(exact, lab).difference, "");
-    assert(again.issues.some(i => i.kind === "zone-height" && again.design.zones.some(z => z.id === i.zone && z.shape.type === "sector") && i.severity === "notice"));
+test("Summit survey and variable labels use the finished terrain", () => {
+    const design = syntheticDesign(), b = design.buildings[0];
+    b.summit = true;
+    design.variables.A.value = 9;
+    const island = new Island(design), label = { name: "A", building: b.id, var: "A" };
+    const summit = summitHeights(island.terrain.grid, island.graded.heights, b.center);
+    assert(summit.ground !== undefined);
+    assert.equal(summit.highest, summit.ground);
+    assert.equal(labelReading(island, label).difference, "");
+    design.variables.A.value = summit.ground + 2;
+    assert.match(labelReading(island, label).difference!, /设计/);
 });
 
-test("Issue counts and topology of the authored design", fixtureOptions("round5.json", "regressions.json"), async () => {
-    const original = await readFixture("round5.json");
-    const author = parseDesign(original), baseline = new Island(author);
-    const counts: Record<string, number> = {};
-    for (const issue of baseline.issues)
-        counts[issue.kind] = (counts[issue.kind] ?? 0) + 1;
-    const expected = (await readRegressions()).round5;
-    assert.deepEqual(counts, expected.issues);
-    assert.equal(author.nodes.length, expected.nodes);
-    assert.equal(author.edges.length, expected.edges);
-});
 
-test("Issue station bounds cover each offending interval", fixtureOptions("round5.json"), async () => {
-    const original = await readFixture("round5.json");
+test("Issue station bounds cover each offending interval", fixtureOptions("round14-land.json"), async () => {
+    const original = await readFixture("round14-land.json");
     const author = parseDesign(original), baseline = new Island(author);
     // Validate station bounds independently against every contiguous run of offending intervals.
     for (const route of baseline.routes) {

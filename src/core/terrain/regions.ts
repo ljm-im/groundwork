@@ -19,6 +19,7 @@ function rangeOf(paths: Segment[][], range: Strip["range"]) {
 
 function commonEdge(segment: Segment, lower: RegionShape, lowerEdges: Segment[], tolerance: number): Segment[] {
     const { a, b } = segment, dx = b[0] - a[0], dy = b[1] - a[1], length = distance(a, b);
+    if (!length) return [];
     const cuts = [0, 1], coincident: Point[] = [];
     for (const { a: p, b: q } of lowerEdges) {
         const ex = q[0] - p[0], ey = q[1] - p[1], det = dx * ey - dy * ex;
@@ -85,7 +86,7 @@ export function makeShape(node: GeoNode, below: Map<string, RegionShape>, tolera
     const firstInside = upperId === c.of[0], [w1, w2] = c.widths;
     const outline = rangeOf(upper.boundary(), c.range), lowerEdges = lower?.boundary().flat() ?? [];
     const edges = lower ? outline.flatMap(s => commonEdge(s, lower, lowerEdges, tolerance)) : outline;
-    const oriented = edges.map(({ a, b }) => {
+    const oriented = edges.filter(({ a, b }) => distance(a, b) > 0).map(({ a, b }) => {
         const length = distance(a, b), nx = (a[1] - b[1]) / length, ny = (b[0] - a[0]) / length, mid = mixPoint(a, b, .5);
         const sign = upper.contains([mid[0] + nx * tolerance * .001, mid[1] + ny * tolerance * .001]) === firstInside ? -1 : 1;
         return { a, b, normal: [sign * nx, sign * ny] as Point };
@@ -116,7 +117,11 @@ export function makeShape(node: GeoNode, below: Map<string, RegionShape>, tolera
 }
 
 export function canvasGrid(d: Design, shapes: Map<string, RegionShape>) {
-    const boxes = d.geoNodes.filter(n => n.function.type === "ground").map(n => shapes.get(n.id)!.box);
+    const boxes = d.geoNodes.filter(n => n.function.type === "ground").map(n => {
+        const shape = shapes.get(n.id)!;
+        if (n.construction.type === "free") return shape.box;
+        return bounds(shape.boundary().flatMap(path => path.flatMap(s => [s.a, s.b])));
+    });
     const { step } = d.grid, low = (x: number) => Math.floor(x / step) * step, high = (x: number) => Math.ceil(x / step) * step;
     const xMin = low(Math.min(...boxes.map(b => b[0]))), yMin = low(Math.min(...boxes.map(b => b[1])));
     const xMax = high(Math.max(...boxes.map(b => b[2]))), yMax = high(Math.max(...boxes.map(b => b[3])));
@@ -135,11 +140,14 @@ export function rasterRegion(grid: Grid, shape: RegionShape): Region {
     return { cells, mask, shape };
 }
 
-export function boundaryDistance(edges: Segment[], x: number, y: number) {
-    let best = Infinity;
-    for (const { a, b } of edges) {
-        const t = projection(x, y, a, b);
-        best = Math.min(best, (x - a[0] - t * (b[0] - a[0])) ** 2 + (y - a[1] - t * (b[1] - a[1])) ** 2);
-    }
-    return Math.sqrt(best);
+export function signedBoundaryDistance(shape: RegionShape) {
+    const edges = shape.boundary().flat();
+    return (x: number, y: number) => {
+        let best = Infinity;
+        for (const { a, b } of edges) {
+            const t = projection(x, y, a, b);
+            best = Math.min(best, (x - a[0] - t * (b[0] - a[0])) ** 2 + (y - a[1] - t * (b[1] - a[1])) ** 2);
+        }
+        return (shape.contains([x, y]) ? 1 : -1) * Math.sqrt(best);
+    };
 }

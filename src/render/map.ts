@@ -69,10 +69,18 @@ function regionPaths(region: Region, g: Grid) {
             const i = k % g.width, j = Math.floor(k / g.width), x = g.xMin + i * g.step, y = g.yMax - j * g.step;
             const right = x + g.step, bottom = y - g.step;
             area.rect(x, bottom, g.step, g.step);
-            if (!i || !region.mask[k - 1]) { outline.moveTo(x, y); outline.lineTo(x, bottom); }
-            if (!j || !region.mask[k - g.width]) { outline.moveTo(x, y); outline.lineTo(right, y); }
-            if (i + 1 === g.width || !region.mask[k + 1]) { outline.moveTo(right, y); outline.lineTo(right, bottom); }
-            if (j + 1 === g.height || !region.mask[k + g.width]) { outline.moveTo(x, bottom); outline.lineTo(right, bottom); }
+            if (!i || !region.mask[k - 1]) {
+                outline.moveTo(x, y); outline.lineTo(x, bottom);
+            }
+            if (!j || !region.mask[k - g.width]) {
+                outline.moveTo(x, y); outline.lineTo(right, y);
+            }
+            if (i + 1 === g.width || !region.mask[k + 1]) {
+                outline.moveTo(right, y); outline.lineTo(right, bottom);
+            }
+            if (j + 1 === g.height || !region.mask[k + g.width]) {
+                outline.moveTo(x, bottom); outline.lineTo(right, bottom);
+            }
         }
     }
     const paths = { area, outline };
@@ -307,7 +315,9 @@ export class IslandMap {
         for (const n of d.geoNodes) {
             if (!n.fill && !n.outline && !this.layers.geoNodes) continue;
             const paths = regionPaths(t.regions.get(n.id)!, g);
-            if (n.fill) { ctx.fillStyle = n.fill; ctx.fill(paths.area, "evenodd"); }
+            if (n.fill) {
+                ctx.fillStyle = n.fill; ctx.fill(paths.area, "evenodd");
+            }
             if (n.outline || this.layers.geoNodes) {
                 ctx.strokeStyle = "#806d50";
                 ctx.lineWidth = .6 / scale;
