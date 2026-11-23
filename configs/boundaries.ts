@@ -99,7 +99,8 @@ export function checkEditorSource() {
     assert(tracked.length);
     for (const file of tracked) {
         const source = readFileSync(resolve(root, file), "utf8");
-        assert.doesNotMatch(source, /[「」]/u, file);
+        assert.doesNotMatch(source, /[「」·]/u, file);
+        if (/\.(?:ts|svelte)$/u.test(file) && !file.includes("/migrations/")) assert.doesNotMatch(source, /岛/u, file);
         assert.doesNotMatch(source, /<input\b[^>]*\btype=["']range["']/u, file);
         assert.doesNotMatch(source, /(?:disabled[^\n]*关闭|关闭[^\n]*disabled)/u, file);
     }
