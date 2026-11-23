@@ -1,32 +1,15 @@
-import { type Clearing, type Design, type Ellipse, type Planting, type Point, type Polygon, type Sector } from "../design/v5.ts";
+import { type Design, type Point } from "../design/v5.ts";
 import { type Handle, type Selection } from "./types.ts";
 import { type NodeAnchor } from "../design/shapes.ts";
 import { advance, bearing, clamp, distance, projection, radians } from "../math/geometry.ts";
 import { corners, moveNode, nodePose } from "../design/model.ts";
 import { resizeRadius, rotateBuilding } from "./buildings.ts";
-import { featureOf } from "./landforms.ts";
-import { simpleBoundary } from "../math/polygon.ts";
 
-export function handles(design: Design, layers: Partial<Record<"sections" | "plantingAreas" | "buildings" | "network", boolean>>, selected?: Selection | null) {
+export function handles(design: Design, layers: Partial<Record<"sections" | "buildings" | "network", boolean>>, selected?: Selection | null) {
     const out: Handle[] = [];
     const add = (kind: string, id: string, point: Point, role: string, index = 0) => out.push({ kind, id, point, role, index });
     if (layers.sections)
         for (const s of design.sections) s.points.forEach((p, i) => add("section", s.id, p, "vertex", i));
-    for (const [kind, list] of [["planting", design.vegetation.plantings], ["clearing", design.vegetation.clearings]] as const) {
-        for (const item of list) {
-            if (!layers.plantingAreas && !(selected?.kind === kind && selected.id === item.id)) continue;
-            const shape = kind === "planting" ? { type: "polygon" as const, points: (item as Planting).points } : (item as Clearing).shape;
-            if ("points" in shape) shape.points.forEach((p, i) => add(kind, item.id, p, "vertex", i));
-            else {
-                add(kind, item.id, shape.center, "center");
-                if (shape.type === "ellipse") {
-                    add(kind, item.id, advance(shape.center, 0, shape.radii[0]), "radiusX");
-                    add(kind, item.id, advance(shape.center, Math.PI / 2, shape.radii[1]), "radiusY");
-                }
-                else for (const key of ["start", "end"] as const) add(kind, item.id, advance(shape.center, shape[key] * radians, shape.outer), key);
-            }
-        }
-    }
     for (const b of design.buildings) if (layers.buildings || selected?.kind === "building" && selected.id === b.id) {
         if (selected?.id !== b.id) add("building", b.id, b.center, "center");
         if (b.shape === "rect") {
@@ -70,27 +53,6 @@ export function moveHandle(d: Design, h: Selection, p: Point) {
     if (h.kind === "section") {
         const ends = d.sections.find(s => s.id === id)!.points;
         if (distance(p, ends[1 - index]) >= 1) ends[index] = p;
-    }
-    if (h.kind === "planting" || h.kind === "clearing") {
-        const item = featureOf(d, h)!, clearing = item as Clearing;
-        const shape = h.kind === "clearing" ? clearing.shape! : item as Planting;
-        if (role === "vertex") {
-            const copy = (shape as Polygon).points.slice(); copy[index] = p;
-            if (simpleBoundary(copy)) (shape as Polygon).points = copy;
-        }
-        else if (role === "center") (shape as Ellipse | Sector).center = p;
-        else if (role === "radiusX" || role === "radiusY") {
-            const dim = role === "radiusX" ? 0 : 1;
-            const ellipse = shape as Ellipse;
-            ellipse.radii[dim] = Math.max(1, Math.abs(p[dim] - ellipse.center[dim]));
-        }
-        else {
-            const sector = shape as Sector, key = role as "start" | "end";
-            const angle = bearing(sector.center, p) / radians;
-            const delta = ((angle - sector[key] + 540) % 360) - 180;
-            sector[key] = role === "start" ? clamp(sector.start + delta, sector.end - 359, sector.end - 1) : clamp(sector.end + delta, sector.start + 1, sector.start + 359);
-            sector.outer = Math.max(1, distance(sector.center, p));
-        }
     }
     if (h.kind === "door") slideDoor(d, { type: "door", building: id, door: role }, p);
     if (h.kind === "building") {

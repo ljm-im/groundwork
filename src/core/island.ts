@@ -45,6 +45,10 @@ export class Island {
         this.reroute();
     }
 
+    inputAt(owner: string, field: string, point: Point) {
+        return this.cache.inputAt(this.design, this.terrain, owner, field, point);
+    }
+
     viewThrough(id: string): IslandView {
         const design = { ...this.design, geoNodes: this.design.geoNodes.slice(0, this.design.geoNodes.findIndex(n => n.id === id) + 1),
             buildings: [], nodes: [], edges: [], labels: [], vegetation: { ...this.design.vegetation, rooms: [], yardTree: { center: [0, 0] as Point, radius: 0 } } };

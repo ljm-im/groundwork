@@ -1,10 +1,10 @@
 import { type Design, type Building, type Point } from "./design/v5.ts";
-import { type Issue, type Route, type Terrain } from "./design/results.ts";
+import { type Issue, type Terrain } from "./design/results.ts";
 import { corners, padCell } from "./design/shapes.ts";
 import { type Grid, advance, clamp, createGrid, radians, sampleDefined } from "./math/geometry.ts";
 import { nodePose } from "./design/model.ts";
 import { surfaceRules, terrainSurface } from "./terrain/surface.ts";
-import { stairSpans } from "./roads/profiles.ts";
+import { exportFlights, maxRiser, precision, type Flight } from "./roads/flights.ts";
 import { type Island } from "./island.ts";
 
 export interface ExportSource { sha256: string; commit: string }
@@ -15,7 +15,6 @@ interface ExportBuilding extends Element {
     shape: Building["shape"]; center: Point; size?: Point; radius?: number; innerRadius?: number;
     longAxis: Point; height: number; color: string; padElevation: number; outline: Point[]; innerOutline?: Point[]; doors: Door[];
 }
-interface Flight { from: number; to: number; rise: number; steps: number; riser: number; tread: number | null }
 interface Road extends Element { width: number; color?: string; centerline: XYZ[]; stairs: boolean[]; flights: Flight[] }
 interface ExportNode extends Element { position: XYZ; normal?: Point; building?: string; door?: string }
 interface ExportTree extends Element { index: number; position: XYZ; radius: number; wooded: boolean }
@@ -31,7 +30,7 @@ export interface GroundworkExport {
     areas: []; nodes: ExportNode[]; trees: ExportTree[]; labels: ExportLabel[]; issues: ExportIssue[];
 }
 
-const maxRiser = .17, minTread = .28;
+const minTread = .28;
 const instructions = [
     "这是一份户外场地设计。Groundwork 已算好几何，描述由作者撰写。",
     "保持给定的位置、标高、尺寸、朝向和门位。描述决定外观。如与几何冲突，采用几何，并在交付时逐条列出冲突。",
@@ -42,10 +41,6 @@ const instructions = [
     "单位为米。X 向东，Y 向北，Z 向上，海平面为 Z = 0。栅格原点是西北角第一个格点的中心，列向东、行向南，行列下标从 0 开始。第 r 行第 c 列的平面坐标为 [origin[0] + c × step, origin[1] − r × step]。defined 为 1 的格子有地形，0 表示画布外。仅在有效格点间插值。画布外的校验问题以 null 表示没有地面标高。"
 ].join("\n\n");
 
-function precision(n: number) {
-    if (!Number.isFinite(n)) throw new Error("几何包含非有限数值");
-    return Number(n.toFixed(3)) || 0;
-}
 const xy = ([x, y]: Point): Point => [precision(x), precision(y)];
 const direction = (angle: number): Point => xy([Math.cos(angle), Math.sin(angle)]);
 const description = (o: { prompt?: string }) => o.prompt ? { prompt: o.prompt } : {};
@@ -67,17 +62,6 @@ function exportTerrain(terrain: Terrain, heights: Float32Array): ExportTerrain {
     }
     return { origin: xy([grid.x(0), grid.y(0)]), step: precision(step), width, height, rowOrder: "north-to-south",
         surfaceTypes: { 0: "海底", 1: "沙", 2: "岩石", 3: "草", 4: "铺装" }, surfaceRules, heights: heightsOut, defined, surface };
-}
-
-export function exportFlights(route: Route): Flight[] {
-    return stairSpans(route.stairs, route.s).map(({ start, end }) => {
-        const from = precision(route.s[start]), to = precision(route.s[end]);
-        // Count from the published endpoint elevations in whole millimetres.
-        const riseMm = Math.round(precision(route.h[end]) * 1000) - Math.round(precision(route.h[start]) * 1000);
-        const rise = riseMm / 1000, steps = Math.ceil(Math.abs(riseMm) / Math.round(maxRiser * 1000));
-        return { from, to, rise, steps, riser: steps ? precision(Math.abs(rise) / steps) : 0,
-            tread: steps ? precision((to - from) / steps) : null };
-    });
 }
 
 function buildingRing(b: Building, radius: number, includeDoors: boolean) {

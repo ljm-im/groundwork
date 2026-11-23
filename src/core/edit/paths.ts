@@ -1,7 +1,7 @@
 import { type GeoNode, type Path, type PathNode, type Point } from "../design/v5.ts";
 import { advance, bearing, distance, mixPoint, projection } from "../math/geometry.ts";
 import { type Segment } from "../design/regions.ts";
-import { pathHandle } from "../terrain/path.ts";
+import { pathHandle } from "../design/path.ts";
 
 export type ShapeTool = "pen" | "rect" | "circle" | "sector";
 export function penNode(id: string, p: Point, drag?: Point): PathNode {
@@ -73,7 +73,9 @@ export function nearestSegment(edges: Segment[], at: Point) {
     return best;
 }
 export function translateGeo(n: GeoNode, delta: Point) {
-    const move = (p: Point) => { p[0] += delta[0]; p[1] += delta[1]; };
+    const move = (p: Point) => {
+        p[0] += delta[0]; p[1] += delta[1];
+    };
     if (n.construction.type === "free") for (const path of n.construction.paths) for (const v of path.nodes) move(v.p);
     const f = n.function;
     if (f.type === "coast") {

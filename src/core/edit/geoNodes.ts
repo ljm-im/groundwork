@@ -1,7 +1,7 @@
 import { type Design, type GeoFunction, type GeoNode, type Path, type Point, type Strip, type FieldInput, type Height, type Polyline } from "../design/v5.ts";
 import { type Terrain } from "../design/results.ts";
 import { bounds, sampleDefined } from "../math/geometry.ts";
-import { flattenPath } from "../terrain/path.ts";
+import { flattenPath } from "../design/path.ts";
 
 export function nextId(used: Iterable<string>, prefix: string) {
     const ids = new Set(used);
@@ -146,9 +146,9 @@ export function addField(d: Design) {
 }
 export const bindHeight = (id: string, offset = 0): Height => ({ var: id, offset });
 export const bindField = (id: string, scale = 1, offset = 0): FieldInput => ({ field: id, scale, offset });
-export function resolved(v: Height | FieldInput, d: Design, t: Terrain, at: Point) {
+export function resolved(v: Height | FieldInput, d: Design, readField: (field: string) => number | undefined) {
     if (typeof v === "number") return v;
-    return ("var" in v ? d.variables[v.var]?.value ?? 0 : (sampleField(t, v.field, at) ?? 0) * (v.scale ?? 1)) + (v.offset ?? 0);
+    return ("var" in v ? d.variables[v.var]?.value ?? 0 : (readField(v.field) ?? 0) * (v.scale ?? 1)) + (v.offset ?? 0);
 }
 
 const functions: GeoFunction["type"][] = ["ground", "coast", "mountain", "cliff", "erosion", "islets", "flat", "slope", "add", "noise", "blend", "split", "batter"];

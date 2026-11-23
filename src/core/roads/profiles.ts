@@ -13,6 +13,11 @@ function valueAt(s: Float64Array, h: number[], d: number) {
     return h[lo] + (h[hi] - h[lo]) * clamp((d - s[lo]) / (s[hi] - s[lo] || 1));
 }
 
+export function gradeAtStation(s: Float64Array, h: number[], at: number, gradeWindow: number) {
+    const length = s[s.length - 1], span = Math.min(length, gradeWindow), start = clamp(at - span / 2, 0, length - span);
+    return Math.abs(valueAt(s, h, start + span) - valueAt(s, h, start)) / (span || 1);
+}
+
 function runsOf(stairs: boolean[], s: Float64Array) {
     const runs = [];
     for (let i = 0; i < stairs.length;) {
@@ -145,10 +150,7 @@ export function profile(design: Design, terrain: Pick<RoutingSurface, "grid" | "
     const rule = design.roadClasses[edge.grade] ?? design.roadClasses.path;
     const flat = fitStairLandings(design, terrain, route, s, h);
     const gradeSpan = Math.min(length, design.routing.gradeWindow);
-    const gradeAt = (at: number) => {
-        const start = clamp(at - gradeSpan / 2, 0, length - gradeSpan);
-        return Math.abs(valueAt(s, h, start + gradeSpan) - valueAt(s, h, start)) / (gradeSpan || 1);
-    };
+    const gradeAt = (at: number) => gradeAtStation(s, h, at, gradeSpan);
     const segmentGrades = () => points.slice(1).map((_, i) => gradeAt((s[i] + s[i + 1]) / 2));
     const surveyedGrades = segmentGrades();
     const stairs = rule.allowStairs ? stairSegments(surveyedGrades, s, rule) : surveyedGrades.map(() => false);

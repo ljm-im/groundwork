@@ -31,7 +31,7 @@
     <div class="row-between"><h2>建筑</h2><button data-action="place" onclick={() => editor.setTool("building")}>放置建筑</button></div>
     <Search id="building-search" label="查找建筑" bind:value={editor.buildingFilter} />
     <Part title="建筑列表" count={list.length}>
-        {#each list as item (item.id)}<button class="object-row" data-building={item.id} onclick={() => editor.focus("building", item.id)}>{item.name}<small>{shapes[item.shape]} ›</small></button>
+        {#each list as item (item.id)}<button class="object-row" data-building={item.id} aria-pressed={editor.selection?.kind === "building" && editor.selection.id === item.id} onclick={() => editor.focus("building", item.id)}>{item.name}<small>{shapes[item.shape]} ›</small></button>
         {:else}<div class="sub">无匹配建筑</div>{/each}
     </Part>
 {/if}
@@ -57,9 +57,9 @@
     import ObjectProblems from "./ObjectProblems.svelte";
     import Search from "./Search.svelte";
 
-    let { editor }: { editor: session.Editor } = $props();
+    let { editor, listOnly = false }: { editor: session.Editor; listOnly?: boolean } = $props();
     let design = $derived(editor.island.design);
-    let b = $derived(editor.selection?.kind === "building" && design.buildings.find(v => v.id === editor.selection!.id));
+    let b = $derived(!listOnly && editor.selection?.kind === "building" && design.buildings.find(v => v.id === editor.selection!.id));
     let list = $derived(design.buildings.filter(v => v.name.toLowerCase().includes(editor.buildingFilter.trim().toLowerCase())));
     let wall = $state(0);
     const shapes = { rect: "矩形", circle: "圆形", ring: "环形" };

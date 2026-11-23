@@ -1,11 +1,5 @@
 <TopBar {editor} />
-<main>
-    <div class="stage">
-        <MapCanvas {editor} />
-        <Sections {editor} />
-    </div>
-    <Sidebar {editor} />
-</main>
+<Workspace {editor} />
 <Dialogs {editor} />
 
 <style>
@@ -341,9 +335,7 @@
 <script lang="ts">
     import * as session from "../state/session.svelte.ts";
     import TopBar from "./TopBar.svelte";
-    import MapCanvas from "./MapCanvas.svelte";
-    import Sections from "./Sections.svelte";
-    import Sidebar from "./Sidebar.svelte";
+    import Workspace from "./Workspace.svelte";
     import Dialogs from "./Dialogs.svelte";
 
     const editor = new session.Editor();

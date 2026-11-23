@@ -1,5 +1,5 @@
 {#snippet roadRow(r: Route)}
-    <button class="route-row" data-edge={r.id} onclick={() => editor.focus("edge", r.id)}>
+    <button class="route-row" data-edge={r.id} aria-pressed={editor.selection?.id === r.id && ["edge", "via"].includes(editor.selection.kind)} onclick={() => editor.focus("edge", r.id)}>
         <span class={"road-symbol " + r.edge.grade}>{r.edge.grade === "stair" ? "≋" : r.edge.grade === "street" ? "═" : "∿"}</span><span>{r.edge.name}</span>
         {#if m.issues.some(i => (i.road === r.id || i.other === r.id) && i.severity === "error")}<i class="route-dot" aria-label="有校验问题"></i>{/if}
         <span class="length mono">{r.length.toFixed(1)} m</span><span class="chev">›</span>
@@ -80,7 +80,7 @@
     <div class="sub">{d.nodes.length} 个节点 · {d.edges.length} 条边</div>
     <Search id="search" label="查找道路或节点" bind:value={editor.filter} />
     <Part title="道路" count={routes.length}>{#each routes as r (r.id)}{@render roadRow(r)}{:else}<div class="sub">无匹配道路</div>{/each}</Part>
-    <details open={!!q}><summary>节点（{nodes.length}）</summary>{#each nodes as n (n.id)}<button class="object-row" data-node={n.id} onclick={() => editor.focus("node", n.id)}>{n.name}<small>{nodeType(n)}</small></button>{/each}</details>
+    <details open={!!q}><summary>节点（{nodes.length}）</summary>{#each nodes as n (n.id)}<button class="object-row" data-node={n.id} aria-pressed={editor.selection?.kind === "node" && editor.selection.id === n.id} onclick={() => editor.focus("node", n.id)}>{n.name}<small>{nodeType(n)}</small></button>{/each}</details>
     <Part title="设计校验"><button class="object-row" data-action="issues" onclick={() => editor.changeTab("issues")}><i class="diamond"></i>{errors} 处问题 · {m.issues.length - errors} 处提示<small>查看 ›</small></button></Part>
 {/if}
 
@@ -95,11 +95,11 @@
     import Search from "./Search.svelte";
     import ObjectProblems from "./ObjectProblems.svelte";
 
-    let { editor }: { editor: session.Editor } = $props();
+    let { editor, listOnly = false }: { editor: session.Editor; listOnly?: boolean } = $props();
     const types: Record<string, string> = { door: "建筑门", junction: "路口", endpoint: "端点", viewpoint: "观景点" };
     const modes: Record<string, string> = { route: "选线", smooth: "平滑", straight: "直线" };
     const pct = (v: number) => (v * 100).toFixed(1) + "%";
-    let m = $derived(editor.island), d = $derived(m.design), h = $derived(editor.selection);
+    let m = $derived(editor.island), d = $derived(m.design), h = $derived(listOnly ? null : editor.selection);
     let route = $derived(h && ["edge", "via"].includes(h.kind) && m.routes.find(r => r.id === h!.id));
     let node = $derived(h?.kind === "node" && d.nodes.find(n => n.id === h!.id));
     let q = $derived((editor.filter ?? "").trim().toLowerCase());

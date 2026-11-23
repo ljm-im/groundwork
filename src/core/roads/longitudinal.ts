@@ -1,5 +1,6 @@
 import { type Route, type Terrain } from "../design/results.ts";
-import { exportFlights } from "../export.ts";
+import { gradeAtStation } from "./profiles.ts";
+import { exportFlights } from "./flights.ts";
 import { clamp, mixPoint, sampleDefined } from "../math/geometry.ts";
 
 export function longitudinal(route: Route, terrain: Pick<Terrain, "grid" | "defined">, heights: Float32Array) {
@@ -17,12 +18,12 @@ export function longitudinal(route: Route, terrain: Pick<Terrain, "grid" | "defi
     return { ground, flights: exportFlights(route), excess };
 }
 
-export function profileReading(route: Route, at: number, terrain: Terrain, heights: Float32Array) {
+export function profileReading(route: Route, at: number, terrain: Terrain, heights: Float32Array, gradeWindow: number) {
     const s = clamp(at, 0, route.length);
     let i = 0;
     while (i + 2 < route.s.length && route.s[i + 1] < s) i++;
     const t = clamp((s - route.s[i]) / (route.s[i + 1] - route.s[i] || 1));
     const point = mixPoint(route.points[i], route.points[i + 1], t), road = route.h[i] + (route.h[i + 1] - route.h[i]) * t;
     const ground = sampleDefined(terrain.grid, heights, terrain.defined, ...point);
-    return { s, road, ground, grade: route.grades[i], point, gap: ground === undefined ? undefined : road - ground };
+    return { s, road, ground, grade: gradeAtStation(route.s, route.h, s, gradeWindow), point, gap: ground === undefined ? undefined : road - ground };
 }

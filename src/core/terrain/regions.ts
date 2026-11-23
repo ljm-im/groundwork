@@ -51,8 +51,14 @@ function commonEdge(segment: Segment, lower: RegionShape, lowerEdges: Segment[],
 
 // Trace implicit strip boundaries only when another construction needs their contour.
 // Every traced segment fits inside one square of diagonal at most the flattening tolerance.
-function trace(shape: RegionShape, tolerance: number) {
+function trace(shape: RegionShape, tolerance: number, clip?: Box) {
+    if (!shape.box.every(Number.isFinite)) return [];
     const step = tolerance / Math.SQRT2, box = expand(shape.box, step), segments: Segment[] = [];
+    if (clip) {
+        if (!intersects(box, clip)) return [];
+        box[0] = Math.max(box[0], clip[0]); box[1] = Math.max(box[1], clip[1]);
+        box[2] = Math.min(box[2], clip[2]); box[3] = Math.min(box[3], clip[3]);
+    }
     const nx = Math.ceil((box[2] - box[0]) / step), ny = Math.ceil((box[3] - box[1]) / step);
     let previous = new Uint8Array(nx + 1);
     for (let j = 0; j <= ny; j++) {
@@ -71,6 +77,11 @@ function trace(shape: RegionShape, tolerance: number) {
         previous = row;
     }
     return [segments];
+}
+
+export function nearbyBoundary(shape: RegionShape, p: Point, radius: number, tolerance: number) {
+    if (!shape.spine) return shape.boundary();
+    return trace(shape, tolerance, expand([p[0], p[1], p[0], p[1]], radius + tolerance));
 }
 
 export function makeShape(node: GeoNode, below: Map<string, RegionShape>, tolerance: number): RegionShape {

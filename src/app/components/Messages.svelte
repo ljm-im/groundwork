@@ -19,6 +19,8 @@
             top: 16px;
         }
         .toast {
+            white-space: pre-line;
+            max-width: calc(100% - 30px);
             bottom: 34px;
             pointer-events: none;
         }

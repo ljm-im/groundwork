@@ -1,11 +1,11 @@
 <dialog bind:this={remove} id="remove-dialog" class="dialog" onclose={() => {
     const pending = editor.removal;
     editor.removal = null;
-    if (remove.returnValue === "remove") pending?.perform();
+    if (remove.returnValue === "remove") pending?.perform?.();
 }}>
-    <h2 id="remove-heading">{editor.removal?.title ?? ""}</h2><div class="sub">确认后，以下道路的门节点将转为原地的自由端点。</div>
-    <ul id="affected-roads">{#each editor.removal?.roads ?? [] as road, i (i)}<li>{road}</li>{/each}</ul>
-    <form method="dialog"><button value="cancel">取消</button><button class="danger" value="remove">确认删除</button></form>
+    <h2 id="remove-heading">{editor.removal?.title ?? ""}</h2><div class="sub">{editor.removal?.detail ?? "确认后，以下道路的门节点将转为原地的自由端点。"}</div>
+    <ul id="affected-items">{#each editor.removal?.items ?? [] as item, i (i)}<li>{item}</li>{/each}</ul>
+    <form method="dialog"><button value="cancel">{editor.removal?.perform ? "取消" : "关闭"}</button>{#if editor.removal?.perform}<button class="danger" value="remove">{editor.removal.action ?? "确认删除"}</button>{/if}</form>
 </dialog>
 <dialog bind:this={convert} id="convert-dialog" class="dialog" onclose={() => {
     const pending = editor.conversion;
@@ -70,7 +70,7 @@
         dialog.dialog form {
             justify-content: flex-end;
         }
-        #affected-roads {
+        #affected-items {
             padding-left: 22px;
         }
         .draft-actions {

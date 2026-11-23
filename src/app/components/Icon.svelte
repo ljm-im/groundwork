@@ -2,6 +2,13 @@
 
 <script lang="ts">
     const icons = {
+        terrain: "m2 6 7-4 7 4-7 4z M2 9l7 4 7-4 M2 12l7 4 7-4",
+        variables: "M2 9h5m4 0h5M7 5h4v8H7z",
+        issues: "m9 2 7.5 13H1.5z M9 6v4m0 2.5v.2",
+        eye: "M1.5 9s2.8-5 7.5-5 7.5 5 7.5 5-2.8 5-7.5 5S1.5 9 1.5 9z M11 9a2 2 0 1 1-4 0 2 2 0 0 1 4 0z",
+        pen: "m3 15 2-8 7-4 3 3-4 7z M3 15l5-5m2-2-1 2-2-1 1-2z",
+        rect: "M2.5 4h13v10h-13z", circle: "M15.5 9a6.5 6.5 0 1 1-13 0 6.5 6.5 0 1 1 13 0z",
+        sector: "M3 15V3a12 12 0 0 1 12 12z", strip: "M2 12c6 0 4-8 14-8M2 15c9 0 7-8 14-8",
         cursor: "M4 3l12 8-6 1-3 5z",
         node: "M11 5H4v10h10V9M15 2v6m-3-3h6",
         edge: "M4 12V5h7m-4 8h8V7 M2 12h4v4H2z M12 2h4v4h-4z",

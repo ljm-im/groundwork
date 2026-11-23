@@ -1,97 +1,81 @@
-<aside>
-    <nav class="tabs" aria-label="检查器">
-        {#each tabs as [tab, label] (tab)}
-            <button data-tab={tab} class:active={editor.tab === tab} aria-pressed={editor.tab === tab} onclick={() => editor.changeTab(tab)}>{label}{#if tab === "issues" && errors} <i id="issue-dot" class="count-dot"></i>{/if}</button>
+<aside class="inspector" style:--upper={layout.upper * 100 + "%"}>
+    <nav class="side-tabs" aria-label="检查器">
+        {#each tabs as [tab, label, icon] (tab)}
+            <button data-tab={tab} title={label} aria-label={label} aria-pressed={editor.tab === tab} onclick={() => editor.changeTab(tab)}>
+                <Icon name={icon} />{#if tab === "issues" && errors}<i class="count-dot" id="issue-dot"></i>{/if}
+            </button>
         {/each}
     </nav>
-    <div bind:this={editor.panel} id="panel" inert={!!editor.busy} onchange={ev => {
-        if (ev.target instanceof HTMLInputElement || ev.target instanceof HTMLSelectElement) changeField(editor, ev.target);
-    }}>
-        {#if editor.island}{#key editor.revision}<View {editor} />{/key}{/if}
+    <div class="panel-stack" class:closed={layout.propertiesClosed} inert={!!editor.busy} onchange={changed}>
+        <div bind:this={editor.panel} id="panel" class="panel-content">
+            {#if editor.island}{#key editor.revision}
+                {#if editor.tab === "terrain"}<GeoList {editor} />
+                {:else if editor.tab === "variables"}<Declarations {editor} />
+                {:else if editor.tab === "network"}<Network {editor} listOnly />
+                {:else if editor.tab === "buildings"}<Buildings {editor} listOnly />
+                {:else if editor.tab === "issues"}<Issues {editor} />
+                {:else}<Layers {editor} />{/if}
+            {/key}{/if}
+        </div>
+        <button class="split horizontal" data-split="upper" title="调整属性区，双击收起或展开" aria-label="调整属性区" onpointerdown={onresize} ondblclick={ontoggle} onkeydown={onkey}></button>
+        <div bind:this={editor.properties} id="properties" class="panel-content" hidden={layout.propertiesClosed}>
+            {#if editor.island}{#key editor.revision}
+                {#if editor.selection?.kind === "geoNode"}<GeoProperties {editor} />
+                {:else if editor.selection?.kind === "variable" || editor.selection?.kind === "field"}<Declarations {editor} properties />
+                {:else if editor.selection?.kind === "building"}<Buildings {editor} />
+                {:else if editor.selection?.kind === "section"}
+                    {@const section = editor.island.design.sections.find(s => s.id === editor.selection!.id)}
+                    {#if section}<h2>{section.name}</h2>
+                        {#each section.points as p, i (i)}<div class="field">{i ? "剖面终点" : "剖面起点"}<span class="mono">{p.map(v => +v.toFixed(2)).join(", ")} m</span></div>{/each}
+                    {/if}
+                {:else if editor.selection && ["edge", "via", "node"].includes(editor.selection.kind)}<Network {editor} />
+                {:else}
+                    {#if editor.tab === "network"}<Routing {editor} />{/if}
+                    <Terrain {editor} />
+                {/if}
+            {/key}{/if}
+        </div>
     </div>
-    {#if editor.island}<div class="hint"><span>双击道路或种植边界加点，也可按住 <kbd>Alt</kbd> 单击</span><span>拖动空白处或双指滑动平移 · 滚轮或捏合缩放</span></div>{/if}
 </aside>
 
 <style>
     :global {
-        aside {
-            background: var(--panel);
-            border-left: 1px solid #cbd4ca;
-            min-height: 0;
-            display: flex;
-            flex-direction: column;
-        }
-        .tabs {
-            display: grid;
-            grid-template-columns: repeat(5, 1fr);
-            gap: 4px;
-            padding: 0 12px;
-            border-bottom: 1px solid var(--line);
-        }
-        .tabs button {
-            border: 0;
-            border-bottom: 2px solid transparent;
-            border-radius: 0;
-            padding: 12px 0 10px;
-            background: transparent;
-            color: var(--muted);
-            font-size: 13px;
-        }
-        .tabs button.active {
-            color: var(--teal);
-            font-weight: 650;
-            border-bottom-color: var(--teal);
-        }
-        .count-dot {
-            display: inline-block;
-            width: 6px;
-            height: 6px;
-            background: var(--red);
-            border-radius: 50%;
-        }
-        #panel {
-            overflow: auto;
-            scrollbar-gutter: stable;
-            flex: 1;
-            padding: 20px 14px 20px 18px;
-        }
-        .hint {
-            border-top: 1px solid var(--line);
-            padding: 11px 16px;
-            color: var(--muted);
-            font-size: 11px;
-        }
-        .hint span {
-            display: block;
-        }
-        @media (max-width:680px) {
-            aside {
-                border: 0;
-                border-top: 1px solid var(--line);
-                min-height: 350px;
-            }
-            #panel {
-                max-height: 62dvh;
-            }
-        }
+        .inspector { background: var(--panel); display: grid; grid-template-columns: 38px minmax(0, 1fr); min-height: 0; }
+        .side-tabs { background: var(--paper); border-right: 1px solid var(--line); display: flex; flex-direction: column; align-items: center; padding: 6px 0; gap: 4px; }
+        .side-tabs button { border: 0; background: transparent; width: 32px; height: 34px; padding: 0; position: relative; color: var(--muted); }
+        .side-tabs button[aria-pressed="true"] { color: var(--teal); background: var(--light); box-shadow: inset 2px 0 var(--teal); }
+        .count-dot { position: absolute; top: 4px; right: 3px; width: 6px; height: 6px; border-radius: 50%; background: var(--red); }
+        .panel-stack { display: grid; grid-template-rows: clamp(125px, var(--upper), calc(100% - 145px)) 5px minmax(0, 1fr); min-height: 0; }
+        .panel-stack.closed { grid-template-rows: minmax(0, 1fr) 5px 0; }
+        .panel-content { overflow: auto; padding: 12px; min-height: 0; scrollbar-gutter: stable; overflow-wrap: anywhere; }
+        .panel-content h2 { font-size: 16px; }
+        .panel-content .part { margin-top: 11px; padding-top: 9px; }
+        .panel-content .object-row[aria-pressed="true"], .panel-content .route-row[aria-pressed="true"] { background: var(--light); }
+        .panel-content .field input, .panel-content .field select { max-width: 58%; }
     }
 </style>
 
 <script lang="ts">
     import * as session from "../state/session.svelte.ts";
+    import { type Layout } from "../state/layout.ts";
     import { changeField } from "../state/fields.ts";
     import Network from "./Network.svelte";
     import Buildings from "./Buildings.svelte";
     import Terrain from "./Terrain.svelte";
     import Issues from "./Issues.svelte";
     import Layers from "./Layers.svelte";
+    import Icon from "./Icon.svelte";
+    import GeoList from "./GeoList.svelte";
+    import GeoProperties from "./GeoProperties.svelte";
+    import Declarations from "./Declarations.svelte";
+    import Routing from "./Routing.svelte";
 
-    let { editor }: { editor: session.Editor } = $props();
-    const tabs = [["network", "路网"], ["buildings", "建筑"], ["terrain", "地形"], ["layers", "图层"], ["issues", "校验"]] as const;
-    const views = { network: Network, buildings: Buildings, terrain: Terrain, layers: Layers, issues: Issues };
-    let View = $derived(views[editor.tab]);
+    let { editor, layout, onresize, ontoggle, onkey }: { editor: session.Editor; layout: Layout; onresize: (e: PointerEvent) => void; ontoggle: () => void; onkey: (e: KeyboardEvent) => void } = $props();
+    const tabs = [["terrain", "地件", "terrain"], ["variables", "变量", "variables"], ["network", "路网", "edge"], ["buildings", "建筑", "building"], ["issues", "校验", "issues"], ["layers", "显示", "eye"]] as const;
     let errors = $derived.by(() => {
-        editor.revision;
-        return editor.island?.issues.some(i => i.severity === "error");
+        editor.revision; return editor.island?.issues.some(i => i.severity === "error");
     });
+    function changed(e: Event) {
+        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) changeField(editor, e.target);
+    }
 </script>

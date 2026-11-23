@@ -23,11 +23,13 @@
         <button id="fit" aria-label="全岛视图" title="全岛视图" onclick={() => editor.island && editor.map.fit()}><Icon name="fit" /></button>
     </div>
     <div class="coords"><span id="mode-hint">{editor.hint}</span><span id="position" class="mono">{editor.position}</span></div>
+    {#if editor.hint === "先选中一个或两个地件"}<div class="tool-help">{editor.hint}</div>{/if}
     <Messages {editor} />
 </section>
 
 <style>
     :global {
+        .tool-help { position: absolute; top: 228px; left: 12px; background: var(--panel); color: var(--ink); padding: 4px 8px; border-radius: 4px; font-size: 12px; }
         .map-wrap {
             position: relative;
             background: #96c3d4;
@@ -86,8 +88,9 @@
             box-shadow: 0 2px 7px #264f5220;
         }
         .map-tools {
-            left: 17px;
-            top: 15px;
+            left: 12px;
+            top: 12px;
+            flex-direction: column;
         }
         .map-tools button, .zoom-tools button {
             border: 0;
@@ -170,8 +173,8 @@
             margin-left: auto;
         }
         .legend {
-            left: 17px;
-            top: 58px;
+            left: 60px;
+            top: 13px;
             display: flex;
             align-items: center;
             gap: 10px;
@@ -224,9 +227,6 @@
                 padding: 3px 4px;
                 gap: 3px;
             }
-            .map-tools .icon {
-                display: none;
-            }
             .legend {
                 top: 49px;
             }
@@ -278,7 +278,6 @@
     import Icon from "./Icon.svelte";
     import Toolbar from "./Toolbar.svelte";
     import Messages from "./Messages.svelte";
-    import { drawSections } from "../../render/sections.ts";
 
     let { editor }: { editor: session.Editor } = $props();
     let canvas: HTMLCanvasElement;
@@ -287,7 +286,7 @@
         const detach = attachController(editor, canvas);
         const observer = new ResizeObserver(() => {
             editor.map.resize();
-            if (editor.island) drawSections(editor.plots, editor.island);
+            if (editor.island) editor.sections();
         });
         observer.observe(canvas.parentElement!);
         void editor.files.start();

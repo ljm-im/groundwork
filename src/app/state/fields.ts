@@ -1,42 +1,8 @@
-import { type Building, type Clearing, type Planting, type Sector, type Species } from "../../core/design/v5.ts";
-import { type Feature } from "../../core/edit/types.ts";
-import { featureOf } from "../../core/edit/landforms.ts";
+import { type Building } from "../../core/design/v5.ts";
 import { doorRoads, resizeRadius, rotateBuilding, setShape } from "../../core/edit/buildings.ts";
 import { setSegment } from "../../core/edit/topology.ts";
 import * as session from "./session.svelte.ts";
-import { checked, numeric, type Editable, type Layer, type Selection } from "../types.ts";
-
-function changeFeature(editor: session.Editor, input: Editable, h: Selection, item: Feature) {
-    const key = input.dataset.featureField;
-    if (!input.validity.valid) {
-        editor.revision++;
-        return;
-    }
-    const v = numeric(input);
-    if (key === "name")
-        item.name = input.value.trim() || item.name;
-    else if (key === "species")
-        (item as Planting).species = input.value as Species;
-    else if (key === "ambient") {
-        if (checked(input))
-            (item as Clearing).cover = "ambient";
-        else
-            delete (item as Clearing).cover;
-    }
-    else if (key === "rows" || key === "natural")
-        (item as Planting)[key] = checked(input);
-    else if (!Number.isFinite(v)) {
-        editor.revision++;
-        return;
-    }
-    else if (key === "minSize" || key === "maxSize")
-        (item as Planting).size[key === "minSize" ? 0 : 1] = v;
-    else if (key === "outer")
-        ((item as Clearing).shape as Sector).outer = v;
-    else
-        Object.assign(item, { [key!]: v });
-    editor.finishFeature();
-}
+import { checked, numeric, type Editable, type Layer } from "../types.ts";
 
 export function changeField(editor: session.Editor, input: Editable) {
     if (editor.busy) return;
@@ -64,19 +30,6 @@ export function changeField(editor: session.Editor, input: Editable) {
         }
         d.seed = numeric(input);
         editor.rebuild();
-        return;
-    }
-    if (input.dataset.density) {
-        if (input.validity.valid && Number.isFinite(numeric(input))) {
-            d.vegetation.density.natural = numeric(input);
-            editor.finishFeature();
-        }
-        else editor.revision++;
-        return;
-    }
-    const item = featureOf(d, h);
-    if (item && input.dataset.featureField) {
-        changeFeature(editor, input, h!, item);
         return;
     }
     if (h?.kind === "building") {

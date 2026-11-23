@@ -1,6 +1,7 @@
-import { type Design, type GeoNode } from "../design/v5.ts";
+import { type Design, type GeoNode, type Point } from "../design/v5.ts";
 import { type Region, type RegionShape } from "../design/regions.ts";
-import { type Box, type Grid } from "../math/geometry.ts";
+import { type Terrain } from "../design/results.ts";
+import { sampleDefined, type Box, type Grid } from "../math/geometry.ts";
 import { applyLayer, evaluateLayer, type LayerOutput } from "./functions.ts";
 import { canvasGrid, intersects, makeShape, rasterRegion } from "./regions.ts";
 import { finishTerrain, initialFields } from "./terrain.ts";
@@ -55,6 +56,19 @@ export class TerrainCache {
 
     private terrainKey(d: Design) {
         return JSON.stringify([d.grid.step, d.seed, d.fields, d.variables, d.geoNodes.map(n => [n.id, n.disabled, n.construction, n.field, n.function])]);
+    }
+
+    inputAt(d: Design, terrain: Terrain, owner: string, field: string, p: Point) {
+        if (field !== "height" && !d.fields[field]) return;
+        const { grid, defined } = terrain, heightDefined = new Uint8Array(grid.size);
+        const values = field === "height" ? new Float32Array(grid.size) : Float32Array.from(defined, v => v ? d.fields[field].default : 0);
+        const state = { grid, defined, heightDefined, fields: { [field]: values } };
+        for (const n of d.geoNodes) {
+            if (n.id === owner) break;
+            const layer = this.layers.get(n.id);
+            if (layer && (n.field ?? "height") === field) applyLayer(layer.output, n, state);
+        }
+        return sampleDefined(grid, values, field === "height" ? heightDefined : defined, ...p);
     }
 
     preview(d: Design) {

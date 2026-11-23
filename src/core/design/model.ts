@@ -105,4 +105,4 @@ export function parseDesign(text: unknown, allowBrokenReferences = false): Desig
 export const roadModes: RoadMode[] = ["route", "smooth", "straight"];
 export const segmentMode = (edge: Edge, i: number) => edge.segments?.[i]?.mode ?? edge.mode ?? "route";
 export const throughPairs = (node: Pick<RoadNode, "through" | "otherThrough">) => [node.through, ...(node.otherThrough ?? [])].filter((pair): pair is RoadPair => !!pair);
-export const serializeDesign = (d: unknown) => JSON.stringify(d, (key, value: unknown) => key === "prompt" && value === "" ? undefined : value, 2);
+export const serializeDesign = (d: unknown) => JSON.stringify(d, (key, value: unknown) => (key === "prompt" && value === "" || key === "disabled" && value === false) ? undefined : value, 2);

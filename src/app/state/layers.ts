@@ -6,7 +6,6 @@ export const layerDefaults = {
     contours: true,
     trees: true,
     labels: true,
-    plantingAreas: false,
     issues: true
 };
 export const layerNames = {
@@ -17,6 +16,5 @@ export const layerNames = {
     contours: "等高线",
     trees: "植被",
     labels: "地名标注",
-    plantingAreas: "绿化区与林间空地",
     issues: "校验标记"
 };

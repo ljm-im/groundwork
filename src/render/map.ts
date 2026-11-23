@@ -1,14 +1,17 @@
-import { type Design, type Label, type Point } from "../core/design/v5.ts";
+import { type GeoNode, type Label, type Point } from "../core/design/v5.ts";
 import { type Issue, type Tree } from "../core/design/results.ts";
-import { type Drawing, type FeatureKind, type Handle, type Selection } from "../core/edit/types.ts";
-import { type Island } from "../core/island.ts";
+import { type Handle, type Selection } from "../core/edit/types.ts";
+import { type Island, type IslandView } from "../core/island.ts";
 import { type layerDefaults } from "../app/state/layers.ts";
 import { type Box } from "../core/math/geometry.ts";
 import { advance, bearing, clamp, distance, mixPoint, nearest, onCanvas, sampleDefined } from "../core/math/geometry.ts";
 import { buildingShape, nodePose } from "../core/design/model.ts";
 import { titlePoint } from "../core/edit/buildings.ts";
 import { issueShapes, issueView, objectIssues } from "../core/checks/issues.ts";
-import { featureLine, featureNames, features } from "../core/edit/landforms.ts";
+import { type GeoDraft } from "../app/state/geoTools.ts";
+import { type GeoControl } from "../core/edit/geoControls.ts";
+import { fieldContours } from "./fieldContours.ts";
+import { drawGeoOverlay } from "./geoOverlay.ts";
 import { treeStyles } from "../core/vegetation/vegetation.ts";
 import { handles } from "../core/edit/controls.ts";
 import { relief } from "./relief.ts";
@@ -118,7 +121,17 @@ export class IslandMap {
     declare layers: typeof layerDefaults;
     declare zoom: number;
     declare selection: Selection | null;
-    declare island: Island;
+    declare island: IslandView;
+    declare frameGrid: Grid;
+    displayField = "height";
+    geoSelection: string[] = [];
+    highlights: string[] = [];
+    vertex?: GeoControl;
+    dragNode?: GeoNode;
+    draft?: GeoDraft;
+    profilePoint?: Point;
+    private contours?: ReturnType<typeof fieldContours>;
+    private contourValues?: Float32Array;
     declare cache: ReturnType<typeof relief>;
     declare center: Point;
     declare width: number;
@@ -127,7 +140,6 @@ export class IslandMap {
     declare activeIssue: Issue | null;
     declare pulseStart: number;
     declare pulseFrame: number;
-    declare drawing: Drawing | null;
     declare linkPreview: Point[] | null;
     declare controls: Handle[];
     declare titleBoxes: { id: string; x: number; y: number; width: number; height: number; point: Point }[];
@@ -139,8 +151,9 @@ export class IslandMap {
         this.zoom = 1;
         this.selection = null;
     }
-    setIsland(island: Island, reset = false) {
+    setIsland(island: IslandView, reset = false, frameGrid = island.terrain.grid) {
         this.island = island;
+        this.frameGrid = frameGrid;
         this.cache = relief(island);
         if (reset || !this.center) this.fit(false);
     }
@@ -155,13 +168,13 @@ export class IslandMap {
         if (this.island) this.draw();
     }
     fit(draw = true) {
-        const g = this.island.terrain.grid;
+        const g = this.frameGrid ?? this.island.terrain.grid;
         this.center = [(g.xMin + g.xMax) / 2, (g.yMin + g.yMax) / 2];
         this.zoom = 1;
         if (draw) this.draw();
     }
     get scale() {
-        const g = this.island.terrain.grid;
+        const g = this.frameGrid ?? this.island.terrain.grid;
         return this.zoom * Math.min((this.width - 65) / (g.xMax - g.xMin), (this.height - 84) / (g.yMax - g.yMin));
     }
     screen(p: Point): Point {
@@ -212,7 +225,7 @@ export class IslandMap {
             .sort((a, b) => distance(this.screen(a.point), screen) - distance(this.screen(b.point), screen)) : [];
     }
     drawIssueShapes(ctx: Context) {
-        const chosen = this.activeIssue, scale = this.scale;
+        const chosen = this.activeIssue && this.island.issues.includes(this.activeIssue) ? this.activeIssue : null, scale = this.scale;
         const related = objectIssues(this.island, this.selection);
         for (const issue of [...related.filter(i => i !== chosen), ...(chosen ? [chosen] : [])]) {
             const active = issue === chosen, elapsed = performance.now() - this.pulseStart;
@@ -230,39 +243,8 @@ export class IslandMap {
             ctx.restore();
         }
     }
-    drawFeatures(ctx: Context, d: Design) {
-        const selected = this.selection, scale = this.scale;
-        for (const kind of Object.keys(featureNames) as FeatureKind[]) for (const item of features(d, kind)) {
-            const active = selected?.kind === kind && selected.id === item.id;
-            if (!active && !this.layers.plantingAreas) continue;
-            const color = "#316d54";
-            ctx.save();
-            ctx.lineWidth = (active ? 2.8 : 1.6) / scale;
-            ctx.setLineDash(active ? [] : [5 / scale, 3 / scale]);
-            polygon(ctx, featureLine(kind, item), kind === "planting" ? "rgba(77,135,77,.11)" : "rgba(255,243,195,.21)", color, ctx.lineWidth);
-            ctx.restore();
-        }
-        if (this.drawing?.hover) {
-            const { hover } = this.drawing;
-            circle(ctx, ...hover.point, 7 / scale, null, paper, 4 / scale);
-            circle(ctx, ...hover.point, 7 / scale, null, ink, 2 / scale);
-        }
-        if (this.drawing?.points.length) {
-            const { points, cursor } = this.drawing, preview = [...points];
-            if (cursor) preview.push(cursor);
-            if (preview.length > 1) stroke(ctx, preview, "#135e63", 2 / scale, [5 / scale, 3 / scale]);
-            for (const p of points) circle(ctx, ...p, 3.5 / scale, paper, ink, 1.3 / scale);
-        }
-    }
-    hitFeature(p: Point) {
-        const d = this.island.design, active = this.selection;
-        let best = null;
-        for (const kind of ["planting", "clearing"] as const) for (const item of features(d, kind)) {
-            if (!this.layers.plantingAreas && !(active?.kind === kind && active.id === item.id)) continue;
-            const line = featureLine(kind, item), gap = nearest(...p, line, true).distance;
-            if (gap * this.scale <= 9 && (!best || gap < best.gap)) best = { kind, id: item.id, gap };
-        }
-        return best;
+    geoHits(p: Point) {
+        return this.island.design.geoNodes.filter(n => !n.disabled && this.island.terrain.regions.get(n.id)?.shape.contains(p)).reverse();
     }
     draw() {
         if (!this.island || !this.width) return;
@@ -299,7 +281,16 @@ export class IslandMap {
         ctx.lineWidth = .6 / scale;
         ctx.strokeStyle = "rgba(54,99,104,.13)";
         ctx.stroke();
-        if (this.layers.contours) this.cache.lines.forEach((p, i) => {
+        if (this.displayField !== "height" && t.fields[this.displayField]) {
+            if (this.contourValues !== t.fields[this.displayField]) {
+                this.contourValues = t.fields[this.displayField];
+                this.contours = fieldContours(t, this.displayField);
+            }
+            for (const line of this.contours!.lines) {
+                ctx.strokeStyle = "#38597d"; ctx.lineWidth = 1.25 / scale; ctx.stroke(line.path);
+            }
+        }
+        else if (this.layers.contours) this.cache.lines.forEach((p, i) => {
             ctx.strokeStyle = ["#64909a", "rgba(70,58,40,.13)", "rgba(70,58,40,.25)", "rgba(70,58,40,.53)"][i];
             ctx.lineWidth = (i === 3 ? .36 : .2);
             ctx.stroke(p);
@@ -311,8 +302,8 @@ export class IslandMap {
             ctx.strokeStyle = "rgba(40,60,30,.48)";
             ctx.stroke(p);
         });
-        const selectedGeo = this.selection?.kind === "geoNode" ? this.selection.id : undefined;
         for (const n of d.geoNodes) {
+            if (n.disabled) continue;
             if (!n.fill && !n.outline && !this.layers.geoNodes) continue;
             const paths = regionPaths(t.regions.get(n.id)!, g);
             if (n.fill) {
@@ -373,11 +364,16 @@ export class IslandMap {
             }
             else circle(ctx, x, y, b.radius! + .45, b.color, "#7a3a28", .45);
         }
-        this.drawFeatures(ctx, d);
-        if (selectedGeo && t.regions.has(selectedGeo)) {
-            ctx.strokeStyle = "#12696a";
-            ctx.lineWidth = 2.5 / scale;
-            ctx.stroke(regionPaths(t.regions.get(selectedGeo)!, g).outline);
+        for (const id of [...this.geoSelection, ...this.highlights]) {
+            const r = t.regions.get(id);
+            if (!r) continue;
+            const color = this.highlights.includes(id) ? "#bd6825" : "#12696a";
+            const paths = regionPaths(r, g);
+            if (r.shape.spine) {
+                ctx.fillStyle = "rgba(21,123,120,.23)"; ctx.fill(paths.area);
+                for (const edge of r.shape.spine) stroke(ctx, [edge.a, edge.b], color, 2.7 / scale);
+            }
+            ctx.strokeStyle = color; ctx.lineWidth = 2 / scale; ctx.stroke(paths.outline);
         }
         this.drawIssueShapes(ctx);
         if (this.linkPreview) stroke(ctx, this.linkPreview, ink, 1.6 / scale, [5 / scale, 3 / scale]);
@@ -418,8 +414,14 @@ export class IslandMap {
                 ctx.restore();
             }
         this.drawOverlays();
-        const treeKey = this.layers.trees && (this.layers.plantingAreas || ["planting", "clearing"].includes(this.selection?.kind!));
-        this.canvas.parentElement!.querySelector(".legend")!.classList.toggle("show-trees", treeKey);
+        drawGeoOverlay(this);
+        if (this.displayField !== "height" && this.contours) {
+            for (const { label, value } of this.contours.lines) if (label) mapText(ctx, String(+value.toPrecision(5)), ...this.screen(label), 11, "#294964");
+            if (this.contours.constant !== undefined) {
+                ctx.textAlign = "right";
+                mapText(ctx, "该场在画布内处处为 " + +this.contours.constant.toPrecision(6), this.width - 16, 87, 12);
+            }
+        }
         const unit = [1, 2, 5, 10, 20, 50, 100].filter(n => n * scale <= 86).at(-1) ?? 1;
         document.getElementById("scale-bar")!.style.width = (unit * scale) + "px";
         document.getElementById("scale-text")!.textContent = unit + " m";
@@ -448,7 +450,7 @@ export class IslandMap {
             const [x, y] = this.screen(h.point);
             if (x < -12 || y < -12 || x > this.width + 12 || y > this.height + 12) continue;
             const selected = active?.kind === h.kind && active.id === h.id && (active.index ?? 0) === h.index &&
-        (active.role ? active.role === h.role : !(h.kind in featureNames && h.role === "vertex"));
+        (!active.role || active.role === h.role);
             if (selected) {
                 circle(ctx, x, y, 10, "rgba(251,252,238,.62)", aqua, 1.5);
             }
@@ -516,7 +518,7 @@ export class IslandMap {
                 ctx.restore();
             }
         }
-        if (this.activeIssue) {
+        if (this.activeIssue && this.island.issues.includes(this.activeIssue)) {
             const [x, y] = this.screen(this.activeIssue.point);
             circle(ctx, x, y, 10, null, "#b24136", 2);
         }

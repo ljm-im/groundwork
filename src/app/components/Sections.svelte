@@ -1,5 +1,4 @@
 <section class="sections" aria-label="地形剖面">
-    <div class="section-heading"><strong>地形剖面</strong><small>海拔 / m</small></div>
     <div bind:this={editor.plots} id="plots" class="plots"></div>
 </section>
 
@@ -9,7 +8,8 @@
             border-top: 1px solid #c5d1c4;
             background: var(--paper);
             display: grid;
-            grid-template-rows: 36px 1fr;
+            grid-template-rows: minmax(0, 1fr);
+            height: 100%;
         }
         .section-heading {
             display: flex;
@@ -27,7 +27,8 @@
         }
         .plots {
             display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-auto-columns: minmax(0, 1fr);
+            grid-auto-flow: column;
             gap: 0;
             padding: 0 8px 8px;
         }
