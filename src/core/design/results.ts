@@ -27,6 +27,7 @@ export interface SmallCorner {
 }
 export interface Alignment {
     id: string; edge: Edge; points: Point[]; controls: Point[]; parts: RoutePart[];
+    offCanvas?: boolean;
     rounds?: [number, number][]; platforms?: number[]; landings?: Point[]; branches?: boolean[];
     smallCorners?: SmallCorner[]; selfOverlaps?: Point[]; constraintKey?: string;
 }
@@ -35,6 +36,7 @@ export interface Route extends Alignment {
     length: number; drop: number; maxGrade: number; stairRuns: number; stairLength: number; detour: number;
 }
 export interface Graded { heights: Float32Array; weight: Float32Array }
+export interface SurfaceCell { type: 0 | 1 | 2 | 3 | 4; slope: number }
 export interface Tree { point: Point; radius: number; species: Exclude<Species, "mixed">; wooded: boolean; planting?: string; row?: boolean }
 export interface IssueSpan { road: string; from: number; to: number }
 export interface Issue {

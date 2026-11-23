@@ -1,6 +1,6 @@
 import { type Alignment, type Route, type Graded, type Terrain, type RoutingSurface } from "../design/results.ts";
-import { type RoadClass, type Design } from "../design/types.ts";
-import { clamp, eachCell, pointAt, sample, smooth, stations } from "../math/geometry.ts";
+import { type RoadClass, type Design } from "../design/v5.ts";
+import { bounds, clamp, eachCell, pointAt, sample, smooth, stations } from "../math/geometry.ts";
 
 function valueAt(s: Float64Array, h: number[], d: number) {
     let lo = 0,
@@ -22,6 +22,10 @@ function runsOf(stairs: boolean[], s: Float64Array) {
         i = end;
     }
     return runs;
+}
+
+export function stairSpans(stairs: boolean[], s: Float64Array) {
+    return runsOf(stairs, s).filter(run => run.stair);
 }
 
 function stairSegments(grades: number[], s: Float64Array, rule: RoadClass) {
@@ -69,7 +73,7 @@ function fitStairLandings(design: Design, terrain: Pick<RoutingSurface, "grid" |
         const apron = Math.min(design.routing.landing ?? 3, length);
         for (const [id, start] of [[edge.from, true], [edge.to, false]] as const) {
             const node = design.nodes.find(n => n.id === id);
-            if (!apron || node?.type !== "door" && node?.type !== "gate") continue;
+            if (!apron || node?.type !== "door") continue;
             const anchor = start ? h[0] : h.at(-1)!;
             const ground = sample(terrain.grid, terrain.heights, ...pointAt(points, s, start ? apron : length - apron));
             if (Math.abs(ground - anchor) <= limit * apron) continue;
@@ -118,11 +122,15 @@ function samplePlatformEdges(route: Alignment) {
     return result;
 }
 
-export function profile(design: Design, terrain: Pick<RoutingSurface, "grid" | "heights">, route: Alignment): Route {
+export function profile(design: Design, terrain: Pick<RoutingSurface, "grid" | "heights">, route: Alignment, elevations?: readonly [number, number]): Route {
     const { edge } = route, points = samplePlatformEdges(route), s = stations(points), length = s.at(-1)!;
     let h = points.map(p => sample(terrain.grid, terrain.heights, ...p));
+    if (elevations) {
+        h[0] = elevations[0];
+        h[h.length - 1] = elevations[1];
+    }
     if (edge.levelDeck) h.fill(h[0]);
-    for (let pass = 0; pass < design.routing.profilePasses; pass++) {
+    for (let pass = 0; !edge.levelDeck && pass < design.routing.profilePasses; pass++) {
         const prev = h;
         h = prev.map((v, i) => {
             if (!i || i === prev.length - 1) return v;
@@ -140,10 +148,18 @@ export function profile(design: Design, terrain: Pick<RoutingSurface, "grid" | "
         const start = clamp(at - gradeSpan / 2, 0, length - gradeSpan);
         return Math.abs(valueAt(s, h, start + gradeSpan) - valueAt(s, h, start)) / (gradeSpan || 1);
     };
-    const grades = points.slice(1).map((_, i) => gradeAt((s[i] + s[i + 1]) / 2));
-    const stairs = rule.allowStairs ? stairSegments(grades, s, rule) : grades.map(() => false);
+    const segmentGrades = () => points.slice(1).map((_, i) => gradeAt((s[i] + s[i + 1]) / 2));
+    const surveyedGrades = segmentGrades();
+    const stairs = rule.allowStairs ? stairSegments(surveyedGrades, s, rule) : surveyedGrades.map(() => false);
     for (let i = 0; i < stairs.length; i++) if (edge.stairs || s[i] < (edge.stairUntil ?? 0)) stairs[i] = true;
     for (let i = 0; i < flat.length; i++) if (flat[i]) stairs[i] = false;
+    const flights = stairSpans(stairs, s);
+    for (const { start, end, length: run } of flights) {
+        if (!run) continue;
+        const slope = (h[end] - h[start]) / run;
+        for (let i = start + 1; i < end; i++) h[i] = h[start] + (s[i] - s[start]) * slope;
+    }
+    const grades = flights.length ? segmentGrades() : surveyedGrades;
     // Window extrema of a piecewise-linear profile occur when either end meets a station.
     const breaks = Array.from(s, at => at - gradeSpan / 2).concat(Array.from(s, at => at + gradeSpan / 2)).sort((a, b) => a - b);
     const peaks = [],
@@ -168,7 +184,6 @@ export function profile(design: Design, terrain: Pick<RoutingSurface, "grid" | "
         locations.push(at);
         maxGrade = Math.max(maxGrade, peak);
     }
-    const stairRuns = runsOf(stairs, s).filter(r => r.stair);
     const direct = stations(route.controls).at(-1)!;
     return {
         ...route,
@@ -182,33 +197,41 @@ export function profile(design: Design, terrain: Pick<RoutingSurface, "grid" | "
         length,
         drop: Math.abs(h.at(-1)! - h[0]),
         maxGrade,
-        stairRuns: stairRuns.length,
-        stairLength: stairRuns.reduce((a, r) => a + r.length, 0),
+        stairRuns: flights.length,
+        stairLength: flights.reduce((a, r) => a + r.length, 0),
         detour: direct ? length / direct : 1
     };
 }
 
-export function gradeRoads(design: Design, terrain: Pick<Terrain, "grid" | "heights" | "padMask">, routes: Route[]): Graded {
-    const { grid } = terrain, weight = new Float32Array(grid.size), target = new Float32Array(grid.size);
-    for (const route of routes) {
+export function gradeRoads(design: Design, terrain: Pick<Terrain, "grid" | "heights" | "padMask" | "defined">, routes: Route[]): Graded {
+    const { grid } = terrain, heights = terrain.heights.slice(), weight = new Float32Array(grid.size);
+    const nearestSquared = new Float64Array(grid.size).fill(Infinity);
+    const order = new Map(design.edges.map((edge, i) => [edge.id, i]));
+    const rank = (r: Route) => order.get(r.id) ?? order.size;
+    for (const route of routes.toSorted((a, b) => rank(a) - rank(b))) {
+        if (route.edge.levelDeck || route.offCanvas) continue;
         const half = route.edge.width / 2 + design.routing.roadBedExtra;
         const shoulder = design.roadClasses[route.edge.grade].shoulder,
             radius = half + shoulder;
-        for (let i = 0; i < route.points.length; i++) {
-            const [px, py] = route.points[i];
-            eachCell(grid, [px, py, px, py], radius, (k, x, y) => {
-                const squared = (px - x) ** 2 + (py - y) ** 2;
-                if (squared > radius * radius) return;
+        for (let i = route.points.length === 1 ? 0 : 1; i < route.points.length; i++) {
+            const prev = Math.max(0, i - 1), a = route.points[prev], b = route.points[i];
+            const dx = b[0] - a[0], dy = b[1] - a[1], length2 = dx * dx + dy * dy;
+            // Opposite bearings and different subdivisions of one centreline must tie at roundoff.
+            const tolerance = 16 * Number.EPSILON * Math.max(1, radius * radius, Math.sqrt(length2) * radius);
+            eachCell(grid, bounds([a, b]), radius, (k, x, y) => {
+                if (!terrain.defined[k]) return;
+                const u = x - a[0], v = y - a[1], t = clamp((u * dx + v * dy) / (length2 || 1));
+                const ex = t === 1 ? x - b[0] : u - t * dx, ey = t === 1 ? y - b[1] : v - t * dy;
+                const squared = ex * ex + ey * ey;
+                if (squared > radius * radius || nearestSquared[k] - squared <= tolerance) return;
                 const w = squared <= half * half ? 1 : 1 - smooth((Math.sqrt(squared) - half) / shoulder);
-                if (w > weight[k]) {
-                    weight[k] = w;
-                    target[k] = route.h[i];
-                }
+                if (!w) return;
+                nearestSquared[k] = squared;
+                weight[k] = w;
+                const target = t === 1 ? route.h[i] : route.h[prev] + t * (route.h[i] - route.h[prev]);
+                if (!terrain.padMask[k]) heights[k] = terrain.heights[k] + (target - terrain.heights[k]) * w;
             });
         }
     }
-    const heights = terrain.heights.slice();
-    for (let k = 0; k < heights.length; k++)
-        if (weight[k] && !terrain.padMask[k]) heights[k] += (target[k] - heights[k]) * weight[k];
     return { heights, weight };
 }

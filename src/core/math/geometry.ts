@@ -151,9 +151,35 @@ export function onCanvas(grid: Grid, mask: Uint8Array, x: number, y: number) {
     return x >= grid.xMin && x < grid.xMax && y > grid.yMin && y <= grid.yMax && !!mask[grid.index(x, y)];
 }
 
+export function gradient(g: Grid, h: Float32Array, defined: Uint8Array, k: number): Point {
+    const i = k % g.width, j = Math.floor(k / g.width);
+    const west = i && defined[k - 1] ? k - 1 : k, east = i + 1 < g.width && defined[k + 1] ? k + 1 : k;
+    const north = j && defined[k - g.width] ? k - g.width : k, south = j + 1 < g.height && defined[k + g.width] ? k + g.width : k;
+    return [(h[east] - h[west]) / ((east - west || 1) * g.step),
+        (h[north] - h[south]) / (((south - north) / g.width || 1) * g.step)];
+}
+
+// Visit every cell traversed by the segment, including short crossings through a corner.
+export function canvasSegment(g: Grid, mask: Uint8Array, a: Point, b: Point) {
+    if (!onCanvas(g, mask, ...a) || !onCanvas(g, mask, ...b)) return false;
+    let i = g.col(a[0]), j = g.row(a[1]);
+    const endI = g.col(b[0]), endJ = g.row(b[1]), dx = b[0] - a[0], dy = b[1] - a[1];
+    const sx = Math.sign(dx), sy = -Math.sign(dy);
+    const strideX = g.step / Math.abs(dx), strideY = g.step / Math.abs(dy);
+    let tx = sx ? (g.xMin + (i + (sx > 0 ? 1 : 0)) * g.step - a[0]) / dx : Infinity;
+    let ty = sy ? (g.yMax - (j + (sy > 0 ? 1 : 0)) * g.step - a[1]) / dy : Infinity;
+    while (i !== endI || j !== endJ) {
+        const t = Math.min(i === endI ? Infinity : tx, j === endJ ? Infinity : ty);
+        if (i !== endI && tx <= t) { i += sx; tx += strideX; }
+        if (j !== endJ && ty <= t) { j += sy; ty += strideY; }
+        if (!mask[j * g.width + i]) return false;
+    }
+    return true;
+}
+
 // Exclude missing neighbours from interpolation. At a zero-width strip edge only
 // centres on the requested side contribute, so a hard step retains its authored value.
-export function sampleDefined(grid: Grid, field: Float32Array, mask: Uint8Array, x: number, y: number,
+export function sampleDefined(grid: Grid, field: ArrayLike<number>, mask: Uint8Array, x: number, y: number,
     side?: (p: Point) => boolean): number | undefined {
     if (!onCanvas(grid, mask, x, y)) return undefined;
     const fx = clamp((x - grid.xMin) / grid.step - .5, 0, grid.width - 1);

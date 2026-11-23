@@ -1,5 +1,5 @@
 import { type Route, type IssueSpan } from "../design/results.ts";
-import { type Routing, type Point } from "../design/types.ts";
+import { type Routing, type Point } from "../design/v5.ts";
 
 type RoadLine = Pick<Route, "id" | "edge" | "points" | "s">;
 interface LineSegment { a: Point; b: Point; length: number; station: number }

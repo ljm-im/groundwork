@@ -1,7 +1,7 @@
 import { type Grid } from "../core/math/geometry.ts";
 import { type Terrain, type Tree } from "../core/design/results.ts";
 import { type Island } from "../core/island.ts";
-import { clamp, smooth } from "../core/math/geometry.ts";
+import { clamp, gradient, smooth } from "../core/math/geometry.ts";
 
 const colors = [
     [0, 226, 231, 200],
@@ -21,7 +21,7 @@ const palette = Array.from({ length: 641 }, (_, i) => {
     return [1, 2, 3].map(k => a[k] + (b[k] - a[k]) * t);
 });
 
-function contours(h: Float32Array, grid: Grid, first: number, end: number) {
+function contours(h: Float32Array, grid: Grid, defined: Uint8Array, first: number, end: number) {
     const paths = Array.from({ length: 4 }, () => new Path2D()),
         { width, height, step } = grid;
     for (let y = first; y < Math.min(end, height - 1); y++)
@@ -31,6 +31,7 @@ function contours(h: Float32Array, grid: Grid, first: number, end: number) {
                 b = h[k + 1],
                 c = h[k + width + 1],
                 d = h[k + width];
+            if (!defined[k] || !defined[k + 1] || !defined[k + width] || !defined[k + width + 1]) continue;
             const lo = Math.min(a, b, c, d),
                 hi = Math.max(a, b, c, d);
             const min = Math.max(0, Math.ceil(lo)),
@@ -62,27 +63,11 @@ const oceanBorder = new WeakMap<Terrain, Chart>();
 
 function chartPaper(t: Terrain) {
     if (oceanBorder.has(t)) return oceanBorder.get(t)!;
-    const { grid: g } = t, pad = Math.ceil(56 / g.step);
+    const { grid: g } = t, pad = 0;
     const raster = document.createElement("canvas");
     raster.width = g.width + 2 * pad;
     raster.height = g.height + 2 * pad;
-    const ctx = raster.getContext("2d")!,
-        pixels = ctx.createImageData(raster.width, raster.height);
-    for (let j = 0; j < raster.height; j++)
-        for (let i = 0; i < raster.width; i++) {
-            const x = i - pad,
-                y = j - pad,
-                u = clamp(x, 0, g.width - 1),
-                v = clamp(y, 0, g.height - 1);
-            if (x === u && y === v) continue;
-            const depth = clamp((-t.dc[v * g.width + u] + Math.hypot(x - u, y - v) * g.step) * .09 / 5);
-            const k = 4 * (j * raster.width + i);
-            pixels.data[k] = 186 - 36 * depth;
-            pixels.data[k + 1] = 221 - 26 * depth;
-            pixels.data[k + 2] = 230 - 18 * depth;
-            pixels.data[k + 3] = 255;
-        }
-    ctx.putImageData(pixels, 0, 0);
+    const ctx = raster.getContext("2d")!;
     const chart: Chart = { raster, ctx, pad, pixels: ctx.createImageData(g.width, g.height), bands: [] };
     oceanBorder.set(t, chart);
     return chart;
@@ -99,25 +84,23 @@ export function relief(island: Island) {
         if (previous && (h === previous || !changedRows(h, previous, width, height, first, end))) continue;
         firstDirty = Math.min(firstDirty, first);
         lastDirty = end;
-        chart.bands[first / bandHeight] = contours(h, grid, first, end);
+        chart.bands[first / bandHeight] = contours(h, grid, t.defined, first, end);
         for (let j = first; j < end; j++)
             for (let i = 0; i < width; i++) {
                 const k = j * width + i,
                     v = h[k],
                     at = k * 4;
+                if (!t.defined[k]) { data[at + 3] = 0; continue; }
                 if (v < 0) {
-                    const depth = Math.min(1, (-v - 1) / 5);
+                    const depth = clamp(-t.shore[k] * .09 / 5);
                     data[at] = 186 - 36 * depth;
                     data[at + 1] = 221 - 26 * depth;
                     data[at + 2] = 230 - 18 * depth;
                 }
                 else {
-                    const dx = (h[k + (i + 1 < width ? 1 : 0)] - h[k - (i ? 1 : 0)]) / (2 * step);
-                    const dy = (h[k - (j ? width : 0)] - h[k + (j + 1 < height ? width : 0)]) / (2 * step);
-                    const slope = Math.sqrt(dx * dx + dy * dy),
-                        rk = t.rock[k];
-                    const rockMix = smooth((slope - .5) / .45) * (.5 + .5 * rk);
-                    const sand = v < 1.6 && slope < .3 && rk < .35 && t.zoneAt[k] < 0 ? smooth(1.6 - v) : 0;
+                    const [dx, dy] = gradient(grid, h, t.defined, k), slope = Math.hypot(dx, dy);
+                    const rockMix = smooth((slope - .5) / .45) * .5;
+                    const sand = v < 1.6 && slope < .3 && Math.abs(t.shore[k]) <= 5 ? smooth(1.6 - v) : 0;
                     const nx = -dx * 1.7,
                         ny = -dy * 1.7;
                     const light = clamp(.45 + .6 * (-nx * .5 + ny * .5 + .7) / Math.sqrt((nx * nx + ny * ny + 1) * .99), .6, 1.13);

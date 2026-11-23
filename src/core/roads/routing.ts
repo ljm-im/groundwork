@@ -1,6 +1,6 @@
 import { type Alignment, type Route, type RoutePart, type RoutingSurface, type SmallCorner } from "../design/results.ts";
-import { type Design, type Edge, type RoadNode, type RoadClass, type Routing, type Point } from "../design/types.ts";
-import { advance, angleDiff, bearing, clamp, distance, eachCell, nearest, pointAt, radians, resample, sample, stations } from "../math/geometry.ts";
+import { type Design, type Edge, type RoadNode, type RoadClass, type Routing, type Point } from "../design/v5.ts";
+import { advance, angleDiff, bearing, canvasSegment, clamp, onCanvas, distance, eachCell, nearest, pointAt, radians, resample, sample, stations } from "../math/geometry.ts";
 import { nodePose, segmentMode, throughPairs } from "../design/model.ts";
 import { biarc, fairAlignment, fillet, tangent, turnLimit } from "./alignment.ts";
 import { selfOverlaps, sharpBends } from "./proximity.ts";
@@ -85,13 +85,13 @@ function segmentDomain(a: Point, b: Point, edge: Edge, t: RoutingSurface, rules:
     };
     const g = t.grid,
         radius = edge.width / 2;
-    const clear = (x: number, y: number) => x >= g.xMin && x <= g.xMax && y >= g.yMin && y <= g.yMax && corridor(x, y) &&
+    const clear = (x: number, y: number) => onCanvas(g, t.defined, x, y) && corridor(x, y) &&
     sample(g, t.clearance, x, y) >= radius && sample(g, t.heights, x, y) >= rules.minHeight;
     const landing = rules.landing ?? 3;
     const atEnd = (x: number, y: number) => landing > 0 && ends.some(p => (x - p[0]) ** 2 + (y - p[1]) ** 2 <= landing ** 2);
     const grade = (p: Point, q: Point) => (sample(g, t.heights, ...q) - sample(g, t.heights, ...p)) / (distance(p, q) || 1);
     const platform = (a: Point, b: Point, c: Point) => !!stairRule && Math.abs(grade(a, b)) >= stairRule.enter && Math.abs(grade(b, c)) >= stairRule.enter;
-    return { corridor, clear, atEnd, grade, platform, penalty: penalty && ((x: number, y: number) => penalty[g.index(x, y)]) };
+    return { corridor, crosses: (a: Point, b: Point) => canvasSegment(g, t.defined, a, b), clear, atEnd, grade, platform, penalty: penalty && ((x: number, y: number) => penalty[g.index(x, y)]) };
 }
 
 // Sample a continuous connector without inserting an approach of predetermined length.
@@ -134,7 +134,7 @@ function lineCost(line: Point[], entry: Heading, exit: Heading, edge: Edge, rule
     for (let i = 1; i < line.length; i++) {
         const a = line[i - 1], b = line[i], length = distance(a, b);
         if (length < 1e-8) continue;
-        if (!domain.clear(...b) || !domain.clear((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)) return Infinity;
+        if (!domain.crosses(a, b) || !domain.clear(...b) || !domain.clear((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)) return Infinity;
         const angle = bearing(a, b), turn = heading == null ? 0 : angleDiff(heading, angle);
         const limit = turnLimit(rules.minRadius, previousLength ? (previousLength + length) / 2 : length) + 1e-7;
         const platform = turn > limit && i > 1 && !domain.atEnd(...a) && domain.platform(line[i - 2], a, b);
@@ -214,7 +214,7 @@ function astar(a: Point, b: Point, entry: Heading, exit: Heading, edge: Edge, t:
             const limit = turnLimit(rules.minRadius, first ? stride : (stride + moves[du].length * step) / 2) + 1e-7;
             const platform = turn > limit && !landing && edge.grade === "stair" && prev && domain.platform(prev, [x, y], [vx, vy]);
             if (turn > limit && !landing && !platform) continue;
-            if (!domain.clear(vx, vy) || !domain.clear((x + vx) / 2, (y + vy) / 2)) continue;
+            if (!domain.crosses([x, y], [vx, vy]) || !domain.clear(vx, vy) || !domain.clear((x + vx) / 2, (y + vy) / 2)) continue;
             if (coarse && resample([[x, y], [vx, vy]], Math.min(step, rules.sampleStep)).some(p => !domain.clear(...p))) continue;
             const length = stride;
             const grade = Math.abs(sample(g, t.heights, vx, vy) - sample(g, t.heights, x, y)) / length;
@@ -241,7 +241,7 @@ function astar(a: Point, b: Point, entry: Heading, exit: Heading, edge: Edge, t:
 
 function clearLine(line: Point[], domain: Domain) {
     return line.every((p, i) => domain.clear(...p) &&
-    (!i || domain.clear((line[i - 1][0] + p[0]) / 2, (line[i - 1][1] + p[1]) / 2)));
+    (!i || domain.crosses(line[i - 1], p) && domain.clear((line[i - 1][0] + p[0]) / 2, (line[i - 1][1] + p[1]) / 2)));
 }
 
 function routedSpan(a: Point, b: Point, entry: Heading, exit: Heading, edge: Edge, terrain: RoutingSurface, rules: SearchRules, domain: Domain, joinEntry?: boolean, joinExit?: boolean): { points: Point[]; failed: boolean } {
@@ -321,7 +321,7 @@ function routedSpan(a: Point, b: Point, entry: Heading, exit: Heading, edge: Edg
 }
 
 export function clearLead(node: RoadNode, edge: Edge, rules: Routing) {
-    return node.type === "door" || node.type === "gate" ? (rules.clearLead ?? edge.width / 2 + .5) : 0;
+    return node.type === "door" ? (rules.clearLead ?? edge.width / 2 + .5) : 0;
 }
 
 function routeOnce(design: Design, t: RoutingSurface, edge: Edge, entry?: EndConstraint, exit?: EndConstraint, penalty?: Float32Array): Alignment {
@@ -415,8 +415,13 @@ function routeOnce(design: Design, t: RoutingSurface, edge: Edge, entry?: EndCon
         }
     }
     const geometry = fairAlignment(design, t, edge, controls, parts, landings, platforms, from.angle, to.angle);
+    const offCanvas = parts.some(part => {
+        if (part.points.every((p, i) => canvasSegment(t.grid, t.defined, part.points[Math.max(0, i - 1)], p))) return false;
+        part.failed = true;
+        return true;
+    });
     const branches = [startNode, endNode].map(n => !!n.through && !throughPairs(n).some(pair => pair.includes(edge.id)));
-    return { id: edge.id, edge, controls, parts, landings, branches, smallCorners, ...geometry };
+    return { id: edge.id, edge, controls, parts, landings, branches, smallCorners, offCanvas, ...geometry };
 }
 
 export function routeEdge(design: Design, terrain: RoutingSurface, edge: Edge, entry?: EndConstraint, exit?: EndConstraint) {
@@ -497,7 +502,7 @@ export function routeAll(design: Design, t: RoutingSurface, previous: Route[] = 
     }
     const dirtyIds = new Set(dirty ?? edges.keys());
     for (const n of nodes.values()) {
-        if (n.type === "door" || n.type === "gate")
+        if (n.type === "door")
             continue;
         const p = pos(n.id);
         for (const [a, b] of pairs(n)) {
@@ -548,7 +553,7 @@ export function routeAll(design: Design, t: RoutingSurface, previous: Route[] = 
             return saved;
         if (!cfg.straight)
             return { ...routeEdge(design, t, e, cfg.from, cfg.to), constraintKey: key };
-        const controls = [pos(e.from), ...e.via, pos(e.to)], parts = controls.slice(1).map((p, i) => ({ index: i, points: resample([controls[i], p], design.routing.sampleStep) }));
-        return { id: e.id, edge: e, constraintKey: key, controls, parts, points: parts.flatMap((part, i) => i ? part.points.slice(1) : part.points) };
+        const controls = [pos(e.from), ...e.via, pos(e.to)], parts = controls.slice(1).map((p, i) => ({ index: i, failed: !canvasSegment(t.grid, t.defined, controls[i], p), points: resample([controls[i], p], design.routing.sampleStep) }));
+        return { id: e.id, edge: e, constraintKey: key, controls, parts, offCanvas: parts.some(p => p.failed), points: parts.flatMap((part, i) => i ? part.points.slice(1) : part.points) };
     });
 }

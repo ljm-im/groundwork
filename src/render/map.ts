@@ -1,11 +1,11 @@
-import { type Design, type Label, type Peak, type Point } from "../core/design/types.ts";
+import { type Design, type Label, type Point } from "../core/design/v5.ts";
 import { type Issue, type Tree } from "../core/design/results.ts";
 import { type Drawing, type FeatureKind, type Handle, type Selection } from "../core/edit/types.ts";
 import { type Island } from "../core/island.ts";
 import { type layerDefaults } from "../app/state/layers.ts";
 import { type Box } from "../core/math/geometry.ts";
-import { advance, bearing, clamp, distance, mixPoint, nearest, sample } from "../core/math/geometry.ts";
-import { areaBoundary, buildingShape, elevation, nodePose, zonePolygon } from "../core/design/model.ts";
+import { advance, bearing, clamp, distance, mixPoint, nearest, onCanvas, sampleDefined } from "../core/math/geometry.ts";
+import { buildingShape, nodePose } from "../core/design/model.ts";
 import { titlePoint } from "../core/edit/buildings.ts";
 import { issueShapes, issueView, objectIssues } from "../core/checks/issues.ts";
 import { featureLine, featureNames, features } from "../core/edit/landforms.ts";
@@ -13,7 +13,8 @@ import { treeStyles } from "../core/vegetation/vegetation.ts";
 import { handles } from "../core/edit/controls.ts";
 import { relief } from "./relief.ts";
 
-import { hedgeLines } from "../core/edit/yards.ts";
+import { type Region } from "../core/design/regions.ts";
+import { type Grid } from "../core/math/geometry.ts";
 
 type Context = CanvasRenderingContext2D;
 
@@ -47,6 +48,36 @@ function polygon(ctx: Context, points: Point[], fill: string | null, outline?: s
         ctx.lineWidth = width!;
         ctx.stroke();
     }
+}
+
+const outlines = new WeakMap<Region, { area: Path2D; outline: Path2D }>();
+function regionPaths(region: Region, g: Grid) {
+    const cached = outlines.get(region);
+    if (cached) return cached;
+    const area = new Path2D(), outline = new Path2D();
+    if (!region.shape.cross) {
+        for (const edges of region.shape.boundary()) {
+            if (!edges.length) continue;
+            area.moveTo(...edges[0].a);
+            for (const edge of edges) area.lineTo(...edge.b);
+            area.closePath();
+        }
+        outline.addPath(area);
+    }
+    else {
+        for (const k of region.cells) {
+            const i = k % g.width, j = Math.floor(k / g.width), x = g.xMin + i * g.step, y = g.yMax - j * g.step;
+            const right = x + g.step, bottom = y - g.step;
+            area.rect(x, bottom, g.step, g.step);
+            if (!i || !region.mask[k - 1]) { outline.moveTo(x, y); outline.lineTo(x, bottom); }
+            if (!j || !region.mask[k - g.width]) { outline.moveTo(x, y); outline.lineTo(right, y); }
+            if (i + 1 === g.width || !region.mask[k + 1]) { outline.moveTo(right, y); outline.lineTo(right, bottom); }
+            if (j + 1 === g.height || !region.mask[k + g.width]) { outline.moveTo(x, bottom); outline.lineTo(right, bottom); }
+        }
+    }
+    const paths = { area, outline };
+    outlines.set(region, paths);
+    return paths;
 }
 
 function circle(ctx: Context, x: number, y: number, r: number, fill: string | null, outline?: string | null, width = 1) {
@@ -195,14 +226,12 @@ export class IslandMap {
         const selected = this.selection, scale = this.scale;
         for (const kind of Object.keys(featureNames) as FeatureKind[]) for (const item of features(d, kind)) {
             const active = selected?.kind === kind && selected.id === item.id;
-            if (!active && !(kind === "ridge" || kind === "peak" ? this.layers.ridges : this.layers.plantingAreas)) continue;
-            const color = kind === "ridge" || kind === "peak" ? "#874622" : "#316d54";
+            if (!active && !this.layers.plantingAreas) continue;
+            const color = "#316d54";
             ctx.save();
             ctx.lineWidth = (active ? 2.8 : 1.6) / scale;
             ctx.setLineDash(active ? [] : [5 / scale, 3 / scale]);
-            if (kind === "peak") circle(ctx, ...(item as Peak).center, (item as Peak).radius, "rgba(181,117,55,.09)", color, ctx.lineWidth);
-            else if (kind === "ridge") stroke(ctx, featureLine(d, kind, item), color, ctx.lineWidth, ctx.getLineDash());
-            else polygon(ctx, featureLine(d, kind, item), kind === "planting" ? "rgba(77,135,77,.11)" : "rgba(255,243,195,.21)", color, ctx.lineWidth);
+            polygon(ctx, featureLine(d, kind, item), kind === "planting" ? "rgba(77,135,77,.11)" : "rgba(255,243,195,.21)", color, ctx.lineWidth);
             ctx.restore();
         }
         if (this.drawing?.hover) {
@@ -221,10 +250,9 @@ export class IslandMap {
     hitFeature(p: Point) {
         const d = this.island.design, active = this.selection;
         let best = null;
-        for (const kind of ["ridge", "planting", "clearing", "peak"] as const) for (const item of features(d, kind)) {
-            if (!(kind === "ridge" || kind === "peak" ? this.layers.ridges : this.layers.plantingAreas) && !(active?.kind === kind && active.id === item.id)) continue;
-            const line = featureLine(d, kind, item), gap = kind === "peak" ? Math.abs(distance(p, (item as Peak).center) - (item as Peak).radius) :
-                nearest(...p, line, kind !== "ridge").distance;
+        for (const kind of ["planting", "clearing"] as const) for (const item of features(d, kind)) {
+            if (!this.layers.plantingAreas && !(active?.kind === kind && active.id === item.id)) continue;
+            const line = featureLine(d, kind, item), gap = nearest(...p, line, true).distance;
             if (gap * this.scale <= 9 && (!best || gap < best.gap)) best = { kind, id: item.id, gap };
         }
         return best;
@@ -237,7 +265,7 @@ export class IslandMap {
             scale = this.scale,
             origin = this.screen([0, 0]);
         ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-        ctx.fillStyle = "#96c3d4";
+        ctx.fillStyle = "#ebeee8";
         ctx.fillRect(0, 0, this.width, this.height);
         ctx.save();
         ctx.translate(...origin);
@@ -276,28 +304,20 @@ export class IslandMap {
             ctx.strokeStyle = "rgba(40,60,30,.48)";
             ctx.stroke(p);
         });
-        for (const z of t.zones) {
-            const shape = this.layers.zones ? zonePolygon(z.shape) : z.polygon;
-            if (z.fill) polygon(ctx, shape, z.fill, "#9c8b6c", .22);
-            if (z.outline || this.layers.zones) {
-                ctx.setLineDash([1.2, .9]);
-                polygon(ctx, shape, null, this.layers.zones ? "#87613d" : "#806d50", this.layers.zones ? .42 : .22);
-                ctx.setLineDash([]);
-            }
-        }
-        for (const area of d.yards ?? []) {
-            if (area.kind === "plaza") continue;
-            const yard = areaBoundary(d, area);
-            polygon(ctx, yard.points, "#c5d5a8");
-            const walls = hedgeLines(yard, d.nodes.filter(n => n.type === "gate" && n.yard === yard.id), d.edges);
-            for (const wall of walls) {
-                stroke(ctx, wall, "#4c6846", .85);
-                stroke(ctx, wall, "#91a875", .4, [.55, .3]);
+        const selectedGeo = this.selection?.kind === "geoNode" ? this.selection.id : undefined;
+        for (const n of d.geoNodes) {
+            if (!n.fill && !n.outline && !this.layers.geoNodes) continue;
+            const paths = regionPaths(t.regions.get(n.id)!, g);
+            if (n.fill) { ctx.fillStyle = n.fill; ctx.fill(paths.area, "evenodd"); }
+            if (n.outline || this.layers.geoNodes) {
+                ctx.strokeStyle = "#806d50";
+                ctx.lineWidth = .6 / scale;
+                ctx.stroke(paths.outline);
             }
         }
         for (const r of this.island.routes) {
+            if (r.offCanvas) continue;
             ctx.save();
-            if (d.nodes.some(n => n.type === "gate" && (n.id === r.edge.from || n.id === r.edge.to))) ctx.lineCap = "butt";
             const selected = this.selection ?.id === r.id && ["edge", "via"].includes(this.selection.kind);
             const p = r.points,
                 width = r.edge.width;
@@ -330,7 +350,7 @@ export class IslandMap {
             }
         }
         const tree = d.vegetation.yardTree;
-        if (this.layers.trees && tree) circle(ctx, ...tree.center, tree.radius, "#9cc584", "#4f7a3a", .22);
+        if (this.layers.trees && tree && onCanvas(g, t.defined, ...tree.center)) circle(ctx, ...tree.center, tree.radius, "#9cc584", "#4f7a3a", .22);
         for (const b of d.buildings) {
             const [x, y] = b.center;
             if (b.shape === "rect") polygon(ctx, buildingShape(b).polygon!, b.color, "#4b453a", .27);
@@ -345,11 +365,15 @@ export class IslandMap {
             else circle(ctx, x, y, b.radius! + .45, b.color, "#7a3a28", .45);
         }
         this.drawFeatures(ctx, d);
+        if (selectedGeo && t.regions.has(selectedGeo)) {
+            ctx.strokeStyle = "#12696a";
+            ctx.lineWidth = 2.5 / scale;
+            ctx.stroke(regionPaths(t.regions.get(selectedGeo)!, g).outline);
+        }
         this.drawIssueShapes(ctx);
         if (this.linkPreview) stroke(ctx, this.linkPreview, ink, 1.6 / scale, [5 / scale, 3 / scale]);
         if (this.layers.sections)
             for (const sec of d.sections) stroke(ctx, sec.points, "rgba(40,75,74,.6)", .85 / scale, [5 / scale, 4 / scale]);
-        if (this.layers.coast) stroke(ctx, [...d.coast.points, d.coast.points[0]], "#20747d", 1.5 / scale, [4 / scale, 4 / scale]);
         ctx.restore();
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
@@ -451,7 +475,7 @@ export class IslandMap {
                         [x + cos * len, y + sin * len]
                     ], ink, 1.6);
                 }
-                if (n.type === "door" || n.type === "gate") {
+                if (n.type === "door") {
                     ctx.save();
                     ctx.translate(x, y);
                     ctx.rotate(-pose.normal!);
@@ -460,7 +484,6 @@ export class IslandMap {
                     ctx.lineWidth = 1.8;
                     ctx.fillRect(-3.5, -3.5, 7, 7);
                     ctx.strokeRect(-3.5, -3.5, 7, 7);
-                    if (n.type === "gate") stroke(ctx, [[-3.5, 0], [3.5, 0]], ink, 1.3);
                     ctx.restore();
                 }
                 else circle(ctx, x, y, n.type === "junction" ? 5 : 3.8, n.type === "junction" ? ink : paper, ink, 1.6);
@@ -484,7 +507,7 @@ export class IslandMap {
                 ctx.translate(x, y);
                 if (h.kind === "via") ctx.rotate(Math.PI / 4);
                 ctx.fillStyle = h.kind === "via" ? "#e2f1e6" : paper;
-                ctx.strokeStyle = h.kind === "ridge" ? "#a34f47" : ink;
+                ctx.strokeStyle = ink;
                 ctx.lineWidth = 1.3;
                 ctx.fillRect(-size / 2, -size / 2, size, size);
                 ctx.strokeRect(-size / 2, -size / 2, size, size);
@@ -543,10 +566,10 @@ export function labelReading(island: Pick<Island, "design" | "terrain" | "graded
     const anchor = b ? b.center : label.point!;
     const point = b && label.offset ? anchor.map((v, i) => v + label.offset![i]) as Point : anchor;
     if (label.titleOnly) return { point, text: label.name };
-    const rule = label.level ? { level: label.level } : b && d.zones.find(z => z.id === b.zone)?.height;
-    if (!rule && !label.spot) return { point, text: label.name };
-    const actual = sample(island.terrain.grid, island.graded.heights, ...anchor);
-    const target = rule ? elevation(rule, d.levels) : null;
+    const target = label.var ? d.variables[label.var]?.value : undefined;
+    if (target === undefined && !label.spot) return { point, text: label.name };
+    const actual = sampleDefined(island.terrain.grid, island.graded.heights, island.terrain.defined, ...anchor);
+    if (actual === undefined) return { point, text: label.name };
     return { point, actual, text: [label.name, actual.toFixed(1) + "m"].filter(Boolean).join(" "),
         difference: target != null && Math.abs(actual - target) > .5 ? "（设计 " + +target.toFixed(1) + "m）" : "" };
 }

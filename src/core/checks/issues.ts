@@ -1,11 +1,11 @@
 import { type Route, type Issue } from "../design/results.ts";
-import { type Design, type Point } from "../design/types.ts";
+import { type Design, type Point } from "../design/v5.ts";
 
 interface IssueContext { design: Design; routes: Route[]; issues: Issue[] }
 interface IssueShape { points: Point[]; closed?: boolean; width?: number; road?: string }
 
 import { bounds, pointAt } from "../math/geometry.ts";
-import { buildingShape, nodePose, zonePolygon } from "../design/model.ts";
+import { buildingShape, nodePose } from "../design/model.ts";
 
 export function objectIssues(island: IssueContext, selection?: { kind: string; id: string } | null) {
     if (!selection)
@@ -15,7 +15,7 @@ export function objectIssues(island: IssueContext, selection?: { kind: string; i
         return island.issues.filter(i => i.road === id || i.other === id || i.spans?.some(s => s.road === id));
     const nodes = kind === "building" ? island.design.nodes.filter(n => n.type === "door" && n.building === id).map(n => n.id) : kind === "node" ? [id] : [];
     return island.issues.filter(i => {
-        if (kind === "building" && i.building === id || kind === "zone" && i.zone === id || nodes.includes(i.node!) || nodes.includes(i.otherNode!))
+        if (kind === "building" && i.building === id || kind === "geoNode" && i.geoNode === id || nodes.includes(i.node!) || nodes.includes(i.otherNode!))
             return true;
         return (i.spans ?? []).some(s => {
             const r = island.routes.find(r => r.id === s.road);
@@ -44,9 +44,6 @@ export function issueShapes(island: IssueContext, issue: Issue) {
                 shapes.push({ points: Array.from({ length: 64 }, (_, i) => [b.center[0] + radius * Math.cos(i * Math.PI / 32), b.center[1] + radius * Math.sin(i * Math.PI / 32)]), closed: true });
             }
     }
-    const z = island.design.zones.find(z => z.id === issue.zone);
-    if (z)
-        shapes.push({ points: zonePolygon(z.shape), closed: true });
     if (issue.otherNode)
         shapes.push({ points: [issue.point, nodePose(island.design, issue.otherNode).point] });
     if (!shapes.length)

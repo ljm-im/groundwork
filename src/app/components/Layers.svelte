@@ -9,7 +9,7 @@
     import Part from "./Part.svelte";
     let { editor }: { editor: session.Editor } = $props();
     const groups = [
-        ["编辑控制点", ["network", "coast", "ridges", "zones", "buildings", "plantingAreas", "sections"]],
+        ["编辑控制点", ["network", "geoNodes", "buildings", "plantingAreas", "sections"]],
         ["平面图", ["contours", "trees", "labels", "issues"]]
     ] as const;
 </script>

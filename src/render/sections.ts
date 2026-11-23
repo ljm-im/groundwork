@@ -1,7 +1,7 @@
 import { type Section, type Point } from "../core/design/types.ts";
 import { type Terrain } from "../core/design/results.ts";
 import { type Island } from "../core/island.ts";
-import { clamp, distance, mixPoint, sample } from "../core/math/geometry.ts";
+import { clamp, distance, mixPoint, sampleDefined } from "../core/math/geometry.ts";
 import { treeStyles } from "../core/vegetation/vegetation.ts";
 
 // Section stations and building intersections only change when an endpoint or the terrain changes.
@@ -62,11 +62,11 @@ export function drawSections(container: HTMLElement, island: Island) {
         const [a, b] = section.points, { len, n, stations, buildings } = sectionCut(section, t, footprints);
         const ux = (b[0] - a[0]) / len,
             uy = (b[1] - a[1]) / len;
-        const ground = stations.map(p => sample(t.grid, graded.heights, ...p));
+        const ground = stations.map(p => sampleDefined(t.grid, graded.heights, t.defined, ...p));
         const left = 17,
             right = w - 5,
             base = h - 15,
-            ys = Math.min((h - 27) / Math.max(28, ...ground), 3.4);
+            ys = Math.min((h - 27) / Math.max(28, ...ground.filter(v => v !== undefined)), 3.4);
         const sx = (v: number) => left + v / len * (right - left),
             sy = (v: number) => base - v * ys;
         ctx.font = "9px Consolas,monospace";
@@ -84,28 +84,27 @@ export function drawSections(container: HTMLElement, island: Island) {
             ctx.lineWidth = .7;
             ctx.stroke();
         }
-        ctx.fillStyle = "#a8cbd3";
-        ctx.fillRect(left, base, right - left, 5);
-        ctx.beginPath();
-        for (let i = 0; i <= n; i++) {
-            const x = sx(len * i / n),
-                y = sy(Math.max(ground[i], -3));
-            if (i) ctx.lineTo(x, y);
-            else ctx.moveTo(x, y);
+        for (let i = 0; i <= n;) {
+            if (ground[i] === undefined) { i++; continue; }
+            const start = i;
+            ctx.beginPath();
+            ctx.moveTo(sx(len * i / n), sy(Math.max(ground[i]!, -3)));
+            while (++i <= n && ground[i] !== undefined) ctx.lineTo(sx(len * i / n), sy(Math.max(ground[i]!, -3)));
+            ctx.lineTo(sx(len * (i - 1) / n), base + 6);
+            ctx.lineTo(sx(len * start / n), base + 6);
+            ctx.closePath();
+            ctx.fillStyle = "#cec5a8";
+            ctx.fill();
+            ctx.strokeStyle = "#978e71";
+            ctx.lineWidth = .8;
+            ctx.stroke();
         }
-        ctx.lineTo(right, base + 6);
-        ctx.lineTo(left, base + 6);
-        ctx.closePath();
-        ctx.fillStyle = "#cec5a8";
-        ctx.fill();
-        ctx.strokeStyle = "#978e71";
-        ctx.lineWidth = .8;
-        ctx.stroke();
         for (const tree of island.trees) {
             const [x, y] = tree.point, dx = x - a[0], dy = y - a[1], along = dx * ux + dy * uy;
             if (along < 0 || along > len || Math.abs(dx * uy - dy * ux) > tree.radius) continue;
             const px = sx(along),
                 g = ground[clamp(Math.round(along / len * n), 0, n)];
+            if (g === undefined) continue;
             const [color, heightRatio] = treeStyles[tree.species], crown = g + tree.radius * heightRatio;
             ctx.beginPath();
             ctx.moveTo(px, sy(g));
@@ -118,7 +117,9 @@ export function drawSections(container: HTMLElement, island: Island) {
             ctx.fill();
         }
         for (const { building, start, end } of buildings) {
-            const x = sx(start * len / n), y = sy(ground[start] + building.data.height);
+            const h = ground[start];
+            if (h === undefined) continue;
+            const x = sx(start * len / n), y = sy(h + building.data.height);
             ctx.fillStyle = building.data.color;
             ctx.fillRect(x, y, Math.max(1, sx(end * len / n) - x), building.data.height * ys);
         }
@@ -140,7 +141,7 @@ export function drawSections(container: HTMLElement, island: Island) {
                 const x = sx(at),
                     height = ground[Math.round(at / len * n)],
                     text = mark[1];
-                if (x - last < ctx.measureText(text).width + 6) continue;
+                if (height === undefined || x - last < ctx.measureText(text).width + 6) continue;
                 ctx.fillStyle = "#556955";
                 ctx.fillText(text, x, Math.max(13, sy(height) - 9));
                 last = x;

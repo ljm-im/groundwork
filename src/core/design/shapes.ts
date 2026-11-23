@@ -1,17 +1,23 @@
 import { type Building, type Clearing, type ClearingShape, type Design, type Height, type Point, type RoadNode, type Shape, type Yard, type ZoneHeight } from "./types.ts";
-import { type Box } from "../math/geometry.ts";
+import { type Box, type Grid } from "../math/geometry.ts";
 import { type Boundary } from "./gates.ts";
 
 export type NodeAnchor = Pick<RoadNode, "type" | "point" | "yard" | "at" | "building" | "door" | "direction">;
 export interface Pose { point: Point; angle: number | null; normal?: number | null }
 
-import { advance, bearing, bounds, mixPoint, nearest, radians, spline } from "../math/geometry.ts";
+import { advance, bearing, bounds, distance, mixPoint, nearest, radians, spline } from "../math/geometry.ts";
 import { noise } from "../math/noise.ts";
 import { gateFraction, gatePose } from "./gates.ts";
 
 const designNoise = noise(99);
 export const zoneNoise = (x: number, y: number) => designNoise(x / 9 + 50, y / 9 - 20);
 export const elevation = (rule: Height | ZoneHeight, levels: Record<string, number>) => typeof rule === "number" ? rule : (levels[rule.level!] ?? 0) + (rule.offset ?? 0);
+
+export function padCell(grid: Grid, cells: number[], center: Point) {
+    const cell = grid.index(...center);
+    if (!cells.length || cells.includes(cell)) return cell;
+    return cells.reduce((best, k) => distance(grid.point(k), center) < distance(grid.point(best), center) ? k : best);
+}
 
 export function zonePolygon(shape: Shape): Point[] {
     if (shape.type === "polygon") return shape.smooth ? spline(shape.points, true, shape.smooth) : shape.points;

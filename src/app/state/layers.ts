@@ -1,8 +1,6 @@
 export const layerDefaults = {
     network: true,
-    coast: false,
-    ridges: false,
-    zones: false,
+    geoNodes: false,
     buildings: false,
     sections: true,
     contours: true,
@@ -13,9 +11,7 @@ export const layerDefaults = {
 };
 export const layerNames = {
     network: "路网节点与途经点",
-    coast: "海岸线",
-    ridges: "山脊与山头",
-    zones: "台地、院墙与整平区",
+    geoNodes: "地件轮廓",
     buildings: "建筑占地",
     sections: "剖面线与端点",
     contours: "等高线",

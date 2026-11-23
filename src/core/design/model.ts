@@ -5,7 +5,7 @@ import { simpleBoundary } from "../math/polygon.ts";
 import { check, point, positive, validateGeo } from "./validateGeo.ts";
 
 export { corners, buildingShape, moveDoorOrPoint as moveNode } from "./shapes.ts";
-export function nodePose(design: Pick<Design, "nodes" | "buildings">, node: RoadNode | string) {
+export function nodePose(design: Pick<Design, "nodes" | "buildings">, node: Pick<RoadNode, "point" | "type" | "building" | "door" | "direction"> | string) {
     if (typeof node === "string") node = design.nodes.find(n => n.id === node)!;
     const pose = doorPose(design, node);
     if (node.type === "door") pose.normal = pose.angle;

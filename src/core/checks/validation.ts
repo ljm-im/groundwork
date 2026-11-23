@@ -1,13 +1,11 @@
 import { type Issue, type IssueSpan, type Route, type Terrain } from "../design/results.ts";
-import { type Design, type Point } from "../design/types.ts";
+import { type Design, type Point } from "../design/v5.ts";
 import { type Grid, type Box } from "../math/geometry.ts";
 type Emit = (kind: string, message: string, point: Point, severity?: Issue["severity"], geometry?: Partial<Issue>) => Issue;
 
 import { angleDiff, bearing, bounds, distance, eachCell, mixPoint, nearest, pointAt, radians, resample, sample } from "../math/geometry.ts";
 import { exemptRadius, radiusAt } from "../roads/alignment.ts";
-import { areaBoundary, elevation, nodePose, throughPairs } from "../design/model.ts";
-import { gateDistance } from "../design/gates.ts";
-import { insidePolygon, perimeter } from "../math/polygon.ts";
+import { nodePose, throughPairs } from "../design/model.ts";
 import { overlappingLocations, selfOverlaps, sharpBends } from "../roads/proximity.ts";
 
 const percent = (v: number) => +(v * 100).toFixed(2) + "%";
@@ -36,13 +34,12 @@ function gradeIssues(design: Design, route: Route, emit: Emit) {
     }
 }
 
-function surfaceIssues(route: Route, terrain: Pick<Terrain, "buildings" | "zones"> & Partial<Pick<Terrain, "yards">>, emit: Emit) {
+function surfaceIssues(route: Route, terrain: Pick<Terrain, "buildings">, emit: Emit) {
     const points = resample(route.points, .5),
         half = route.edge.width / 2,
         box = bounds(points);
     const nearby = (b: Box) => box[0] - half <= b[2] && box[2] + half >= b[0] && box[1] - half <= b[3] && box[3] + half >= b[1];
     const buildings = terrain.buildings.filter(b => nearby(b.box));
-    const walls = terrain.zones.filter(z => z.retainingWall && nearby(z.box));
     const yards = (terrain.yards ?? []).filter(y => nearby(y.box) && y.yard.kind !== "plaza");
     const active = new Map<string, Issue>();
     const finish = (key: string, at: number) => {
@@ -78,19 +75,7 @@ function surfaceIssues(route: Route, terrain: Pick<Terrain, "buildings" | "zones
             }
             contact(key, hit, i, "building", "路面穿过" + building.data.name, "error", { building: building.data.id });
         }
-        for (const z of walls) {
-            const key = "z/" + z.id,
-                hit = nearest(...p, z.polygon, true).distance <= half;
-            contact(key, hit, i, "wall", "路面与" + z.name + "挡土墙相交", "notice");
-        }
-        for (const { yard } of yards) {
-            const key = "yard/" + yard.id;
-            const hit = [0, -half, half].some(offset => {
-                const q: Point = [p[0] + nx * offset, p[1] + ny * offset];
-                return insidePolygon(yard, q) && nearest(...q, yard.points, true).distance > .03;
-            });
-            contact(key, hit, i, "yard-interior", "路面进入" + yard.name + "内部", "error");
-        }
+
     }
     for (const key of active.keys()) finish(key, route.length);
 }
@@ -181,11 +166,11 @@ export function armBearing(route: Route, nodeId: string) {
     return bearing(end, pointAt(route.points, route.s, start ? 3 : route.length - 3));
 }
 
-export function summitHeights(grid: Grid, heights: Float32Array, point: Point) {
+export function summitHeights(grid: Grid, heights: Float32Array, point: Point, defined?: Uint8Array) {
     const [x, y] = point, ground = sample(grid, heights, x, y);
     let highest = ground, highestAt = point;
     eachCell(grid, [x, y, x, y], 25, (k, px, py) => {
-        if ((px - x) ** 2 + (py - y) ** 2 <= 625 && heights[k] > highest) {
+        if ((!defined || defined[k]) && (px - x) ** 2 + (py - y) ** 2 <= 625 && heights[k] > highest) {
             highest = heights[k];
             highestAt = [px, py];
         }
@@ -193,25 +178,8 @@ export function summitHeights(grid: Grid, heights: Float32Array, point: Point) {
     return { ground, highest, highestAt };
 }
 
-export function validateDesign(d: Design, terrain: Pick<Terrain, "grid" | "buildings" | "zones">, heights: Float32Array, routes: Route[]): Issue[] {
+export function validateDesign(d: Design, terrain: Pick<Terrain, "grid" | "buildings" | "defined">, heights: Float32Array, routes: Route[]): Issue[] {
     const issues: Issue[] = [];
-    for (const y of d.yards ?? []) {
-        const gates = d.nodes.filter(n => n.type === "gate" && n.yard === y.id);
-        const { length } = perimeter(areaBoundary(d, y));
-        const boundary = y.kind === "plaza" ? "广场边界" : "院墙";
-        const entrance = y.kind === "plaza" ? "广场入口" : "院门";
-        for (const [i, n] of gates.entries()) {
-            const point = nodePose(d, n).point;
-            for (const other of gates.slice(i + 1)) {
-                const gap = gateDistance(n, other, length);
-                if (gap < 6 - 1e-8) issues.push({ kind: "gate-spacing", severity: "notice", node: n.id, otherNode: other.id, point, label: n.name,
-                    message: "沿" + boundary + "距" + other.name + "仅 " + gap.toFixed(1) + " m，需至少 6 m" });
-            }
-            for (const b of terrain.buildings) if (b.signedDistance(...point) <= 1.5) {
-                issues.push({ kind: "gate-building", severity: "error", node: n.id, building: b.data.id, point, label: n.name, message: entrance + "落在" + b.data.name + "占地外扩 1.5 m 范围内" });
-            }
-        }
-    }
     for (const n of d.nodes.filter(n => n.detachedDoor)) issues.push({ kind: "detached-door", severity: "notice", node: n.id, point: n.point!, label: n.name, message: "端点未接建筑（" + n.detachedDoor + "）" });
     for (const n of d.nodes.filter(n => n.through)) {
         const pairs = throughPairs(n), mains = new Set(pairs.flat());
@@ -227,19 +195,9 @@ export function validateDesign(d: Design, terrain: Pick<Terrain, "grid" | "build
         }
     }
     for (const b of d.buildings.filter(b => b.summit)) {
-        const { ground, highest } = summitHeights(terrain.grid, heights, b.center);
+        const { ground, highest } = summitHeights(terrain.grid, heights, b.center, terrain.defined);
         if (highest - ground > .5) issues.push({ kind: "summit", severity: "error", building: b.id, point: b.center, label: b.name,
             message: "基座 " + ground.toFixed(1) + " m，25 m 内最高 " + highest.toFixed(1) + " m，高差超过 0.5 m" });
-    }
-    for (const z of terrain.zones) {
-        if (!z.cells.length) continue;
-        let sum = 0;
-        for (const k of z.cells) sum += heights[k];
-        const mean = sum / z.cells.length, target = elevation(z.height, d.levels);
-        if (Math.abs(mean - target) > .5) {
-            issues.push({ kind: "zone-height", severity: "notice", zone: z.id, point: z.marker!, label: z.name,
-                message: "区内平均 " + mean.toFixed(1) + " m，设计 " + target.toFixed(1) + " m" });
-        }
     }
     return issues;
 }
