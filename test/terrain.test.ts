@@ -25,13 +25,13 @@ const circle = (r: number): Path => ({ closed: true, nodes: [-r, r].map((x, i) =
 
 test("A seed reproduces terrain and graded heights", () => {
     const g = base();
-    const detail = layer("N", g.construction, { type: "noise", amplitude: 1.5, scale: 9, seed: 7 });
+    const detail = layer("N", g.construction, { type: "noise", amplitude: 1.5, scale: 9, seed: "{var:seed} + 7" });
     const d = design([g, detail]);
     const initial = new Island(d);
     assert.deepEqual(new Island(structuredClone(d)).graded.heights, initial.graded.heights);
-    d.seed++;
+    d.variables.seed.value++;
     assert.notDeepEqual(generateTerrain(d).heights, initial.terrain.heights);
-    detail.function.seed = 6;
+    detail.function.seed = "{var:seed} + 6";
     assert.deepEqual(generateTerrain(d).heights, initial.terrain.heights);
 });
 
@@ -66,7 +66,7 @@ test("Noise fades to zero at the boundary and reaches its full FBM amplitude ins
     d.fields.B = { default: 2.5 };
     const plain = evaluateStack(parseDesign(d));
     n.function = { ...fn, feather: 4 };
-    const soft = evaluateStack(parseDesign(d)), pattern = noise(d.seed + fn.seed);
+    const soft = evaluateStack(parseDesign(d)), pattern = noise(fn.seed);
     const seen = new Set<string>();
     for (const k of soft.regions.get(n.id)!.cells) {
         const [x, y] = soft.grid.point(k), gap = Math.min(x + 8.5, 9.5 - x, y + 6.5, 7.5 - y);
@@ -83,15 +83,15 @@ test("Noise fades to zero at the boundary and reaches its full FBM amplitude ins
 
 test("A field-bound noise amplitude leaves a zero disk intact and skips undefined input", () => {
     const g = base(), disk = layer("Z", { type: "free", paths: [circle(6)] }, { type: "flat", value: 0 }, "A");
-    const n = layer("N", g.construction, { type: "noise", amplitude: { field: "A", scale: .5 }, scale: 7, octaves: 2 });
+    const n = layer("N", g.construction, { type: "noise", amplitude: "{field:A} * 0.5", scale: 7, octaves: 2 });
     const d = design([g, disk, n]); d.fields.A = { default: 4 };
-    const t = evaluateStack(parseDesign(d)), pattern = noise(d.seed), mask = t.regions.get(disk.id)!.mask;
+    const t = evaluateStack(parseDesign(d)), pattern = noise(0), mask = t.regions.get(disk.id)!.mask;
     assert(mask.includes(1) && t.fields.height.some((v, k) => !mask[k] && v !== 2));
     for (let k = 0; k < mask.length; k++) {
         const [x, y] = t.grid.point(k);
         assert.equal(t.fields.height[k], mask[k] ? 2 : Math.fround(2 + 2 * fbm(pattern, x / 7, y / 7, 2)));
     }
-    n.field = "A"; n.function = { type: "noise", amplitude: { field: "height" }, scale: 7 };
+    n.field = "A"; n.function = { type: "noise", amplitude: "{field:height}", scale: 7 };
     d.geoNodes = [n, g];
     assert(evaluateStack(parseDesign(d)).fields.A.every(v => v === 4));
 });
@@ -222,7 +222,7 @@ test("A zero strength disk protects every cell of an eroded slope", () => {
         layer("P", { type: "free", paths: [circle(6)] }, { type: "flat", value: 0 }, "f")]);
     d.fields.f = { default: 1 };
     const before = evaluateStack(d);
-    d.geoNodes.push(layer("E", all, { ...erosion, droplets: 2400, strength: { field: "f" } }));
+    d.geoNodes.push(layer("E", all, { ...erosion, droplets: 2400, strength: "{field:f}" }));
     const after = evaluateStack(d);
     assert(after.fields.height.some((v, k) => v !== before.fields.height[k]));
     for (const k of after.regions.get("P")!.cells) assert.equal(after.fields.height[k], before.fields.height[k]);

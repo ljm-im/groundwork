@@ -36,13 +36,13 @@ test("History capacity, undo and redo branches", () => {
     const moved = syntheticDesign();
     const hist = new History(moved, 50);
     for (let i = 0; i < 55; i++) {
-        moved.seed = i;
+        moved.variables.seed.value = i;
         hist.record(moved);
     }
     for (let i = 0; i < 50; i++) assert(hist.step(false));
     assert(!hist.canUndo);
-    assert.equal(hist.step(true)!.seed, 5);
-    moved.seed = 900;
+    assert.equal(hist.step(true)!.variables.seed.value, 5);
+    moved.variables.seed.value = 900;
     hist.record(moved);
     assert(!hist.canRedo);
 });
@@ -55,7 +55,7 @@ test("Splitting and removing roads maintains through pairs and approaches", () =
     const main = forkNode.through!.map(id => again.routes.find(r => r.id === id)!);
     const branch = again.routes.find(r => r.edge.from === forkNode.id && !main.includes(r))!;
     const portal = again.design.edges.find(e => again.design.nodes.some(n => n.id === e.to && n.type === "door"))!,
-        front = nodePose(again.design, portal.to);
+        front = nodePose(again.resolved, portal.to);
     const onLead = advance(front.point, front.angle!, 1);
     const cutDesign = structuredClone(again.design), cutIsland = new Island(cutDesign);
     const garden = cutIsland.routes.find(r => r.id === branch.id)!;

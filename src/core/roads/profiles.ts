@@ -1,5 +1,5 @@
 import { type Alignment, type Route, type Graded, type Terrain, type RoutingSurface } from "../design/results.ts";
-import { type RoadClass, type Design } from "../design/v5.ts";
+import { type RoadClass, type NetworkDesign as Design } from "../design/v5.ts";
 import { bounds, clamp, eachCell, pointAt, sampleDefined, smooth, stations } from "../math/geometry.ts";
 
 function valueAt(s: Float64Array, h: number[], d: number) {

@@ -1,8 +1,12 @@
-import { type Building as Footprint, type ClearingShape, type Disk, type Edge, type Erosion, type Harbor, type Label as MapLabel, type Named, type NoiseSettings, type Planting as PlantingRules, type Point, type RoadClass, type RoadNode as NetworkNode, type Routing, type Section } from "./types.ts";
+import { type Building as Footprint, type ClearingShape, type Disk, type Edge as Road, type Erosion, type Label as MapLabel, type Named, type Planting as PlantingRules, type Point, type RoadClass, type RoadNode as NetworkNode, type Routing, type Section } from "./types.ts";
 
-export { type ClearingShape, type Disk, type Door, type Ellipse, type Polygon, type Sector, type Edge, type Erosion, type Named, type Point, type RoadClass, type RoadMode, type RoadPair, type Routing, type Section, type Segment, type Species } from "./types.ts";
-export type Building = Omit<Footprint, "zone">;
-export type RoadNode = Omit<NetworkNode, "yard" | "at" | "type"> & { type: Exclude<NetworkNode["type"], "gate"> };
+export { type ClearingShape, type Disk, type Ellipse, type Polygon, type Sector, type Erosion, type Named, type Point, type RoadClass, type RoadMode, type RoadPair, type Routing, type Section, type Segment, type Species } from "./types.ts";
+export type Expression = number | string;
+type NumericProperties<T, N> = { [K in keyof T]: Exclude<T[K], undefined> extends number ? N : T[K] };
+export type Door<N = number> = NumericProperties<Footprint["doors"][number], N>;
+export type Building<N = number> = NumericProperties<Omit<Footprint, "zone" | "size" | "doors">, N> & { size?: [N, N]; doors: Door<N>[] };
+export type Edge<N = number> = NumericProperties<Road, N>;
+export type RoadNode<N = number> = NumericProperties<Omit<NetworkNode, "yard" | "at" | "type">, N> & { type: Exclude<NetworkNode["type"], "gate"> };
 export type Planting = Omit<PlantingRules, "zones">;
 export type Label = Omit<MapLabel, "level"> & { var?: string };
 export interface Clearing extends Named { shape: ClearingShape; cover?: "ambient" }
@@ -14,9 +18,7 @@ export interface Vegetation {
     clearings: Clearing[];
 }
 
-export type Height = number | { var: string; offset?: number };
-export type FieldInput = number | { field: string; scale?: number; offset?: number };
-export interface Variable { value: number; label?: string; range?: [number, number, number] }
+export interface Variable<N = Expression> { value: N; label?: string; range?: [number, number, number] }
 export interface PathNode {
     id: string;
     p: Point;
@@ -27,55 +29,56 @@ export interface PathNode {
     bulge?: number;
 }
 export interface Path { closed: true; nodes: PathNode[] }
-export interface Polyline { points: { p: Point; h?: Height }[]; smooth?: boolean }
-export interface Strip {
+export interface Polyline<N = Expression> { points: { p: Point; h?: N }[]; smooth?: boolean }
+export interface Strip<N = Expression> {
     type: "strip";
     of: [string] | [string, string];
-    widths: Point;
+    widths: [N, N];
     range?: { from: string; to: string };
 }
-export type Construction = { type: "free"; paths: Path[] } | Strip;
-export interface Ridge { line: Polyline; widths: Point; widthNoise: NoiseSettings; heightNoise: NoiseSettings }
-export interface Peak { at: { p: Point; h: Height }; radius: number; noise: number; scale: number }
-export type GeoFunction = (
-    { type: "ground" | "flat"; value: Height } |
-    { type: "coast"; shore: Path; roughness: FieldInput; harbor?: Harbor } |
-    { type: "mountain"; ridges: Ridge[]; peaks: Peak[]; floor?: Height } |
-    { type: "cliff"; factor: FieldInput; seaLevel?: Height } |
-    ({ type: "erosion"; strength?: FieldInput; floor?: Height } & Erosion) |
-    { type: "islets"; density: FieldInput; reach: number; threshold?: number; seaLevel?: Height } |
-    { type: "slope"; kind: "path"; line: Polyline; ease?: boolean } |
-    { type: "slope"; kind: "radial"; center: Point; radius: number; value: Height; rate: number } |
-    { type: "add"; amount: Height; feather: number } |
-    { type: "noise"; amplitude: FieldInput; scale: number; octaves?: number; feather?: number } |
+export type Construction<N = Expression> = { type: "free"; paths: Path[] } | Strip<N>;
+export interface Ridge<N> { line: Polyline<N>; widths: [N, N]; widthNoise: [N, N, N]; heightNoise: [N, N, N] }
+export interface Peak<N> { at: { p: Point; h: N }; radius: N; noise: N; scale: N }
+export type GeoFunction<N = Expression> = (
+    { type: "ground" | "flat"; value: N } |
+    { type: "coast"; shore: Path; roughness: Expression; harbor?: { center: Point; span: N; radius: N } } |
+    { type: "mountain"; ridges: Ridge<N>[]; peaks: Peak<N>[]; floor?: N } |
+    { type: "cliff"; factor: Expression; seaLevel?: N } |
+    ({ type: "erosion"; strength?: Expression; floor?: N } & NumericProperties<Erosion, N>) |
+    { type: "islets"; density: Expression; reach: N; threshold?: N; seaLevel?: N } |
+    { type: "slope"; kind: "path"; line: Polyline<N>; ease?: boolean } |
+    { type: "slope"; kind: "radial"; center: Point; radius: N; value: N; rate: N } |
+    { type: "add"; amount: N; feather: N } |
+    { type: "noise"; amplitude: Expression; scale: N; octaves?: N; feather?: N } |
     { type: "blend" | "split" } |
-    { type: "batter"; grade: number }
-) & { seed?: number };
-export interface GeoNode extends Named {
+    { type: "batter"; grade: N }
+) & { seed?: N };
+export interface GeoNode<N = Expression> extends Named {
     disabled?: true;
     prompt?: string;
     field?: string;
-    construction: Construction;
-    function: GeoFunction;
+    construction: Construction<N>;
+    function: GeoFunction<N>;
     fill?: string;
     outline?: boolean;
 }
-export interface Design {
+export interface DesignData<N> {
     version: 5;
     prompt?: string;
-    seed: number;
     grid: { step: number };
-    variables: Record<string, Variable>;
-    fields: Record<string, { label?: string; default: number }>;
-    geoNodes: GeoNode[];
-    buildings: Building[];
-    nodes: RoadNode[];
-    edges: Edge[];
+    variables: Record<string, Variable<N>>;
+    fields: Record<string, { label?: string; default: N }>;
+    geoNodes: GeoNode<N>[];
+    buildings: Building<N>[];
+    nodes: RoadNode<N>[];
+    edges: Edge<N>[];
     roadClasses: Record<string, RoadClass>;
-    routing: Routing;
+    routing: NumericProperties<Routing, N>;
     vegetation: Vegetation;
     sections: Section[];
     labels: Label[];
 }
 
-export const elevation = (h: Height, vars: Design["variables"]) => typeof h === "number" ? h : vars[h.var].value + (h.offset ?? 0);
+export interface Design extends DesignData<Expression> {}
+export type ResolvedDesign = DesignData<number>;
+export type NetworkDesign = Pick<ResolvedDesign, "nodes" | "edges" | "buildings" | "roadClasses" | "routing">;

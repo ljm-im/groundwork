@@ -1,5 +1,5 @@
 import { type Alignment, type RoutePart, type RoutingSurface } from "../design/results.ts";
-import { type Design, type Edge, type Point } from "../design/v5.ts";
+import { type NetworkDesign as Design, type Edge, type Point } from "../design/v5.ts";
 import { canvasSegment, advance, angleDiff, bearing, clamp, distance, nearest, radians, resample, sampleDefined, stations } from "../math/geometry.ts";
 
 export function radiusAt(a: Point, b: Point, c: Point) {

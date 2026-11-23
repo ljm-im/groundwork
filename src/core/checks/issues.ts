@@ -1,7 +1,7 @@
 import { type Route, type Issue } from "../design/results.ts";
-import { type Design, type Point } from "../design/v5.ts";
+import { type Design, type ResolvedDesign, type Point } from "../design/v5.ts";
 
-interface IssueContext { design: Design; routes: Route[]; issues: Issue[] }
+type IssueContext = ({ design: Design; resolved: ResolvedDesign } | { design: ResolvedDesign }) & { routes: Route[]; issues: Issue[] };
 interface IssueShape { points: Point[]; closed?: boolean; width?: number; road?: string }
 
 import { bounds, pointAt } from "../math/geometry.ts";
@@ -35,7 +35,8 @@ export function issueShapes(island: IssueContext, issue: Issue) {
         const points = [pointAt(r.points, r.s, span.from), ...r.points.filter((p, i) => r.s[i] > span.from && r.s[i] < span.to), pointAt(r.points, r.s, span.to)];
         shapes.push({ points, width: r.edge.width, road: r.id });
     }
-    const b = island.design.buildings.find(b => b.id === issue.building);
+    const design = "resolved" in island ? island.resolved : island.design;
+    const b = design.buildings.find(b => b.id === issue.building);
     if (b) {
         if (b.shape === "rect")
             shapes.push({ points: buildingShape(b).polygon!, closed: true });
@@ -45,7 +46,7 @@ export function issueShapes(island: IssueContext, issue: Issue) {
             }
     }
     if (issue.otherNode)
-        shapes.push({ points: [issue.point, nodePose(island.design, issue.otherNode).point] });
+        shapes.push({ points: [issue.point, nodePose(design, issue.otherNode).point] });
     if (!shapes.length)
         shapes.push({ points: [issue.point] });
     return shapes;

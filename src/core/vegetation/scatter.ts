@@ -1,4 +1,4 @@
-import { type Design, type Point, type ClearingShape } from "../design/v5.ts";
+import { type ResolvedDesign, type Point, type ClearingShape } from "../design/v5.ts";
 import { type Terrain } from "../design/results.ts";
 import { angleDiff, bearing, distance, radians, smooth, type Grid, gradient } from "../math/geometry.ts";
 import { fbm, noise, randomAt } from "../math/noise.ts";
@@ -14,8 +14,8 @@ export function inClearing(shape: ClearingShape, p: Point) {
     return radius <= shape.outer && radius >= (shape.inner ?? 0) && angleDiff(bearing(shape.center, p), shape.start * radians + half) <= half;
 }
 
-export function treeEnvironment(design: Design, terrain: Terrain) {
-    const { grid, defined, heights } = terrain, rules = design.vegetation, n = noise(design.seed + 404);
+export function treeEnvironment(design: Pick<ResolvedDesign, "vegetation">, terrain: Terrain) {
+    const { grid, defined, heights } = terrain, rules = design.vegetation, n = noise(404);
     const clearings = rules.clearings.map(c => ({ ambient: c.cover === "ambient", shape: c.shape }));
     const buffers = terrain.buildings.map(b => ({ center: b.data.center, radius: b.data.treeRadius ??
       Math.hypot(b.box[2] - b.box[0], b.box[3] - b.box[1]) / 2 + 1.5 }));
@@ -35,8 +35,8 @@ export function treeEnvironment(design: Design, terrain: Terrain) {
 }
 
 // Each cell owns four samples, regardless of planting decisions in earlier cells.
-export function walkScatter(design: Design, grid: Grid, visit: (point: Point, roll: number, size: number) => void) {
-    const seed = design.seed + 55;
+export function walkScatter(design: Pick<ResolvedDesign, "vegetation">, grid: Grid, visit: (point: Point, roll: number, size: number) => void) {
+    const seed = 55;
     let cell = 0;
     for (let y = grid.yMin + 2; y < grid.yMax; y += 3)
         for (let x = grid.xMin + 2; x < grid.xMax; x += 3, cell++) {

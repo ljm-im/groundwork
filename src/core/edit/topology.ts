@@ -1,4 +1,4 @@
-import { type Design, type RoadNode, type Edge, type Point, type Segment, type RoadPair } from "../design/v5.ts";
+import { type Design, type Expression, type RoadNode, type Edge, type Point, type Segment, type RoadPair } from "../design/v5.ts";
 import { type Route } from "../design/results.ts";
 import { distance, nearest } from "../math/geometry.ts";
 import { throughPairs } from "../design/model.ts";
@@ -16,7 +16,7 @@ export function addNode(d: Design, point: Point): RoadNode {
     return node;
 }
 
-export function connect(d: Design, from: RoadNode, to: RoadNode): Edge {
+export function connect(d: Design, from: RoadNode<Expression>, to: RoadNode<Expression>): Edge {
     const { width, comfort, maxGrade, corridor } = d.roadClasses.path;
     const edge: Edge = { id: newId(d.edges, "edge"), name: from.name + " → " + to.name, from: from.id, to: to.id,
         via: [], grade: "path", width, comfort, maxGrade, corridor };
@@ -24,7 +24,7 @@ export function connect(d: Design, from: RoadNode, to: RoadNode): Edge {
     return edge;
 }
 
-export function setSegment<K extends keyof Segment>(edge: Edge, index: number, key: K, value: Segment[K] | false | "" | null) {
+export function setSegment<K extends keyof Segment>(edge: Edge<Expression>, index: number, key: K, value: Segment[K] | false | "" | null) {
     const segments = edge.segments ?? Array.from({ length: edge.via.length + 1 }, () => ({}));
     const option = { ...segments[index] };
     if (value == null || value === false || value === "") delete option[key]; else option[key] = value;
@@ -33,7 +33,7 @@ export function setSegment<K extends keyof Segment>(edge: Edge, index: number, k
     else delete edge.segments;
 }
 
-export function insertVia(edge: Edge, index: number, p: Point) {
+export function insertVia(edge: Edge<Expression>, index: number, p: Point) {
     if (edge.segments) {
         const option = edge.segments[index];
         edge.segments.splice(index, 0, option?.mode ? { mode: option.mode } : {});
@@ -41,7 +41,7 @@ export function insertVia(edge: Edge, index: number, p: Point) {
     edge.via.splice(index, 0, p.slice() as Point);
 }
 
-export function removeVia(edge: Edge, index: number) {
+export function removeVia(edge: Edge<Expression>, index: number) {
     if (edge.segments) {
         const [before, after] = edge.segments.slice(index, index + 2), merged = { ...before };
         delete merged.exactEnd;
@@ -52,16 +52,16 @@ export function removeVia(edge: Edge, index: number) {
 }
 
 export function splitRoad(d: Design, route: Route, point: Point, index: number) {
-    const e = route.edge, oldEnd = d.nodes.find(n => n.id === e.to)!;
+    const e = d.edges.find(edge => edge.id === route.id)!, oldEnd = d.nodes.find(n => n.id === e.to)!;
     if (distance(route.points[0], point) < .02 || distance(route.points.at(-1)!, point) < .02) return null;
     const node = addNode(d, point);
     node.name = "分岔路口 " + node.id.split("-").at(-1)!;
     const after = { ...e, id: newId(d.edges, "edge"), name: node.name + " → " + oldEnd.name, from: node.id, via: e.via.slice(index) };
-    if (e.stairUntil != null) {
+    if (route.edge.stairUntil != null) {
         const hit = nearest(...point, route.points);
         const station = route.s[hit.segment] + hit.t * (route.s[hit.segment + 1] - route.s[hit.segment]);
-        after.stairUntil = Math.max(0, e.stairUntil - station);
-        e.stairUntil = Math.min(e.stairUntil, station);
+        after.stairUntil = Math.max(0, route.edge.stairUntil - station);
+        e.stairUntil = Math.min(route.edge.stairUntil, station);
     }
     if (e.segments) {
         after.segments = e.segments.slice(index).map(s => ({ ...s }));

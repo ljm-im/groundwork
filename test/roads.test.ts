@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { type Point, type Design, type Edge, type Building } from "../src/core/design/v5.ts";
+import { type Point, type NetworkDesign as Design, type Edge, type Building } from "../src/core/design/v5.ts";
 import { type Alignment } from "../src/core/design/results.ts";
 import { advance, angleDiff, bearing, createGrid, distance, nearest, pointAt, radians, resample, sample, stations } from "../src/core/math/geometry.ts";
 import { radiusAt, exemptRadius } from "../src/core/roads/alignment.ts";
@@ -135,10 +135,10 @@ test("Selective rerouting and variable previews retain unaffected geometry", () 
 
 test("Splitting a portal lead preserves the original centreline", () => {
     const again = new Island(junctionDesign());
-    const portal = again.design.edges.find(e => again.design.nodes.some(n => n.id === e.to && n.type === "door"))!,
-        front = nodePose(again.design, portal.to);
+    const portal = again.resolved.edges.find(e => again.resolved.nodes.some(n => n.id === e.to && n.type === "door"))!,
+        front = nodePose(again.resolved, portal.to);
     const onLead = advance(front.point, front.angle!, 1);
-    const split = routeEdge(again.design, again.terrain, { ...portal, via: [onLead] });
+    const split = routeEdge(again.resolved, again.terrain, { ...portal, via: [onLead] });
     assert(split.parts.every(p => !p.failed));
     assert(split.points.some(p => distance(p, onLead) < 1e-8));
     const unsplit = again.routes.find(r => r.id === portal.id)!.points;
@@ -215,7 +215,7 @@ test("Stair flights, corner landings and narrow treads", () => {
 
 test("Through roads and branch angles are independent of edge order", () => {
     const again = new Island(junctionDesign());
-    const forkNode = branchJunction(again.design);
+    const forkNode = branchJunction(again.resolved);
     const main = forkNode.through!.map(id => again.routes.find(r => r.id === id)!);
     const branch = again.routes.find(r => r.edge.from === forkNode.id && !main.includes(r))!;
     const arms = main.map(r => armBearing(r, forkNode.id));
@@ -224,8 +224,8 @@ test("Through roads and branch angles are independent of edge order", () => {
     assert(mainAngle <= 10 && branchAngle >= 30);
     assert(angleDiff(bearing(...main[0].points.slice(-2) as [Point, Point]), bearing(...main[1].points.slice(0, 2) as [Point, Point])) < 1e-7);
     const shallow = { ...main[1], id: branch.id, edge: branch.edge };
-    assert(validateDesign(again.design, again.terrain, again.graded.heights, [...main, shallow]).some(i => i.kind === "branch-angle"));
-    const backwards = { ...again.design, edges: [...again.design.edges].reverse() };
+    assert(validateDesign(again.resolved, again.terrain, again.graded.heights, [...main, shallow]).some(i => i.kind === "branch-angle"));
+    const backwards = { ...again.resolved, edges: [...again.resolved.edges].reverse() };
     for (const r of routeAll(backwards, again.terrain)) assert.deepEqual(r.points, again.routes.find(saved => saved.id === r.id)!.points);
 });
 

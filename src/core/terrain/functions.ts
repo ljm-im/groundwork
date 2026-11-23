@@ -1,4 +1,5 @@
-import { elevation, type Design, type FieldInput, type GeoNode, type Height, type Point, type Polyline } from "../design/v5.ts";
+import { type Expression, type GeoNode, type Point, type Polyline } from "../design/v5.ts";
+import { evaluate, fieldValue, sampleValue, type Value } from "../design/expression.ts";
 import { type Region } from "../design/regions.ts";
 import { distance, nearest, polygonField, sampleDefined, smooth, spline, stations, type Grid } from "../math/geometry.ts";
 import { fbm, noise } from "../math/noise.ts";
@@ -19,10 +20,10 @@ export interface LayerOutput {
     residual?: { height: number; point: Point };
 }
 
-function profileLine(line: Polyline, vars: Design["variables"]) {
+function profileLine(line: Polyline<number>) {
     const divisions = line.smooth ? 8 : 1, vertices = line.points.map(v => v.p);
     const points = line.smooth ? spline(vertices, false, divisions) : vertices, lengths = stations(points);
-    const anchors = line.points.flatMap((v, i) => v.h === undefined ? [] : [{ s: lengths[i * divisions], h: elevation(v.h, vars) }]);
+    const anchors = line.points.flatMap((v, i) => v.h === undefined ? [] : [{ s: lengths[i * divisions], h: v.h }]);
     function value(segment: number, t: number, ease = false) {
         const s = lengths[segment] + t * (lengths[segment + 1] - lengths[segment]);
         const end = anchors.findIndex(a => a.s >= s);
@@ -34,15 +35,19 @@ function profileLine(line: Polyline, vars: Design["variables"]) {
     return { points, divisions, value };
 }
 
-export function evaluateLayer(d: Design, n: GeoNode, region: Region, state: FieldState): LayerOutput {
+export function evaluateLayer(n: GeoNode<number>, region: Region, state: FieldState): LayerOutput {
     const { grid, fields, defined, heightDefined } = state, f = n.function, field = n.field ?? "height";
     const source = fields[field], mask = field === "height" ? heightDefined : defined;
-    const seed = d.seed + (f.seed ?? 0);
-    const height = (h: Height) => elevation(h, d.variables);
-    const input = (v: FieldInput, k: number): number | undefined => {
+    const seed = f.seed ?? 0;
+    const compiled = new Map<string, Value>();
+    const input = (v: Expression, k: number): number | undefined => {
         if (typeof v === "number") return v;
-        if (!(v.field === "height" ? heightDefined : defined)[k]) return;
-        return fields[v.field][k] * (v.scale ?? 1) + (v.offset ?? 0);
+        let rule = compiled.get(v);
+        if (rule === undefined) {
+            rule = evaluate(v, key => fieldValue(key.slice(6)));
+            compiled.set(v, rule);
+        }
+        return sampleValue(rule, id => (id === "height" ? heightDefined : defined)[k] ? fields[id][k] : undefined);
     };
     function featherWeight(width: number) {
         if (!width) return () => 1;
@@ -55,22 +60,22 @@ export function evaluateLayer(d: Design, n: GeoNode, region: Region, state: Fiel
     function prepare(): Cell {
         switch (f.type) {
             case "ground": case "flat": {
-                const value = height(f.value);
+                const value = f.value;
                 return () => value;
             }
             case "slope": {
                 if (f.kind === "radial") {
-                    const base = height(f.value);
+                    const base = f.value;
                     return (_, x, y) => base + f.rate * (Math.hypot(x - f.center[0], y - f.center[1]) - f.radius);
                 }
-                const line = profileLine(f.line, d.variables);
+                const line = profileLine(f.line);
                 return (_, x, y) => {
                     const hit = nearest(x, y, line.points);
                     return line.value(hit.segment, hit.t, f.ease);
                 };
             }
             case "add": {
-                const amount = height(f.amount), weight = featherWeight(f.feather);
+                const amount = f.amount, weight = featherWeight(f.feather);
                 return (k, x, y) => source[k] + amount * weight(x, y);
             }
             case "noise": {
@@ -103,9 +108,9 @@ export function evaluateLayer(d: Design, n: GeoNode, region: Region, state: Fiel
             }
             case "mountain": {
                 const n3 = noise(seed + 202), n4 = noise(seed + 303);
-                const floor = f.floor === undefined ? -Infinity : height(f.floor);
-                const ridges = f.ridges.map(r => ({ ...r, profile: profileLine(r.line, d.variables) }));
-                const peaks = f.peaks.map(p => ({ ...p, h: height(p.at.h) }));
+                const floor = f.floor === undefined ? -Infinity : f.floor;
+                const ridges = f.ridges.map(r => ({ ...r, profile: profileLine(r.line) }));
+                const peaks = f.peaks.map(p => ({ ...p, h: p.at.h }));
                 return (k, x, y) => {
                     let h = source[k];
                     if (h <= floor) return h;
@@ -126,19 +131,19 @@ export function evaluateLayer(d: Design, n: GeoNode, region: Region, state: Fiel
             }
             case "cliff": {
                 const n1 = noise(seed);
-                const sea = height(f.seaLevel ?? 0), shore = atSea(sea);
+                const sea = f.seaLevel ?? 0, shore = atSea(sea);
                 return (k, x, y) => source[k] <= sea ? source[k] :
                     Math.min(source[k], Math.max(.4, shore[k] * input(f.factor, k)! * (1 + .3 * n1(x / 12, y / 12))));
             }
             case "erosion": {
-                const floor = f.floor === undefined ? -Infinity : height(f.floor);
+                const floor = f.floor === undefined ? -Infinity : f.floor;
                 const eligible = Uint8Array.from(region.mask, (v, k) => +(!!v && !!mask[k] && source[k] > floor));
                 const delta = erode(grid, eligible, source, f, seed);
                 return k => source[k] + delta[k] * input(f.strength ?? 1, k)!;
             }
             case "islets": {
                 const n3 = noise(seed + 202);
-                const sea = height(f.seaLevel ?? 0), shore = atSea(sea);
+                const sea = f.seaLevel ?? 0, shore = atSea(sea);
                 return (k, x, y) => {
                     const density = input(f.density, k)!;
                     return source[k] <= sea && -shore[k] <= f.reach && density > (f.threshold ?? .45) &&
@@ -146,7 +151,7 @@ export function evaluateLayer(d: Design, n: GeoNode, region: Region, state: Fiel
                 };
             }
             case "blend": case "split": case "batter": {
-                if (n.construction.type !== "strip") throw new Error(n.id + " 需要条带");
+                if (n.construction.type !== "strip") throw new Error("“" + n.name + "”需要条带");
                 const [w1, w2] = n.construction.widths;
                 return (k, x, y) => {
                     const { s, first, normal: [nx, ny], at: [ax, ay] } = region.shape.cross!([x, y])!;

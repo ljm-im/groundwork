@@ -31,7 +31,7 @@ export async function designFixtures() {
     return Promise.all(names.map(async name => ({ name, text: await readFixture(name) })));
 }
 
-interface Edits { variables: string[]; move: string; swap: [string, string]; remove: string }
+interface Edits { expressionEdit?: { target: string; source: string; variable: string }; variables: string[]; move: string; swap: [string, string]; remove: string }
 interface Regressions {
     exportCommit: string;
     perfEdge: string;

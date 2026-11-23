@@ -1,5 +1,5 @@
 import { type Issue, type IssueSpan, type Route, type Terrain } from "../design/results.ts";
-import { type Design, type Point } from "../design/v5.ts";
+import { type NetworkDesign as Design, type Point } from "../design/v5.ts";
 import { type Grid, type Box } from "../math/geometry.ts";
 type Emit = (kind: string, message: string, point: Point, severity?: Issue["severity"], geometry?: Partial<Issue>) => Issue;
 
@@ -72,7 +72,7 @@ function surfaceIssues(route: Route, terrain: Pick<Terrain, "buildings">, emit: 
                     hit = building.signedDistance(p[0] + nx * offset, p[1] + ny * offset) < -.015;
                 }
             }
-            contact(key, hit, i, "building", "路面穿过" + building.data.name, "error", { building: building.data.id });
+            contact(key, hit, i, "building", "路面穿过“" + building.data.name + "”", "error", { building: building.data.id });
         }
 
     }
@@ -95,7 +95,7 @@ function overlapIssues(design: Design, routes: Route[], issues: Issue[]) {
                     road: a.id,
                     other: b.id,
                     point, spans,
-                    message: ea.name + "与" + eb.name + "间距不足 " + rules.clearance + " m，持续至少 " + rules.overlapLength + " m"
+                    message: "“" + ea.name + "”与“" + eb.name + "”间距不足 " + rules.clearance + " m，持续至少 " + rules.overlapLength + " m"
                 });
             }
         }
@@ -186,7 +186,7 @@ export function summitHeights(grid: Grid, heights: Float32Array, point: Point, d
 
 export function validateDesign(d: Design, terrain: Pick<Terrain, "grid" | "buildings" | "defined">, heights: Float32Array, routes: Route[]): Issue[] {
     const issues: Issue[] = [];
-    for (const n of d.nodes.filter(n => n.detachedDoor)) issues.push({ kind: "detached-door", severity: "notice", node: n.id, point: n.point!, label: n.name, message: "端点未接建筑（" + n.detachedDoor + "）" });
+    for (const n of d.nodes.filter(n => n.detachedDoor)) issues.push({ kind: "detached-door", severity: "notice", node: n.id, point: n.point!, label: n.name, message: "端点未接建筑（“" + n.detachedDoor + "”）" });
     for (const n of d.nodes.filter(n => n.through)) {
         const pairs = throughPairs(n), mains = new Set(pairs.flat());
         const branches = routes.filter(r => !mains.has(r.id) && (r.edge.from === n.id || r.edge.to === n.id));

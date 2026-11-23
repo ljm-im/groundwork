@@ -37,7 +37,7 @@ export function migrateDesign(d: ImportDesign) {
         if (n.fixedRoad) {
             const road = roads.find(r => r.data.id === n.fixedRoad);
             if (!road)
-                throw new Error(n.name + " 的原道路不存在");
+                throw new Error("“" + n.name + "”的原道路不存在");
             cut(road, n.at == null ? road.s[n.vertex!] : n.at * road.s.at(-1)!, n);
             delete n.fixedRoad;
             delete n.vertex;

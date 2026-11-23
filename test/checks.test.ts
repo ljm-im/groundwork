@@ -100,9 +100,9 @@ test("Summit survey and variable labels use the finished terrain", () => {
     const summit = summitHeights(island.terrain.grid, island.graded.heights, b.center);
     assert(summit.ground !== undefined);
     assert.equal(summit.highest, summit.ground);
-    assert.equal(labelReading(island, label).difference, "");
+    assert.equal(labelReading(island.view(), label).difference, "");
     design.variables.A.value = summit.ground + 2;
-    assert.match(labelReading(island, label).difference!, /设计/);
+    assert.match(labelReading(island.view(), label).difference!, /设计/);
 });
 
 

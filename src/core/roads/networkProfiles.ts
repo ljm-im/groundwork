@@ -1,7 +1,7 @@
 import { type Alignment, type Route, type Terrain } from "../design/results.ts";
 import { nodePose } from "../design/model.ts";
 import { padCell } from "../design/shapes.ts";
-import { type Design } from "../design/v5.ts";
+import { type NetworkDesign as Design } from "../design/v5.ts";
 import { sampleDefined } from "../math/geometry.ts";
 import { profile } from "./profiles.ts";
 

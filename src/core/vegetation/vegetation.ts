@@ -1,4 +1,4 @@
-import { type Design, type Planting, type Point } from "../design/v5.ts";
+import { type ResolvedDesign, type Planting, type Point } from "../design/v5.ts";
 import { type Graded, type SurfaceCell, type Terrain, type Tree, type Route } from "../design/results.ts";
 import { advance, bounds, distance, nearest, pointAt, smooth, stations, onCanvas } from "../math/geometry.ts";
 import { treeEnvironment, walkScatter } from "./scatter.ts";
@@ -14,10 +14,10 @@ export const treeStyles: Record<Tree["species"], [string, number]> = {
 
 export { inClearing } from "./scatter.ts";
 
-function plantedTrees(design: Design, terrain: Terrain, areas: Planting[], env: ReturnType<typeof treeEnvironment>) {
-    const result = [], n = noise(design.seed + 741);
+function plantedTrees(design: Pick<ResolvedDesign, "vegetation">, terrain: Terrain, areas: Planting[], env: ReturnType<typeof treeEnvironment>) {
+    const result = [], n = noise(741);
     for (const [index, area] of areas.entries()) {
-        let seed = design.seed;
+        let seed = 0;
         for (const letter of area.id)
             seed = Math.imul(seed, 31) + letter.charCodeAt(0) | 0;
         const next = random(seed), box = bounds(area.points), later = areas.slice(index + 1), local: Tree[] = [];
@@ -86,7 +86,7 @@ function plantedTrees(design: Design, terrain: Terrain, areas: Planting[], env: 
     return result;
 }
 
-export function plantTrees(design: Design, terrain: Terrain): Tree[] {
+export function plantTrees(design: Pick<ResolvedDesign, "vegetation">, terrain: Terrain): Tree[] {
     const rules = design.vegetation, env = treeEnvironment(design, terrain), trees: Tree[] = [];
     walkScatter(design, terrain.grid, (p, roll, size) => {
         const k = terrain.grid.index(...p);

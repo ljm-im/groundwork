@@ -30,16 +30,26 @@ test("Incremental layers match a fresh stack byte for byte after every fixture e
         const erosion = d.geoNodes.find(n => n.function.type === "erosion")!;
         check();
         for (const [i, key] of rule.variables.entries()) {
-            d.variables[key].value += .5;
+            d.variables[key].value = Number(d.variables[key].value) + .5;
             check();
             assert.equal(cache.recomputed.includes(erosion.id), i === 1);
+        }
+        if (rule.expressionEdit) {
+            const { target, source, variable } = rule.expressionEdit;
+            const f = d.geoNodes.find(n => n.id === target)!.function;
+            assert(f.type === "flat");
+            f.value = "{geo:" + source + ".value} - 2";
+            check();
+            d.variables[variable].value = Number(d.variables[variable].value) + .5;
+            check();
+            assert(cache.recomputed.includes(target) && cache.recomputed.includes(source));
         }
         const moved = d.geoNodes.find(n => n.id === rule.move)!.construction;
         assert(moved.type === "free");
         for (const path of moved.paths) for (const v of path.nodes) v.p[0] += 3;
         check();
         assert(erosion.function.type === "erosion");
-        erosion.function.droplets += 123;
+        erosion.function.droplets = Number(erosion.function.droplets) + 123;
         check();
         const [i, j] = rule.swap.map(id => d.geoNodes.findIndex(n => n.id === id));
         [d.geoNodes[i], d.geoNodes[j]] = [d.geoNodes[j], d.geoNodes[i]];
@@ -63,7 +73,7 @@ test("Cached noise follows its amplitude field and the order of a flat terrace",
     const d = syntheticDesign(), area = rect(2, 0, 18, 14), cache = new TerrainCache();
     d.fields.A = { default: 2 };
     const amplitude = layer("F", area, { type: "flat", value: 1 }, "A");
-    const detail = layer("N", area, { type: "noise", amplitude: { field: "A" }, scale: 9 });
+    const detail = layer("N", area, { type: "noise", amplitude: "{field:A}", scale: 9 });
     const terrace = layer("P", area, { type: "flat", value: 8 });
     d.geoNodes = [d.geoNodes[0], amplitude, detail, terrace];
     const plain = compare(cache, d), cells = plain.regions.get(terrace.id)!.cells;

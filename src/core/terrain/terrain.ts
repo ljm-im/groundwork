@@ -1,13 +1,14 @@
-import { type Design } from "../design/v5.ts";
+import { type Design, type ResolvedDesign } from "../design/v5.ts";
 import { type Region, type RegionShape } from "../design/regions.ts";
 import { type Terrain } from "../design/results.ts";
+import { resolveDesign } from "../design/parameters.ts";
 import { buildingShape } from "../design/shapes.ts";
 import { eachCell, sampleDefined, type Grid } from "../math/geometry.ts";
 import { canvasGrid, makeShape, rasterRegion } from "./regions.ts";
 import { applyLayer, evaluateLayer, type FieldState } from "./functions.ts";
 import { shoreDistance } from "./shore.ts";
 
-export function layout(d: Design) {
+export function layout(d: ResolvedDesign) {
     const shapes = new Map<string, RegionShape>();
     for (const n of d.geoNodes) shapes.set(n.id, makeShape(n, shapes, d.grid.step / 8));
     const grid = canvasGrid(d, shapes);
@@ -15,7 +16,7 @@ export function layout(d: Design) {
     return { grid, regions };
 }
 
-export function initialFields(d: Design, grid: Grid, regions: Map<string, Region>): FieldState {
+export function initialFields(d: ResolvedDesign, grid: Grid, regions: Map<string, Region>): FieldState {
     const defined = new Uint8Array(grid.size);
     for (const n of d.geoNodes)
         if (!n.disabled && n.function.type === "ground") for (const k of regions.get(n.id)!.cells) defined[k] = 1;
@@ -24,19 +25,23 @@ export function initialFields(d: Design, grid: Grid, regions: Map<string, Region
     return { grid, defined, fields, heightDefined: new Uint8Array(grid.size) };
 }
 
-export function evaluateStack(d: Design) {
+export function evaluateStack(source: Design) {
+    return resolvedStack(resolveDesign(source));
+}
+
+function resolvedStack(d: ResolvedDesign) {
     const { grid, regions } = layout(d), state = initialFields(d, grid, regions);
     const batterResiduals: Terrain["batterResiduals"] = new Map();
     for (const n of d.geoNodes) {
         if (n.disabled) continue;
-        const result = evaluateLayer(d, n, regions.get(n.id)!, state);
+        const result = evaluateLayer(n, regions.get(n.id)!, state);
         applyLayer(result, n, state);
         if (result.residual) batterResiduals.set(n.id, result.residual);
     }
     return { ...state, regions, batterResiduals };
 }
 
-export function finishTerrain(d: Design, stack: ReturnType<typeof evaluateStack>): Terrain {
+export function finishTerrain(d: ResolvedDesign, stack: ReturnType<typeof evaluateStack>): Terrain {
     const { grid, defined, regions, batterResiduals } = stack;
     const heights = stack.fields.height.slice(), fields = { ...stack.fields, height: heights };
     const buildings = d.buildings.map(b => buildingShape(b)), padMask = new Uint8Array(grid.size);
@@ -64,5 +69,6 @@ export function finishTerrain(d: Design, stack: ReturnType<typeof evaluateStack>
 }
 
 export function generateTerrain(d: Design) {
-    return finishTerrain(d, evaluateStack(d));
+    const numeric = resolveDesign(d);
+    return finishTerrain(numeric, resolvedStack(numeric));
 }

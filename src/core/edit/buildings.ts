@@ -1,7 +1,8 @@
-import { type Design, type Point, type Building, type Door, type RoadNode } from "../design/v5.ts";
+import { type Design, type Expression, type Point, type Building, type Door, type RoadNode } from "../design/v5.ts";
 import { type Terrain, type Route } from "../design/results.ts";
 import { advance, bearing, distance, mixPoint, nearest, radians, sampleDefined, eachCell } from "../math/geometry.ts";
 import { corners, moveNode, nodePose } from "../design/model.ts";
+import { resolveDesign } from "../design/parameters.ts";
 import { newId } from "./topology.ts";
 
 export function canPlaceBuilding(island: { terrain: Terrain; routes: Route[] }, center: Point) {
@@ -53,18 +54,19 @@ export function placeBuilding(d: Design, point: Point): Building {
     return b;
 }
 
-export function titlePoint(d: Design, b: Building): Point {
+export function titlePoint(d: Design, b: Building<Expression>): Point {
     const offset = b.titleOffset ?? d.labels.find(l => l.building === b.id)?.offset ?? [0, 0];
     return [b.center[0] + offset[0], b.center[1] + offset[1]];
 }
 
-export function setShape(d: Design, b: Building, shape: Building["shape"]) {
+export function setShape(d: Design, b: Building<Expression>, shape: Building["shape"]) {
     if (b.shape === shape)
         return;
-    const positions = b.doors.map(door => nodePose(d, { type: "door", building: b.id, door: door.id }).point);
-    const size: Point = b.size ?? [b.radius! * 2, b.radius! * 2], radius = b.radius ?? Math.sqrt(size[0] * size[1] / Math.PI);
+    const numeric = resolveDesign(d), shapeBefore = numeric.buildings.find(v => v.id === b.id)!;
+    const positions = b.doors.map(door => nodePose(numeric, { type: "door", building: b.id, door: door.id }).point);
+    const size: Point = shapeBefore.size ?? [shapeBefore.radius! * 2, shapeBefore.radius! * 2], radius = shapeBefore.radius ?? Math.sqrt(size[0] * size[1] / Math.PI);
     if (b.pad != null)
-        b.pad = shape === "rect" ? Math.max(0, b.pad - radius) : radius + b.pad;
+        b.pad = shape === "rect" ? Math.max(0, shapeBefore.pad! - radius) : radius + shapeBefore.pad!;
     b.shape = shape;
     if (shape === "rect") {
         b.size = size;
@@ -81,24 +83,32 @@ export function setShape(d: Design, b: Building, shape: Building["shape"]) {
         delete door.wall;
         delete door.t;
         delete door.angle;
-        moveNode(d, { type: "door", building: b.id, door: door.id }, positions[i]);
+        const current = resolveDesign(d);
+        moveNode(current, { type: "door", building: b.id, door: door.id }, positions[i]);
+        Object.assign(door, current.buildings.find(v => v.id === b.id)!.doors[i]);
     });
 }
 
-export function rotateBuilding(b: Building, angle: number) {
-    if (b.shape !== "rect")
-        for (const door of b.doors)
-            door.angle! += angle - (b.angle ?? 0);
+export function offsetBuildingParts(b: Building<Expression>, key: "angle" | "radius", delta: number) {
+    if (key === "angle" && b.shape !== "rect") {
+        for (const door of b.doors) if (typeof door.angle === "number") door.angle += delta;
+    }
+    if (key === "radius" && typeof b.pad === "number") b.pad = Math.max(0, b.pad + delta);
+}
+
+export function rotateBuilding(b: Building, angle: number): void;
+export function rotateBuilding(b: Building<Expression>, angle: number, before: Building): void;
+export function rotateBuilding(b: Building<Expression>, angle: number, before?: Building) {
+    offsetBuildingParts(b, "angle", angle - Number((before ?? b).angle ?? 0));
     b.angle = angle;
 }
 
-export function resizeRadius(b: Building, radius: number) {
-    if (b.pad != null)
-        b.pad = Math.max(0, b.pad + radius - b.radius!);
+export function resizeRadius(b: Building<Expression>, radius: number, before: Building) {
+    offsetBuildingParts(b, "radius", radius - before.radius!);
     b.radius = radius;
 }
 
-export function doorNode(d: Design, b: Building, door: Door) {
+export function doorNode(d: Design, b: Building<Expression>, door: Door<Expression>) {
     let node = d.nodes.find(n => n.type === "door" && n.building === b.id && n.door === door.id);
     if (!node) {
         node = { id: newId(d.nodes, "door-node"), type: "door", name: b.name + "·" + (door.name ?? door.id), building: b.id, door: door.id };
@@ -107,19 +117,19 @@ export function doorNode(d: Design, b: Building, door: Door) {
     return node;
 }
 
-export function addDoor(d: Design, b: Building, wall = 0) {
+export function addDoor(d: Design, b: Building<Expression>, wall = 0) {
     const id = newId(b.doors, "door"), door: Door = { id, name: "门 " + id.split("-").at(-1) };
     if (b.shape === "rect")
         Object.assign(door, { wall, t: .5 });
     else
-        door.angle = b.angle ?? 0;
+        door.angle = resolveDesign(d).buildings.find(v => v.id === b.id)!.angle ?? 0;
     b.doors.push(door);
     return doorNode(d, b, door);
 }
 
 export function nearbyWall(design: Design, p: Point, tolerance = 2) {
     let best: { building: Building; point: Point; pose: Pick<Door, "wall" | "t" | "angle">; gap: number } | null = null;
-    for (const building of design.buildings) {
+    for (const building of resolveDesign(design).buildings) {
         let point, pose;
         if (building.shape === "rect") {
             const wall = corners(building), h = nearest(...p, wall, true);
@@ -138,9 +148,10 @@ export function nearbyWall(design: Design, p: Point, tolerance = 2) {
     return best;
 }
 
-export function openDoorAt(design: Design, hit: NonNullable<ReturnType<typeof nearbyWall>>, node?: RoadNode | null) {
-    const b = hit.building;
-    let door = b.doors.find(door => distance(nodePose(design, { type: "door", building: b.id, door: door.id }).point, hit.point) < .35);
+export function openDoorAt(design: Design, hit: NonNullable<ReturnType<typeof nearbyWall>>, node?: RoadNode<Expression> | null) {
+    const b = design.buildings.find(b => b.id === hit.building.id)!;
+    const numeric = resolveDesign(design);
+    let door = b.doors.find(door => distance(nodePose(numeric, { type: "door", building: b.id, door: door.id }).point, hit.point) < .35);
     if (!door) {
         const id = newId(b.doors, "door");
         door = { id, name: "门 " + id.split("-").at(-1), ...hit.pose };
@@ -154,20 +165,20 @@ export function openDoorAt(design: Design, hit: NonNullable<ReturnType<typeof ne
     return node;
 }
 
-function relatedNodes(d: Design, b: Building, door?: Door) {
+function relatedNodes(d: Design, b: Building<Expression>, door?: Door<Expression>) {
     return d.nodes.filter(n => n.type === "door" && n.building === b.id && (!door || n.door === door.id));
 }
 
-export function doorRoads(d: Design, b: Building, door?: Door) {
+export function doorRoads(d: Design, b: Building<Expression>, door?: Door<Expression>) {
     const ids = new Set(relatedNodes(d, b, door).map(n => n.id));
     return d.edges.filter(e => ids.has(e.from) || ids.has(e.to));
 }
 
-export function removeBuildingPart(d: Design, b: Building, door?: Door) {
+export function removeBuildingPart(d: Design, b: Building<Expression>, door?: Door<Expression>) {
     const connected = new Set(doorRoads(d, b, door).flatMap(e => [e.from, e.to]));
     for (const n of relatedNodes(d, b, door)) {
         if (connected.has(n.id)) {
-            n.point = nodePose(d, n).point.slice() as Point;
+            n.point = nodePose(resolveDesign(d), n.id).point.slice() as Point;
             n.type = "endpoint";
             n.detachedDoor = b.name;
             delete n.building;
@@ -178,9 +189,9 @@ export function removeBuildingPart(d: Design, b: Building, door?: Door) {
             d.nodes = d.nodes.filter(other => other !== n);
     }
     if (door) {
-        b.doors = b.doors.filter(item => item !== door);
+        b.doors = b.doors.filter(item => item.id !== door.id);
         return;
     }
-    d.buildings = d.buildings.filter(item => item !== b);
+    d.buildings = d.buildings.filter(item => item.id !== b.id);
     d.labels = d.labels.filter(l => l.building !== b.id);
 }

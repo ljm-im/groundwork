@@ -1,5 +1,5 @@
 import { type Alignment, type Route, type RoutePart, type RoutingSurface, type SmallCorner } from "../design/results.ts";
-import { type Design, type Edge, type RoadNode, type RoadClass, type Routing, type Point } from "../design/v5.ts";
+import { type NetworkDesign as Design, type Edge, type RoadNode, type RoadClass, type Routing, type Point } from "../design/v5.ts";
 import { advance, angleDiff, bearing, canvasSegment, clamp, onCanvas, distance, eachCell, nearest, pointAt, radians, resample, sampleDefined, stations } from "../math/geometry.ts";
 import { nodePose, segmentMode, throughPairs } from "../design/model.ts";
 import { biarc, fairAlignment, fillet, tangent, turnLimit } from "./alignment.ts";

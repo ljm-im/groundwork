@@ -160,10 +160,10 @@ test("Function defaults preserve construction, mandatory geometry commits only o
         { type: "islets", density: .5, reach: 12 }, { type: "flat", value: 3.4 }, { type: "add", amount: 1, feather: 3 },
         { type: "noise", amplitude: 1, scale: 24, feather: 0 }];
     for (const f of defaults) historyEdit(d, () => {
-        n.function = defaultFunction(f.type, 3.4)!; assert.deepEqual(n.function, f); assert.deepEqual(n.construction, construction);
+        n.function = defaultFunction(f.type, 3.4)!; assert.deepEqual(n.function, ["mountain", "cliff", "islets", "noise"].includes(f.type) ? { ...f, seed: "{var:seed}" } : f); assert.deepEqual(n.construction, construction);
     });
     for (const f of [{ type: "blend" }, { type: "split" }, { type: "batter", grade: .5 } ] as const) assert.deepEqual(defaultFunction(f.type), f);
-    const erosion = defaultFunction("erosion"); assert(erosion?.type === "erosion" && erosion.strength === 1 && erosion.droplets > 0 && erosion.floor === 0);
+    const erosion = defaultFunction("erosion"); assert(erosion?.type === "erosion" && erosion.strength === 1 && Number(erosion.droplets) > 0 && erosion.floor === 0);
     const before = serializeDesign(d), pending = draft(d, "shore", { owner: n.id });
     assert.equal(defaultFunction("coast"), undefined); assert.equal(serializeDesign(d), before);
     pending.nodes = geometryPath(n, 0)!.nodes.map(v => penNode(pending.nextId(), [...v.p]));

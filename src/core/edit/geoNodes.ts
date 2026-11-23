@@ -1,6 +1,8 @@
-import { type Design, type GeoFunction, type GeoNode, type Path, type Point, type Strip, type FieldInput, type Height, type Polyline } from "../design/v5.ts";
+import { type Design, type GeoFunction, type GeoNode, type Path, type Point, type Strip, type Expression, type Polyline } from "../design/v5.ts";
 import { type Terrain } from "../design/results.ts";
 import { bounds, sampleDefined } from "../math/geometry.ts";
+import { expressionGraph, referenceUses } from "../design/parameters.ts";
+import { evaluate, sampleValue } from "../design/expression.ts";
 import { flattenPath } from "../design/path.ts";
 
 export function nextId(used: Iterable<string>, prefix: string) {
@@ -54,7 +56,7 @@ export function createFree(d: Design, path: Path, field: string, t: Terrain, abo
     const value = tenth(sampleField(t, field, pathCenter(path, d.grid.step / 8)));
     return insert(d, { ...identity(d), field, construction: { type: "free", paths: [path] }, function: { type: "flat", value } }, above);
 }
-export function stripConstruction(d: Design, ids: string[], range?: Strip["range"]): Strip {
+export function stripConstruction(d: Design, ids: string[], range?: Strip["range"]): Strip<number> {
     const refs = d.geoNodes.filter(n => ids.includes(n.id)).reverse();
     if (refs.length !== 1 && refs.length !== 2) throw Error("先选中一个或两个地件");
     const of: Strip["of"] = refs.length === 1 ? [refs[0].id] : [refs[0].id, refs[1].id];
@@ -100,6 +102,8 @@ export function dependentStrips(d: Design, id: string) {
 }
 export function deleteGeo(d: Design, id: string, cascade: boolean) {
     const refs = dependentStrips(d, id);
+    const uses = [id, ...(cascade ? refs.map(n => n.id) : [])].flatMap(key => referenceUses(d, "geo", key));
+    if (uses.length) throw Error("仍被引用：\n" + uses.join("\n"));
     if (refs.length && !cascade) return false;
     d.geoNodes = d.geoNodes.filter(n => n.id !== id && !refs.includes(n));
     return true;
@@ -113,18 +117,10 @@ export function rangeUsers(d: Design, owner: string, nodes: string[]) {
 }
 
 export function declarationUses(d: Design, kind: "variable" | "field", id: string) {
-    const uses: string[] = [], key = kind === "variable" ? "var" : "field";
-    function visit(value: unknown, at: string) {
-        if (!value || typeof value !== "object") return;
-        if (Object.hasOwn(value, key) && Reflect.get(value, key) === id) uses.push(at);
-        for (const [k, v] of Object.entries(value)) visit(v, at + (Array.isArray(value) ? "[" + k + "]" : "." + k));
-    }
-    for (const n of d.geoNodes) {
-        if (kind === "field" && n.field === id) uses.push(n.name + " · 写入的场");
-        visit(n.function, n.name + " · " + n.function.type);
-    }
+    const uses = referenceUses(d, kind === "variable" ? "var" : kind, id);
+    for (const n of d.geoNodes) if (kind === "field" && n.field === id) uses.push("“" + n.name + "” · 输出到");
     if (kind === "variable") d.labels.forEach(l => {
-        if (l.var === id) uses.push(l.name + " · 标注");
+        if (l.var === id) uses.push("“" + l.name + "” · 标注");
     });
     return uses;
 }
@@ -136,19 +132,18 @@ export function removeDeclaration(d: Design, kind: "variable" | "field", id: str
 }
 export function addVariable(d: Design, value = 0) {
     const id = nextId(Object.keys(d.variables), "v");
-    d.variables[id] = { label: id, value, range: [Math.min(0, Math.floor(value)), Math.max(10, Math.ceil(value) + 5), .1] };
+    d.variables[id] = { label: "变量 " + id.slice(1), value, range: [Math.min(0, Math.floor(value)), Math.max(10, Math.ceil(value) + 5), .1] };
     return id;
 }
 export function addField(d: Design) {
     const id = nextId(Object.keys(d.fields), "field");
-    d.fields[id] = { label: id, default: 0 };
+    d.fields[id] = { label: "场 " + id.slice(5), default: 0 };
     return id;
 }
-export const bindHeight = (id: string, offset = 0): Height => ({ var: id, offset });
-export const bindField = (id: string, scale = 1, offset = 0): FieldInput => ({ field: id, scale, offset });
-export function resolved(v: Height | FieldInput, d: Design, readField: (field: string) => number | undefined) {
-    if (typeof v === "number") return v;
-    return ("var" in v ? d.variables[v.var]?.value ?? 0 : (readField(v.field) ?? 0) * (v.scale ?? 1)) + (v.offset ?? 0);
+export const bindHeight = (id: string, offset = 0) => "{var:" + id + "}" + (offset ? (offset < 0 ? " - " : " + ") + Math.abs(offset) : "");
+export const bindField = (id: string, scale = 1, offset = 0) => "{field:" + id + "}" + (scale === 1 ? "" : " * " + scale) + (offset ? (offset < 0 ? " - " : " + ") + Math.abs(offset) : "");
+export function resolved(v: Expression, d: Design, readField: (field: string) => number | undefined) {
+    return sampleValue(evaluate(v, expressionGraph(d).get), readField) ?? 0;
 }
 
 const functions: GeoFunction["type"][] = ["ground", "coast", "mountain", "cliff", "erosion", "islets", "flat", "slope", "add", "noise", "blend", "split", "batter"];
@@ -160,16 +155,16 @@ export function allowedFunctions(n: GeoNode) {
 export function defaultFunction(type: GeoFunction["type"], value = 0, geometry?: { shore?: Path; line?: Polyline }): GeoFunction | undefined {
     switch (type) {
         case "ground": return { type, value: 0 };
-        case "coast": return geometry?.shore && { type, shore: geometry.shore, roughness: 6 };
-        case "mountain": return { type, ridges: [], peaks: [] };
-        case "cliff": return { type, factor: .6 };
-        case "erosion": return { type, droplets: 40000, inertia: .06, capacity: 5, minCapacity: .002, deposition: .25, erosion: .35, evaporation: .02,
+        case "coast": return geometry?.shore && { type, seed: "{var:seed}", shore: geometry.shore, roughness: 6 };
+        case "mountain": return { type, seed: "{var:seed}", ridges: [], peaks: [] };
+        case "cliff": return { type, seed: "{var:seed}", factor: .6 };
+        case "erosion": return { type, seed: "{var:seed}", droplets: 40000, inertia: .06, capacity: 5, minCapacity: .002, deposition: .25, erosion: .35, evaporation: .02,
             gravity: 6, lifetime: 50, radius: 2, strength: 1, floor: 0 };
-        case "islets": return { type, density: .5, reach: 12 };
+        case "islets": return { type, seed: "{var:seed}", density: .5, reach: 12 };
         case "flat": return { type, value };
         case "slope": return geometry?.line && { type, kind: "path", line: geometry.line };
         case "add": return { type, amount: 1, feather: 3 };
-        case "noise": return { type, amplitude: 1, scale: 24, feather: 0 };
+        case "noise": return { type, seed: "{var:seed}", amplitude: 1, scale: 24, feather: 0 };
         case "blend": case "split": return { type };
         case "batter": return { type, grade: .5 };
     }

@@ -1,4 +1,4 @@
-import { type Design, type GeoNode, type Point, type Strip } from "../design/v5.ts";
+import { type ResolvedDesign as Design, type GeoNode, type Point, type Strip } from "../design/v5.ts";
 import { bounds, clamp, createGrid, distance, eachCell, mixPoint, projection, type Box, type Grid } from "../math/geometry.ts";
 import { insidePolygon } from "../math/polygon.ts";
 import { flattenPath, type Segment } from "./path.ts";
@@ -84,7 +84,7 @@ export function nearbyBoundary(shape: RegionShape, p: Point, radius: number, tol
     return trace(shape, tolerance, expand([p[0], p[1], p[0], p[1]], radius + tolerance));
 }
 
-export function makeShape(node: GeoNode, below: Map<string, RegionShape>, tolerance: number): RegionShape {
+export function makeShape(node: GeoNode<number>, below: Map<string, RegionShape>, tolerance: number): RegionShape {
     const c = node.construction;
     if (c.type === "free") {
         const paths = c.paths.map(p => flattenPath(p, tolerance));

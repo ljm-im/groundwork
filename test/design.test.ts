@@ -83,7 +83,7 @@ test("Geo references report their location and reject invalid field writers", ()
     n.field = "f"; d.fields.f = { default: 2 };
     n.function = { type: "ground", value: 0 };
     assert.throws(() => parseDesign(d), /geoNodes\[2\].*field/);
-    n.function = { type: "add", feather: 0, amount: { var: "absent" } };
+    n.function = { type: "add", feather: 0, amount: "{var:absent}" };
     assert.throws(() => parseDesign(d), /amount.*找不到变量/);
     n.function = { type: "flat", value: 1 }; n.construction = { type: "strip", of: ["N"], widths: [1, 1] };
     assert.throws(() => parseDesign(d), /of.*找不到下方/);
@@ -97,7 +97,7 @@ test("Noise validates its inputs and rejects the retired inline noise parameter"
     const d = syntheticDesign(), node = d.geoNodes[1];
     const fn = { type: "noise" as const, amplitude: 2, scale: 8 };
     for (const [key, value] of [["scale", 0], ["scale", Infinity], ["octaves", 0], ["octaves", 1.5], ["feather", -1],
-        ["amplitude", { field: "missing" }]] as const) {
+        ["amplitude", "{field:missing}"]] as const) {
         node.function = { ...fn, [key]: value };
         assert.throws(() => parseDesign(d), error => error instanceof Error && error.message.includes("geoNodes[1].function." + key));
     }
@@ -113,7 +113,7 @@ test("Removing a referenced variable lists every layer and label location", () =
     const d = syntheticDesign();
     delete d.variables.A;
     d.labels = [{ name: "B", point: [1, 1], var: "A" }];
-    d.geoNodes.push(layer("C", rect(2, 2, 5, 5), { type: "add", amount: { var: "A" }, feather: 0 }));
+    d.geoNodes.push(layer("C", rect(2, 2, 5, 5), { type: "add", amount: "{var:A}", feather: 0 }));
     assert.throws(() => parseDesign(d), error => error instanceof Error &&
         ["geoNodes[1].function.value", "geoNodes[2].function.amount", "labels[0].var"].every(p => error.message.includes(p)));
     assert.throws(() => parseDesign({ ...syntheticDesign(), zones: [] }), /zones.*v5/);

@@ -29,6 +29,6 @@ time("全部重新选线", () => model.reroute());
 const edge = design.edges.find(e => e.id === perfEdge);
 if (!edge || !Object.hasOwn(design.variables, variable)) throw Error("Unknown performance scenario in .local/fixtures/regressions.json");
 time(`单条边重算（${edge.name}）`, () => model.reroute(new Set([edge.id])));
-design.variables[variable].value += .5;
+design.variables[variable].value = Number(design.variables[variable].value) + .5;
 time("变量预览（保持线形）", () => model.variables());
 console.table(timings);

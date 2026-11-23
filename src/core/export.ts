@@ -1,4 +1,4 @@
-import { type Design, type Building, type Point } from "./design/v5.ts";
+import { type ResolvedDesign as Design, type Building, type Point } from "./design/v5.ts";
 import { type Issue, type Terrain } from "./design/results.ts";
 import { corners, padCell } from "./design/shapes.ts";
 import { type Grid, advance, clamp, createGrid, radians, sampleDefined } from "./math/geometry.ts";
@@ -89,7 +89,7 @@ function exportBuilding(design: Design, b: Building, cells: number[], grid: Grid
 }
 
 export function exportIsland(island: Island, source: ExportSource): GroundworkExport {
-    const { design } = island, { grid } = island.terrain, heights = island.graded.heights;
+    const { resolved: design } = island, { grid } = island.terrain, heights = island.graded.heights;
     const terrain = exportTerrain(island.terrain, heights);
     if (terrain.step === 0) throw new Error("格距小于导出文件可表示的精度");
     const samples = Float64Array.from(terrain.heights.flat());
