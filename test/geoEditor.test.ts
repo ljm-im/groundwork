@@ -27,15 +27,15 @@ function historyEdit(d: Design, edit: () => void) {
     assert.equal(serializeDesign(history.step(false)), before);
     assert.equal(serializeDesign(history.step(true)), after);
 }
-function draft(d: Design, tool: DrawTool, options: Partial<GeoDraft> = {}): GeoDraft {
-    return { tool, ids: [], nodes: [], anchors: [], reverse: false, nextId: nodeIds(d), ...options };
+function draft(tool: DrawTool, options: Partial<GeoDraft> = {}): GeoDraft {
+    return { tool, ids: [], nodes: [], anchors: [], reverse: false, ...options };
 }
 
 test("Closed tools add one unit to height and insert above the selection with one history step", () => {
     for (const tool of ["rect", "circle", "sector", "pen"] as const) {
         const d = syntheticDesign(), [ground, terrace] = d.geoNodes;
-        const t = generateTerrain(d), make = draft(d, tool, { ids: [ground.id], start: [2, 2], radius: [5, 4], cursor: [2, 6] });
-        make.nodes = [penNode(make.nextId(), [1, 1]), penNode(make.nextId(), [5, 1], [6, 2]), penNode(make.nextId(), [4, 6])];
+        const t = generateTerrain(d), make = draft(tool, { ids: [ground.id], start: [2, 2], radius: [5, 4], cursor: [2, 6] });
+        make.nodes = [penNode("", [1, 1]), penNode("", [5, 1], [6, 2]), penNode("", [4, 6])];
         historyEdit(d, () => {
             const n = finishDraft(d, t, make), path = geometryPath(n, 0)!;
             assert.deepEqual(d.geoNodes, [ground, n, terrace]);
@@ -48,7 +48,7 @@ test("Closed tools add one unit to height and insert above the selection with on
             }
             assert.equal(new Set(path.nodes.map(v => v.id)).size, path.nodes.length);
         });
-        const off = finishDraft(d, t, draft(d, "rect", { start: [100, 100], cursor: [110, 111] }));
+        const off = finishDraft(d, t, draft("rect", { start: [100, 100], cursor: [110, 111] }));
         assert.equal(d.geoNodes.at(-1), off); assert.deepEqual(off.function, { type: "flat", amount: 1, feather: 0 });
     }
 });
@@ -58,7 +58,7 @@ test("Strip direction, whole outlines, shared edges, ordering and referenced del
     const options = { ids: [upper.id], anchors: ["0", "2"] };
     for (const [anchors, reverse, expected] of [[[], false, undefined], [["0", "2"], false, { from: "0", to: "2" }], [["0", "2"], true, { from: "2", to: "0" }]] as const) {
         historyEdit(d, () => {
-            const n = finishDraft(d, t, draft(d, "strip", { ...options, anchors: [...anchors], reverse }));
+            const n = finishDraft(d, t, draft("strip", { ...options, anchors: [...anchors], reverse }));
             assert(n.construction.type === "strip"); assert.deepEqual(n.construction.range, expected);
             assert.deepEqual(n.construction.widths, [0, 6]); assert.equal(n.function.type, "blend");
         });
@@ -165,9 +165,9 @@ test("Function defaults preserve construction and drawn geometry retains its aut
     });
     for (const f of [{ type: "blend" }, { type: "split" }, { type: "batter", grade: .5 } ] as const) assert.deepEqual(defaultFunction(f.type), f);
     const erosion = defaultFunction("erosion"); assert(erosion?.type === "erosion" && erosion.strength === 1 && Number(erosion.droplets) > 0 && erosion.floor === -1000);
-    const before = serializeDesign(d), pending = draft(d, "shore", { owner: n.id });
+    const before = serializeDesign(d), pending = draft("shore", { owner: n.id });
     assert.equal(serializeDesign(d), before);
-    pending.nodes = geometryPath(n, 0)!.nodes.map(v => penNode(pending.nextId(), [...v.p]));
+    pending.nodes = geometryPath(n, 0)!.nodes.map(v => penNode("", [...v.p]));
     historyEdit(d, () => {
         finishDraft(d, t, pending); assert(n.function.type === "coast" && n.function.roughness === 6);
     });

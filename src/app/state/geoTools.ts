@@ -13,7 +13,7 @@ type Editor = import("./session.svelte.ts").Editor;
 export type DrawTool = ShapeTool | "strip" | "addPath" | "shore" | "ridge" | "peak" | "slopeLine" | "center" | "harbor";
 export interface GeoDraft {
     tool: DrawTool; owner?: string; member?: number; ids: string[]; nodes: PathNode[]; anchors: string[]; reverse: boolean;
-    nextId: () => string; down?: Point; downRaw?: Point; clickNode?: string; start?: Point; sizing?: boolean; radius?: Point; cursor?: Point; path?: Path; spine?: Segment[]; spineRange?: string;
+    down?: Point; downRaw?: Point; start?: Point; sizing?: boolean; radius?: Point; cursor?: Point; path?: Path; spine?: Segment[]; spineRange?: string;
 }
 export const drawingTools: DrawTool[] = ["pen", "rect", "circle", "sector", "strip", "addPath", "shore", "ridge", "peak", "slopeLine", "center", "harbor"];
 const penTools: DrawTool[] = ["pen", "addPath", "shore"];
@@ -26,8 +26,7 @@ export function startDrawing(e: Editor, tool: DrawTool, owner?: string, member?:
         if (c?.type === "strip") ids.splice(0, ids.length, ...c.of);
     }
     if (tool === "strip") stripConstruction(d, ids);
-    const draft = { tool, owner, member, ids, nodes: [], anchors: [], reverse: false, nextId: nodeIds(d) };
-    return draft;
+    return { tool, owner, member, ids, nodes: [], anchors: [], reverse: false };
 }
 function stripSource(d: Design, draft: GeoDraft) {
     return d.geoNodes.findLast(n => draft.ids.includes(n.id));
@@ -137,8 +136,10 @@ export function finishDraft(d: Design, terrain: Terrain, draft: GeoDraft) {
         }
         return n!;
     }
+    const nextId = nodeIds(d);
     const path = (tool === "rect" || tool === "circle" || tool === "sector") ?
-        shapePath(tool, draft.start!, draft.radius ?? draft.cursor!, draft.nextId, draft.cursor) : closedPen(draft.nodes);
+        shapePath(tool, draft.start!, draft.radius ?? draft.cursor!, nextId, draft.cursor) :
+        closedPen(draft.nodes.map(v => ({ ...v, id: nextId() })));
     if (tool === "shore" && n) {
         if (n.function.type === "coast") n.function.shore = path;
         else n.function = defaultFunction("coast", { shore: path,
@@ -157,7 +158,6 @@ export function draftPointer(e: Editor, phase: "down" | "move" | "up", raw: Poin
     const at = !ev.ctrlKey && penTools.includes(tool) && !(phase === "move" && draft.down) ?
         snapPoint(e.map.project.terrain, e.map.project.design, raw, e.map.scale, draft.owner) : raw;
     if (phase === "down") {
-        draft.clickNode = undefined;
         draft.down = at;
         draft.downRaw = raw;
         if (["rect", "circle", "sector"].includes(tool)) draft.start ??= at;
@@ -197,12 +197,9 @@ export function draftPointer(e: Editor, phase: "down" | "move" | "up", raw: Poin
         e.completeDrawing(ev.shiftKey);
     else {
         const drag = penTools.includes(tool) && dragged ? raw : undefined;
-        const node = penNode(draft.nextId(), down, drag);
+        const node = penNode("", down, drag);
         if (tool === "peak" || tool === "center" || tool === "harbor") draft.nodes = [node];
-        else {
-            draft.nodes.push(node);
-            if (!dragged) draft.clickNode = node.id;
-        }
+        else draft.nodes.push(node);
     }
     if (e.map.draft === draft) updatePreview(e, draft);
     return true;

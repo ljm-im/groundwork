@@ -6,7 +6,7 @@ import { moveHandle } from "../../core/edit/controls.ts";
 import { editControl, geometryPath, hitControl, insertPathNode, type GeoControl } from "../../core/edit/geoControls.ts";
 import { setNodeMode } from "../../core/edit/paths.ts";
 import { nodeIds } from "../../core/edit/geoNodes.ts";
-import { doubleClickTools, draftPointer, geoAt, snapPoint, updatePreview } from "./geoTools.ts";
+import { doubleClickTools, draftPointer, geoAt, snapPoint, updatePreview, type GeoDraft } from "./geoTools.ts";
 import { errorText, type Point } from "../types.ts";
 import * as session from "./session.svelte.ts";
 
@@ -69,7 +69,6 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
     function beginPan(ev: PointerEvent, screen: Point, click?: () => void) {
         ev.preventDefault();
         editor.gesture = { pan: true, middle: ev.button === 1, screen, center: map.center.slice(), pointer: ev.pointerId, click };
-        canvas.setPointerCapture(ev.pointerId);
     }
 
     function pick(screen: Point, alt = false, context = false) {
@@ -114,10 +113,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             editor.openMenu({ kind: "geoNode", id: hit.id }, ev.clientX, ev.clientY, true, hit.control);
         else editor.openMenu(hit.kind === "section" ? hit.section : hit.h, ev.clientX, ev.clientY, true);
     }, { signal });
-    canvas.addEventListener("pointerdown", ev => {
-        if (!editor.project || editor.busy || editor.gesture) return;
-        if (ev.button !== 0 && ev.button !== 1) return;
-        canvas.focus({ preventScroll: true });
+    function beginPointer(ev: PointerEvent) {
         const screen = localPoint(ev),
             p = map.world(...screen),
             d = editor.project.design;
@@ -126,7 +122,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             return;
         }
         if (map.draft) {
-            ev.preventDefault(); canvas.setPointerCapture(ev.pointerId);
+            ev.preventDefault();
             try {
                 draftPointer(editor, "down", p, ev);
             }
@@ -152,7 +148,6 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             if (c.role === "vertex" || c.role === "parameter") editor.pickVertex(c);
             if (c.role === "segment" || c.role === "body" && n.construction.type !== "free") return;
             editor.gesture = { geo: n, control: c, screen, pointer: ev.pointerId };
-            canvas.setPointerCapture(ev.pointerId);
             return;
         }
         if (hit?.kind === "handle") {
@@ -161,20 +156,61 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             const mark = h.kind === "mark" ? d.marks.find(m => m.id === h.id)! : undefined;
             const at = mark ? map.markCoordinate(screen, mark.follow) : p;
             editor.gesture = { handle: h, offset: [h.point[0] - at[0], h.point[1] - at[1]], screen, pointer: ev.pointerId };
-            canvas.setPointerCapture(ev.pointerId);
             return;
         }
         if (hit?.kind === "issues") {
             beginPan(ev, screen, () => editor.pickMarkers(hit.hits)); return;
         }
         beginPan(ev, screen, () => editor.select(hit?.kind === "section" ? hit.section : null));
+    }
+
+    type DrawingClick = { draft: GeoDraft; nodeCount: number };
+    let firstClick: DrawingClick | undefined;
+    let press: { down: PointerEvent; drawing?: DrawingClick; state: "active" | "pending" | "double"; up?: PointerEvent } | undefined;
+    canvas.addEventListener("pointerdown", ev => {
+        if (!editor.project || editor.busy || editor.gesture || (ev.button !== 0 && ev.button !== 1)) return;
+        canvas.focus({ preventScroll: true });
+        canvas.setPointerCapture(ev.pointerId);
+        const draft = map.draft;
+        const drawing = ev.button === 0 && draft && doubleClickTools.includes(draft.tool) ? { draft, nodeCount: draft.nodes.length } : undefined;
+        // The first click may already have closed the path and switched tools.
+        press = { down: ev, drawing, state: ev.button === 0 && firstClick ? "pending" : "active" };
+        if (press.state === "active") beginPointer(ev);
+    }, { signal });
+    canvas.addEventListener("mousedown", ev => {
+        if (press?.state !== "pending" || press.up || ev.button !== 0) return;
+        // Mouse clicks report their count on press. Touch taps can report it only after release.
+        ev.preventDefault();
+        if (ev.detail === 2) press.state = "double";
+        else {
+            firstClick = undefined;
+            press.state = "active";
+            beginPointer(press.down);
+        }
+    }, { signal });
+    canvas.addEventListener("click", ev => {
+        const current = press;
+        press = undefined;
+        if (ev.detail === 2 && firstClick) return;
+        firstClick = ev.detail === 1 ? current?.drawing : undefined;
+        if (current?.up && editor.project && !editor.busy) {
+            if (current.state !== "active") beginPointer(current.down);
+            finishGesture(current.up);
+        }
     }, { signal });
     canvas.addEventListener("dblclick", ev => {
+        const first = firstClick;
+        firstClick = undefined;
         if (!editor.project || editor.busy || ev.button !== 0) return;
-        if (map.draft && doubleClickTools.includes(map.draft.tool)) {
+        const draft = first?.draft ?? map.draft;
+        if (draft && doubleClickTools.includes(draft.tool)) {
             ev.preventDefault();
-            if (map.draft.clickNode && map.draft.clickNode === map.draft.nodes.at(-1)?.id) map.draft.nodes.pop();
-            editor.completeDrawing(ev.shiftKey);
+            if (map.draft === draft) {
+                draft.down = draft.downRaw = undefined;
+                if (first) draft.nodes.splice(first.nodeCount);
+                updatePreview(editor, draft);
+                editor.completeDrawing(ev.shiftKey);
+            }
             return;
         }
         if (ev.altKey || editor.tool !== "select") return;
@@ -195,6 +231,11 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             p = map.world(...screen),
             d = editor.project.design;
         editor.readPosition(p);
+        if (press && press.state !== "active" && press.down.pointerId === ev.pointerId && !press.up) {
+            if (press.state === "double" || distance(screen, localPoint(press.down)) <= 3) return;
+            press.state = "active";
+            beginPointer(press.down);
+        }
         if (map.draft && !editor.gesture && !editor.busy) {
             try {
                 draftPointer(editor, "move", p, ev);
@@ -289,8 +330,23 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             if (ev.type === "pointerup") editor.record();
         }
     }
-    canvas.addEventListener("pointerup", finishGesture, { signal });
-    canvas.addEventListener("pointercancel", finishGesture, { signal });
+    canvas.addEventListener("pointerup", ev => {
+        if (firstClick && press?.down.pointerId === ev.pointerId) {
+            const moved = distance(localPoint(ev), localPoint(press.down)) > 3;
+            if (press.state === "double" || (!moved && (press.state === "pending" || press.drawing?.draft === firstClick.draft))) {
+                press.up = ev;
+                return;
+            }
+            if (press.state === "pending") beginPointer(press.down);
+        }
+        finishGesture(ev);
+    }, { signal });
+    canvas.addEventListener("pointercancel", ev => {
+        const pending = press?.down.pointerId === ev.pointerId && press.state !== "active";
+        press = undefined; firstClick = undefined;
+        if (pending && map.draft) editor.cancelDrawing();
+        else finishGesture(ev);
+    }, { signal });
     canvas.addEventListener("auxclick", ev => ev.preventDefault(), { signal });
     document.addEventListener("keydown", ev => {
         if (composingKey(ev)) return;

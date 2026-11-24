@@ -201,6 +201,99 @@ async function checkEditor(url: string) {
         await wait(writes => window.probe.writes === writes + 1, writes);
         await saved();
         assert.equal(await disk(), before);
+
+        console.log("Double-click finishes drawing with only the previously placed vertices");
+        await panel("terrain");
+        const [cx, cy] = await evaluate(() => {
+            const box = document.querySelector("#map")!.getBoundingClientRect();
+            return [Math.round(box.left + box.width / 2), Math.round(box.top + box.height / 2)];
+        });
+        const a = [cx - 76, cy - 40], b = [cx + 60, cy - 40], c = [cx + 15, cy + 58], end = [cx - 90, cy + 48];
+        async function tap([x, y]: number[], clickCount = 1, button = "left", modifiers = 0) {
+            for (const type of ["mousePressed", "mouseReleased"])
+                await cdp("Input.dispatchMouseEvent", { type, x, y, button, clickCount, modifiers });
+        }
+        async function pen() {
+            await click("button[aria-label=新建地件]");
+            await click(".creation-menu [role=menuitem]");
+        }
+        async function vertices(closed: boolean) {
+            await tap(a);
+            await browser.mouse("mousePressed", b[0], b[1]);
+            await browser.mouse("mouseMoved", b[0] + 12, b[1] + 7);
+            await browser.mouse("mouseReleased", b[0] + 12, b[1] + 7);
+            if (closed) await tap(c);
+        }
+        async function undo() {
+            await click("#undo"); await idle(); await saved();
+        }
+        async function compareFinish(start: () => Promise<void>, closed: boolean) {
+            const original = await disk();
+            await start(); await vertices(closed); await key("Enter"); await idle(); await saved();
+            const byEnter = await disk();
+            assert(byEnter !== original, "Enter must commit the drawing");
+            await undo();
+            assert(await disk() === original, "One undo must restore the previous design");
+            await start(); await vertices(closed);
+            await tap(end); await tap([end[0] + 1, end[1]], 2); await idle(); await saved();
+            assert.match(await text("#mode-hint"), /单击选择/);
+            assert(await disk() === byEnter, "Double-click and Enter must save identical geometry");
+        }
+        await compareFinish(pen, true);
+        const triangle = await disk();
+        await undo();
+        await pen(); await vertices(false);
+        await tap(a); await tap(a, 2);
+        assert.match(await text("#toast"), /至少需要三个节点/);
+        assert.match(await text("#mode-hint"), /单击放尖角/);
+        await tap(c); await key("Enter"); await idle(); await saved();
+        assert(await disk() === triangle, "An incomplete double-click must leave the original vertices and IDs intact");
+
+        for (const shift of [true, false]) {
+            await undo();
+            await pen(); await vertices(true);
+            await tap(a, 1, "left", shift ? 8 : 0); await idle();
+            const second = { x: a[0], y: a[1], button: "left", clickCount: 2, modifiers: shift ? 8 : 0 };
+            await cdp("Input.dispatchMouseEvent", { ...second, type: "mousePressed" });
+            await cdp("Input.dispatchMouseEvent", { ...second, type: "mouseMoved", x: a[0] + 4, buttons: 1 });
+            await cdp("Input.dispatchMouseEvent", { ...second, type: "mouseReleased" });
+            await idle(); await saved();
+            assert(await disk() === triangle, "Double-clicking the first node must close exactly once");
+            if (shift) {
+                assert.match(await text("#mode-hint"), /单击放尖角/);
+                await key("Escape");
+            }
+            assert.match(await text("#mode-hint"), /单击选择/);
+            assert.equal(await evaluate(() => !!document.querySelector("[aria-label=节点类型]")), false);
+        }
+        await undo();
+        await pen(); await vertices(true);
+        await cdp("Emulation.setTouchEmulationEnabled", { enabled: true });
+        for (let i = 0; i < 2; i++) {
+            await cdp("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: end[0], y: end[1] }] });
+            await cdp("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+        }
+        await cdp("Emulation.setTouchEmulationEnabled", { enabled: false });
+        await idle(); await saved();
+        assert.match(await text("#mode-hint"), /单击选择/);
+        assert(await disk() === triangle, "A native double-tap must finish the same drawing");
+        await tap(a); await tap(a, 2); await idle(); await saved();
+        assert(await disk() !== triangle, "A separate double-click in selection mode must still change the node type");
+        await undo();
+        assert(await disk() === triangle);
+
+        await compareFinish(async () => {
+            await tap(a, 1, "right");
+            await click(".context-menu button");
+        }, true);
+        await undo();
+        await terrainTab();
+        await choose("函数", "coast");
+        await compareFinish(() => click("button[aria-label=重画海岸线]"), true);
+        await choose("函数", "slope");
+        await compareFinish(() => click("button[aria-label=重画坡线]"), false);
+        await choose("函数", "mountain");
+        await compareFinish(() => click("button[aria-label=添加山脊]"), false);
     }
     finally {
         await browser.close();
