@@ -60,7 +60,7 @@ export const baseMap = {
 export const contourStyle = {
     minSpacing: 5,
     labelSpacing: 18,
-    labelDistance: 180,
+    labelLength: 80,
     labelInset: 40,
     labelRank: 2,
     lines: [

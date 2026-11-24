@@ -10,7 +10,7 @@ import { clamp, distance, nearest } from "../core/math/geometry.ts";
 import { issueView, objectIssues } from "../core/checks/issues.ts";
 import { type GeoDraft } from "../app/state/geoTools.ts";
 import { type GeoControl, type GeometryTarget } from "../core/edit/geoControls.ts";
-import { fieldContours } from "./fieldContours.ts";
+import { contourLabels, fieldContours } from "./fieldContours.ts";
 import { geoLabelPoint } from "./labelLayout.ts";
 import { drawGeoOverlay, drawHandle } from "./geoOverlay.ts";
 import { baseMap, canvasText, contourStyle, overlay, palette } from "./palette.ts";
@@ -142,6 +142,7 @@ export class ProjectMap {
     declare controls: Handle[];
 
     private markBoxes: { mark: Handle; box: Box }[] = [];
+    private contourText?: { contours: ReturnType<typeof fieldContours>; camera: [number, number, number, number]; placed: ReturnType<typeof contourLabels> };
 
     constructor(canvas: HTMLCanvasElement, layers: typeof layerDefaults, gridDisplay: GridDisplay) {
         this.canvas = canvas;
@@ -335,15 +336,17 @@ export class ProjectMap {
         if (contours && this.layers.contourLabels) this.drawContourLabels(ctx, contours);
         document.getElementById("zoom-value")!.textContent = displayReading(this.zoomFactor() * 100, 1, "%");
     }
-    private drawContourLabels(ctx: Context, { base, labels }: ReturnType<typeof fieldContours>) {
-        const { labelDistance, labelInset } = contourStyle, accepted: Point[] = [];
-        for (const { point, value } of labels) {
-            const p = this.screen(point), [x, y] = p;
-            if (x < labelInset || x > this.width - labelInset || y < labelInset || y > this.height - labelInset) continue;
-            if (accepted.some(other => distance(p, other) < labelDistance)) continue;
-            accepted.push(p);
-            mapText(ctx, displayReading(value, base), x, y);
+    private drawContourLabels(ctx: Context, contours: ReturnType<typeof fieldContours>) {
+        const { base, lines } = contours, camera = [...this.center, this.width, this.height] as const;
+        if (this.contourText?.contours !== contours || !this.contourText.camera.every((value, i) => value === camera[i])) {
+            ctx.font = labelFont();
+            const placed = contourLabels(lines, this.width, this.height, point => this.screen(point), value => {
+                const text = ctx.measureText(displayReading(value, base));
+                return [text.width + overlay.labelHalo, text.actualBoundingBoxAscent + text.actualBoundingBoxDescent + overlay.labelHalo];
+            });
+            this.contourText = { contours, camera: [...camera], placed };
         }
+        for (const { point, value } of this.contourText.placed) mapText(ctx, displayReading(value, base), ...point);
     }
     private drawGrid(ctx: Context, scale: number) {
         const { mode, meters, pixels } = this.gridDisplay;
