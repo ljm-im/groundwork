@@ -1,7 +1,6 @@
-{#if errors.length || warnings.length}
-    <Part title="问题">{#if errors.length}<IssueRows {editor} issues={errors} />{:else}<div class="list-empty">没有匹配的结果</div>{/if}</Part>
-    <Part title="提示">{#if warnings.length}<IssueRows {editor} issues={warnings} />{:else}<div class="list-empty">没有匹配的结果</div>{/if}</Part>
-{:else}<div class="list-empty">没有匹配的结果</div>{/if}
+{#if errors.length}<Part title="错误"><IssueRows {editor} issues={errors} /></Part>{/if}
+{#if warnings.length}<Part title="警告"><IssueRows {editor} issues={warnings} /></Part>{/if}
+{#if !errors.length && !warnings.length}<div class="list-empty">没有问题</div>{/if}
 
 <script lang="ts">
     import * as session from "../state/session.svelte.ts";
@@ -9,5 +8,5 @@
     import Part from "./Part.svelte";
     let { editor }: { editor: session.Editor } = $props();
     let errors = $derived(editor.project.issues.filter(i => i.severity === "error"));
-    let warnings = $derived(editor.project.issues.filter(i => i.severity === "notice"));
+    let warnings = $derived(editor.project.issues.filter(i => i.severity === "warning"));
 </script>

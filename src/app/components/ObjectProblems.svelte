@@ -1,5 +1,5 @@
 <Part>
-    {#if issues.length}<IssueRows {editor} {issues} />{:else}<div class="list-empty">没有匹配的结果</div>{/if}
+    {#if issues.length}<IssueRows {editor} {issues} />{:else}<div class="list-empty">没有问题</div>{/if}
 </Part>
 
 <script lang="ts">

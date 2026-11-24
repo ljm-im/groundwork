@@ -99,7 +99,7 @@
         editor: session.Editor; layout: Layout; onresize: (e: PointerEvent) => void; ontoggle: () => void; onkey: (e: KeyboardEvent) => void;
     } = $props();
     const tabs = [["terrain", "地件", "terrain"], ["inputs", "变量", "inputs"], ["marks", "标记", "marks"],
-        ["issues", "校验", "issues"], ["layers", "显示", "display"]] as const;
+        ["issues", "问题", "issues"], ["layers", "显示", "display"]] as const;
     const geoTools = [["pen", "钢笔", "pen"], ["rect", "矩形", "rect"], ["circle", "圆", "circle"], ["sector", "扇形", "sector"], ["strip", "条带", "strip"]] as const;
     const markTools = [["textMark", "文字标记", "textMark"], ["scaleMark", "比例尺", "scaleMark"]] as const;
     function start(tool: Tool) {

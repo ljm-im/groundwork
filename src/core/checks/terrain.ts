@@ -32,10 +32,10 @@ export function terrainIssues(d: Design, t: Terrain): Issue[] {
             if (k >= width) measure(k, k - width);
             if (k < width * (height - 1)) measure(k, k + width);
         }
-        if (count) issues.push({ kind: "untreated-height", severity: "notice", point, geoNode: n.id, label: n.label,
+        if (count) issues.push({ kind: "untreated-height", severity: "warning", point, geoNode: n.id, label: n.label,
             message: `未处理高差共 ${count} 处，最大 ${max.toFixed(2)} m（${point.join(", ")}）` });
         const residual = t.batterResiduals.get(n.id);
-        if (residual) issues.push({ kind: "short-batter", severity: "notice", geoNode: n.id, label: n.label, point: residual.point,
+        if (residual) issues.push({ kind: "short-batter", severity: "warning", geoNode: n.id, label: n.label, point: residual.point,
             message: `放坡不到底，最大残留陡坎 ${residual.height.toFixed(2)} m（${residual.point.map(x => +x.toFixed(2)).join(", ")}）` });
     }
     return issues;

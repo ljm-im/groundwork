@@ -80,6 +80,28 @@ async function checkEditor(url: string) {
         await wait(() => document.querySelector("#filename")?.textContent === "regression.json");
         await idle();
 
+        console.log("Issue groups show only present severities");
+        const groupNames = () => evaluate(() => [...document.querySelectorAll("#panel h3")].map(h => h.textContent));
+        async function issueGroups(expected: string[]) {
+            await panel("issues");
+            assert.equal(await text("#panel h2"), "问题");
+            assert.deepEqual(await groupNames(), expected);
+        }
+        async function toggleNode(id: string) {
+            await panel("terrain"); await click("[data-geo-node=" + id + "]");
+            await click("#properties .property-title button[aria-pressed]"); await idle();
+        }
+        await issueGroups(["错误", "警告"]);
+        await toggleNode("T"); await issueGroups(["错误"]);
+        await toggleNode("X"); await issueGroups([]);
+        assert.equal(await text("#panel .list-empty"), "没有问题");
+        await toggleNode("T"); await issueGroups(["警告"]);
+        await toggleNode("X"); await issueGroups(["错误", "警告"]);
+        await panel("terrain");
+        await click("[data-geo-node=G]"); await click("[data-property-tab=issues]");
+        assert.equal(await text("#properties .list-empty"), "没有问题");
+        await click("[data-property-tab=label]");
+
         console.log("IME search and selecting candidates with Enter");
         await panel("terrain");
         await click("#terrain-search");

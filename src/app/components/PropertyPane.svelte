@@ -4,7 +4,7 @@
             {#each tabs as [tab, label, icon] (tab)}
                 <button class="icon-button" data-property-tab={tab} data-tip={label} aria-label={label}
                     aria-pressed={editor.propertyTab === tab} onclick={() => editor.changePropertyTab(tab)}>
-                    <Icon name={icon} />{#if tab === "issues" && errors}<i class="count-dot" aria-label="有校验错误"></i>{/if}
+                    <Icon name={icon} />{#if tab === "issues" && errors}<i class="count-dot" aria-label="有错误"></i>{/if}
                 </button>
             {/each}
         </nav>

@@ -62,7 +62,7 @@ exportTest("independent exports have identical formatted bytes and preserve auth
     const json = JSON.parse(bytes);
     assert.deepEqual(json.source, source);
     assert.equal(json.format, "groundwork-export");
-    assert.equal(json.version, 5);
+    assert.equal(json.version, 6);
     assert.deepEqual(Object.keys(json), ["format", "version", "source", "instructions", "prompt", "terrain", "marks", "issues"]);
     assert(!Object.hasOwn(json, "labels"));
     assert.deepEqual(result.marks.map(m => [m.id, m.label, m.type]), [["B", "B", "mark.text"]]);
@@ -116,4 +116,11 @@ test("Mark bases can be reconstructed from rounded grid spacing and origin", () 
     assert.equal(out.terrain.step, 1);
     assert.equal(out.marks.length, 1);
     for (const m of out.marks) assert(Math.abs(m.position[2] - ground(m.position, out.terrain)) <= .00050000001);
+});
+
+test("Export version six uses error and warning severities", () => {
+    const design = syntheticDesign();
+    design.geoNodes.push(layer("X", { type: "strip", of: ["missing"], widths: [1, 2] }, { type: "blend" }));
+    const result = exportProject(new Project(design), provenance(serializeDesign(design)));
+    assert.deepEqual(result.issues.map(i => [i.geoNode, i.severity]), [["X", "error"], ["T", "warning"]]);
 });

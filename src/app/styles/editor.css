@@ -203,7 +203,7 @@ input[type="radio"]:checked::after {
 .issue-row :is(b, small) { display: block; }
 .issue-row b { font-weight: var(--weight-regular); }
 .issue-error { color: var(--danger); }
-.issue-notice { color: var(--warning); }
+.issue-warning { color: var(--warning); }
 
 .popup {
     position: fixed;

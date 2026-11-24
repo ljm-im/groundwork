@@ -25,6 +25,7 @@ import { type Grid } from "../core/math/geometry.ts";
 type Context = CanvasRenderingContext2D;
 
 const labelFont = (bold = false) => (bold ? canvasText.semibold : canvasText.regular) + " " + canvasText.sm + "px " + canvasText.font;
+const issueColor = (issue: Issue) => issue.severity === "error" ? palette.danger : palette.warning;
 const line = (ctx: Context, points: Point[], closed = false) => {
     ctx.beginPath();
     ctx.moveTo(...points[0]);
@@ -239,7 +240,7 @@ export class ProjectMap {
             const active = issue === chosen, elapsed = performance.now() - this.pulseStart;
             ctx.save();
             ctx.globalAlpha = active ? (elapsed < 1500 ? .72 + .28 * Math.cos(elapsed * Math.PI / 250) : 1) : .42;
-            circle(ctx, ...issue.point, 8 / scale, null, palette.danger, 2 / scale);
+            circle(ctx, ...issue.point, 8 / scale, null, issueColor(issue), 2 / scale);
             ctx.restore();
         }
     }
@@ -446,8 +447,7 @@ export class ProjectMap {
                 ctx.save();
                 ctx.translate(x, y);
                 ctx.rotate(Math.PI / 4);
-                ctx.fillStyle = problem.severity === "notice" ? palette.bgPanel : palette.danger;
-                ctx.strokeStyle = palette.danger;
+                ctx.fillStyle = ctx.strokeStyle = issueColor(problem);
                 ctx.lineWidth = 1.3;
                 ctx.fillRect(-2.8, -2.8, 5.6, 5.6);
                 ctx.strokeRect(-2.8, -2.8, 5.6, 5.6);
@@ -463,7 +463,7 @@ export class ProjectMap {
         }
         if (this.activeIssue && this.project.issues.includes(this.activeIssue)) {
             const [x, y] = this.screen(this.activeIssue.point);
-            circle(ctx, x, y, 10, null, palette.danger, overlay.selectedWidth);
+            circle(ctx, x, y, 10, null, issueColor(this.activeIssue), overlay.selectedWidth);
         }
     }
     hitHandle(x: number, y: number) {

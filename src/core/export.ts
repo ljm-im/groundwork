@@ -15,7 +15,7 @@ interface ExportTerrain {
     heights: number[][]; defined: number[][]; surface: number[][]; surfaceTypes: Record<number, string>; surfaceRules: typeof surfaceRules;
 }
 export interface GroundworkExport {
-    format: "groundwork-export"; version: 5; source: ExportSource; instructions: string; prompt: string;
+    format: "groundwork-export"; version: 6; source: ExportSource; instructions: string; prompt: string;
     terrain: ExportTerrain; marks: ExportMark[]; issues: ExportIssue[];
 }
 
@@ -24,8 +24,8 @@ const instructions = [
     "保持给定的位置、标高、尺寸和朝向。描述决定外观。如与几何冲突，采用几何，并在交付时逐条列出冲突。",
     "先读项目描述，再读各元素的描述，具体元素的描述优先。只制作设计中列出的内容，不添加描述以外的道具或装饰。",
     "marks 只含跟随地图的文字标记，用于定位和标注。元素的标签保存在 label。",
-    "按原样呈现 issues 中的校验问题。遇到描述不足、无法确定做法的地方，采用最简单的实现，并在交付时逐条列明。",
-    "单位为米。X 向东，Y 向北，Z 向上，海平面为 Z = 0。栅格原点是西北角第一个格点的中心，列向东、行向南，行列下标从 0 开始。第 r 行第 c 列的平面坐标为 [origin[0] + c × step, origin[1] − r × step]。defined 为 1 的格子有地形，0 表示高度未定义。仅在有效格点间插值。高度未定义处的校验问题以 null 表示没有地面标高。"
+    "按原样呈现 issues 中的问题。遇到描述不足、无法确定做法的地方，采用最简单的实现，并在交付时逐条列明。",
+    "单位为米。X 向东，Y 向北，Z 向上，海平面为 Z = 0。栅格原点是西北角第一个格点的中心，列向东、行向南，行列下标从 0 开始。第 r 行第 c 列的平面坐标为 [origin[0] + c × step, origin[1] − r × step]。defined 为 1 的格子有地形，0 表示高度未定义。仅在有效格点间插值。高度未定义处的问题以 null 表示没有地面标高。"
 ].join("\n\n");
 
 function precision(n: number) {
@@ -72,7 +72,7 @@ export function exportProject(project: Project, source: ExportSource): Groundwor
     const issues = project.issues.map(({ point, kind, severity, message, geoNode, label }, i): ExportIssue => ({
         kind, severity, message, geoNode, id: "issue-" + (i + 1),
         label: label ?? message, type: "issue." + kind, position: position(point, ground) ?? [...xy(point), null] }));
-    return { format: "groundwork-export", version: 5, source: { sha256: source.sha256, commit: source.commit }, instructions, prompt: design.prompt ?? "",
+    return { format: "groundwork-export", version: 6, source: { sha256: source.sha256, commit: source.commit }, instructions, prompt: design.prompt ?? "",
         terrain, marks, issues };
 }
 

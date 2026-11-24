@@ -1,7 +1,7 @@
 import { type Selection } from "../../core/edit/types.ts";
 
 const label = ["label", "标签与描述", "tag"] as const;
-const issues = ["issues", "校验", "issues"] as const;
+const issues = ["issues", "问题", "issues"] as const;
 const single = [["general", "", "project"]] as const;
 const tabs = {
     geoNode: [label, ["region", "区域", "region"], ["function", "函数", "function"], issues],

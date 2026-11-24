@@ -14,7 +14,7 @@ export const layerNames = {
     sections: "剖面线",
     labels: "标签",
     marks: "标记",
-    issues: "校验标记"
+    issues: "问题位置"
 };
 
 const gridDefaults = { mode: "pixels" as "meters" | "pixels", meters: 10, pixels: 80 };

@@ -13,7 +13,7 @@ export interface Terrain {
 }
 export interface SurfaceCell { type: 0 | 1 | 2 | 3; slope: number }
 export interface Issue {
-    kind: string; severity: "error" | "notice"; message: string; point: Point; geoNode?: string; label?: string; location?: Location;
+    kind: string; severity: "error" | "warning"; message: string; point: Point; geoNode?: string; label?: string; location?: Location;
 }
 export function sampleField(t: Terrain, id: string, p: Point) {
     if (!Object.hasOwn(t.fields, id)) return;
