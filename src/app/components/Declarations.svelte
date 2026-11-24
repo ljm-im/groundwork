@@ -40,8 +40,8 @@
         <PropertyPane {editor}>
             {#snippet title()}
                 <PropertyTitle name={item.label ?? h!.id} icon={variable ? "inputs" : "field"} label={variable ? "自定义输入名称" : "场名称"}
-                    {builtin} rename={variable && !builtin ? name => editor.edit(d => {
-                        d.inputs[h!.id].label = name;
+                    {builtin} rename={!builtin ? name => editor.edit(d => {
+                        d[table][h!.id].label = name;
                     }) : undefined}
                     remove={builtin ? undefined : () => editor.removeSelected()} />
             {/snippet}
@@ -57,16 +57,8 @@
                 </Part>
             {:else}
                 {@const f = d.fields[h.id]}
+                {@const precision = fieldPrecision(f)}
                 <Part>
-                    <FieldRow label="标签" readOnlyValue={builtin ? f.label : undefined}>
-                        <input class="input-box" aria-label="标签" value={f.label} onchange={e => {
-                            const label = e.currentTarget.value.trim();
-                            if (label && label !== f.label) editor.edit(d => {
-                                d.fields[h!.id].label = label;
-                            });
-                            else e.currentTarget.value = f.label;
-                        }} />
-                    </FieldRow>
                     <FieldRow label="单位" readOnlyValue={builtin ? f.unit ?? "" : undefined}>
                         <input class="input-box" aria-label="单位" value={f.unit ?? ""} onchange={e => {
                             const unit = e.currentTarget.value.trim();
@@ -77,6 +69,12 @@
                             });
                         }} />
                     </FieldRow>
+                    {#if builtin}
+                        <FieldRow label="精度" unit={f.unit} readOnlyValue={displayValue(precision, precision)} />
+                    {:else}
+                        <NumberInput {editor} label="精度" unit={f.unit} address={["fields", h.id, "precision"]} kind="literal"
+                            step={precision} fallback={defaultFieldPrecision} inputStep />
+                    {/if}
                 </Part>
             {/if}
         </PropertyPane>
@@ -99,7 +97,8 @@
 
 <script lang="ts">
     import * as session from "../state/session.svelte.ts";
-    import { fieldEntries, isBuiltin } from "../../core/design/defaults.ts";
+    import { defaultFieldPrecision, fieldEntries, fieldPrecision, isBuiltin } from "../../core/design/defaults.ts";
+    import { displayValue } from "../state/numbers.ts";
     import Search from "./Search.svelte";
     import Part from "./Part.svelte";
     import Icon from "./Icon.svelte";

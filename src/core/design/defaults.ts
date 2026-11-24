@@ -1,4 +1,10 @@
-import { type CustomInput } from "./v5.ts";
+import { type CustomInput, type FieldDeclaration } from "./v5.ts";
+
+export const defaultFieldPrecision = .1;
+
+export function fieldPrecision(field?: FieldDeclaration) {
+    return field?.precision ?? defaultFieldPrecision;
+}
 
 export const seedId = "seed", heightId = "height";
 export const reserved = {

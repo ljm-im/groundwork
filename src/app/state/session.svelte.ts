@@ -4,7 +4,7 @@ import { TerrainCache } from "../../core/terrain/cache.ts";
 import { History, promptOwner, type PromptTarget } from "../../core/edit/history.ts";
 import { readDisplaySettings, saveDisplaySettings, type GridDisplay } from "./layers.ts";
 import { constructionCenter } from "../../core/design/regions.ts";
-import { heightId, isBuiltin } from "../../core/design/defaults.ts";
+import { fieldPrecision, heightId, isBuiltin } from "../../core/design/defaults.ts";
 import { type SelectionState } from "../../core/edit/types.ts";
 import { defaultFollow, type GeoNode, type GeoFunction, type PathNode } from "../../core/design/v5.ts";
 import { geoParameter, slotName, type Slot } from "../../core/design/parameters.ts";
@@ -18,7 +18,7 @@ import { displaySteps, markParameters } from "../../core/design/functionTable.ts
 import { functionGeometry } from "../../core/edit/functionGeometry.ts";
 import { sampleField } from "../../core/design/results.ts";
 import { designErrorText } from "./designMessages.ts";
-import { displayReading, displayValue } from "./numbers.ts";
+import { displayReading } from "./numbers.ts";
 import { objectIssues } from "../../core/checks/issues.ts";
 import { propertyTabs, tabForSelection, type PropertyTab, type SubitemGroup } from "./inspector.ts";
 import { drawSections } from "../../render/sections.ts";
@@ -496,7 +496,7 @@ export class Editor {
         this.pointerPosition = p;
         const coordinate = (value: number) => displayReading(value, displaySteps.coordinates, displaySteps.coordinateUnit);
         this.position = "X " + coordinate(p[0]) + "  Y " + coordinate(p[1]) + "  " + field.label + " " +
-            displayValue(sample, displaySteps.field, field.unit);
+            displayReading(sample, fieldPrecision(field), field.unit);
     }
     private referenceItem(slot: Slot): RemovalItem {
         return { text: slotName(slot), locate: () => {

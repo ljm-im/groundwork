@@ -56,7 +56,7 @@
     import { onDestroy, onMount } from "svelte";
     import * as session from "../state/session.svelte.ts";
     import { heightId } from "../../core/design/defaults.ts";
-    import { isBuiltinFunction } from "../../core/design/functionTable.ts";
+    import { isBuiltinFunction, parameterStep } from "../../core/design/functionTable.ts";
     import { geoParameter } from "../../core/design/parameters.ts";
     import { displayValue, flagOverflow } from "../state/numbers.ts";
     import { reorderGeo } from "../../core/edit/geoNodes.ts";
@@ -85,7 +85,7 @@
         const p = geoParameter(n, ["function", "amount"]);
         if (!p || p.type === "geometry") return "";
         const value = authored ?? p.default;
-        return (typeof value === "number" && value < 0 ? "" : "+") + displayValue(value, p.step, "", d);
+        return (typeof value === "number" && value < 0 ? "" : "+") + displayValue(value, parameterStep(p, d.fields[n.field]), "", d);
     }
     const mime = "application/x-groundwork-stack";
     function start(e: DragEvent, id: string | null) {

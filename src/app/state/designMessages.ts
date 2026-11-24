@@ -38,6 +38,7 @@ export function designProblemText({ location, message }: DesignProblem, d: Desig
     else {
         label = (kind === "field" ? d.fields[id] : d.inputs[id])?.label;
         if (key === "unit") property = "单位";
+        if (key === "precision") property = "精度";
         if (key === "range") property = "取值范围";
     }
     if (!property && key === "label") property = "标签";

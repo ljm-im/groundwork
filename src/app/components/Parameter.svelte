@@ -1,13 +1,13 @@
 {#if spec && spec.type !== "geometry"}
     <NumberInput {editor} address={["geoNodes", index, ...path]} {label} {unit}
-        kind={spec.type === "field" ? "field" : "number"} self={key} owner={node.id} step={spec.step} />
+        kind={spec.type === "field" ? "field" : "number"} self={key} owner={node.id} step={parameterStep(spec, field)} />
 {/if}
 
 <script lang="ts">
     import * as session from "../state/session.svelte.ts";
     import { type GeoNode } from "../../core/design/v5.ts";
     import { geoParameter, geoParameterName, type Address } from "../../core/design/parameters.ts";
-    import { parameterUnit } from "../../core/design/functionTable.ts";
+    import { parameterStep, parameterUnit } from "../../core/design/functionTable.ts";
     import NumberInput from "./NumberInput.svelte";
 
     let { editor, node, address, construction = false }: { editor: session.Editor; node: GeoNode; address: Address; construction?: boolean } = $props();
@@ -17,5 +17,6 @@
     let key = $derived("geo:" + node.id + "." + (construction ? path : address).join("."));
     let spec = $derived(geoParameter(node, path));
     let label = $derived(geoParameterName(d, node, path, false) ?? "数值");
-    let unit = $derived(spec ? parameterUnit(spec, d.fields[node.field]?.unit) : "");
+    let field = $derived(d.fields[node.field]);
+    let unit = $derived(spec ? parameterUnit(spec, field?.unit) : "");
 </script>

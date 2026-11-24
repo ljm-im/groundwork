@@ -1,7 +1,7 @@
 import { test } from "node:test";
-import { functionTable, parameterUnit } from "../src/core/design/functionTable.ts";
+import { functionTable, parameterStep, parameterUnit } from "../src/core/design/functionTable.ts";
 import assert from "node:assert/strict";
-import { adjustInputStep, adjustNumber, displayValue, NumberDrag, numericText, repeatButton } from "../src/app/state/numbers.ts";
+import { adjustInputStep, adjustNumber, displayReading, displayValue, NumberDrag, numericText, repeatButton } from "../src/app/state/numbers.ts";
 import { Project } from "../src/core/project.ts";
 import { ProjectMap } from "../src/render/map.ts";
 import { generateTerrain } from "../src/core/terrain/terrain.ts";
@@ -35,6 +35,11 @@ test("Displayed values keep authored precision, keyboard minus, and unit spacing
     assert.equal(displayValue(-.001, .1, "m"), "-0.001 m");
     assert.equal(displayValue(1.4e-7, 1e-7), "0.0000001");
     assert.equal(displayValue(NaN, .1, "m"), "–");
+    assert.equal(displayReading(4.5364, .1, "m"), "4.5 m");
+    assert.equal(displayReading(.4964, .01), "0.50");
+    assert.equal(displayReading(-.0004, .01), "0.00");
+    assert.equal(displayReading(undefined, .1, "m"), "–");
+    assert.equal(displayReading(1, Number.MIN_VALUE), "1");
 });
 test("Pointer lock transitions discard the cursor jump without losing subsequent steps", () => {
     const drag = new NumberDrag();
@@ -105,16 +110,22 @@ test("Camera framing survives empty and changing canvases and the viewport hides
 test("Every function parameter defines its display metadata and keeps its numeric default", () => {
     for (const [type, definition] of Object.entries(functionTable)) for (const p of definition.parameters) {
         const key = type + "." + p.key.join(".");
-        assert(p.label && p.key.length && Number.isFinite(p.step) && p.step > 0, key);
+        const step = parameterStep(p);
+        assert(p.label && p.key.length && Number.isFinite(step) && step > 0, key);
+        assert.equal(p.step === "field", p.unit === "field" || p.unit === "field/m", key);
         assert.equal(typeof p.unit, "string", key);
         assert.equal(typeof p.advanced, "boolean", key);
         assert(["number", "field", "geometry", "seed"].includes(p.type), key);
         assert.notEqual(p.default, undefined, key);
-        if (typeof p.default === "number") assert.equal(Number(displayValue(p.default, p.step)), p.default, key);
+        if (typeof p.default === "number") assert.equal(Number(displayValue(p.default, step)), p.default, key);
     }
     const rate = functionTable.slope.parameters.find(p => p.key[0] === "rate")!;
     assert.equal(parameterUnit(rate, "kg"), "kg/m");
     assert.equal(parameterUnit(rate), "/m");
+    assert.equal(parameterStep(rate), .01);
+    assert.equal(parameterStep(rate, { label: "A", precision: .02 }), .002);
+    assert.equal(parameterStep(rate, { label: "A", precision: .7 }), .07);
+    assert.equal(parameterStep(functionTable.flat.parameters[0], { label: "A", precision: .01 }), .01);
     for (const v of [.06, .002, .333]) assert.equal(displayValue(v, .1), String(v));
     assert.equal(displayValue("{input:A} * 0.333", .1), "{input:A} × 0.333");
 });

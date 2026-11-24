@@ -124,28 +124,30 @@
     import { evaluate, sampleValue } from "../../core/design/expression.ts";
     import { parseDesign } from "../../core/design/model.ts";
     import { fieldEntries, isBuiltin } from "../../core/design/defaults.ts";
-    import { adjustInputStep, adjustNumber, chipSpans, composingKey, displayValue, editorSelection, flagOverflow, editorText, NumberDrag, numericCaret, numericText, repeatButton, selectionOffsets, type Range } from "../state/numbers.ts";
+    import { adjustInputStep, adjustNumber, chipSpans, composingKey, displayReading, displayValue, editorSelection, flagOverflow, editorText, NumberDrag, numericCaret, numericText, repeatButton, selectionOffsets, type Range } from "../state/numbers.ts";
     import { designErrorText } from "../state/designMessages.ts";
     import { anchoredPopup } from "../state/popup.ts";
     import Icon, { type IconName } from "./Icon.svelte";
     import ReferenceChip from "./ReferenceChip.svelte";
-    let { editor, address, label, labelIcon, builtin = false, kind = "number", step = .1, range, unit = "", self, owner, compact = false, inputStep = false }: {
+    let { editor, address, label, labelIcon, builtin = false, kind = "number", step = .1, range, unit = "", self, owner, compact = false, inputStep = false, fallback = 0 }: {
         editor: session.Editor; address: Address; label: string; labelIcon?: IconName; builtin?: boolean; kind?: "number" | "field" | "literal"; step?: number;
-        range?: Range; unit?: string; self?: string; owner?: string; compact?: boolean; inputStep?: boolean;
+        range?: Range; unit?: string; self?: string; owner?: string; compact?: boolean; inputStep?: boolean; fallback?: number;
     } = $props();
     let face = $state<HTMLButtonElement>(), expandedBox = $state<HTMLElement>();
     let root: HTMLElement, box = $state<HTMLElement>(null!), input = $state<HTMLElement>(null!), mirror = $state<HTMLElement>(null!);
     let base = $derived(editor.project.design), authored = $derived(readAt(base, address) as Expression | undefined);
     let value = $derived(authored ?? (readAt(editor.project.resolved, address) as number | undefined) ??
-        (self ? expressionGraph(base).get(self) as number : 0));
+        (self ? expressionGraph(base).get(self) as number : fallback));
     let editing = $state(false), expanded = $state(false), draft = $state(""), error = $state(""), opened = $state(false), parent = $state(""), query = $state("");
     let queryStart = 0, queryEnd = 0, composing = false;
     let active = $state(0);
     let slots = $derived(parameters(base));
     let gesturing = $state(false), live = $state<Expression>(0), shown = $derived(gesturing ? live : value);
     let result = $derived(currentResult(shown));
-    let outside = $derived(result !== undefined && range && (result < range[0] || result > range[1]));
-    let tip = $derived(typeof shown === "string" ? (result === undefined ? "= 未定义" : "= " + displayValue(result, step, unit)) : undefined);
+    let reading = $derived(result?.value);
+    let outside = $derived(reading !== undefined && range && (reading < range[0] || reading > range[1]));
+    let tip = $derived(typeof shown === "string" ? (reading === undefined ? "= 未定义" :
+        "= " + (result?.sampled ? displayReading(reading, step, unit) : displayValue(reading, step, unit))) : undefined);
     let origin: Design | undefined, cleanup: (() => void) | undefined, version = 0;
     type Option = { key: string; name: string; icon: IconName; builtin?: boolean; branch?: boolean };
     type Group = { title: string; items: Option[] };
@@ -173,10 +175,12 @@
         return result.filter(group => group.items.length);
     });
     let options = $derived(groups.flatMap(g => g.items));
-    function currentResult(v: Expression | undefined) {
-        if (v === undefined || typeof v === "number") return v;
+    function currentResult(v: Expression) {
+        if (typeof v === "number") return { value: v, sampled: false };
         try {
-            return sampleValue(evaluate(v, expressionGraph(base).get), field => owner ? editor.project.inputAt(owner, field, editor.geoCenter(owner)) : undefined);
+            const expression = evaluate(v, expressionGraph(base).get);
+            const value = sampleValue(expression, field => owner ? editor.project.inputAt(owner, field, editor.geoCenter(owner)) : undefined);
+            return { value, sampled: typeof expression !== "number" };
         }
         catch {
             return undefined;

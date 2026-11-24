@@ -20,8 +20,11 @@ test("Editor interactions in Chromium", async () => {
 async function checkEditor(url: string) {
     const d = syntheticDesign();
     d.geoNodes[0].label = "基底"; d.geoNodes[1].label = "甲台"; d.inputs.A.label = "台地增量";
+    d.geoNodes[0].function = { type: "ground", value: 4.5364 };
     d.fields.F = { label: "系数", unit: "%" };
-    d.geoNodes.splice(1, 0, layer("F", rect(-36, -36, 36, 36), { type: "ground", value: .6 }, "F"));
+    d.geoNodes.splice(1, 0,
+        layer("F", rect(-36, -36, 36, 36), { type: "ground", value: .4564 }, "F"),
+        layer("R", rect(-32, -32, 32, 32), { type: "flat", amount: .04 }, "F"));
     d.geoNodes.push(layer("X", { type: "strip", of: ["missing"], widths: [1, 2] }, { type: "blend" }));
     d.marks.push({ id: "M", label: "比例尺", kind: "scale", point: [94, 120], follow: "screen", length: 10 });
     const browser = await startChromium();
@@ -168,6 +171,8 @@ async function checkEditor(url: string) {
         });
         assert(maxWidth.actual >= maxWidth.minimum, JSON.stringify(maxWidth));
         console.log("Unit width", JSON.stringify(maxWidth));
+        await click("[data-parameter$=\".function.rate\"] button[aria-label=增大径向变化率]");
+        assert.equal(await text("[data-parameter$=\".function.rate\"] .numeric-face"), "-0.19");
         await choose("坡面形式", "沿路径");
         await saved();
         const slope = parseDesign(await disk(), true).geoNodes.find(n => n.id === "T")?.function;
@@ -176,10 +181,10 @@ async function checkEditor(url: string) {
 
         console.log("Displayed field, undefined readings, and mark follow");
         await moveMap(.5, .5);
-        assert.match(await text("#position"), /^X -?\d+\.\d m\s+Y -?\d+\.\d m\s+高度 4\.0 m$/);
+        assert.match(await text("#position"), /^X -?\d+\.\d m\s+Y -?\d+\.\d m\s+高度 4\.5 m$/);
         await panel("layers"); await choose("显示的场", "系数");
         await moveMap(.5, .5);
-        assert.match(await text("#position"), /系数 0\.6%$/);
+        assert.match(await text("#position"), /系数 0\.5%$/);
         await moveMap(.01, .01);
         assert.match(await text("#position"), /系数 –$/);
         await panel("marks"); await click("[data-mark=M]");
@@ -191,7 +196,7 @@ async function checkEditor(url: string) {
 
         console.log("Read-only built-ins, positive input steps, and byte-stable reopening");
         await panel("inputs"); await click("[data-select-field=height]");
-        for (const [label, value] of [["标签", "高度"], ["单位", "m"]]) {
+        for (const [label, value] of [["单位", "m"], ["精度", "0.1"]]) {
             const selector = "#properties [aria-readonly=true][aria-label=" + label + "]";
             await click(selector);
             assert.deepEqual(await evaluate(s => {
@@ -210,17 +215,37 @@ async function checkEditor(url: string) {
             await browser.mouse("mouseReleased", right, y);
             assert.equal(await evaluate(() => document.getSelection()?.toString()), value);
         }
-        const fieldBackground = () => evaluate(() => getComputedStyle(document.querySelector("#properties [aria-label=标签]")!).backgroundColor);
+        const fieldBackground = () => evaluate(() => getComputedStyle(document.querySelector("#properties [aria-label=单位]")!).backgroundColor);
         const readOnlyBackground = await fieldBackground();
         await click("[data-select-field=F]");
         assert.notEqual(await fieldBackground(), readOnlyBackground);
-        await click("#properties input[aria-label=标签]");
-        await key("Tab");
+        await click(".property-title input[aria-label=场名称]");
+        await evaluate(() => (document.activeElement as HTMLInputElement).select());
+        await cdp("Input.insertText", { text: "岩性" });
+        await key("Tab"); await idle();
+        await click("#properties input[aria-label=单位]");
         assert(await evaluate(() => document.activeElement?.matches("input[aria-label=单位]")));
         await evaluate(() => (document.activeElement as HTMLInputElement).select());
         await cdp("Input.insertText", { text: "‰" });
         await key("Tab"); await idle();
-        await click("[data-select-input=A]");
+        assert.equal(await text("#properties [data-parameter$=\".precision\"] .unit"), "‰");
+        for (const step of [.05, .02, .01]) {
+            await click("#properties button[aria-label=减小精度]");
+            assert.equal(Number(await text("#properties button[aria-label=精度]")), step);
+        }
+        await moveMap(.5, .5);
+        assert.match(await text("#position"), /岩性 0\.50 ‰$/);
+        await panel("terrain");
+        await evaluate(() => {
+            const search = document.querySelector<HTMLInputElement>("#terrain-search")!;
+            search.value = ""; search.dispatchEvent(new InputEvent("input", { bubbles: true }));
+        });
+        await click("[data-geo-node=R]"); await terrainTab();
+        await click("#properties button[aria-label=增大增量]");
+        assert.equal(await text("#properties button[aria-label=增量]"), "0.05");
+        await moveMap(.5, .5);
+        assert.match(await text("#position"), /岩性 0\.51 ‰$/);
+        await panel("inputs"); await click("[data-select-input=A]");
         for (const step of [.5, .2, .1, .05]) {
             await click("#properties button[aria-label=减小步长]");
             assert.equal(Number(await text("#properties button[aria-label=步长]")), step);
@@ -229,7 +254,7 @@ async function checkEditor(url: string) {
         assert.equal(Number(await text("#properties button[aria-label=步长]")), .1);
         await saved();
         const before = await disk();
-        assert.equal(parseDesign(before, true).fields.F.unit, "‰");
+        assert.deepEqual(parseDesign(before, true).fields.F, { label: "岩性", unit: "‰", precision: .01 });
         await click("#open");
         await wait(() => window.probe.opens === 2);
         await idle();

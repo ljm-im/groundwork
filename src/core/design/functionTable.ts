@@ -1,14 +1,16 @@
 import { type Address, readAt, writeAt } from "./address.ts";
-import { heightId, seedId } from "./defaults.ts";
-import { type Expression, type GeoFunction } from "./v5.ts";
+import { fieldPrecision, heightId, seedId } from "./defaults.ts";
+import { type Expression, type FieldDeclaration, type GeoFunction } from "./v5.ts";
+import { shiftDecimal } from "../math/interval.ts";
 
 type Unit = "" | "m" | "m/m" | "%" | "px" | "field" | "field/m";
 type Constraint = "positive" | "nonnegative" | "positive-integer" | "nonnegative-integer";
+type ParameterStep = number | "field";
 interface ParameterBase {
     key: Address;
     label: string;
     unit: Unit;
-    step: number;
+    step: ParameterStep;
     advanced: boolean;
     variant?: "path" | "radial";
 }
@@ -34,8 +36,8 @@ interface FunctionSpec {
 }
 
 const asKey = (key: string): Address => key.split(".").map(part => /^\d+$/.test(part) ? Number(part) : part);
-function number(key: string, label: string, unit: Unit, step: number, value: Expression,
-    options: Partial<Pick<NumericParameter, "type" | "constraint" | "advanced" | "variant" | "create" | "profile">> = {}): NumericParameter {
+function number<S extends ParameterStep>(key: string, label: string, unit: Unit, step: S, value: Expression,
+    options: Partial<Pick<NumericParameter, "type" | "constraint" | "advanced" | "variant" | "create" | "profile">> = {}): NumericParameter & { step: S } {
     return { key: asKey(key), label, unit, step, default: value, type: "number", advanced: false, ...options };
 }
 function geometry(key: string, label: string, value: GeometryDefault, variant?: GeometryParameter["variant"]): GeometryParameter {
@@ -54,7 +56,7 @@ const ridgeNoise = (key: string, label: string) => [
 export const slopeEndpointValues = [0, 2] as const;
 export const functionTable: Record<GeoFunction["type"], FunctionSpec> = {
     ground: { initial: true, writes: "any", reading: "none", parameters: [
-        number("value", "数值", "field", .1, 0)
+        number("value", "数值", "field", "field", 0)
     ] },
     coast: { initial: false, writes: "height", reading: "point", readArea: "canvas", parameters: [
         geometry("shore", "海岸线", "boundary"),
@@ -66,12 +68,12 @@ export const functionTable: Record<GeoFunction["type"], FunctionSpec> = {
     mountain: { initial: false, writes: "height", reading: "point", parameters: [
         floor, seed, geometry("ridges", "山脊", "empty"), geometry("peaks", "山峰", "empty"),
         geometry("ridges.*.line", "山脊线", "draw-line"),
-        number("ridges.*.line.points.*.h", "高度", "field", .1, 0, { profile: true }),
+        number("ridges.*.line.points.*.h", "高度", "field", "field", 0, { profile: true }),
         number("ridges.*.widths.0", "左侧宽度", "m", .1, 5, { constraint: "positive" }),
         number("ridges.*.widths.1", "右侧宽度", "m", .1, 5, { constraint: "positive" }),
         ...ridgeNoise("widthNoise", "宽度起伏"), ...ridgeNoise("heightNoise", "高度起伏"),
         geometry("peaks.*.at.p", "位置", "draw-point"),
-        number("peaks.*.at.h", "高度", "field", .1, 0),
+        number("peaks.*.at.h", "高度", "field", "field", 0),
         number("peaks.*.radius", "半径", "m", .1, 5, { constraint: "positive" }),
         number("peaks.*.noise", "半径起伏", "m", .1, 0),
         number("peaks.*.scale", "噪声尺度", "m", 1, 12, { constraint: "positive" })
@@ -98,18 +100,18 @@ export const functionTable: Record<GeoFunction["type"], FunctionSpec> = {
         number("threshold", "密度阈值", "", .01, .45), sea, seed
     ] },
     flat: { initial: false, writes: "any", reading: "point", parameters: [
-        number("amount", "增量", "field", .1, 1, { type: "field" }), feather
+        number("amount", "增量", "field", "field", 1, { type: "field" }), feather
     ] },
     slope: { initial: false, writes: "any", reading: "point", parameters: [
         geometry("line", "坡线", "axis", "path"),
-        number("line.points.*.h", "增量", "field", .1, slopeEndpointValues[0], { variant: "path", profile: true }),
+        number("line.points.*.h", "增量", "field", "field", slopeEndpointValues[0], { variant: "path", profile: true }),
         geometry("center", "圆心", "center", "radial"),
         number("radius", "半径", "m", .1, 5, { variant: "radial" }),
-        number("value", "增量", "field", .1, 2, { variant: "radial" }),
-        number("rate", "径向变化率", "field/m", .01, -.2, { variant: "radial" })
+        number("value", "增量", "field", "field", 2, { variant: "radial" }),
+        number("rate", "径向变化率", "field/m", "field", -.2, { variant: "radial" })
     ], toggles: [{ key: ["line", "smooth"], label: "平滑折线", default: false }, { key: ["ease"], label: "平滑增量过渡", default: false }] },
     noise: { initial: false, writes: "any", reading: "point", parameters: [
-        number("amplitude", "振幅", "field", .1, 1, { type: "field" }),
+        number("amplitude", "振幅", "field", "field", 1, { type: "field" }),
         number("scale", "噪声尺度", "m", 1, 24, { constraint: "positive" }),
         number("octaves", "倍频数", "", 1, 5, { constraint: "positive-integer" }), feather, seed
     ] },
@@ -129,7 +131,7 @@ export const markParameters = {
     scale: number("length", "长度", "m", 1, 10, { constraint: "positive" })
 };
 export const gridStep = number("grid.step", "采样间距", "m", .25, 1, { constraint: "positive" });
-export const displaySteps = { gridUnits: 1, gridPixels: 1, coordinates: .1, coordinateUnit: "m", field: .1, section: .01, length: .1 };
+export const displaySteps = { gridUnits: 1, gridPixels: 1, coordinates: .1, coordinateUnit: "m", section: .01, length: .1 };
 
 const sharedStripWidths = [number("widths.0", "第一侧宽度", "m", .1, 1), number("widths.1", "第二侧宽度", "m", .1, 1)];
 const singleStripWidths = [number("widths.0", "向内", "m", .1, 0), number("widths.1", "向外", "m", .1, 6)];
@@ -145,6 +147,12 @@ export function functionParameters(f: GeoFunction) {
 
 export function canWrite(type: GeoFunction["type"], field: string) {
     return functionTable[type].writes === "any" || field === heightId;
+}
+
+export function parameterStep(spec: ParameterSpec, field?: FieldDeclaration) {
+    if (spec.step !== "field") return spec.step;
+    const precision = fieldPrecision(field);
+    return spec.unit === "field/m" ? Math.max(Number.MIN_VALUE, shiftDecimal(precision, -1)) : precision;
 }
 
 export function parameterUnit(spec: ParameterSpec, unit = "") {

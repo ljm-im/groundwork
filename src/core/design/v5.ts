@@ -88,7 +88,7 @@ export interface GeoNode<N = Expression> extends Labeled {
     fill?: string;
     outline?: boolean;
 }
-export interface FieldDeclaration { label: string; unit?: string }
+export interface FieldDeclaration { label: string; unit?: string; precision?: number }
 export interface DesignData<N> {
     version: 5;
     prompt?: string;

@@ -1,5 +1,5 @@
 import { type ResolvedDesign, type Path, type Point, type Polyline } from "./v5.ts";
-import { isBuiltin, reserved, seedId, heightId } from "./defaults.ts";
+import { defaultFieldPrecision, isBuiltin, reserved, seedId, heightId } from "./defaults.ts";
 import { canWrite, expandKeys, functionParameters, functionTable, numericValid } from "./functionTable.ts";
 import { readAt, type Address } from "./address.ts";
 import { check, DesignError, type DesignProblem } from "./problems.ts";
@@ -21,10 +21,13 @@ export function validateGeo(d: ResolvedDesign, allowBrokenReferences = false) {
         check(!Object.hasOwn(field, "default"), "已从 v5 移除", at(["default"]));
         check(typeof field.label === "string", "无效", at(["label"]));
         check(field.unit === undefined || typeof field.unit === "string", "无效", at(["unit"]));
+        const { precision } = field;
+        check(precision === undefined || Number.isFinite(precision) && precision > 0, "必须是正的有限数", at(["precision"]));
         if (isBuiltin("field", id)) {
             const builtin = reserved.field[heightId];
             check(field.label === builtin.label, "必须是“" + builtin.label + "”", at(["label"]));
             check(field.unit === builtin.unit, "必须是“" + builtin.unit + "”", at(["unit"]));
+            check(precision === undefined || precision === defaultFieldPrecision, "必须是 " + defaultFieldPrecision, at(["precision"]));
         }
     }
     const problems: DesignProblem[] = [];

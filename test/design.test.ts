@@ -5,6 +5,7 @@ import { designFixtures, fixtureOptions } from "../configs/read-fixture.ts";
 import { parseDesign, serializeDesign } from "../src/core/design/model.ts";
 import { type Design } from "../src/core/design/v5.ts";
 import { newDesign } from "../src/core/design/newDesign.ts";
+import { fieldPrecision } from "../src/core/design/defaults.ts";
 import { isBuiltinFunction } from "../src/core/design/functionTable.ts";
 import { resolveDesign } from "../src/core/design/parameters.ts";
 import { removeDeclaration } from "../src/core/edit/geoNodes.ts";
@@ -205,4 +206,22 @@ test("Built-in height is hydrated and reserved declaration metadata is protected
     d.geoNodes[1].function = { type: "flat", amount: 1, feather: -1 };
     assert.throws(() => parseDesign(d), error => error instanceof DesignError &&
         error.problems.some(p => p.location?.kind === "geo" && p.location.id === "T" && p.location.path.join(".") === "function.feather"));
+});
+
+test("Field precision defaults to a tenth and only custom overrides are saved", () => {
+    const d = newDesign();
+    d.fields.A = { label: "A" };
+    assert.equal(fieldPrecision(parseDesign(d).fields.A), .1);
+    const baseline = serializeDesign(d);
+    d.fields.height.precision = d.fields.A.precision = .1;
+    assert.equal(serializeDesign(parseDesign(d)), baseline);
+    d.fields.A.precision = .01;
+    const saved = parseDesign(serializeDesign(d));
+    assert.equal(saved.fields.A.precision, .01);
+    for (const precision of [0, -.1, Infinity, -Infinity, NaN, "0.1", null]) {
+        const fields = { ...d.fields, A: { label: "A", precision } };
+        assert.throws(() => parseDesign({ ...d, fields }), /fields.A.precision.*正的有限数/);
+    }
+    d.fields.height.precision = .01;
+    assert.throws(() => parseDesign(d), /fields.height.precision.*0.1/);
 });

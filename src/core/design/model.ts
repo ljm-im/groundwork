@@ -1,5 +1,5 @@
 import { defaultFollow, type Design } from "./v5.ts";
-import { defaultInputRange, heightId, reserved, seedId } from "./defaults.ts";
+import { defaultFieldPrecision, defaultInputRange, heightId, reserved, seedId } from "./defaults.ts";
 import { constructionCenter, rasterRegion, shapeLayout } from "./regions.ts";
 import { distance } from "../math/geometry.ts";
 import { point, record, validateGeo } from "./validateGeo.ts";
@@ -116,6 +116,7 @@ export function parseDesign(text: unknown, allowBrokenReferences = false): Desig
 }
 export function serializeDesign(d: Design | null) {
     const terrain = new Set<object>(d?.geoNodes);
+    const fields = new Set<object>(Object.values(d?.fields ?? {}));
     const marks = new Map<object, Design["marks"][number]["kind"]>(d?.marks.map(mark => [mark, mark.kind]));
     const ranges = new Map<object, number[]>(Object.entries(d?.inputs ?? {}).map(([id, input]) => [input, defaultInputRange(id)]));
     const coasts = new Set<object>(d?.geoNodes.flatMap(node => node.function.type === "coast" ? [node.function] : []));
@@ -123,6 +124,7 @@ export function serializeDesign(d: Design | null) {
         if (key === "prompt" && value === "" || key === "disabled" && value === false ||
             key === "showLabel" && value === !terrain.has(this)) return undefined;
         if (key === "field" && terrain.has(this) && value === heightId) return undefined;
+        if (key === "precision" && fields.has(this) && value === defaultFieldPrecision) return undefined;
         const kind = marks.get(this);
         if (key === "follow" && kind && value === defaultFollow(kind)) return undefined;
         const range = ranges.get(this);

@@ -37,8 +37,10 @@ export function displayValue(value: Expression | undefined, step: number, unit =
     return (Number(rounded) === 0 ? rounded.replace(/^-/, "") : rounded) + (unit && unit !== "%" ? " " + unit : unit);
 }
 
-export function displayReading(value: number, precision: number, unit: string) {
-    return displayValue(Number(value.toFixed(fractionDigits(precision))), precision, unit);
+export function displayReading(value: number | undefined, precision: number, unit = "") {
+    if (value === undefined || !Number.isFinite(value)) return "–";
+    const digits = fractionDigits(precision);
+    return displayValue(digits > 100 ? value : Number(value.toFixed(digits)), precision, unit);
 }
 
 export function adjustInputStep(value: number, steps: number) {
