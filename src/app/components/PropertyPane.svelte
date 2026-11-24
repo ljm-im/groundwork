@@ -20,7 +20,7 @@
 <style>
     .property-inspector { display: grid; grid-template-columns: minmax(0, 1fr); height: 100%; min-height: 0; }
     .property-inspector.tabbed { grid-template-columns: var(--tabs-w) minmax(0, 1fr); }
-    .property-column { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
+    .property-column { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
     .property-content {
         padding: var(--space-6) var(--panel-inset) calc(var(--panel-inset) + var(--editor-clearance, 0px));
     }

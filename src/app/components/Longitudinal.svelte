@@ -36,9 +36,9 @@
 
 <style>
     .profile-empty { display: grid; place-items: center; color: var(--text-secondary); }
-    .profile { min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); background: var(--bg-panel); }
+    .profile { min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); background: var(--bg-panel); }
     .profile-summary { display: flex; gap: var(--space-1) var(--space-3); flex-wrap: wrap; align-items: center; font-size: var(--text-xs); padding: var(--space-1) var(--space-3); color: var(--text-secondary); }
-    .profile-summary strong { color: var(--text); }
+    .profile-summary strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
     .profile-legend { margin-left: auto; }
     .profile-chart { position: relative; min-height: 0; overflow: hidden; }
     svg { display: block; }

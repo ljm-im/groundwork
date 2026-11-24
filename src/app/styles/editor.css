@@ -7,6 +7,7 @@
 }
 
 * { box-sizing: border-box; }
+#app { overflow-x: clip; }
 body, h1, h2, h3, h4, dl, dd { margin: 0; }
 h1 { font-size: var(--text-lg); line-height: var(--leading-lg); }
 h2 { font-size: var(--text-md); line-height: var(--leading-md); }

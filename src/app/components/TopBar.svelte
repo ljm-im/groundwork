@@ -27,9 +27,10 @@
     .saved-text { white-space: nowrap; }
     .header-actions { margin-left: auto; display: flex; align-items: center; gap: var(--space-1); }
     @media (max-width: 680px) {
-        .topbar { gap: var(--space-1); padding-inline: var(--space-2); }
+        .topbar { height: auto; min-height: var(--topbar-h); flex-wrap: wrap; gap: var(--space-1); padding: var(--space-1) var(--space-2); }
         .file-info { gap: var(--space-1); }
         #filename { max-width: 15vw; }
+        .header-actions { flex-wrap: wrap; justify-content: flex-end; }
     }
 </style>
 
