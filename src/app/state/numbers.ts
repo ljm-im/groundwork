@@ -48,7 +48,17 @@ export class NumberDrag {
     private x = 0;
     private y = 0;
     private pixels = 0;
+    private skipMove = false;
+
+    lockChanged() {
+        this.skipMove = true;
+    }
+
     move(dx: number, dy: number, shift: boolean, ctrl: boolean) {
+        if (this.skipMove) {
+            this.skipMove = false;
+            return 0;
+        }
         this.x += dx; this.y += dy;
         this.pixels += dx * (shift ? .1 : 1) * (ctrl ? 10 : 1);
         this.moved ||= Math.hypot(this.x, this.y) > 3;

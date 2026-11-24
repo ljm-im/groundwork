@@ -35,6 +35,20 @@ test("Read-only values use the input step, keyboard minus, and unit spacing", ()
     assert.equal(displayNumber(1.4e-7, 1e-7), "0.0000001");
     assert.equal(displayNumber(NaN, .1, "m"), "—");
 });
+test("Pointer lock transitions discard the cursor jump without losing subsequent steps", () => {
+    const drag = new NumberDrag();
+    let value = adjustNumber(2.3, drag.move(4, 0, false, false), .1);
+    for (const jump of [-544, 544]) {
+        const before = value;
+        drag.lockChanged();
+        value = adjustNumber(value, drag.move(jump, 0, false, false), .1);
+        assert.equal(value, before);
+        const steps = drag.move(8, 0, false, false);
+        assert.equal(steps, 2);
+        value = adjustNumber(value, steps, .1);
+    }
+    assert.equal(value, 2.8);
+});
 test("Dragging and repeating preview several values but release records one history entry", async t => {
     const jitter = new NumberDrag();
     for (const dx of [2, -2, 2, -2]) assert.equal(jitter.move(dx, 0, false, false), 0);

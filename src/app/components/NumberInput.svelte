@@ -414,10 +414,14 @@
         const chip = direction ? undefined : chipAt(button, e.target);
         button.setPointerCapture(id);
         const stop = direction ? repeatButton(() => advance(direction)) : undefined;
-        let x = e.clientX, y = e.clientY, requested = false;
+        let x = e.clientX, y = e.clientY, requested = false, locked = document.pointerLockElement === button;
+        function lockChanged() {
+            const next = document.pointerLockElement === button;
+            if (next !== locked) drag.lockChanged();
+            locked = next;
+        }
         function move(ev: PointerEvent) {
             if (ev.pointerId !== id || direction) return;
-            const locked = document.pointerLockElement === button;
             const steps = drag.move(locked ? ev.movementX : ev.clientX - x, locked ? ev.movementY : ev.clientY - y, ev.shiftKey, ev.ctrlKey);
             x = ev.clientX; y = ev.clientY;
             if (drag.moved && !requested) {
@@ -446,8 +450,10 @@
             if (ev.pointerId === id) end(false);
         };
         const cancel = () => end(true);
+        document.addEventListener("pointerlockchange", lockChanged);
         window.addEventListener("pointermove", move); window.addEventListener("pointerup", up); window.addEventListener("pointercancel", cancel); window.addEventListener("blur", cancel);
         cleanup = () => {
+            document.removeEventListener("pointerlockchange", lockChanged);
             stop?.(); window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", cancel); window.removeEventListener("blur", cancel);
         };
     }
