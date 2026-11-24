@@ -72,7 +72,7 @@
 <script lang="ts">
     import * as session from "../state/session.svelte.ts";
     import { defaultFieldPrecision, declarationEntries, fieldPrecision, isBuiltin } from "../../core/design/defaults.ts";
-    import { displayValue } from "../state/numbers.ts";
+    import { displayValue } from "../../core/design/display.ts";
     import { matchesSearch } from "../state/inspector.ts";
     import { pendingInput } from "../state/pendingInput.ts";
     import AddButton from "./AddButton.svelte";

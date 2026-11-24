@@ -7,7 +7,7 @@ import { resolveDesign } from "../src/core/design/parameters.ts";
 import { History } from "../src/core/edit/history.ts";
 import { propertyTabs } from "../src/app/state/inspector.ts";
 import { Project } from "../src/core/project.ts";
-import { pixelGridSpacing } from "../src/app/state/layers.ts";
+import { pixelGridSpacing } from "../src/core/edit/display.ts";
 import { constrainGeoLabel, constrainSectionLabel, geoLabelPoint } from "../src/render/labelLayout.ts";
 import { makeShape, rasterRegion } from "../src/core/design/regions.ts";
 import { ProjectMap } from "../src/render/map.ts";
@@ -19,31 +19,19 @@ test("Map focus, hit radius and the selected inspector issue", async () => {
     const session = await import("../src/app/state/session.svelte.ts");
     const { default: GeoProperties } = await import("../src/app/components/GeoProperties.svelte");
     const selected = baseline.issues.find(i => !!i.geoNode)!;
-    const view = Object.assign(Object.create(ProjectMap.prototype) as ProjectMap, {
-        project: baseline.view(), width: 1000, height: 700, layers: { issues: true }, draw() { }, clearIssue() {
-            view.activeIssue = null;
-        }
+    const map: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), {
+        width: 1000, height: 700, cameraChanged() {}
     });
-    const previousFrame: typeof requestAnimationFrame | undefined = Reflect.get(globalThis, "requestAnimationFrame");
-    try {
-        globalThis.requestAnimationFrame = () => 1;
-        view.fit(false);
-        view.focusIssue(selected);
-        assert(distance(view.center, selected.point) < 5);
-        const screen = view.screen(selected.point);
-        assert(view.issueHits([screen[0] + 11.9, screen[1]]).includes(selected));
-        assert(!view.issueHits([screen[0] + 12.1, screen[1]]).includes(selected));
-        assert.equal(view.activeIssue, selected);
-    }
-    finally {
-        if (previousFrame)
-            globalThis.requestAnimationFrame = previousFrame;
-        else
-            Reflect.deleteProperty(globalThis, "requestAnimationFrame");
-    }
+    map.fit(baseline.terrain, false);
     const ui = new session.Editor();
-    Object.assign(ui, { project: baseline, map: view, tab: "terrain", issue: selected, selectedIssues: [selected] });
+    Object.assign(ui, { project: baseline, map, tab: "terrain" });
     ui.setSelection({ kind: "geoNode", id: selected.geoNode! });
+    ui.issueAt(selected);
+    assert(distance(map.center, selected.point) < 5);
+    const screen = map.screen(selected.point), view = ui.mapView!;
+    assert(map.issueHits(view, [screen[0] + 11.9, screen[1]]).includes(selected));
+    assert(!map.issueHits(view, [screen[0] + 12.1, screen[1]]).includes(selected));
+    assert.equal(view.issue, selected);
     ui.changePropertyTab("issues");
     const { body: markup } = render(GeoProperties, { props: { editor: ui } });
     assert.match(markup, /data-property-tab="issues"[^>]*aria-pressed="true"/);
@@ -101,7 +89,7 @@ test("A committed prompt, undo and redo preserve the live project and all geomet
 test("Terrain work runs synchronously on a hit and defers cold history steps for two frames", async t => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
     const editor = new Editor(), design = syntheticDesign(), frames: FrameRequestCallback[] = [];
-    Object.assign(editor, { map: { clearIssue() {}, draw() {}, scale: 4 } });
+    Object.assign(editor, { map: { scale: 4 } });
     t.mock.method(editor, "refresh", () => {});
     t.mock.method(editor.files, "remember", () => {});
     const previous = globalThis.requestAnimationFrame;
@@ -152,7 +140,7 @@ test("Terrain work runs synchronously on a hit and defers cold history steps for
 test("Opening, creating and recovering a design each starts with empty terrain caches", async t => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
     const editor = new Editor(), design = syntheticDesign(), text = JSON.stringify(design);
-    Object.assign(editor, { map: { clearIssue() {}, draw() {}, scale: 4 } });
+    Object.assign(editor, { map: { scale: 4 } });
     Object.assign(editor.files, { supported: true });
     t.mock.method(editor, "refresh", () => {});
     t.mock.method(editor, "message", () => {});
@@ -200,13 +188,13 @@ test("Drawing or canceling a parameter keeps its owner and activates only the co
     const { geoControls } = await import("../src/core/edit/geoControls.ts");
     const editor = new Editor(), design = syntheticDesign(), n = design.geoNodes[1];
     n.function = { type: "mountain", ridges: [], peaks: [] };
-    Object.assign(editor, { map: { clearIssue() {}, draw() {}, scale: 4 } });
+    Object.assign(editor, { map: { scale: 4 } });
     t.mock.method(editor, "refresh", () => {});
     t.mock.method(editor.files, "remember", () => {});
     t.mock.method(editor, "terrainWork", async (_d: unknown, fn: () => void) => {
         fn();
     });
-    editor.replace(design); editor.map.project = editor.project.view(); editor.history = new History(design);
+    editor.replace(design); editor.history = new History(design);
     const selected = { kind: "geoNode", id: n.id } as const;
     editor.select(selected);
     for (const cancel of [true, false]) {
@@ -219,7 +207,7 @@ test("Drawing or canceling a parameter keeps its owner and activates only the co
         assert.equal(editor.tool, "select"); assert.deepEqual(editor.selection, selected);
         assert.equal(editor.history.index, cancel ? 0 : 1);
     }
-    const owner = editor.project.design.geoNodes[1], target = editor.map.geometry;
+    const owner = editor.project.design.geoNodes[1], target = editor.geometry;
     assert.deepEqual(target, { kind: "parameter", index: 0 });
     const handles = geoControls(owner, target);
     assert.equal(handles.length, 3); assert(handles.every(c => c.role === "parameter" && c.path === 0));
@@ -227,10 +215,10 @@ test("Drawing or canceling a parameter keeps its owner and activates only the co
     draftPointer(editor, "down", [4, 4], { ctrlKey: true } as PointerEvent);
     assert.deepEqual(editor.selection, selected); assert.equal(editor.history.index, 1);
     draftPointer(editor, "up", [4, 4], { ctrlKey: true } as PointerEvent);
-    assert.equal(editor.map.draft, undefined);
+    assert.equal(editor.geoDraft, undefined);
     assert.equal(editor.history.index, 2);
     assert.deepEqual(editor.selection, selected);
-    assert.equal(geoControls(editor.project.design.geoNodes[1], editor.map.geometry).length, 1);
+    assert.equal(geoControls(editor.project.design.geoNodes[1], editor.geometry).length, 1);
 });
 
 test("Isolating a section exposes only its own map handles", () => {
@@ -257,8 +245,8 @@ test("Fixed pixel grids choose the closest nice spacing at each zoom", () => {
 });
 
 test("Zoom stays between 5 and 3000 percent and keeps its anchor fixed", () => {
-    const map = Object.assign(Object.create(ProjectMap.prototype) as ProjectMap, { center: [0, 0], width: 800, height: 450, scale: 3, referenceScale: 3,
-        draw() {} });
+    const map: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), { center: [0, 0], width: 800, height: 450, scale: 3, referenceScale: 3,
+        cameraChanged() {} });
     const anchor = map.world(200, 300);
     map.zoomAt(.001, 200, 300);
     assert(Math.abs(map.zoomFactor() - .05) < 1e-12);
@@ -370,8 +358,8 @@ test("Selection history restores edited elements and list tabs preserve the sele
 test("Mark follow changes preserve the displayed anchor and screen coordinates ignore camera changes", async t => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
     const d = syntheticDesign(), editor = new Editor();
-    const map = Object.assign(Object.create(ProjectMap.prototype) as ProjectMap, { center: [0, 0], width: 800, height: 450, scale: 3, referenceScale: 3,
-        draw() {}, clearIssue() {} });
+    const map: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), { center: [0, 0], width: 800, height: 450, scale: 3, referenceScale: 3,
+        cameraChanged() {}, clearIssue() {} });
     Object.assign(editor, { map });
     t.mock.method(editor, "refresh", () => {});
     t.mock.method(editor, "terrainWork", async (_d: unknown, fn: () => void) => fn());

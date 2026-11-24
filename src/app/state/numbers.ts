@@ -1,5 +1,5 @@
 import { literalPattern, tokens } from "../../core/design/expression.ts";
-import { parameters, type Slot } from "../../core/design/parameters.ts";
+import { type Slot } from "../../core/design/parameters.ts";
 import { isBuiltin } from "../../core/design/defaults.ts";
 import { type Design, type Expression } from "../../core/design/v5.ts";
 
@@ -12,37 +12,6 @@ export function numericText(text: string, literal: boolean) {
     if (literal) throw Error("这里只能输入一个数");
     return trimmed;
 }
-function fractionDigits(value: number) {
-    const [mantissa, exponent] = String(Math.abs(value)).split("e");
-    return Math.max(0, (mantissa.split(".")[1]?.length ?? 0) - Number(exponent ?? 0));
-}
-
-export function displayValue(value: Expression | undefined, step: number, unit = "", design?: Design): string {
-    if (typeof value === "string") {
-        const slots = design ? parameters(design) : undefined;
-        return value.replace(/\{([^{}]+)\}|(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?|[*/]/g, (part, key?: string) => {
-            if (key) {
-                if (!design || !slots) return part;
-                const item = referenceLabel(key, design, slots);
-                return item.name + (item.property ? "." + item.property : "");
-            }
-            if (part === "*") return "×";
-            if (part === "/") return "÷";
-            return displayValue(Number(part), step);
-        });
-    }
-    if (value === undefined || !Number.isFinite(value)) return "–";
-    const digits = Math.max(fractionDigits(step), fractionDigits(Number(value.toFixed(4))));
-    const rounded = digits > 100 ? String(value) : value.toFixed(digits);
-    return (Number(rounded) === 0 ? rounded.replace(/^-/, "") : rounded) + (unit && unit !== "%" ? " " + unit : unit);
-}
-
-export function displayReading(value: number | undefined, precision: number, unit = "") {
-    if (value === undefined || !Number.isFinite(value)) return "–";
-    const digits = fractionDigits(precision);
-    return displayValue(digits > 100 ? value : Number(value.toFixed(digits)), precision, unit);
-}
-
 export function adjustInputStep(value: number, steps: number) {
     for (let i = 0; i < Math.abs(steps); i++) {
         const power = Math.floor(Math.log10(value));

@@ -45,7 +45,6 @@ export class DesignFiles {
     }
     async start() {
         const e = this.editor;
-        e.map.resize();
         if (!this.supported) return;
         try {
             const stored = localStorage.getItem(draftKey);

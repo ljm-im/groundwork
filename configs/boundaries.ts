@@ -7,7 +7,7 @@ import ts from "typescript";
 import { palette } from "../src/render/palette.ts";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const tests = resolve(root, "test"), core = resolve(root, "src/core");
+const tests = resolve(root, "test"), core = resolve(root, "src/core"), render = resolve(root, "src/render");
 const testImports = new Set(["node:assert/strict", "node:crypto", "node:test", "svelte/server"]);
 const browserNames = new Set(["document", "window", "localStorage", "HTMLCanvasElement", "navigator", "Path2D", "requestAnimationFrame"]);
 const ioNames = new Set(["require", "process", "fetch", "XMLHttpRequest", "Worker"]);
@@ -29,7 +29,7 @@ function checkDirectory(directory: string, graph: Map<string, Set<string>>) {
         const path = resolve(entry.parentPath, entry.name);
         assert.equal(extname(path), ".ts", relative(root, path) + " must be TypeScript");
         const file = ts.createSourceFile(path, readFileSync(path, "utf8"), ts.ScriptTarget.Latest, true);
-        const inCore = directory === core;
+        const inCore = directory === core, inRender = directory === render, inTests = directory === tests;
         if (inCore) graph.set(path, new Set());
         function fail(node: ts.Node, reason: string): never {
             const line = file.getLineAndCharacterOfPosition(node.getStart()).line + 1;
@@ -38,7 +38,7 @@ function checkDirectory(directory: string, graph: Map<string, Set<string>>) {
         function dependency(node: ts.Expression) {
             if (!ts.isStringLiteral(node)) fail(node, "Use a literal module specifier.");
             const name = node.text;
-            if (!inCore && testImports.has(name)) return;
+            if (inTests && testImports.has(name)) return;
             if (!name.startsWith(".")) fail(node, "Unexpected dependency " + name);
             const target = resolve(entry.parentPath, name);
             if (inCore && target.startsWith(core + sep) && extname(target) === ".ts") {
@@ -49,7 +49,8 @@ function checkDirectory(directory: string, graph: Map<string, Set<string>>) {
                 graph.get(path)!.add(target);
                 return;
             }
-            if (!inCore && (testTools.has(target) ||
+            if (inRender && (target.startsWith(core + sep) || target.startsWith(render + sep)) && extname(target) === ".ts") return;
+            if (inTests && (testTools.has(target) ||
         (target.startsWith(tests + sep) && extname(target) === ".ts") ||
         (target.startsWith(resolve(root, "src") + sep) && /\.(?:ts|svelte)$/.test(target)))) return;
             fail(node, "Unexpected file dependency " + name);
@@ -61,13 +62,13 @@ function checkDirectory(directory: string, graph: Map<string, Set<string>>) {
             else if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument)) dependency(node.argument.literal);
             else if (ts.isCallExpression(node)) {
                 if (node.expression.kind === ts.SyntaxKind.ImportKeyword) dependency(node.arguments[0]);
-                if (!inCore && ts.isIdentifier(node.expression) && ["readFixture", "fixtureOptions"].includes(node.expression.text)) {
+                if (inTests && ts.isIdentifier(node.expression) && ["readFixture", "fixtureOptions"].includes(node.expression.text)) {
                     const filename = /^[\w-]+\.json$/;
                     if (!node.arguments.length || !node.arguments.every(arg => ts.isStringLiteral(arg) && filename.test(arg.text)))
                         fail(node, "Use a JSON filename from .local/fixtures/.");
                 }
             }
-            else if (ts.isIdentifier(node) && (ioNames.has(node.text) || inCore && browserNames.has(node.text))) {
+            else if (ts.isIdentifier(node) && (ioNames.has(node.text) || inCore && browserNames.has(node.text) || inRender && node.text === "document")) {
                 fail(node, "Unexpected API " + node.text);
             }
             ts.forEachChild(node, visit);
@@ -90,7 +91,29 @@ export function checkBoundaries() {
         visited.add(path);
     }
     for (const path of graph.keys()) checkCycles(path);
+    checkDirectory(render, graph);
     checkDirectory(tests, graph);
+    checkMapState();
+}
+
+function checkMapState() {
+    const state = "selection|draft|vertex|geometry|objectGeometry|displayField|hovered|drag\\w*|layers|gridDisplay|referencedGeo";
+    const field = new RegExp("^(?:" + state + ")$");
+    const map = resolve(render, "map.ts");
+    const file = ts.createSourceFile(map, readFileSync(map, "utf8"), ts.ScriptTarget.Latest, true);
+    const projectMap = file.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === "ProjectMap");
+    assert(projectMap && ts.isClassDeclaration(projectMap));
+    for (const member of projectMap.members) {
+        if (!ts.isPropertyDeclaration(member) && !ts.isGetAccessorDeclaration(member) && !ts.isSetAccessorDeclaration(member)) continue;
+        assert.doesNotMatch(member.name.getText(file).replace(/^["']|["']$/g, ""), field, "ProjectMap must receive editor state with its view");
+    }
+
+    const assignment = new RegExp("\\bmap\\s*(?:\\.\\s*(?:" + state + ")\\b|\\[\\s*[\"'](?:" + state + ")[\"']\\s*\\])\\s*=(?!=|>)");
+    for (const entry of readdirSync(resolve(root, "src/app"), { recursive: true, withFileTypes: true })) {
+        if (!entry.isFile() || !/\.(?:ts|svelte)$/.test(entry.name)) continue;
+        const path = resolve(entry.parentPath, entry.name);
+        assert.doesNotMatch(readFileSync(path, "utf8"), assignment, relative(root, path));
+    }
 }
 
 export function checkEditorSource() {

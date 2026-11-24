@@ -2,19 +2,18 @@ import { type GeoNode, type Mark, type TextMark, type Point } from "../core/desi
 import { displaySteps, markParameters } from "../core/design/functionTable.ts";
 import { fieldPrecision, heightId } from "../core/design/defaults.ts";
 import { type Issue, type Terrain } from "../core/design/results.ts";
-import { type Handle, type Selection } from "../core/edit/types.ts";
+import { type GeoDraft, type Handle, type Selection } from "../core/edit/types.ts";
 import { type ProjectView } from "../core/project.ts";
-import { type GridDisplay, type layerDefaults, pixelGridSpacing } from "../app/state/layers.ts";
+import { type GridDisplay, type layerDefaults, pixelGridSpacing } from "../core/edit/display.ts";
 import { type Box } from "../core/math/geometry.ts";
 import { clamp, distance, nearest } from "../core/math/geometry.ts";
 import { issueView, objectIssues } from "../core/checks/issues.ts";
-import { type GeoDraft } from "../app/state/geoTools.ts";
 import { type GeoControl, type GeometryTarget } from "../core/edit/geoControls.ts";
 import { contourLabels, fieldContours } from "./fieldContours.ts";
 import { constrainGeoLabel, constrainSectionLabel, geoLabelPoint } from "./labelLayout.ts";
 import { drawGeoOverlay, drawHandle } from "./geoOverlay.ts";
 import { baseMap, canvasText, contourStyle, overlay, palette } from "./palette.ts";
-import { displayReading, displayValue } from "../app/state/numbers.ts";
+import { displayReading, displayValue } from "../core/design/display.ts";
 import { sectionHandles } from "../core/edit/controls.ts";
 import { relief } from "./relief.ts";
 import { fieldFill } from "./fieldFill.ts";
@@ -25,6 +24,26 @@ import { type Grid } from "../core/math/geometry.ts";
 type Context = CanvasRenderingContext2D;
 export type LabelTarget = { kind: "geoNode" | "section"; id: string };
 type LabelHit = LabelTarget & { point: Point; box: Box };
+export type LabelPreview = LabelTarget & { point: Point; offset: Point };
+
+export type MapView = Readonly<{
+    project: Readonly<ProjectView>;
+    layers: Readonly<typeof layerDefaults>;
+    grid: Readonly<GridDisplay>;
+    displayField: string;
+    selection: Selection | null;
+    hovered?: Selection;
+    referencedGeo: readonly string[];
+    geometry?: GeometryTarget;
+    objectGeometry?: Selection;
+    vertex?: GeoControl;
+    draft?: Readonly<GeoDraft>;
+    dragNode?: GeoNode;
+    dragMark?: Readonly<{ id: string; point: Point }>;
+    dragLabel?: Readonly<LabelPreview>;
+    issue?: Issue;
+    issueStart?: number;
+}>;
 
 const labelFont = (bold = false) => (bold ? canvasText.semibold : canvasText.regular) + " " + canvasText.sm + "px " + canvasText.font;
 const issueColor = (issue: Issue) => issue.severity === "error" ? palette.danger : palette.warning;
@@ -111,71 +130,49 @@ function mapText(ctx: Context, text: string, x: number, y: number, bold = false,
     ctx.fillText(text, x, y);
 }
 
-const hasSamples = (t: Terrain) => Object.values(t.fields).some(field => field.defined.some(Boolean));
+const sampledTerrains = new WeakMap<Terrain, boolean>();
+export function hasSamples(terrain: Terrain) {
+    const known = sampledTerrains.get(terrain);
+    if (known !== undefined) return known;
+    const sampled = Object.values(terrain.fields).some(field => field.defined.some(Boolean));
+    sampledTerrains.set(terrain, sampled);
+    return sampled;
+}
 
 export class ProjectMap {
-    declare canvas: HTMLCanvasElement;
-    declare ctx: Context;
-    declare layers: typeof layerDefaults;
-    declare gridDisplay: GridDisplay;
+    readonly canvas: HTMLCanvasElement;
+    readonly ctx: Context;
     scale = 1;
     referenceScale = 1;
-    declare selection: Selection | null;
-    declare project: ProjectView;
-    declare frameTerrain: Terrain;
-    emptyCanvas = false;
-    displayField = heightId;
-    referencedGeo = (): readonly string[] => [];
-    private hovered?: Selection;
-    geometry?: GeometryTarget;
-    objectGeometry?: Selection;
-    vertex?: GeoControl;
-    dragNode?: GeoNode;
-    dragMark?: { id: string; point: Point };
-    dragLabel?: LabelTarget & { point: Point; offset: Point };
-    draft?: GeoDraft;
     declare center: Point;
     declare width: number;
     declare height: number;
     declare dpr: number;
-    declare activeIssue: Issue | null;
-    declare pulseStart: number;
-    declare pulseFrame: number;
-    declare controls: Handle[];
+    private readonly cameraChanged: () => void;
 
     private markBoxes: { mark: Handle; box: Box }[] = [];
     private labelBoxes: LabelHit[] = [];
     private contourText?: { contours: ReturnType<typeof fieldContours>; camera: [number, number, number, number]; placed: ReturnType<typeof contourLabels> };
 
-    constructor(canvas: HTMLCanvasElement, layers: typeof layerDefaults, gridDisplay: GridDisplay) {
+    constructor(canvas: HTMLCanvasElement, cameraChanged: () => void) {
         this.canvas = canvas;
         this.ctx = canvas.getContext("2d")!;
-        this.layers = layers;
-        this.gridDisplay = gridDisplay;
-        this.selection = null;
-    }
-    setProject(project: ProjectView, reset = false, frameTerrain = project.terrain) {
-        this.project = project;
-        this.hovered = undefined;
-        this.emptyCanvas = !hasSamples(project.terrain);
-        this.frame(frameTerrain, reset);
+        this.cameraChanged = cameraChanged;
     }
     frame(terrain: Terrain, reset = false) {
-        this.frameTerrain = terrain;
-        if (reset || !this.center) this.fit(false);
+        if (reset || !this.center) this.fit(terrain);
     }
-    resize() {
-        const box = this.canvas.getBoundingClientRect(),
-            dpr = window.devicePixelRatio || 1;
-        this.width = box.width;
-        this.height = box.height;
+    resize(width: number, height: number, dpr: number) {
+        if (width === this.width && height === this.height && dpr === this.dpr) return;
+        this.width = width;
+        this.height = height;
         this.dpr = dpr;
-        this.canvas.width = Math.round(box.width * dpr);
-        this.canvas.height = Math.round(box.height * dpr);
-        if (this.project) this.draw();
+        this.canvas.width = Math.round(width * dpr);
+        this.canvas.height = Math.round(height * dpr);
+        this.cameraChanged();
     }
-    fit(draw = true) {
-        const terrain = this.frameTerrain ?? this.project.terrain, g = terrain.grid;
+    fit(terrain: Terrain, notify = true) {
+        const g = terrain.grid;
         let box: Box = [g.xMin, g.yMin, g.xMax, g.yMax];
         if (!hasSamples(terrain)) {
             const boxes = [...terrain.regions.values()].map(r => r.shape.box).filter(b => b.every(Number.isFinite));
@@ -185,7 +182,7 @@ export class ProjectMap {
         this.center = [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2];
         this.referenceScale = this.scale = Math.min(Math.max(1, this.width - 65) / Math.max(g.step, box[2] - box[0]),
             Math.max(1, this.height - 84) / Math.max(g.step, box[3] - box[1]));
-        if (draw) this.draw();
+        if (notify) this.cameraChanged();
     }
     zoomFactor() {
         return this.scale / this.referenceScale;
@@ -202,14 +199,14 @@ export class ProjectMap {
         const after = this.world(x, y);
         this.center[0] += before[0] - after[0];
         this.center[1] += before[1] - after[1];
-        this.draw();
+        this.cameraChanged();
     }
     revealBounds([left, bottom, right, top]: Box) {
         if (![left, bottom, right, top].every(Number.isFinite)) return;
         const [x0, y0] = this.screen([left, top]), [x1, y1] = this.screen([right, bottom]);
         if (x0 > this.width || x1 < 0 || y0 > this.height || y1 < 0) {
             this.center = [(left + right) / 2, (bottom + top) / 2];
-            this.draw();
+            this.cameraChanged();
         }
     }
     focusBounds([left, bottom, right, top]: Box) {
@@ -217,65 +214,54 @@ export class ProjectMap {
         this.center = [(left + right) / 2, (bottom + top) / 2];
         this.scale = base * clamp(Math.min(this.width * .80 / (base * Math.max(1, right - left)),
             this.height * .72 / (base * Math.max(1, top - bottom))), .5, 5);
-        this.draw();
+        this.cameraChanged();
+    }
+    panTo(center: Point) {
+        this.center = center;
+        this.cameraChanged();
     }
     focusIssue(issue: Issue, fit = true) {
-        this.clearIssue();
-        this.activeIssue = issue;
         if (fit) {
             const view = issueView(issue, this.width, this.height, this.referenceScale);
             this.center = view.center;
             this.scale = view.zoom * this.referenceScale;
+            this.cameraChanged();
         }
         else this.revealBounds([...issue.point, ...issue.point]);
-        this.pulseStart = performance.now();
-        const animate = () => {
-            this.draw();
-            if (this.activeIssue === issue && performance.now() - this.pulseStart < 1500) this.pulseFrame = requestAnimationFrame(animate);
-        };
-        animate();
     }
-    clearIssue() {
-        cancelAnimationFrame(this.pulseFrame);
-        this.activeIssue = null;
-    }
-    issueHits(screen: Point) {
-        return this.layers.issues ? this.project.issues.filter(i => distance(this.screen(i.point), screen) <= 12)
+    issueHits(view: MapView, screen: Point) {
+        return view.layers.issues ? view.project.issues.filter(i => distance(this.screen(i.point), screen) <= 12)
             .sort((a, b) => distance(this.screen(a.point), screen) - distance(this.screen(b.point), screen)) : [];
     }
-    drawIssueShapes(ctx: Context) {
-        const chosen = this.activeIssue && this.project.issues.includes(this.activeIssue) ? this.activeIssue : null, scale = this.scale;
-        const related = objectIssues(this.project, this.selection);
+    private drawIssueShapes(ctx: Context, view: MapView) {
+        const chosen = view.issue && view.project.issues.includes(view.issue) ? view.issue : undefined, scale = this.scale;
+        const related = objectIssues(view.project, view.selection);
         for (const issue of [...related.filter(i => i !== chosen), ...(chosen ? [chosen] : [])]) {
-            const active = issue === chosen, elapsed = performance.now() - this.pulseStart;
+            const active = issue === chosen, elapsed = performance.now() - (view.issueStart ?? 0);
             ctx.save();
             ctx.globalAlpha = active ? (elapsed < 1500 ? .72 + .28 * Math.cos(elapsed * Math.PI / 250) : 1) : .42;
             circle(ctx, ...issue.point, 8 / scale, null, issueColor(issue), 2 / scale);
             ctx.restore();
         }
     }
-    hoverSelection(selection?: Selection) {
-        if (selection?.kind === this.hovered?.kind && selection?.id === this.hovered?.id) return;
-        this.hovered = selection;
-        this.draw();
-    }
-    private outlineStyle(kind: string, id: string) {
-        const selected = this.selection?.id === id && this.selection.kind === kind;
+    private outlineStyle(view: MapView, kind: string, id: string) {
+        const selected = view.selection?.id === id && view.selection.kind === kind;
         if (selected) return { color: palette.accent, width: overlay.selectedWidth / this.scale };
-        if (this.hovered?.kind === kind && this.hovered.id === id || kind === "geoNode" && (this.referencedGeo().includes(id) ||
-            this.draft?.tool === "strip" && this.draft.ids.includes(id)))
+        if (view.hovered?.kind === kind && view.hovered.id === id || kind === "geoNode" && (view.referencedGeo.includes(id) ||
+            view.draft?.tool === "strip" && view.draft.ids.includes(id)))
             return { color: palette.accentHover, width: overlay.hoverWidth / this.scale };
     }
-    geoHits(p: Point) {
-        return this.project.design.geoNodes.filter(n => (!n.disabled || this.emptyCanvas) && this.project.terrain.regions.get(n.id)?.shape.contains(p)).reverse();
+    geoHits(project: ProjectView, p: Point) {
+        const empty = !hasSamples(project.terrain);
+        return project.design.geoNodes.filter(n => (!n.disabled || empty) && project.terrain.regions.get(n.id)?.shape.contains(p)).reverse();
     }
-    draw() {
-        if (!this.project || !this.width) return;
+    draw(view: MapView) {
+        if (!this.width || !this.center) return;
         const ctx = this.ctx,
-            { terrain: t, design: d } = this.project,
+            { terrain: t, design: d } = view.project,
             g = t.grid,
             scale = this.scale,
-            origin = this.screen([0, 0]);
+            origin = this.screen([0, 0]), empty = !hasSamples(t);
         ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
         ctx.fillStyle = palette.bgApp;
         ctx.fillRect(0, 0, this.width, this.height);
@@ -284,8 +270,8 @@ export class ProjectMap {
         ctx.scale(scale, -scale);
         ctx.lineCap = "round";
         ctx.lineJoin = "round";
-        const samples = Object.hasOwn(t.fields, this.displayField) && t.fields[this.displayField];
-        const raster = this.displayField === heightId ? relief(t) : samples && fieldFill(g, samples);
+        const samples = Object.hasOwn(t.fields, view.displayField) && t.fields[view.displayField];
+        const raster = view.displayField === heightId ? relief(t) : samples && fieldFill(g, samples);
         if (raster) {
             ctx.save();
             ctx.translate(g.xMin, g.yMax);
@@ -293,33 +279,33 @@ export class ProjectMap {
             ctx.drawImage(raster, 0, 0, g.xMax - g.xMin, g.yMax - g.yMin);
             ctx.restore();
         }
-        if (this.layers.grid) this.drawGrid(ctx, scale);
-        const draggedRegionId = this.dragNode?.construction.type === "free" ? this.dragNode.id : undefined;
+        if (view.layers.grid) this.drawGrid(ctx, view, scale);
+        const draggedRegionId = view.dragNode?.construction.type === "free" ? view.dragNode.id : undefined;
         for (const n of d.geoNodes) {
-            if (n.disabled && !this.emptyCanvas) continue;
-            if (!this.emptyCanvas && !n.fill && !n.outline && !this.layers.geoNodes) continue;
+            if (n.disabled && !empty) continue;
+            if (!empty && !n.fill && !n.outline && !view.layers.geoNodes) continue;
             const paths = regionPaths(t.regions.get(n.id)!, g);
-            if (n.fill && !this.emptyCanvas) {
+            if (n.fill && !empty) {
                 ctx.fillStyle = n.fill; ctx.fill(paths.area, "evenodd");
             }
-            if (n.id !== draggedRegionId && (this.emptyCanvas || n.outline || this.layers.geoNodes)) {
+            if (n.id !== draggedRegionId && (empty || n.outline || view.layers.geoNodes)) {
                 ctx.strokeStyle = baseMap.boundary;
                 ctx.lineWidth = .6 / scale;
                 ctx.stroke(paths.outline);
             }
         }
-        const contours = this.layers.contours && samples ? fieldContours(g, samples, fieldPrecision(d.fields[this.displayField]), scale) : undefined;
+        const contours = view.layers.contours && samples ? fieldContours(g, samples, fieldPrecision(d.fields[view.displayField]), scale) : undefined;
         contours?.paths.forEach((path, rank) => {
             if (!path) return;
             const style = contourStyle.lines[rank] ?? contourStyle.zero;
             ctx.strokeStyle = style.color; ctx.lineWidth = style.width / scale; ctx.stroke(path);
         });
-        const outlined = new Set(this.referencedGeo());
-        if (this.selection?.kind === "geoNode") outlined.add(this.selection.id);
-        if (this.draft?.tool === "strip") for (const id of this.draft.ids) outlined.add(id);
-        if (this.hovered?.kind === "geoNode") outlined.add(this.hovered.id);
+        const outlined = new Set(view.referencedGeo);
+        if (view.selection?.kind === "geoNode") outlined.add(view.selection.id);
+        if (view.draft?.tool === "strip") for (const id of view.draft.ids) outlined.add(id);
+        if (view.hovered?.kind === "geoNode") outlined.add(view.hovered.id);
         for (const id of outlined) {
-            const r = t.regions.get(id), outline = this.outlineStyle("geoNode", id);
+            const r = t.regions.get(id), outline = this.outlineStyle(view, "geoNode", id);
             if (!r || !outline) continue;
             const paths = regionPaths(r, g);
             if (r.shape.spine) {
@@ -330,23 +316,22 @@ export class ProjectMap {
             ctx.strokeStyle = id === draggedRegionId ? palette.dragOrigin : outline.color;
             ctx.lineWidth = outline.width; ctx.stroke(paths.outline);
         }
-        this.drawIssueShapes(ctx);
+        this.drawIssueShapes(ctx, view);
         const dash = overlay.dash.map(px => px / scale);
-        if (this.layers.sections)
+        if (view.layers.sections)
             for (const sec of d.sections) {
-                const outline = this.outlineStyle("section", sec.id);
+                const outline = this.outlineStyle(view, "section", sec.id);
                 if (outline) stroke(ctx, sec.points, outline.color, outline.width);
                 else stroke(ctx, sec.points, baseMap.sectionLine, .85 / scale, dash);
             }
         ctx.restore();
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        this.drawOverlays();
-        drawGeoOverlay(this);
-        this.drawLabels(ctx, d, t);
-        this.drawMarks(ctx);
-        if (contours && this.layers.contourLabels) this.drawContourLabels(ctx, contours);
-        document.getElementById("zoom-value")!.textContent = displayReading(this.zoomFactor() * 100, 1, "%");
+        this.drawOverlays(view);
+        drawGeoOverlay(this, view);
+        this.drawLabels(ctx, view);
+        this.drawMarks(ctx, view);
+        if (contours && view.layers.contourLabels) this.drawContourLabels(ctx, contours);
     }
     private drawContourLabels(ctx: Context, contours: ReturnType<typeof fieldContours>) {
         const { base, lines } = contours, camera = [...this.center, this.width, this.height] as const;
@@ -360,8 +345,8 @@ export class ProjectMap {
         }
         for (const { point, value } of this.contourText.placed) mapText(ctx, displayReading(value, base), ...point);
     }
-    private drawGrid(ctx: Context, scale: number) {
-        const { mode, meters, pixels } = this.gridDisplay;
+    private drawGrid(ctx: Context, view: MapView, scale: number) {
+        const { mode, meters, pixels } = view.grid;
         const step = mode === "meters" ? meters : pixelGridSpacing(scale, pixels);
         const [left, bottom] = this.world(0, this.height), [right, top] = this.world(this.width, 0);
         const lines = (spacing: number, color: string, fine = false) => {
@@ -385,10 +370,11 @@ export class ProjectMap {
             ctx.strokeStyle = color;
             ctx.stroke();
         };
-        if (this.layers.fineGrid) lines(step / 5, baseMap.fineGrid, true);
+        if (view.layers.fineGrid) lines(step / 5, baseMap.fineGrid, true);
         lines(step, baseMap.mainGrid);
     }
-    private drawLabels(ctx: Context, d: ProjectView["design"], terrain: Terrain) {
+    private drawLabels(ctx: Context, view: MapView) {
+        const { design: d, terrain } = view.project;
         this.labelBoxes = [];
         const draw = (target: LabelTarget, name: string, point: Point) => {
             if (!name) return;
@@ -402,18 +388,18 @@ export class ProjectMap {
             this.labelBoxes.push({ ...target, point, box: [start - 2, middle - half - 2, start + width + 2, middle + half + 2] });
             ctx.restore();
         };
-        if (this.layers.labels) for (const n of d.geoNodes) if (n.showLabel && !n.disabled) {
+        if (view.layers.labels) for (const n of d.geoNodes) if (n.showLabel && !n.disabled) {
             const target = { kind: "geoNode", id: n.id } as const, region = terrain.regions.get(n.id);
             const origin = region && geoLabelPoint(region, terrain.grid);
             if (origin && region) {
-                const drag = this.dragLabel;
+                const drag = view.dragLabel;
                 const point = drag?.kind === target.kind && drag.id === n.id ? drag.point :
                     n.labelOffset ? constrainGeoLabel(region, terrain.grid, addOffset(origin, n.labelOffset), origin)! : origin;
                 draw(target, n.label, point);
             }
         }
-        if (this.layers.sections) for (const section of d.sections) if (section.showLabel !== false) {
-            const target = { kind: "section", id: section.id } as const, drag = this.dragLabel;
+        if (view.layers.sections) for (const section of d.sections) if (section.showLabel !== false) {
+            const target = { kind: "section", id: section.id } as const, drag = view.dragLabel;
             const point = drag?.kind === "section" && drag.id === section.id ? drag.point :
                 section.labelOffset ? constrainSectionLabel(section.points, addOffset(section.points[0], section.labelOffset)) : section.points[0];
             draw(target, section.label, point);
@@ -422,8 +408,7 @@ export class ProjectMap {
     hitLabel(x: number, y: number) {
         return this.labelBoxes.findLast(({ box: [left, top, right, bottom] }) => x >= left && x <= right && y >= top && y <= bottom);
     }
-    moveLabel(target: LabelTarget, at: Point) {
-        const { terrain, design } = this.project;
+    labelPosition({ terrain, design }: ProjectView, target: LabelTarget, at: Point): LabelPreview | undefined {
         let origin: Point | undefined, point: Point | undefined;
         if (target.kind === "geoNode") {
             const region = terrain.regions.get(target.id);
@@ -440,8 +425,7 @@ export class ProjectMap {
             }
         }
         if (!origin || !point) return;
-        this.dragLabel = { ...target, point, offset: [point[0] - origin[0], point[1] - origin[1]] };
-        this.draw();
+        return { ...target, point, offset: [point[0] - origin[0], point[1] - origin[1]] };
     }
 
     markScreen(mark: Pick<Mark, "point" | "follow">): Point {
@@ -452,13 +436,13 @@ export class ProjectMap {
         return follow === "screen" ? screen : this.world(...screen);
     }
 
-    private drawMarks(ctx: Context) {
+    private drawMarks(ctx: Context, view: MapView) {
         this.markBoxes = [];
-        if (!this.layers.marks) return;
-        for (const mark of this.project.design.marks) {
-            const point = this.dragMark?.id === mark.id ? this.dragMark.point : mark.point;
+        if (!view.layers.marks) return;
+        for (const mark of view.project.design.marks) {
+            const point = view.dragMark?.id === mark.id ? view.dragMark.point : mark.point;
             const [x, y] = this.markScreen({ point, follow: mark.follow });
-            const selected = this.selection?.kind === "mark" && this.selection.id === mark.id;
+            const selected = view.selection?.kind === "mark" && view.selection.id === mark.id;
             const handle: Handle = { kind: "mark", id: mark.id, role: "body", point };
             const color = selected ? palette.accent : palette.text;
             ctx.save();
@@ -493,12 +477,10 @@ export class ProjectMap {
     hitMark(x: number, y: number): Handle | undefined {
         return this.markBoxes.findLast(({ box: [l, t, r, b] }) => x >= l && x <= r && y >= t && y <= b)?.mark;
     }
-    drawOverlays() {
-        const ctx = this.ctx,
-            d = this.project.design,
-            active = this.selection;
-        if (this.layers.issues)
-            for (const problem of this.project.issues) {
+    private drawOverlays(view: MapView) {
+        const ctx = this.ctx, active = view.selection;
+        if (view.layers.issues)
+            for (const problem of view.project.issues) {
                 const [x, y] = this.screen(problem.point);
                 ctx.save();
                 ctx.translate(x, y);
@@ -509,23 +491,26 @@ export class ProjectMap {
                 ctx.strokeRect(-2.8, -2.8, 5.6, 5.6);
                 ctx.restore();
             }
-        this.controls = this.geometry && active?.kind === "geoNode" ? [] : sectionHandles(d, this.layers.sections, this.objectGeometry);
-        for (const h of this.controls) {
+        for (const h of this.sectionControls(view)) {
             const [x, y] = this.screen(h.point);
             if (x < -12 || y < -12 || x > this.width + 12 || y > this.height + 12) continue;
             const selected = active?.kind === h.kind && active.id === h.id && (active.index ?? 0) === h.index &&
                 (!active.role || active.role === h.role);
             drawHandle(ctx, x, y, selected);
         }
-        if (this.activeIssue && this.project.issues.includes(this.activeIssue)) {
-            const [x, y] = this.screen(this.activeIssue.point);
-            circle(ctx, x, y, 10, null, issueColor(this.activeIssue), overlay.selectedWidth);
+        if (view.issue && view.project.issues.includes(view.issue)) {
+            const [x, y] = this.screen(view.issue.point);
+            circle(ctx, x, y, 10, null, issueColor(view.issue), overlay.selectedWidth);
         }
     }
-    hitHandle(x: number, y: number) {
+    private sectionControls(view: MapView) {
+        return view.geometry && view.selection?.kind === "geoNode" ? [] :
+            sectionHandles(view.project.design, view.layers.sections, view.objectGeometry);
+    }
+    hitHandle(view: MapView, x: number, y: number) {
         let best = null,
             min = 9;
-        for (const h of [...(this.controls ?? [])].reverse()) {
+        for (const h of this.sectionControls(view).reverse()) {
             const p = this.screen(h.point),
                 dist = Math.hypot(x - p[0], y - p[1]);
             if (dist < min) {
@@ -535,9 +520,9 @@ export class ProjectMap {
         }
         return best;
     }
-    hitSection(p: Point): Selection | undefined {
-        if (!this.layers.sections) return;
-        const hit = this.project.design.sections.findLast(s => nearest(...p, s.points).distance * this.scale <= 5);
+    hitSection(view: MapView, p: Point): Selection | undefined {
+        if (!view.layers.sections) return;
+        const hit = view.project.design.sections.findLast(s => nearest(...p, s.points).distance * this.scale <= 5);
         if (hit) return { kind: "section", id: hit.id };
     }
 }

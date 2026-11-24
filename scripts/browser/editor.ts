@@ -556,7 +556,8 @@ async function checkEditor(url: string) {
         console.log("Only the original outline fades while dragging");
         const left = cx + 82, top = cy + 4, mid = top + 40, dx = 58, dy = -24;
         async function pixel(x: number, y: number) {
-            return evaluate(([x, y]) => {
+            return evaluate(async ([x, y]) => {
+                await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
                 const canvas = document.querySelector<HTMLCanvasElement>("#map")!, box = canvas.getBoundingClientRect();
                 const px = Math.floor((x - box.left) * canvas.width / box.width), py = Math.floor((y - box.top) * canvas.height / box.height);
                 return [...canvas.getContext("2d")!.getImageData(px, py, 1, 1).data].slice(0, 3);
@@ -610,8 +611,8 @@ async function checkEditor(url: string) {
         await panel("terrain"); await click("#fit");
         const mapBox = await evaluate(() => document.querySelector("#map")!.getBoundingClientRect().toJSON() as { left: number; top: number; width: number; height: number });
         const project = new Project(parseDesign(adjacent));
-        const camera: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), { width: mapBox.width, height: mapBox.height, project: project.view() });
-        camera.fit(false);
+        const camera: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), { width: mapBox.width, height: mapBox.height });
+        camera.fit(project.terrain, false);
         const at = (p: Point): Point => {
             const [x, y] = camera.screen(p);
             return [mapBox.left + x, mapBox.top + y];

@@ -120,7 +120,8 @@
     import { evaluate, sampleValue } from "../../core/design/expression.ts";
     import { parseDesign } from "../../core/design/model.ts";
     import { declarationEntries, isBuiltin } from "../../core/design/defaults.ts";
-    import { adjustInputStep, adjustNumber, chipSpans, composingKey, displayReading, displayValue, editorSelection, flagOverflow, editorText, NumberDrag, numericCaret, numericText, repeatButton, selectionOffsets, type Range } from "../state/numbers.ts";
+    import { adjustInputStep, adjustNumber, chipSpans, composingKey, editorSelection, flagOverflow, editorText, NumberDrag, numericCaret, numericText, repeatButton, selectionOffsets, type Range } from "../state/numbers.ts";
+    import { displayReading, displayValue } from "../../core/design/display.ts";
     import { designErrorText } from "../state/designMessages.ts";
     import { placePopup } from "../state/popup.ts";
     import { pendingInput } from "../state/pendingInput.ts";

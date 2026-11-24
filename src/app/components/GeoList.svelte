@@ -42,8 +42,9 @@
     import * as session from "../state/session.svelte.ts";
     import { heightId } from "../../core/design/defaults.ts";
     import { isBuiltinFunction, parameterStep } from "../../core/design/functionTable.ts";
-    import { geoParameter } from "../../core/design/parameters.ts";
-    import { displayValue, flagOverflow } from "../state/numbers.ts";
+    import { geoParameter, parameters } from "../../core/design/parameters.ts";
+    import { flagOverflow, referenceLabel } from "../state/numbers.ts";
+    import { displayValue } from "../../core/design/display.ts";
     import { reorderGeo } from "../../core/edit/geoNodes.ts";
     import { type Expression, type GeoNode } from "../../core/design/v5.ts";
     import { matchesSearch } from "../state/inspector.ts";
@@ -53,6 +54,7 @@
     import EmptyState from "./EmptyState.svelte";
     let { editor }: { editor: session.Editor } = $props();
     let d = $derived(editor.project.design), stack = $derived(d.geoNodes.toReversed());
+    let slots = $derived(parameters(d));
     let anchor = $derived(stack.find(n => n.id === editor.viewport)), hiddenCount = $derived(anchor ? stack.indexOf(anchor) + 1 : 0);
     let problems = $derived.by(() => {
         const byNode = new SvelteMap<string, string[]>();
@@ -81,7 +83,10 @@
         const p = geoParameter(n, ["function", "amount"]);
         if (!p || p.type === "geometry") return "";
         const value = authored ?? p.default;
-        return (typeof value === "number" && value < 0 ? "" : "+") + displayValue(value, parameterStep(p, d.fields[n.field]), "", d);
+        return (typeof value === "number" && value < 0 ? "" : "+") + displayValue(value, parameterStep(p, d.fields[n.field]), "", key => {
+            const item = referenceLabel(key, d, slots);
+            return item.name + (item.property ? "." + item.property : "");
+        });
     }
     const mime = "application/x-groundwork-stack";
     function start(e: DragEvent, id: string | null) {

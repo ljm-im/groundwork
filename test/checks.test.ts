@@ -1,8 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Project } from "../src/core/project.ts";
-import { ProjectMap } from "../src/render/map.ts";
+import { gridDefaults, layerDefaults } from "../src/core/edit/display.ts";
+import { ProjectMap, type MapView } from "../src/render/map.ts";
 import { syntheticDesign } from "./scenarios.ts";
+
+const view = (project: Project, layers: Partial<MapView["layers"]>): MapView => ({
+    project: project.view(), layers: { ...layerDefaults, ...layers }, grid: gridDefaults,
+    selection: null, displayField: "height", referencedGeo: []
+});
 
 test("Text marks show the resolved authored elevation when enabled", () => {
     const d = syntheticDesign();
@@ -13,11 +19,9 @@ test("Text marks show the resolved authored elevation when enabled", () => {
     const text: string[] = [];
     const ctx = { save() {}, restore() {}, strokeText() {}, measureText: () => ({ width: 15 }),
         fillText: (value: string) => text.push(value) } as unknown as CanvasRenderingContext2D;
-    const map: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), { layers: { marks: true },
-        markScreen: () => [0, 0] });
+    const map: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), { markScreen: () => [0, 0] });
     function draw() {
-        map.project = project.view();
-        map["drawMarks"](ctx);
+        map["drawMarks"](ctx, view(project, { marks: true }));
         return text.at(-1);
     }
     assert.equal(draw(), "A 9.0 m");
@@ -39,11 +43,10 @@ test("Groundwork names and section names follow separate map switches", () => {
     const names: string[] = [];
     const ctx = { save() {}, restore() {}, strokeText() {}, measureText: () => ({ width: 8 }),
         fillText: (value: string) => names.push(value) } as unknown as CanvasRenderingContext2D;
-    const map = Object.assign(Object.create(ProjectMap.prototype) as ProjectMap, { layers: { labels: true, sections: true }, screen: () => [0, 0] });
+    const map = Object.assign(Object.create(ProjectMap.prototype) as ProjectMap, { screen: () => [0, 0] });
     for (const [labels, sections, expected] of [[true, true, ["G", "A"]], [false, true, ["A"]], [true, false, ["G"]], [false, false, []]] as const) {
-        map.layers.labels = labels; map.layers.sections = sections;
         names.length = 0;
-        map["drawLabels"](ctx, project.resolved, project.terrain);
+        map["drawLabels"](ctx, view(project, { labels, sections }));
         assert.deepEqual(names, expected);
     }
 });

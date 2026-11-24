@@ -1,20 +1,15 @@
-import { type Design, type GeoNode, type Path, type PathNode, type Point } from "../../core/design/v5.ts";
+import { type Design, type GeoNode, type Point } from "../../core/design/v5.ts";
 import { heightId } from "../../core/design/defaults.ts";
 import { fillFunctionParameters, slopeEndpointValues } from "../../core/design/functionTable.ts";
 import { writeAt } from "../../core/design/address.ts";
-import { type Segment } from "../../core/design/regions.ts";
-import { closedPen, nearestSegment, penNode, penPath, shapePath, type ShapeTool } from "../../core/edit/paths.ts";
+import { type DrawTool, type GeoDraft } from "../../core/edit/types.ts";
+import { closedPen, nearestSegment, penNode, penPath, shapePath } from "../../core/edit/paths.ts";
 import { createFree, createStrip, defaultFunction, nodeIds, stripConstruction, stripRange, tenth } from "../../core/edit/geoNodes.ts";
 import { distance } from "../../core/math/geometry.ts";
 import { constructionCenter, makeShape, nearbyBoundary } from "../../core/design/regions.ts";
 import { sampleField, type Terrain } from "../../core/design/results.ts";
 type Editor = import("./session.svelte.ts").Editor;
 
-export type DrawTool = ShapeTool | "strip" | "addPath" | "shore" | "ridge" | "peak" | "slopeLine" | "center" | "harbor" | "section";
-export interface GeoDraft {
-    tool: DrawTool; owner?: string; member?: number; ids: string[]; nodes: PathNode[]; anchors: string[]; reverse: boolean;
-    down?: Point; downRaw?: Point; start?: Point; sizing?: boolean; radius?: Point; cursor?: Point; path?: Path; spine?: Segment[]; spineRange?: string;
-}
 export const drawingTools: DrawTool[] = ["pen", "rect", "circle", "sector", "strip", "addPath", "shore", "ridge", "peak", "slopeLine", "center", "harbor", "section"];
 const penTools: DrawTool[] = ["pen", "addPath", "shore"];
 export const doubleClickTools: DrawTool[] = [...penTools, "ridge", "slopeLine"];
@@ -73,8 +68,6 @@ export function updatePreview(e: Editor, draft: GeoDraft) {
         else if (cursor) preview.push(penNode("", cursor));
         draft.path = penPath(preview);
     }
-    e.drawingReady = drawingReady(draft);
-    e.map.draw();
 }
 
 function pickStripPoint(e: Editor, draft: GeoDraft, at: Point) {
@@ -87,7 +80,7 @@ function pickStripPoint(e: Editor, draft: GeoDraft, at: Point) {
         draft.anchors = next;
     }
     else if (!draft.owner && !draft.anchors.length && draft.ids.length < 2) {
-        const node = e.map.geoHits(at)[0];
+        const node = e.map.geoHits(e.mapProject, at)[0];
         if (node && !draft.ids.includes(node.id)) draft.ids.push(node.id);
     }
 }
@@ -184,11 +177,11 @@ export function finishDraft(d: Design, terrain: Terrain, draft: GeoDraft) {
     return createFree(d, path, draft.ids[0]);
 }
 export function draftPointer(e: Editor, phase: "down" | "move" | "up", raw: Point, ev: PointerEvent) {
-    const draft = e.map.draft;
+    const draft = e.geoDraft;
     if (!draft) return false;
     const { tool } = draft;
     const at = !ev.ctrlKey && penTools.includes(tool) && !(phase === "move" && draft.down) ?
-        snapPoint(e.map.project.terrain, e.map.project.design, raw, e.map.scale, draft.owner) : raw;
+        snapPoint(e.mapProject.terrain, e.mapProject.design, raw, e.map.scale, draft.owner) : raw;
     if (phase === "down") {
         draft.down = at;
         draft.downRaw = raw;

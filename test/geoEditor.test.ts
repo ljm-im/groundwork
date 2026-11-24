@@ -12,7 +12,8 @@ import { addField, addInput, copyGeo, createStrip, removalUses, removalUseName, 
 import { arcHandle, moveHandle, penNode, setSegment, translateGeo } from "../src/core/edit/paths.ts";
 import { flattenPath } from "../src/core/design/path.ts";
 import { copyGeometryItem, geoControls, geometryPath, insertPathNode, removeGeometryItem } from "../src/core/edit/geoControls.ts";
-import { finishDraft, snapPoint, type GeoDraft, type DrawTool } from "../src/app/state/geoTools.ts";
+import { finishDraft, snapPoint } from "../src/app/state/geoTools.ts";
+import { type GeoDraft, type DrawTool } from "../src/core/edit/types.ts";
 import { TerrainCache } from "../src/core/terrain/cache.ts";
 import { generateTerrain } from "../src/core/terrain/terrain.ts";
 import { Project } from "../src/core/project.ts";
@@ -188,7 +189,7 @@ for (const construction of ["free", "strip"] as const) test("Default shore and s
     const editor = new Editor(), d = syntheticDesign(), source = d.geoNodes[1];
     t.mock.method(editor, "working", async (_label: string, work: () => void) => work());
     const n = construction === "strip" ? createStrip(d, [source.id], { from: "0", to: "1" }) : source;
-    Object.assign(editor, { project: new Project(d), map: { draw() {}, clearIssue() {}, setProject() {} } });
+    Object.assign(editor, { project: new Project(d), map: { frame() {} } });
     editor.history = new History(d);
     editor.select({ kind: "geoNode", id: n.id });
     const saved = serializeDesign(d);
@@ -196,7 +197,7 @@ for (const construction of ["free", "strip"] as const) test("Default shore and s
         await editor.switchFunction(n, type);
         const f = editor.project.design.geoNodes.find(v => v.id === n.id)!.function;
         assert.equal(editor.tool, "select");
-        assert.equal(editor.map.draft, undefined);
+        assert.equal(editor.geoDraft, undefined);
         assert.equal(f.type, type);
         if (f.type === "coast") {
             assert(f.shore.nodes.length >= 4);

@@ -23,9 +23,9 @@
     {/if}
     <div class="zoom-tools">
         <button class="icon-button" id="minus" aria-label="缩小" data-tip="缩小" onclick={() => editor.project && editor.map.zoomAt(1 / 1.4)}><Icon name="minus" /></button>
-        <output id="zoom-value">100%</output>
+        <output id="zoom-value">{displayReading(zoom * 100, 1, "%")}</output>
         <button class="icon-button" id="plus" aria-label="放大" data-tip="放大" onclick={() => editor.project && editor.map.zoomAt(1.4)}><Icon name="plus" /></button>
-        <button class="icon-button" id="fit" aria-label="适应" data-tip="适应" onclick={() => editor.project && editor.map.fit()}><Icon name="fit" /></button>
+        <button class="icon-button" id="fit" aria-label="适应" data-tip="适应" onclick={() => editor.project && editor.map.fit(editor.project.terrain)}><Icon name="fit" /></button>
     </div>
     <div class="coords"><span id="busy" role="status" hidden={!editor.busy}>{busyText}</span><span id="mode-hint">{editor.hint}</span><span id="position">{editor.position}</span></div>
     <Messages {editor} />
@@ -112,6 +112,7 @@
 
 <script lang="ts">
     import { onMount } from "svelte";
+    import { displayReading } from "../../core/design/display.ts";
     import { attachController } from "../state/controller.ts";
     import * as session from "../state/session.svelte.ts";
     import Icon from "./Icon.svelte";
@@ -120,16 +121,36 @@
     let { editor }: { editor: session.Editor } = $props();
     let busyText = $derived(editor.busy === "正在生成地形…" || editor.busy === "正在更新地件…" ? "计算中" : editor.busy ?? "");
     let canvas: HTMLCanvasElement;
-    onMount(() => {
-        editor.attach(canvas);
-        const detach = attachController(editor, canvas);
-        const observer = new ResizeObserver(() => {
-            editor.map.resize();
-            if (editor.project) editor.sections();
+    let zoom = $state(1);
+    let frame = 0;
+    function requestDraw() {
+        frame ||= requestAnimationFrame(() => {
+            frame = 0;
+            const view = editor.mapView;
+            if (!view) return;
+            editor.map.draw(view);
+            if (view.issueStart !== undefined && performance.now() - view.issueStart < 1500) requestDraw();
         });
+    }
+    $effect(() => {
+        if (editor.mapView) requestDraw();
+    });
+    onMount(() => {
+        editor.attach(canvas, () => {
+            zoom = editor.map.zoomFactor();
+            requestDraw();
+        });
+        const detach = attachController(editor, canvas);
+        function resize() {
+            const { width, height } = canvas.getBoundingClientRect();
+            editor.map.resize(width, height, window.devicePixelRatio || 1);
+        }
+        resize();
+        const observer = new ResizeObserver(resize);
         observer.observe(canvas);
         void editor.files.start();
         return () => {
+            cancelAnimationFrame(frame);
             detach();
             observer.disconnect();
             editor.dispose();

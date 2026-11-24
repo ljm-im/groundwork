@@ -1,4 +1,4 @@
-import { type ProjectMap } from "./map.ts";
+import { type MapView, type ProjectMap } from "./map.ts";
 import { geoControls, geometryPath, linePoints, pathEntries, type GeoControl } from "../core/edit/geoControls.ts";
 import { flattenPath } from "../core/design/path.ts";
 import { type Point, type GeoNode } from "../core/design/v5.ts";
@@ -15,8 +15,8 @@ export function drawHandle(ctx: CanvasRenderingContext2D, x: number, y: number, 
     ctx.stroke();
 }
 
-export function drawGeoOverlay(map: ProjectMap) {
-    const ctx = map.ctx, scale = map.scale, d = map.project.design, draft = map.draft;
+export function drawGeoOverlay(map: ProjectMap, view: MapView) {
+    const ctx = map.ctx, scale = map.scale, d = view.project.design, draft = view.draft;
     const edges = (segments: Segment[], color: string, width: number, dashed = false) => {
         ctx.strokeStyle = color;
         ctx.lineWidth = width;
@@ -35,7 +35,7 @@ export function drawGeoOverlay(map: ProjectMap) {
     function controls(n: GeoNode, numeric: GeoNode<number>) {
         for (const [i, path] of pathEntries(n)) {
             if (i === -1) edges(flattenPath(path, .6 / scale), palette.parameterGeometry, overlay.parameterWidth, true);
-            else if (map.dragNode || draft?.owner === n.id) edges(flattenPath(path, .6 / scale), palette.accent, overlay.selectedWidth);
+            else if (view.dragNode || draft?.owner === n.id) edges(flattenPath(path, .6 / scale), palette.accent, overlay.selectedWidth);
         }
         for (const points of linePoints(n)) {
             if (points.length === 1) dot(points[0]);
@@ -52,16 +52,16 @@ export function drawGeoOverlay(map: ProjectMap) {
             ctx.setLineDash([]);
         }
         if (draft) return;
-        for (const c of geoControls(n, map.geometry)) {
+        for (const c of geoControls(n, view.geometry)) {
             const tangent = c.role === "in" || c.role === "out";
             if (tangent) edges([{ a: geometryPath(n, c.path)!.nodes[c.index].p, b: c.point }], palette.accent, overlay.controlLine);
-            const active = map.vertex && (["path", "role", "index"] as (keyof GeoControl)[]).every(k => map.vertex![k] === c[k]);
+            const active = view.vertex && (["path", "role", "index"] as (keyof GeoControl)[]).every(k => view.vertex![k] === c[k]);
             dot(c.point, !!active, tangent);
         }
     }
     ctx.save();
-    const owner = map.selection?.kind === "geoNode" ? d.geoNodes.find(n => n.id === map.selection!.id) : undefined;
-    if (owner && (!draft || draft.owner === owner.id)) controls(map.dragNode ?? owner, owner);
+    const owner = view.selection?.kind === "geoNode" ? d.geoNodes.find(n => n.id === view.selection!.id) : undefined;
+    if (owner && (!draft || draft.owner === owner.id)) controls(view.dragNode ?? owner, owner);
     if (draft) {
         if (draft.tool === "strip") {
             edges(draft.spine ?? [], palette.accent, overlay.selectedWidth);

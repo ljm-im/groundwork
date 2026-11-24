@@ -1,5 +1,12 @@
 <section class="sections" aria-label="地形剖面">
-    <div bind:this={editor.plots} id="plots" class="plots"></div>
+    <div id="plots" class="plots">
+        {#each sections as section (section.id)}
+            <div class="plot">
+                <div class="plot-title"><b>{section.id}—{section.id}′</b><span>{section.label}</span></div>
+                <canvas use:plot={{ section, terrain: editor.mapProject.terrain }}></canvas>
+            </div>
+        {/each}
+    </div>
 </section>
 
 <style>
@@ -14,6 +21,38 @@
 </style>
 
 <script lang="ts">
+    import { type Section } from "../../core/design/v5.ts";
+    import { type Terrain } from "../../core/design/results.ts";
+    import { drawSection } from "../../render/sections.ts";
     import * as session from "../state/session.svelte.ts";
     let { editor }: { editor: session.Editor } = $props();
+    let sections = $derived(editor.mapDesign?.sections.filter(section => editor.selection?.kind !== "section" || section.id === editor.selection.id) ?? []);
+
+    function plot(canvas: HTMLCanvasElement, data: { section: Section; terrain: Terrain }) {
+        const ctx = canvas.getContext("2d")!;
+        let frame = 0;
+        function redraw() {
+            frame ||= requestAnimationFrame(() => {
+                frame = 0;
+                const w = canvas.clientWidth, h = canvas.clientHeight, dpr = window.devicePixelRatio || 1;
+                if (w < 20 || h < 20) return;
+                if (canvas.width !== Math.round(w * dpr)) canvas.width = Math.round(w * dpr);
+                if (canvas.height !== Math.round(h * dpr)) canvas.height = Math.round(h * dpr);
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                drawSection(ctx, w, h, data.section, data.terrain);
+            });
+        }
+        const observer = new ResizeObserver(redraw);
+        observer.observe(canvas);
+        redraw();
+        return {
+            update(next: typeof data) {
+                if (next.section === data.section && next.terrain === data.terrain) return;
+                data = next; redraw();
+            },
+            destroy() {
+                cancelAnimationFrame(frame); observer.disconnect();
+            }
+        };
+    }
 </script>

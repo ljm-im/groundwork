@@ -2,7 +2,7 @@
     <Parameter {editor} node={n} {address} />
 {/snippet}
 {#snippet geometry(label: string, kind: GeometryTarget["kind"], index: number, icon: "point" | "polyline" | "closedPath", count: number, heightAt?: Address, redraw?: DrawTool, member?: number)}
-    {@const active = editor.map.geometry?.kind === kind && editor.map.geometry.index === index}
+    {@const active = editor.geometry?.kind === kind && editor.geometry.index === index}
     <GeometryInput {label} {icon} {count} {active} onclick={() => editor.focusGeometry({ kind, index })}
         redraw={redraw ? () => editor.setTool(redraw, n.id, member) : undefined}
         redrawing={redraw && editor.toolActive(redraw, n.id, member)} />
@@ -116,7 +116,8 @@
     import { type GeoFunction, type Strip } from "../../core/design/v5.ts";
     import { declarationEntries, isBuiltin } from "../../core/design/defaults.ts";
     import { canWrite, functionParameters, functionTable, isBuiltinFunction } from "../../core/design/functionTable.ts";
-    import { geoAt, type DrawTool } from "../state/geoTools.ts";
+    import { geoAt } from "../state/geoTools.ts";
+    import { type DrawTool } from "../../core/edit/types.ts";
     import { geoParameter, readAt, writeAt, type Address } from "../../core/design/parameters.ts";
     import { geometryPath, type GeometryTarget } from "../../core/edit/geoControls.ts";
     import Icon from "./Icon.svelte";
@@ -148,7 +149,7 @@
     }
     let vertex = $derived.by(() => {
         editor.revision;
-        return editor.map.vertex;
+        return editor.vertex;
     });
     let pathNode = $derived(vertex?.role === "vertex" ? geometryPath(n, vertex.path)?.nodes[vertex.index] : undefined);
     function nameOf(id: string) {

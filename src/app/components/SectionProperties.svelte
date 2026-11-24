@@ -11,7 +11,7 @@
                     d.sections.find(s => s.id === section.id)!.showLabel = visible;
                 })} />
         {:else}
-            <GeometryInput label="剖面线" icon="polyline" count={section.points.length} active={editor.map?.objectGeometry?.kind === "section"}
+            <GeometryInput label="剖面线" icon="polyline" count={section.points.length} active={editor.objectGeometry?.kind === "section"}
                 onclick={() => editor.focusObjectGeometry({ kind: "section", id: section.id })} />
         {/if}
     {/snippet}

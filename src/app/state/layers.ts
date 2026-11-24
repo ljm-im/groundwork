@@ -1,14 +1,5 @@
-export const layerDefaults = {
-    geoNodes: false,
-    sections: true,
-    contours: true,
-    contourLabels: true,
-    labels: true,
-    marks: true,
-    issues: true,
-    grid: true,
-    fineGrid: false
-};
+import { gridDefaults, layerDefaults, type GridDisplay } from "../../core/edit/display.ts";
+
 export const layerNames = {
     geoNodes: "地件轮廓",
     sections: "剖面线",
@@ -17,8 +8,6 @@ export const layerNames = {
     issues: "问题位置"
 };
 
-const gridDefaults = { mode: "pixels" as "meters" | "pixels", meters: 10, pixels: 80 };
-export type GridDisplay = typeof gridDefaults;
 const storageKey = "groundwork/map-display-v1";
 
 export function readDisplaySettings() {
@@ -42,10 +31,4 @@ export function saveDisplaySettings(layers: typeof layerDefaults, grid: GridDisp
         localStorage.setItem(storageKey, JSON.stringify({ layers, grid }));
     }
     catch { /* Display settings remain available in memory. */ }
-}
-
-export function pixelGridSpacing(scale: number, pixels: number) {
-    const target = pixels / scale, decade = 10 ** Math.floor(Math.log10(target));
-    return [1, 2, 5, 10].map(n => n * decade).reduce((best, step) =>
-        Math.abs(step - target) < Math.abs(best - target) ? step : best);
 }

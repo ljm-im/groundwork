@@ -22,10 +22,12 @@ function compare(cache: TerrainCache, d: Design) {
 
 test("Incremental layers match a fresh stack byte for byte after every fixture edit", fixtureOptions("round14-coast.json", "round14-land.json", "regressions.json"), async () => {
     const rules = (await readRegressions()).fixtures;
-    for (const fixture of await designFixtures()) {
+    const fixtures = new Map((await designFixtures()).map(fixture => [fixture.name.replace("round14-", "").replace(".json", ""), fixture]));
+    for (const [name, rule] of Object.entries(rules)) {
+        const fixture = fixtures.get(name);
+        assert(fixture, "Missing regression fixture " + name);
         const d = parseDesign(fixture.text), cache = new TerrainCache();
         const check = () => compare(cache, d);
-        const rule = rules[fixture.name.replace("round14-", "").replace(".json", "")];
         const erosion = d.geoNodes.find(n => n.function.type === "erosion")!;
         check();
         for (const [i, key] of rule.variables.entries()) {

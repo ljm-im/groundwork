@@ -14,15 +14,13 @@ const palette = Array.from({ length: 641 }, (_, i) => {
     return [1, 2, 3].map(k => a[k] + (b[k] - a[k]) * t);
 });
 
-const charts = new WeakMap<Terrain, HTMLCanvasElement>();
+const charts = new WeakMap<Terrain, OffscreenCanvas>();
 
 export function relief(t: Terrain) {
     const cached = charts.get(t);
     if (cached) return cached;
     const { grid } = t, { values: h, defined } = t.fields[heightId], { width, height } = grid;
-    const raster = document.createElement("canvas");
-    raster.width = width;
-    raster.height = height;
+    const raster = new OffscreenCanvas(width, height);
     const ctx = raster.getContext("2d")!, pixels = ctx.createImageData(width, height), data = pixels.data;
     for (let j = 0; j < height; j++)
         for (let i = 0; i < width; i++) {

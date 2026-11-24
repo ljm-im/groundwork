@@ -38,8 +38,8 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
             const box = document.querySelector("#map")!.getBoundingClientRect();
             return [box.x, box.y, box.width, box.height];
         });
-        const map = Object.assign(Object.create(ProjectMap.prototype) as ProjectMap, { width, height, project: new Project(design).view() });
-        map.fit(false);
+        const project = new Project(design), map: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), { width, height });
+        map.fit(project.terrain, false);
         const [px, py] = screen ? point : map.screen(point);
         return [x + px, y + py];
     }

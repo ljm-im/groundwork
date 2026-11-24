@@ -71,7 +71,7 @@
 </style>
 
 <script lang="ts">
-    import { onMount, tick } from "svelte";
+    import { onMount } from "svelte";
     import { readLayout, saveLayout } from "../state/layout.ts";
     import { clamp } from "../../core/math/geometry.ts";
     import * as session from "../state/session.svelte.ts";
@@ -128,8 +128,5 @@
         editor.revealSections = () => {
             if (layout.bottomClosed) toggle("bottomClosed");
         };
-    });
-    $effect(() => {
-        if (!layout.bottomClosed) void tick().then(() => editor.sections());
     });
 </script>
