@@ -5,6 +5,10 @@ const collections = { geo: "geoNodes", input: "inputs", field: "fields", mark: "
 export type Location = { kind: keyof typeof collections; id: string; index?: number; path: Address } | { kind: "project"; path: Address };
 export type DesignProblem = { message: string; location?: Location };
 
+export function quotedLocation(name: string, property?: string) {
+    return "“" + name + (property ? "." + property : "") + "”";
+}
+
 export function problemText({ message, location }: DesignProblem) {
     if (!location) return message;
     const root = location.kind === "project" ? [] : [collections[location.kind], location.index ?? location.id];

@@ -58,9 +58,9 @@ test("Format and type errors identify the authored slot and cycles name every pa
     const d: Design = syntheticDesign(), a = d.geoNodes[0], b = d.geoNodes[1];
     a.function = { type: "ground", value: "{geo:T.value} + 1" };
     b.function = { type: "slope", kind: "radial", center: [0, 0], radius: 1, value: "{geo:G.value}", rate: 0 };
-    assert.throws(() => parseDesign(d), /“G”.数值 → “T”.增量 → “G”.数值/);
+    assert.throws(() => parseDesign(d), /“G.数值” → “T.增量” → “G.数值”/);
     b.function.value = "{input:A}"; d.inputs.A.value = "{geo:G.value}";
-    assert.throws(() => parseDesign(d), e => e instanceof Error && ["“G”.数值", "“T”.增量", "“A”", "引用成环"].every(v => e.message.includes(v)));
+    assert.throws(() => parseDesign(d), e => e instanceof Error && ["“G.数值”", "“T.增量”", "“A”", "引用成环"].every(v => e.message.includes(v)));
     d.inputs.A.value = 4;
     for (const bad of ["{field:height}", "{geo:G.construction.paths.0.nodes.0.p.0}", "{building:A.padElevation}", "{edge:E.length}", "{node:a.point.1}", "1 + @"])
         assert.throws(() => parseDesign({ ...d, inputs: { A: { value: bad } } }), /inputs.A.value/);

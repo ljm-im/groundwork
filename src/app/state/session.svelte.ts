@@ -18,6 +18,7 @@ import { displaySteps, markParameters } from "../../core/design/functionTable.ts
 import { functionGeometry } from "../../core/edit/functionGeometry.ts";
 import { sampleField } from "../../core/design/results.ts";
 import { designErrorText } from "./designMessages.ts";
+import { quotedLocation } from "../../core/design/problems.ts";
 import { displayReading } from "./numbers.ts";
 import { objectIssues } from "../../core/checks/issues.ts";
 import { propertyTabs, tabForSelection, type PropertyTab, type SubitemGroup } from "./inspector.ts";
@@ -530,7 +531,7 @@ export class Editor {
         } };
     }
     private geoReference(id: string, label: string, parameter: string, tab: PropertyTab): RemovalItem {
-        return { text: "“" + label + "”." + parameter, locate: () => {
+        return { text: quotedLocation(label, parameter), locate: () => {
             this.select({ kind: "geoNode", id });
             this.changePropertyTab(tab);
             this.revealProperties?.();

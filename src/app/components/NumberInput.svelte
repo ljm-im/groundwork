@@ -200,7 +200,7 @@
             candidate(parseDraft()); error = "";
         }
         catch (e) {
-            error = designErrorText(e, base);
+            error = designErrorText(e, base, "message");
         }
     }
     function closeMenu() {
@@ -289,7 +289,7 @@
                 next = candidate(parseDraft());
             }
             catch (e) {
-                error = designErrorText(e, base);
+                error = designErrorText(e, base, "message");
             }
         }
         editing = expanded = false; closeMenu(); error = "";
@@ -384,7 +384,7 @@
             const d = candidate(next, origin); live = next; error = ""; editor.previewNumber(d);
         }
         catch (e) {
-            error = designErrorText(e, base);
+            error = designErrorText(e, base, "message");
         }
     }
     function keyboardStep(e: MouseEvent, direction: number) {
@@ -393,7 +393,7 @@
             editor.commitNumber(candidate(adjusted(value, direction)));
         }
         catch (e) {
-            error = designErrorText(e, base);
+            error = designErrorText(e, base, "message");
         }
     }
     function beginGesture(e: PointerEvent, direction: number) {

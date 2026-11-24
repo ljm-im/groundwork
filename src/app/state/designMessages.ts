@@ -1,5 +1,5 @@
 import { geoParameterName, type Address } from "../../core/design/parameters.ts";
-import { DesignError, type DesignProblem } from "../../core/design/problems.ts";
+import { DesignError, quotedLocation, type DesignProblem } from "../../core/design/problems.ts";
 import { gridStep, markParameters } from "../../core/design/functionTable.ts";
 import { type Design } from "../../core/design/v5.ts";
 import { errorText } from "../types.ts";
@@ -16,8 +16,10 @@ function geoProperty(path: Address) {
     if (group === "disabled") return "启用状态";
 }
 
-export function designProblemText({ location, message }: DesignProblem, d: Design) {
-    if (!location) return message;
+type ProblemContext = "location" | "property" | "message";
+
+export function designProblemText({ location, message }: DesignProblem, d: Design, context: ProblemContext = "location") {
+    if (!location || context === "message") return message;
     const { kind, path } = location;
     const key = path[0];
     if (kind === "project") return key === "grid" ? gridStep.label + " " + message : message;
@@ -43,9 +45,10 @@ export function designProblemText({ location, message }: DesignProblem, d: Desig
     }
     if (!property && key === "label") property = "名称";
     if (!property && key === "showLabel") property = "显示名称";
-    return "“" + (label ?? id) + "”" + (property ? "." + property : "") + " " + message;
+    const prefix = context === "location" ? quotedLocation(label ?? id, property) : property;
+    return prefix ? prefix + " " + message : message;
 }
 
-export function designErrorText(error: unknown, d: Design) {
-    return error instanceof DesignError ? [...new Set(error.problems.map(problem => designProblemText(problem, d)))].join("\n") : errorText(error);
+export function designErrorText(error: unknown, d: Design, context?: ProblemContext) {
+    return error instanceof DesignError ? [...new Set(error.problems.map(problem => designProblemText(problem, d, context)))].join("\n") : errorText(error);
 }

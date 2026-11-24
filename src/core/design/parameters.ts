@@ -2,7 +2,7 @@ import { readAt, type Address } from "./address.ts";
 import { expandKeys, functionParameters, functionTable, markParameters, matchesKey, stripWidths, type NumericParameter } from "./functionTable.ts";
 import { lineProfile } from "./polyline.ts";
 import { evaluate, fieldValue, references, type Value } from "./expression.ts";
-import { check, DesignError, type DesignProblem, type Location } from "./problems.ts";
+import { check, DesignError, quotedLocation, type DesignProblem, type Location } from "./problems.ts";
 import { type Design, type Expression, type GeoNode, type Polyline, type ResolvedDesign } from "./v5.ts";
 
 export { readAt, writeAt, type Address } from "./address.ts";
@@ -86,7 +86,7 @@ export function parameters(d: Design) {
     return slots;
 }
 
-export const slotName = (s: Slot) => "“" + s.name + "”" + (s.owner === "input" ? "" : "." + s.label);
+export const slotName = (s: Slot) => quotedLocation(s.name, s.owner === "input" ? undefined : s.label);
 export function canReference(slots: Map<string, Slot>, from: string | undefined, to: string) {
     const seen = new Set<string>();
     function reaches(key: string): boolean {

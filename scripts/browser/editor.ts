@@ -34,6 +34,10 @@ async function checkEditor(url: string) {
         !!document.querySelector(s + " svg")!.querySelector("circle[fill=currentColor]"), selector);
     const panel = (name: string) => click("[data-tab=" + name + "]");
     const terrainTab = () => click("[data-property-tab=function]");
+    const clearTerrainSearch = () => evaluate(() => {
+        const search = document.querySelector<HTMLInputElement>("#terrain-search")!;
+        search.value = ""; search.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    });
     const forbidden = /geoNodes\[|inputs\.|fields\.|marks\[/;
     async function choose(label: string, name: string) {
         const escaped = JSON.stringify(label);
@@ -154,17 +158,27 @@ async function checkEditor(url: string) {
         await click(".number-row[data-parameter$=\".function.feather\"] .numeric-face");
         await evaluate(() => document.getSelection()!.selectAllChildren(document.querySelector(".numeric-edit")!));
         await cdp("Input.insertText", { text: "-1" });
-        assert.match(await text(".number-error"), /“新台”\.羽化宽度 无效/);
+        assert.equal(await text(".number-error"), "无效");
+        await evaluate(() => document.getSelection()!.selectAllChildren(document.querySelector(".numeric-edit")!));
+        await cdp("Input.insertText", { text: "1/0" });
+        assert.equal(await text(".number-error"), "除数不能为 0");
         assert.doesNotMatch(await text(".number-error"), forbidden);
         await key("Escape");
         await panel("issues");
-        assert.match(await text("#panel .issue-row"), /“X”\.边 找不到下方地件/);
+        const brokenReference = "边 找不到下方地件“missing”";
+        assert.equal(await text("#panel .issue-row b"), "X");
+        assert.equal(await text("#panel .issue-row small"), brokenReference);
         assert.doesNotMatch(await text("#panel"), forbidden);
+        await panel("terrain"); await clearTerrainSearch(); await click("[data-geo-node=X]");
+        await click("[data-property-tab=issues]");
+        assert.equal(await text("#properties .issue-row b"), "X");
+        assert.equal(await text("#properties .issue-row small"), brokenReference);
+        assert(await evaluate(() => !!document.querySelector("[data-property-tab=issues] [aria-label=有错误]")));
         await panel("inputs"); await click("[data-select-input=A]");
         await click("#properties [data-action=delete]");
         await wait(() => !!document.querySelector("#remove-dialog[open]"));
         assert.match(await text("#remove-dialog h2"), /无法删除“台地增量”/);
-        assert.match(await text("#affected-items"), /“新台”\.增量/);
+        assert.equal(await text("#affected-items"), "“新台.增量”");
         assert.doesNotMatch(await text("#remove-dialog"), forbidden);
         await click("#affected-items button");
         await wait(() => !!document.querySelector("#properties button[aria-label=增量]"));
@@ -282,12 +296,7 @@ async function checkEditor(url: string) {
         }
         await moveMap(.5, .5);
         assert.match(await text("#position"), /岩性 0\.50 ‰$/);
-        await panel("terrain");
-        await evaluate(() => {
-            const search = document.querySelector<HTMLInputElement>("#terrain-search")!;
-            search.value = ""; search.dispatchEvent(new InputEvent("input", { bubbles: true }));
-        });
-        await click("[data-geo-node=R]"); await terrainTab();
+        await panel("terrain"); await click("[data-geo-node=R]"); await terrainTab();
         await click("#properties button[aria-label=增大增量]");
         assert.equal(await text("#properties button[aria-label=增量]"), "0.05");
         await moveMap(.5, .5);

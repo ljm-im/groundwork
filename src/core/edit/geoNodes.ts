@@ -1,3 +1,4 @@
+import { quotedLocation } from "../design/problems.ts";
 import { type Design, type GeoFunction, type GeoNode, type Path, type Point, type Strip, type Polyline } from "../design/v5.ts";
 import { defaultInputRange, heightId, isBuiltin } from "../design/defaults.ts";
 import { canWrite, fillFunctionParameters, functionTable, stripWidths } from "../design/functionTable.ts";
@@ -111,7 +112,7 @@ export function removalUses(d: Design, kind: "geo" | "input" | "field", id: stri
 }
 
 export const removalUseName = (use: RemovalUse) => use.kind === "parameter" ? slotName(use.slot) :
-    "“" + use.node.label + "”." + (use.kind === "strip" ? "边" : "输出到");
+    quotedLocation(use.node.label, use.kind === "strip" ? "边" : "输出到");
 
 function requireUnused(uses: RemovalUse[]) {
     if (uses.length) throw Error("仍被引用：\n" + uses.map(removalUseName).join("\n"));
