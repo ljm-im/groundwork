@@ -58,21 +58,25 @@
             {:else}
                 {@const f = d.fields[h.id]}
                 <Part>
-                    <FieldRow label="标签"><input class="input-box" aria-label="标签" value={f.label} readonly={builtin} onchange={e => {
-                        const label = e.currentTarget.value.trim();
-                        if (label && label !== f.label) editor.edit(d => {
-                            d.fields[h!.id].label = label;
-                        });
-                        else e.currentTarget.value = f.label;
-                    }} /></FieldRow>
-                    <FieldRow label="单位"><input class="input-box" aria-label="单位" value={f.unit ?? ""} readonly={builtin} onchange={e => {
-                        const unit = e.currentTarget.value.trim();
-                        if (unit === (f.unit ?? "")) return;
-                        editor.edit(d => {
-                            if (unit) d.fields[h!.id].unit = unit;
-                            else delete d.fields[h!.id].unit;
-                        });
-                    }} /></FieldRow>
+                    <FieldRow label="标签" readOnlyValue={builtin ? f.label : undefined}>
+                        <input class="input-box" aria-label="标签" value={f.label} onchange={e => {
+                            const label = e.currentTarget.value.trim();
+                            if (label && label !== f.label) editor.edit(d => {
+                                d.fields[h!.id].label = label;
+                            });
+                            else e.currentTarget.value = f.label;
+                        }} />
+                    </FieldRow>
+                    <FieldRow label="单位" readOnlyValue={builtin ? f.unit ?? "" : undefined}>
+                        <input class="input-box" aria-label="单位" value={f.unit ?? ""} onchange={e => {
+                            const unit = e.currentTarget.value.trim();
+                            if (unit === (f.unit ?? "")) return;
+                            editor.edit(d => {
+                                if (unit) d.fields[h!.id].unit = unit;
+                                else delete d.fields[h!.id].unit;
+                            });
+                        }} />
+                    </FieldRow>
                 </Part>
             {/if}
         </PropertyPane>

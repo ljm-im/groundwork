@@ -191,10 +191,35 @@ async function checkEditor(url: string) {
 
         console.log("Read-only built-ins, positive input steps, and byte-stable reopening");
         await panel("inputs"); await click("[data-select-field=height]");
-        assert.deepEqual(await evaluate(() => ["标签", "单位"].map(label => {
-            const input = document.querySelector<HTMLInputElement>("#properties input[aria-label=" + label + "]")!;
-            return [input.value, input.readOnly];
-        })), [["高度", true], ["m", true]]);
+        for (const [label, value] of [["标签", "高度"], ["单位", "m"]]) {
+            const selector = "#properties [aria-readonly=true][aria-label=" + label + "]";
+            await click(selector);
+            assert.deepEqual(await evaluate(s => {
+                const el = document.querySelector<HTMLElement>(s)!;
+                return [el.innerText, el.matches(":focus"), el.tabIndex, getComputedStyle(el).cursor];
+            }, selector), [value, false, -1, "default"]);
+
+            const [left, right, y] = await evaluate(s => {
+                const range = document.createRange();
+                range.selectNodeContents(document.querySelector(s)!);
+                const box = range.getBoundingClientRect();
+                return [box.left - 1, box.right + 1, box.top + box.height / 2];
+            }, selector);
+            await browser.mouse("mousePressed", left, y);
+            await browser.mouse("mouseMoved", right, y);
+            await browser.mouse("mouseReleased", right, y);
+            assert.equal(await evaluate(() => document.getSelection()?.toString()), value);
+        }
+        const fieldBackground = () => evaluate(() => getComputedStyle(document.querySelector("#properties [aria-label=标签]")!).backgroundColor);
+        const readOnlyBackground = await fieldBackground();
+        await click("[data-select-field=F]");
+        assert.notEqual(await fieldBackground(), readOnlyBackground);
+        await click("#properties input[aria-label=标签]");
+        await key("Tab");
+        assert(await evaluate(() => document.activeElement?.matches("input[aria-label=单位]")));
+        await evaluate(() => (document.activeElement as HTMLInputElement).select());
+        await cdp("Input.insertText", { text: "‰" });
+        await key("Tab"); await idle();
         await click("[data-select-input=A]");
         for (const step of [.5, .2, .1, .05]) {
             await click("#properties button[aria-label=减小步长]");
@@ -204,6 +229,7 @@ async function checkEditor(url: string) {
         assert.equal(Number(await text("#properties button[aria-label=步长]")), .1);
         await saved();
         const before = await disk();
+        assert.equal(parseDesign(before, true).fields.F.unit, "‰");
         await click("#open");
         await wait(() => window.probe.opens === 2);
         await idle();
