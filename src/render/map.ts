@@ -293,6 +293,7 @@ export class ProjectMap {
                 ctx.strokeStyle = baseMap.fieldContours; ctx.lineWidth = 1.25 / scale; ctx.stroke(line.path);
             }
         }
+        const draggedRegionId = this.dragNode?.construction.type === "free" ? this.dragNode.id : undefined;
         for (const n of d.geoNodes) {
             if (n.disabled && !this.emptyCanvas) continue;
             if (!this.emptyCanvas && !n.fill && !n.outline && !this.layers.geoNodes) continue;
@@ -300,7 +301,7 @@ export class ProjectMap {
             if (n.fill && !this.emptyCanvas) {
                 ctx.fillStyle = n.fill; ctx.fill(paths.area, "evenodd");
             }
-            if (this.emptyCanvas || n.outline || this.layers.geoNodes) {
+            if (n.id !== draggedRegionId && (this.emptyCanvas || n.outline || this.layers.geoNodes)) {
                 ctx.strokeStyle = baseMap.boundary;
                 ctx.lineWidth = .6 / scale;
                 ctx.stroke(paths.outline);
@@ -317,7 +318,8 @@ export class ProjectMap {
                 ctx.fill(paths.area, "evenodd");
                 for (const edge of r.shape.spine) stroke(ctx, [edge.a, edge.b], outline.color, outline.width);
             }
-            ctx.strokeStyle = outline.color; ctx.lineWidth = outline.width; ctx.stroke(paths.outline);
+            ctx.strokeStyle = id === draggedRegionId ? palette.dragOrigin : outline.color;
+            ctx.lineWidth = outline.width; ctx.stroke(paths.outline);
         }
         this.drawIssueShapes(ctx);
         const dash = overlay.dash.map(px => px / scale);

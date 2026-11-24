@@ -294,6 +294,45 @@ async function checkEditor(url: string) {
         await compareFinish(() => click("button[aria-label=重画坡线]"), false);
         await choose("函数", "mountain");
         await compareFinish(() => click("button[aria-label=添加山脊]"), false);
+
+        console.log("Only the original outline fades while dragging");
+        const left = cx + 82, top = cy + 4, mid = top + 40, dx = 58, dy = -24;
+        async function pixel(x: number, y: number) {
+            return evaluate(([x, y]) => {
+                const canvas = document.querySelector<HTMLCanvasElement>("#map")!, box = canvas.getBoundingClientRect();
+                const px = Math.floor((x - box.left) * canvas.width / box.width), py = Math.floor((y - box.top) * canvas.height / box.height);
+                return [...canvas.getContext("2d")!.getImageData(px, py, 1, 1).data].slice(0, 3);
+            }, [x, y]);
+        }
+        await click("button[aria-label=新建地件]");
+        await click(".creation-menu [role=menuitem]:nth-child(2)");
+        await tap([left, top]); await tap([left + 76, top + 80]); await idle(); await saved();
+        await panel("inputs"); await click("[data-select-field=height]");
+        await panel("layers"); await click("input[data-layer=contours]");
+        const terrain = await pixel(left, mid);
+        await click("input[data-layer=geoNodes]");
+        await tap([left + 38, mid]);
+        const solid = await pixel(left, mid), handle = await pixel(left, top);
+        assert.notDeepEqual(solid, terrain);
+        await browser.mouse("mousePressed", left + 38, mid);
+        await browser.mouse("mouseMoved", left + 38 + dx, mid + dy);
+        const origin = await pixel(left, mid);
+        for (const [i, channel] of origin.entries())
+            assert(Math.abs(channel - (.7 * terrain[i] + .3 * solid[i])) <= 2, "Original outline pixel " + origin);
+        assert.deepEqual(await pixel(left + dx, mid + dy), solid);
+        assert.deepEqual(await pixel(left + dx, top + dy), handle);
+        await browser.mouse("mouseReleased", left + 38 + dx, mid + dy); await idle(); await saved();
+        assert.deepEqual(await pixel(left + dx, mid + dy), solid);
+        await undo();
+        const restored = await disk();
+        await cdp("Emulation.setTouchEmulationEnabled", { enabled: true });
+        await cdp("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: left, y: top }] });
+        await cdp("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: left + 26, y: top - 12 }] });
+        assert.deepEqual(await pixel(left, mid), origin, "Dragging a vertex also fades the old edge");
+        await cdp("Input.dispatchTouchEvent", { type: "touchCancel", touchPoints: [] });
+        await cdp("Emulation.setTouchEmulationEnabled", { enabled: false });
+        assert.deepEqual(await pixel(left, mid), solid);
+        assert.equal(await disk(), restored);
     }
     finally {
         await browser.close();

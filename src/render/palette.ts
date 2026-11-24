@@ -8,6 +8,7 @@ export const palette = {
     borderRegion: "#c4ccc1",
     accent: "#226659",
     accentHover: "rgb(34 102 89 / 50%)",
+    dragOrigin: "rgb(34 102 89 / 30%)",
     stripArea: "rgb(34 102 89 / 10%)",
     warning: "#ad771c",
     danger: "#a34839",
