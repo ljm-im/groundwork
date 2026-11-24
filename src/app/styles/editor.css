@@ -6,6 +6,8 @@
     background: var(--bg-app);
 }
 
+:root[data-theme="dark"] { color-scheme: dark; }
+
 * { box-sizing: border-box; }
 #app { overflow-x: clip; }
 body, h1, h2, h3, h4, dl, dd { margin: 0; }

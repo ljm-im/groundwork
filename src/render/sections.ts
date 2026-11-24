@@ -2,7 +2,7 @@ import { type Section, type Point } from "../core/design/v5.ts";
 import { heightId } from "../core/design/defaults.ts";
 import { sampleField, type Terrain } from "../core/design/results.ts";
 import { distance, mixPoint } from "../core/math/geometry.ts";
-import { canvasText, palette, sectionColors } from "./palette.ts";
+import { canvasText, interfaceColors, sectionColors, type Theme } from "./palette.ts";
 import { displaySteps, markParameters } from "../core/design/functionTable.ts";
 import { displayReading } from "../core/design/display.ts";
 
@@ -18,7 +18,8 @@ function sectionCut(section: Section) {
     return cut;
 }
 
-export function drawSection(ctx: CanvasRenderingContext2D, w: number, h: number, section: Section, terrain: Terrain) {
+export function drawSection(ctx: CanvasRenderingContext2D, w: number, h: number, section: Section, terrain: Terrain, theme: Theme) {
+    const colors = interfaceColors[theme];
     ctx.clearRect(0, 0, w, h);
     const { len, n, stations } = sectionCut(section);
     const ground = stations.map(p => sampleField(terrain, heightId, p));
@@ -34,12 +35,12 @@ export function drawSection(ctx: CanvasRenderingContext2D, w: number, h: number,
     for (const level of [0, 10, 20, 30]) {
         const y = sy(level);
         if (y < 4) continue;
-        ctx.fillStyle = palette.textSecondary;
+        ctx.fillStyle = colors.textSecondary;
         ctx.fillText(String(level), left - 3, y);
         ctx.beginPath();
         ctx.moveTo(left, y);
         ctx.lineTo(right, y);
-        ctx.strokeStyle = palette.border;
+        ctx.strokeStyle = colors.border;
         ctx.lineWidth = .7;
         ctx.stroke();
     }
@@ -62,7 +63,7 @@ export function drawSection(ctx: CanvasRenderingContext2D, w: number, h: number,
     }
     ctx.textAlign = "left";
     ctx.textBaseline = "bottom";
-    ctx.fillStyle = palette.textSecondary;
+    ctx.fillStyle = colors.textSecondary;
     ctx.fillText("0", left, h);
     ctx.textAlign = "right";
     ctx.fillText(displayReading(len, displaySteps.section, markParameters.scale.unit), right, h);

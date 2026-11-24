@@ -113,13 +113,15 @@
 <script lang="ts">
     import { onMount } from "svelte";
     import { displayReading } from "../../core/design/display.ts";
+    import { type Theme } from "../../render/palette.ts";
     import { drawingHint, positionText } from "../state/mapText.ts";
     import { attachController } from "../state/controller.ts";
     import * as session from "../state/session.svelte.ts";
     import Icon from "./Icon.svelte";
     import Messages from "./Messages.svelte";
 
-    let { editor }: { editor: session.Editor } = $props();
+    let { editor, theme }: { editor: session.Editor; theme: Theme } = $props();
+    let drawView = $derived(editor.mapView && { view: editor.mapView, theme });
     let busyText = $derived(editor.busy === "正在生成地形…" || editor.busy === "正在更新地件…" ? "计算中" : editor.busy ?? "");
     let hint = $derived(drawingHint(editor.tool, editor.geoDraft, editor.drawing?.end));
     let position = $derived(positionText(editor.cursor, editor.project?.design.fields[editor.displayField]));
@@ -129,14 +131,14 @@
     function requestDraw() {
         frame ||= requestAnimationFrame(() => {
             frame = 0;
-            const view = editor.mapView;
-            if (!view) return;
-            editor.map.draw(view);
+            if (!drawView) return;
+            const { view, theme } = drawView;
+            editor.map.draw(view, theme);
             if (view.issueStart !== undefined && performance.now() - view.issueStart < 1500) requestDraw();
         });
     }
     $effect(() => {
-        if (editor.mapView) requestDraw();
+        if (drawView) requestDraw();
     });
     onMount(() => {
         editor.attach(canvas, () => {

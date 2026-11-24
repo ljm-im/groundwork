@@ -69,3 +69,25 @@
     --z-tip: 200;
     --z-dialog: 300;
 }
+
+:root[data-theme="dark"] {
+    --bg-app: #171d1b;
+    --bg-panel: #1d2422;
+    --bg-sunken: #141a18;
+    --bg-hover: #26302d;
+    --bg-selected: #2d3c37;
+    --bg-chip: #2a3532;
+    --text: #dde6e1;
+    --text-secondary: #8f9e98;
+    --text-disabled: #56635f;
+    --border: #323d39;
+    --border-region: #404c48;
+    --border-strong: #5d756d;
+    --accent: #62b3a0;
+    --focus-ring: rgb(98 179 160 / 35%);
+    --warning: #cf9c45;
+    --danger: #e5816f;
+    --on-accent: #10201b;
+    --backdrop: rgb(0 0 0 / 50%);
+    --shadow-pop: 0 0 0 1px rgb(255 255 255 / 9%), 0 4px 16px rgb(0 0 0 / 45%);
+}

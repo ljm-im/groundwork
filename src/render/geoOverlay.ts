@@ -3,13 +3,13 @@ import { geoControls, geometryPath, linePoints, pathEntries, type GeoControl } f
 import { flattenPath } from "../core/design/path.ts";
 import { type Point, type GeoNode } from "../core/design/v5.ts";
 import { type Segment } from "../core/design/regions.ts";
-import { overlay, palette } from "./palette.ts";
+import { mapColors, overlay } from "./palette.ts";
 
 export function drawHandle(ctx: CanvasRenderingContext2D, x: number, y: number, selected: boolean, control = false) {
     ctx.beginPath();
     ctx.arc(x, y, control ? overlay.controlRadius : overlay.handleRadius, 0, Math.PI * 2);
-    ctx.fillStyle = selected ? palette.accent : palette.bgPanel;
-    ctx.strokeStyle = palette.accent;
+    ctx.fillStyle = selected ? mapColors.accent : mapColors.bgPanel;
+    ctx.strokeStyle = mapColors.accent;
     ctx.lineWidth = overlay.handleOutline;
     ctx.fill();
     ctx.stroke();
@@ -34,18 +34,18 @@ export function drawGeoOverlay(map: ProjectMap, view: MapView) {
     const dot = (point: Point, active = false, control = false) => drawHandle(ctx, ...map.screen(point), active, control);
     function controls(n: GeoNode, numeric: GeoNode<number>) {
         for (const [i, path] of pathEntries(n)) {
-            if (i === -1) edges(flattenPath(path, .6 / scale), palette.parameterGeometry, overlay.parameterWidth, true);
-            else if (view.dragNode || draft?.owner === n.id) edges(flattenPath(path, .6 / scale), palette.accent, overlay.selectedWidth);
+            if (i === -1) edges(flattenPath(path, .6 / scale), mapColors.parameterGeometry, overlay.parameterWidth, true);
+            else if (view.dragNode || draft?.owner === n.id) edges(flattenPath(path, .6 / scale), mapColors.accent, overlay.selectedWidth);
         }
         for (const points of linePoints(n)) {
             if (points.length === 1) dot(points[0]);
-            else edges(points.slice(1).map((b, i) => ({ a: points[i], b })), palette.parameterGeometry, overlay.parameterWidth, true);
+            else edges(points.slice(1).map((b, i) => ({ a: points[i], b })), mapColors.parameterGeometry, overlay.parameterWidth, true);
         }
         if (n.function.type === "coast" && numeric.function.type === "coast" && numeric.function.harbor.radius > 0) {
             const { center } = n.function.harbor, { radius } = numeric.function.harbor;
             ctx.beginPath();
             ctx.arc(...map.screen(center), radius * scale, 0, Math.PI * 2);
-            ctx.strokeStyle = palette.parameterGeometry;
+            ctx.strokeStyle = mapColors.parameterGeometry;
             ctx.lineWidth = overlay.parameterWidth;
             ctx.setLineDash([...overlay.dash]);
             ctx.stroke();
@@ -54,7 +54,7 @@ export function drawGeoOverlay(map: ProjectMap, view: MapView) {
         if (draft) return;
         for (const c of geoControls(n, view.geometry)) {
             const tangent = c.role === "in" || c.role === "out";
-            if (tangent) edges([{ a: geometryPath(n, c.path)!.nodes[c.index].p, b: c.point }], palette.accent, overlay.controlLine);
+            if (tangent) edges([{ a: geometryPath(n, c.path)!.nodes[c.index].p, b: c.point }], mapColors.accent, overlay.controlLine);
             const active = view.vertex && (["path", "role", "index"] as (keyof GeoControl)[]).every(k => view.vertex![k] === c[k]);
             dot(c.point, !!active, tangent);
         }
@@ -64,7 +64,7 @@ export function drawGeoOverlay(map: ProjectMap, view: MapView) {
     if (owner && (!draft || draft.owner === owner.id)) controls(view.dragNode ?? owner, owner);
     if (draft) {
         if (draft.tool === "strip") {
-            edges(draft.spine ?? [], palette.accent, overlay.selectedWidth);
+            edges(draft.spine ?? [], mapColors.accent, overlay.selectedWidth);
             const upper = d.geoNodes.findLast(n => draft.ids.includes(n.id));
             if (upper?.construction.type === "free") for (const path of upper.construction.paths) for (const v of path.nodes)
                 dot(v.p, draft.anchors.includes(v.id));
@@ -73,10 +73,10 @@ export function drawGeoOverlay(map: ProjectMap, view: MapView) {
             if (["peak", "center", "harbor"].includes(draft.tool)) {
                 if (!draft.nodes.length && draft.cursor) dot(draft.cursor);
             }
-            else if (draft.path) edges(flattenPath(draft.path, .5 / scale), palette.accent, overlay.selectedWidth, true);
+            else if (draft.path) edges(flattenPath(draft.path, .5 / scale), mapColors.accent, overlay.selectedWidth, true);
             else {
                 const points = [...(draft.start ? [draft.start] : []), ...draft.nodes.map(v => v.p), ...(draft.cursor ? [draft.cursor] : [])];
-                edges(points.slice(1).map((b, i) => ({ a: points[i], b })), palette.parameterGeometry, overlay.parameterWidth, true);
+                edges(points.slice(1).map((b, i) => ({ a: points[i], b })), mapColors.parameterGeometry, overlay.parameterWidth, true);
             }
             for (const v of draft.nodes) dot(v.p);
         }

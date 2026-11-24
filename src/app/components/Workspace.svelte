@@ -1,6 +1,6 @@
 <main class="workspace" bind:this={main} style:--right={layout.right + "px"} style:--bottom={layout.bottomClosed ? "0px" : layout.bottom * 100 + "%"}>
     <div class="map-column" class:closed={layout.bottomClosed}>
-        <MapCanvas {editor} />
+        <MapCanvas {editor} {theme} />
         <button class="split horizontal" data-split="bottom" aria-label="调整左下面板" data-tip="调整左下面板"
             onpointerdown={e => begin(e, "bottom")} ondblclick={() => toggle("bottomClosed")} onkeydown={e => keyboard(e, "bottom")} ></button>
         <div class="bottom-pane" hidden={layout.bottomClosed}>
@@ -10,7 +10,7 @@
                     {#snippet actions()}<small>海拔 / m</small>{/snippet}
                 </Heading>
             </nav>
-            <div class="plot-pane"><Sections {editor} /></div>
+            <div class="plot-pane"><Sections {editor} {theme} /></div>
         </div>
     </div>
     <button class="split vertical" data-split="right" aria-label="调整右栏宽度" data-tip="调整右栏宽度"
@@ -74,6 +74,7 @@
     import { onMount } from "svelte";
     import { readLayout, saveLayout } from "../state/layout.ts";
     import { clamp } from "../../core/math/geometry.ts";
+    import { type Theme } from "../../render/palette.ts";
     import * as session from "../state/session.svelte.ts";
     import MapCanvas from "./MapCanvas.svelte";
     import Sections from "./Sections.svelte";
@@ -81,7 +82,7 @@
     import ContextMenu from "./ContextMenu.svelte";
     import Heading from "./Heading.svelte";
 
-    let { editor }: { editor: session.Editor } = $props();
+    let { editor, theme }: { editor: session.Editor; theme: Theme } = $props();
     let main: HTMLElement;
     let layout = $state(readLayout());
     type Split = "bottom" | "upper" | "right";

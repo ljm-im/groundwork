@@ -12,7 +12,7 @@ import { type GeoControl, type GeometryTarget } from "../core/edit/geoControls.t
 import { contourLabels, fieldContours } from "./fieldContours.ts";
 import { constrainGeoLabel, constrainSectionLabel, geoLabelPoint } from "./labelLayout.ts";
 import { drawGeoOverlay, drawHandle } from "./geoOverlay.ts";
-import { baseMap, canvasText, contourStyle, overlay, palette } from "./palette.ts";
+import { baseMap, canvasText, contourStyle, interfaceColors, mapColors, overlay, type Theme } from "./palette.ts";
 import { displayReading, displayValue } from "../core/design/display.ts";
 import { sectionHandles } from "../core/edit/controls.ts";
 import { relief } from "./relief.ts";
@@ -46,7 +46,7 @@ export type MapView = Readonly<{
 }>;
 
 const labelFont = (bold = false) => (bold ? canvasText.semibold : canvasText.regular) + " " + canvasText.sm + "px " + canvasText.font;
-const issueColor = (issue: Issue) => issue.severity === "error" ? palette.danger : palette.warning;
+const issueColor = (issue: Issue) => issue.severity === "error" ? mapColors.danger : mapColors.warning;
 const line = (ctx: Context, points: Point[], closed = false) => {
     ctx.beginPath();
     ctx.moveTo(...points[0]);
@@ -120,11 +120,11 @@ function circle(ctx: Context, x: number, y: number, r: number, fill: string | nu
     }
 }
 
-function mapText(ctx: Context, text: string, x: number, y: number, bold = false, color: string = palette.text) {
+function mapText(ctx: Context, text: string, x: number, y: number, bold = false, color: string = mapColors.text) {
     ctx.font = labelFont(bold);
     ctx.lineJoin = "round";
     ctx.lineWidth = overlay.labelHalo;
-    ctx.strokeStyle = palette.bgPanel;
+    ctx.strokeStyle = mapColors.bgPanel;
     ctx.strokeText(text, x, y);
     ctx.fillStyle = color;
     ctx.fillText(text, x, y);
@@ -246,16 +246,16 @@ export class ProjectMap {
     }
     private outlineStyle(view: MapView, kind: string, id: string) {
         const selected = view.selection?.id === id && view.selection.kind === kind;
-        if (selected) return { color: palette.accent, width: overlay.selectedWidth / this.scale };
+        if (selected) return { color: mapColors.accent, width: overlay.selectedWidth / this.scale };
         if (view.hovered?.kind === kind && view.hovered.id === id || kind === "geoNode" && (view.referencedGeo.includes(id) ||
             view.draft?.tool === "strip" && view.draft.ids.includes(id)))
-            return { color: palette.accentHover, width: overlay.hoverWidth / this.scale };
+            return { color: mapColors.accentHover, width: overlay.hoverWidth / this.scale };
     }
     geoHits(project: ProjectView, p: Point) {
         const empty = !hasSamples(project.terrain);
         return project.design.geoNodes.filter(n => (!n.disabled || empty) && project.terrain.regions.get(n.id)?.shape.contains(p)).reverse();
     }
-    draw(view: MapView) {
+    draw(view: MapView, theme: Theme) {
         if (!this.width || !this.center) return;
         const ctx = this.ctx,
             { terrain: t, design: d } = view.project,
@@ -263,7 +263,7 @@ export class ProjectMap {
             scale = this.scale,
             origin = this.screen([0, 0]), empty = !hasSamples(t);
         ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-        ctx.fillStyle = palette.bgApp;
+        ctx.fillStyle = interfaceColors[theme].bgApp;
         ctx.fillRect(0, 0, this.width, this.height);
         ctx.save();
         ctx.translate(...origin);
@@ -309,11 +309,11 @@ export class ProjectMap {
             if (!r || !outline) continue;
             const paths = regionPaths(r, g);
             if (r.shape.spine) {
-                ctx.fillStyle = palette.stripArea;
+                ctx.fillStyle = mapColors.stripArea;
                 ctx.fill(paths.area, "evenodd");
                 for (const edge of r.shape.spine) stroke(ctx, [edge.a, edge.b], outline.color, outline.width);
             }
-            ctx.strokeStyle = id === draggedRegionId ? palette.dragOrigin : outline.color;
+            ctx.strokeStyle = id === draggedRegionId ? mapColors.dragOrigin : outline.color;
             ctx.lineWidth = outline.width; ctx.stroke(paths.outline);
         }
         this.drawIssueShapes(ctx, view);
@@ -444,13 +444,13 @@ export class ProjectMap {
             const [x, y] = this.markScreen({ point, follow: mark.follow });
             const selected = view.selection?.kind === "mark" && view.selection.id === mark.id;
             const handle: Handle = { kind: "mark", id: mark.id, role: "body", point };
-            const color = selected ? palette.accent : palette.text;
+            const color = selected ? mapColors.accent : mapColors.text;
             ctx.save();
             if (mark.kind === "scale") {
                 const length = mark.follow === "screen" ? pixelGridSpacing(this.scale, 80) : mark.length;
                 const right = x + length * this.scale;
                 ctx.textAlign = "left";
-                stroke(ctx, [[x, y - 4], [x, y], [right, y], [right, y - 4]], palette.bgPanel, 4);
+                stroke(ctx, [[x, y - 4], [x, y], [right, y], [right, y - 4]], mapColors.bgPanel, 4);
                 stroke(ctx, [[x, y - 4], [x, y], [right, y], [right, y - 4]], color, selected ? overlay.selectedWidth : 1.7);
                 const text = displayReading(length, displaySteps.length, markParameters.scale.unit);
                 mapText(ctx, text, right + 6, y - 2);
@@ -461,7 +461,7 @@ export class ProjectMap {
                 ctx.font = labelFont(true);
                 const width = Math.max(10, ctx.measureText(text).width), left = x - width / 2;
                 if (selected) {
-                    ctx.fillStyle = palette.bgSelected;
+                    ctx.fillStyle = mapColors.bgSelected;
                     ctx.beginPath();
                     ctx.roundRect(left - 4, y - 9, width + 8, 18, 3);
                     ctx.fill();

@@ -4,7 +4,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { resolve, relative, sep, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
-import { palette } from "../src/render/palette.ts";
+import { interfaceColors, mapColors } from "../src/render/palette.ts";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const tests = resolve(root, "test"), core = resolve(root, "src/core"), render = resolve(root, "src/render");
@@ -160,12 +160,41 @@ export function checkDesignTokens() {
             }
         }
     }
-    const definitions = new Map([...readFileSync(tokens, "utf8").matchAll(/(--[a-z-]+):\s*([^;]+);/g)].map(match => [match[1], match[2].trim()]));
-    for (const key of ["bgApp", "bgPanel", "bgSelected", "text", "textSecondary", "border", "borderRegion", "accent", "warning", "danger"] as const) {
-        const token = "--" + key.replace(/[A-Z]/g, letter => "-" + letter.toLowerCase());
-        assert.equal(definitions.get(token), palette[key], token);
+
+    const blocks = [...readFileSync(tokens, "utf8").matchAll(/([^{}]+)\{([^{}]*)\}/g)];
+    function definitions(selector: string) {
+        const matching = blocks.filter(([, rule]) => rule.trim() === selector);
+        assert.equal(matching.length, 1, "Expected one token block for " + selector);
+        const pairs = [...matching[0][2].matchAll(/([\w-]+)\s*:\s*([^;]+);/g)].map(([, name, value]) => [name, value.trim()] as const);
+        const result = new Map(pairs);
+        assert.equal(result.size, pairs.length, "Duplicate token in " + selector);
+        return result;
+    }
+    const light = definitions(":root"), dark = definitions(":root[data-theme=\"dark\"]");
+    const colorNames = new Set(["--shadow-pop", ...[...light].filter(([, value]) => colors.test(value)).map(([name]) => name)]);
+    assert(light.has("--shadow-pop"));
+    assert.deepEqual(new Set(dark.keys()), colorNames, "Dark mode overrides every color token and the popup shadow only");
+    for (const [name, value] of dark) assert.match(value, colors, name);
+
+    const tokenName = (key: string) => "--" + key.replace(/[A-Z]/g, letter => "-" + letter.toLowerCase());
+    for (const key of ["bgApp", "textSecondary", "border"] as const) {
+        const token = tokenName(key);
+        assert.equal(interfaceColors.light[key], light.get(token), "Light canvas " + token);
+        assert.equal(interfaceColors.dark[key], dark.get(token), "Dark canvas " + token);
+    }
+    for (const key of ["bgPanel", "bgSelected", "text", "borderRegion", "accent", "warning", "danger"] as const) {
+        const token = tokenName(key);
+        assert.equal(mapColors[key], light.get(token), "Map overlay " + token);
     }
 
+    const html = readFileSync(resolve(root, "index.html"), "utf8");
+    assert.doesNotMatch(html, colors, "index.html must use color tokens");
+    const startup = html.match(/<head>[^]*?<script>([^]*?)<\/script>/u)?.[1];
+    assert(startup, "The head must set the initial appearance");
+    const theme = readFileSync(resolve(root, "src/app/state/theme.ts"), "utf8");
+    const key = theme.match(/\bconst key = "([^"]+)";/u)?.[1];
+    assert.equal(key, "groundwork/appearance-v1");
+    assert.equal(startup.match(/\blocalStorage\.getItem\("([^"]+)"\)/u)?.[1], key, "The initial appearance uses the same storage key");
 }
 
 export function checkParameterSource() {

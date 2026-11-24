@@ -50,7 +50,7 @@
 
     let { label, groups, choose, close, variant, kind = "menu", anchor, point, viewport = false, keyboardTarget,
         back, searching = false, openingKey }: {
-        label: string; groups: MenuGroup[]; choose: (id: string) => void; close: (focus?: boolean) => void;
+        label: string; groups: MenuGroup[]; choose: (id: string) => void; close: (focus?: boolean, event?: KeyboardEvent) => void;
         variant: string; kind?: "menu" | "listbox"; anchor?: HTMLElement; point?: { x: number; y: number };
         viewport?: boolean; keyboardTarget?: HTMLElement; back?: () => void; searching?: boolean; openingKey?: string;
     } = $props();
@@ -78,7 +78,7 @@
     function keyboard(e: KeyboardEvent) {
         if (composingKey(e)) return;
         if (e.key === "Escape") {
-            e.preventDefault(); close(true); return;
+            e.preventDefault(); close(true, e); return;
         }
         if (e.target !== anchor && e.target !== keyboardTarget && !(e.target instanceof Node && menu?.contains(e.target))) return;
         const targets = buttons();

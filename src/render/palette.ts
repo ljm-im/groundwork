@@ -1,10 +1,14 @@
-export const palette = {
-    bgApp: "#f9faf6",
+export const interfaceColors = {
+    light: { bgApp: "#f9faf6", textSecondary: "#657570", border: "#d9dfd7" },
+    dark: { bgApp: "#171d1b", textSecondary: "#8f9e98", border: "#323d39" }
+} as const;
+
+export type Theme = keyof typeof interfaceColors;
+
+export const mapColors = {
     bgPanel: "#fffefa",
     bgSelected: "#e2ece4",
     text: "#233d37",
-    textSecondary: "#657570",
-    border: "#d9dfd7",
     borderRegion: "#c4ccc1",
     accent: "#226659",
     accentHover: "rgb(34 102 89 / 50%)",

@@ -4,7 +4,18 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <meta name="theme-color" content="#f8f9f5">
+    <meta name="theme-color">
+    <script>
+        {
+            let appearance;
+            try { appearance = localStorage.getItem("groundwork/appearance-v1"); }
+            catch { /* Use the system appearance if storage is unavailable. */ }
+            document.documentElement.dataset.theme = appearance === "light" || appearance === "dark"
+                ? appearance : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        }
+    </script>
+    <link rel="stylesheet" href="./src/app/styles/tokens.css">
+    <link rel="stylesheet" href="./src/app/styles/editor.css">
     <link rel="icon" type="image/svg+xml" href="/groundwork.svg">
     <title>Groundwork</title>
 </head>
