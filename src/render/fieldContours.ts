@@ -119,8 +119,21 @@ export function traceContours(grid: Grid, samples: FieldSamples, base: number, s
     }
 }
 
-export function connectContourLinks(value: number, tier: number, links: Link[]): ContourLine[] {
+type FieldDomain = { grid: Grid; defined: Uint8Array };
+
+function isBoundaryEdge(edge: number, { grid: { width, height }, defined }: FieldDomain) {
+    const k = Math.floor(edge / 2), x = k % width, y = Math.floor(k / width), vertical = edge % 2 === 1;
+    const cellDefined = (i: number, j: number) => {
+        if (i < 0 || i >= width - 1 || j < 0 || j >= height - 1) return false;
+        const a = j * width + i;
+        return defined[a] && defined[a + 1] && defined[a + width] && defined[a + width + 1];
+    };
+    return !cellDefined(x, y) || !cellDefined(vertical ? x - 1 : x, vertical ? y : y - 1);
+}
+
+export function connectContourLinks(value: number, tier: number, links: Link[], domain?: FieldDomain): ContourLine[] {
     const junctions = new Map<number, Link[]>(), unvisited = new Set(links), lines: ContourLine[] = [];
+    let boundaryLine: ContourLine | undefined;
     for (const link of links) for (const edge of link.edges) {
         const adjacent = junctions.get(edge);
         if (adjacent) adjacent.push(link);
@@ -136,7 +149,16 @@ export function connectContourLinks(value: number, tier: number, links: Link[]):
             edge = link.edges[reversed ? 0 : 1];
             link = junctions.get(edge)?.find(next => unvisited.has(next));
         }
-        if (spans.length) lines.push({ value, tier, spans });
+        if (!spans.length) return;
+        const onBoundary = domain && edge !== start && (isBoundaryEdge(start, domain) || isBoundaryEdge(edge, domain));
+        if (onBoundary && boundaryLine) {
+            for (const span of spans) boundaryLine.spans.push(span);
+        }
+        else {
+            const line = { value, tier, spans };
+            lines.push(line);
+            if (onBoundary) boundaryLine = line;
+        }
     }
     for (const [edge, adjacent] of junctions) if (adjacent.length === 1) trace(adjacent[0], edge);
     for (const link of unvisited) trace(link, link.edges[0]);
@@ -209,7 +231,8 @@ export function fieldContours(grid: Grid, samples: FieldSamples, precision: numb
         if (!line) levels.set(level, line = { value, tier, links: [] });
         line.links.push({ edges, from, to, spacing });
     }, true);
-    const lines = [...levels.values()].flatMap(({ value, tier, links }) => connectContourLinks(value, tier, links));
+    const domain = { grid, defined };
+    const lines = [...levels.values()].flatMap(({ value, tier, links }) => connectContourLinks(value, tier, links, domain));
     const rendered = { grid, defined, precision, scale, base, paths, lines };
     contours.set(samples.values, rendered);
     return rendered;

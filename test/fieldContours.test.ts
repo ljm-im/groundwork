@@ -81,3 +81,35 @@ test("Overlapping contour numbers keep the higher multiple and break ties in pla
     assert.deepEqual(placed.map(label => label.value), [20]);
     assert.deepEqual(labels([line(30, 2, 100), line(10, 2, 101)]).map(label => label.value), [30]);
 });
+
+function sampleContour(width: number, height: number, value: (x: number, y: number) => number,
+    inside: (x: number, y: number) => boolean = () => true) {
+    const grid = createGrid({ xMin: 0, xMax: width, yMin: 0, yMax: height, step: 1 });
+    const values = Float32Array.from({ length: width * height }, (_, i) => value(i % width, Math.floor(i / width)));
+    const defined = Uint8Array.from(values, (_, i) => Number(inside(i % width, Math.floor(i / width))));
+    const scale = 20, links: Parameters<typeof connectContourLinks>[2] = [];
+    traceContours(grid, { values, defined }, 1, scale, (_rank, level, from, to, _label, { edges, spacing }) => {
+        if (level === 20) links.push({ edges, from, to, spacing });
+    }, true);
+    return {
+        links, domain: { grid, defined },
+        labels: (lines: ContourLine[]) => contourLabels(lines, width * scale, height * scale, ([x, y]) => [x * scale, y * scale], () => [32, 14])
+    };
+}
+
+test("Three equal contour fragments ending on the defined field boundary receive one number", () => {
+    const { links, domain, labels } = sampleContour(27, 18, (_x, y) => 20 + (y - 8.5) * .05, x => x % 10 < 7);
+    assert.equal(labels(connectContourLinks(20, 3, links)).length, 3);
+    const joined = connectContourLinks(20, 3, links, domain);
+    assert.deepEqual(joined.map(line => line.spans.length), [links.length]);
+    assert.deepEqual(labels(joined).map(label => label.value), [20]);
+});
+
+test("Two equal closed contours inside a defined field each receive a number", () => {
+    const { links, domain, labels } = sampleContour(30, 19, (x, y) =>
+        20 + .05 * (3.7 - Math.min(Math.hypot(x - 7, y - 9), Math.hypot(x - 22, y - 9))));
+    const lines = connectContourLinks(20, 3, links, domain);
+    assert.equal(lines.length, 2);
+    for (const { spans } of lines) assert.deepEqual(spans[0].from, spans.at(-1)!.to);
+    assert.deepEqual(labels(lines).map(label => label.value), [20, 20]);
+});
