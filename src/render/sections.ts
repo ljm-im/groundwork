@@ -1,40 +1,23 @@
 import { type Section, type Point } from "../core/design/v5.ts";
-import { type Terrain } from "../core/design/results.ts";
-import { type IslandView } from "../core/island.ts";
-import { clamp, distance, mixPoint, sampleDefined } from "../core/math/geometry.ts";
-import { canvasText, palette, sectionColors, treeStyles } from "./palette.ts";
+import { type ProjectView } from "../core/project.ts";
+import { distance, mixPoint, sampleDefined } from "../core/math/geometry.ts";
+import { canvasText, palette, sectionColors } from "./palette.ts";
 import { displayNumber } from "../app/state/numbers.ts";
 
-// Section stations and building intersections only change when an endpoint or the terrain changes.
-const sectionCuts = new WeakMap<Section, { terrain: Terrain; footprints: string; x0: number; y0: number; x1: number; y1: number;
-    len: number; n: number; stations: Point[]; buildings: { building: Terrain["buildings"][number]; start: number; end: number }[] }>();
+const sectionCuts = new WeakMap<Section, { a: Point; b: Point; len: number; n: number; stations: Point[] }>();
 
-function sectionCut(section: Section, terrain: Terrain, footprints: string) {
-    const [a, b] = section.points;
-    const last = sectionCuts.get(section);
-    if (last && last.terrain === terrain && last.footprints === footprints && last.x0 === a[0] && last.y0 === a[1] && last.x1 === b[0] && last.y1 === b[1]) return last;
+function sectionCut(section: Section) {
+    const [a, b] = section.points, last = sectionCuts.get(section);
+    if (last?.a === a && last.b === b) return last;
     const len = distance(a, b), n = Math.max(2, Math.round(len * 2));
     const stations = Array.from({ length: n + 1 }, (_, i) => mixPoint(a, b, i / n));
-    const buildings = [];
-    for (const building of terrain.buildings) {
-        let start = -1;
-        for (let i = 0; i <= stations.length; i++) {
-            const inside = i < stations.length && building.signedDistance(...stations[i]) <= 0;
-            if (inside && start < 0) start = i;
-            if (!inside && start >= 0) {
-                buildings.push({ building, start, end: i - 1 });
-                start = -1;
-            }
-        }
-    }
-    const cut = { terrain, footprints, x0: a[0], y0: a[1], x1: b[0], y1: b[1], len, n, stations, buildings };
+    const cut = { a, b, len, n, stations };
     sectionCuts.set(section, cut);
     return cut;
 }
 
-export function drawSections(container: HTMLElement, island: IslandView) {
-    const { design: d, terrain: t, graded } = island;
-    const footprints = t.buildings.map(({ data: b }) => [b.shape, ...b.center, b.angle, b.radius, b.inner, ...(b.size ?? [])].join(",")).join(";");
+export function drawSections(container: HTMLElement, project: ProjectView) {
+    const { design: d, terrain: t } = project;
     while (container.children.length > d.sections.length) container.lastChild!.remove();
     for (const [index, section] of d.sections.entries()) {
         let figure = container.children[index];
@@ -60,10 +43,10 @@ export function drawSections(container: HTMLElement, island: IslandView) {
         const ctx = canvas.getContext("2d")!;
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, w, h);
-        const [a, b] = section.points, { len, n, stations, buildings } = sectionCut(section, t, footprints);
+        const [a, b] = section.points, { len, n, stations } = sectionCut(section);
         const ux = (b[0] - a[0]) / len,
             uy = (b[1] - a[1]) / len;
-        const ground = stations.map(p => sampleDefined(t.grid, graded.heights, t.defined, ...p));
+        const ground = stations.map(p => sampleDefined(t.grid, t.heights, t.defined, ...p));
         const left = 17,
             right = w - 5,
             base = h - 15,
@@ -101,30 +84,6 @@ export function drawSections(container: HTMLElement, island: IslandView) {
             ctx.strokeStyle = sectionColors.groundOutline;
             ctx.lineWidth = .8;
             ctx.stroke();
-        }
-        for (const tree of island.trees) {
-            const [x, y] = tree.point, dx = x - a[0], dy = y - a[1], along = dx * ux + dy * uy;
-            if (along < 0 || along > len || Math.abs(dx * uy - dy * ux) > tree.radius) continue;
-            const px = sx(along),
-                g = ground[clamp(Math.round(along / len * n), 0, n)];
-            if (g === undefined) continue;
-            const [color, heightRatio] = treeStyles[tree.species], crown = g + tree.radius * heightRatio;
-            ctx.beginPath();
-            ctx.moveTo(px, sy(g));
-            ctx.lineTo(px, sy(crown));
-            ctx.strokeStyle = sectionColors.trunk;
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.ellipse(px, sy(crown), Math.max(1, tree.radius * (right - left) / len), tree.radius * ys, 0, 0, Math.PI * 2);
-            ctx.fillStyle = color;
-            ctx.fill();
-        }
-        for (const { building, start, end } of buildings) {
-            const h = ground[start];
-            if (h === undefined) continue;
-            const x = sx(start * len / n), y = sy(h + building.data.height);
-            ctx.fillStyle = building.data.color;
-            ctx.fillRect(x, y, Math.max(1, sx(end * len / n) - x), building.data.height * ys);
         }
         ctx.textAlign = "left";
         ctx.textBaseline = "bottom";

@@ -1,8 +1,7 @@
 import { type Path, type Point } from "./v5.ts";
 import { distance, mixPoint, projection } from "../math/geometry.ts";
 
-import { type Segment } from "./regions.ts";
-export { type Segment } from "./regions.ts";
+export interface Segment { a: Point; b: Point; from?: string }
 
 export const defaultArcBulge = .4142135624;
 

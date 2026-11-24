@@ -1,5 +1,6 @@
 import { literalPattern, tokens } from "../../core/design/expression.ts";
 import { parameters, type Slot } from "../../core/design/parameters.ts";
+import { seedId } from "../../core/design/defaults.ts";
 import { type Design, type Expression } from "../../core/design/v5.ts";
 
 export type Range = [number, number, number];
@@ -81,11 +82,10 @@ export function repeatButton(change: () => void) {
 
 export function referenceLabel(key: string, d: Design, slots: Map<string, Slot>) {
     const kind = key.slice(0, key.indexOf(":")), id = key.slice(kind.length + 1);
-    if (kind === "field") return { icon: "field" as const, name: id === "height" ? "高度" : d.fields[id]?.label ?? id };
+    if (kind === "field") return { icon: "field" as const, builtin: id === "height", name: id === "height" ? "高度" : d.fields[id]?.label ?? id };
     const s = slots.get(key);
-    if (kind === "input") return { icon: "inputs" as const, name: d.inputs[id]?.label ?? id };
-    const icon = kind === "geo" ? "terrain" : kind === "edge" ? "edge" : kind === "building" ? "building" : "node";
-    return { icon, name: s?.name ?? id, property: s?.label } as const;
+    if (kind === "input") return { icon: "inputs" as const, builtin: id === seedId, name: d.inputs[id]?.label ?? id };
+    return { icon: "property", builtin: false, name: s?.name ?? id, property: s?.label } as const;
 }
 export function displayExpression(v: Expression, d: Design) {
     if (typeof v === "number") return String(v);

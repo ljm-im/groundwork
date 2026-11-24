@@ -1,5 +1,6 @@
 import { type ResolvedDesign as Design, type Expression, type Path, type Point, type Polyline } from "./v5.ts";
 
+import { seedId, seedLabel } from "./defaults.ts";
 import { randomFunctions } from "./parameters.ts";
 
 export function check(ok: unknown, message: string): asserts ok {
@@ -13,10 +14,11 @@ const finite = Number.isFinite;
 export function validateGeo(d: Design, allowBrokenReferences = false) {
     check(record(d.inputs), "inputs 缺失");
     check(record(d.fields) && !Object.hasOwn(d.fields, "height"), "fields 无效，高度场是内置场");
+    check(Object.hasOwn(d.inputs, seedId) && d.inputs[seedId]?.label === seedLabel, "inputs.seed.label 必须是“种子”");
     for (const [key, variable] of Object.entries(d.inputs)) {
         const r = variable?.range;
         check(key && finite(variable?.value) && (variable.label == null || typeof variable.label === "string") &&
-            (r == null || Array.isArray(r) && r.length === 3 && r.every(finite) && r[0] < r[1] && positive(r[2])), "inputs." + key + " 无效");
+            Array.isArray(r) && r.length === 3 && r.every(finite) && r[0] < r[1] && positive(r[2]), "inputs." + key + " 无效");
     }
     for (const [key, f] of Object.entries(d.fields))
         check(key && finite(f?.default) && (f.label == null || typeof f.label === "string"), "fields." + key + " 无效");
@@ -85,7 +87,7 @@ export function validateGeo(d: Design, allowBrokenReferences = false) {
             case "coast":
                 path(f.shore, "function.shore");
                 input(f.roughness, "function.roughness");
-                if (f.harbor) valid(point(f.harbor.center) && f.harbor.radius >= 0 && positive(f.harbor.span), "function.harbor");
+                valid(f.harbor && point(f.harbor.center) && f.harbor.radius >= 0 && positive(f.harbor.span), "function.harbor");
                 break;
             case "mountain":
                 valid(Array.isArray(f.ridges) && Array.isArray(f.peaks), "function");

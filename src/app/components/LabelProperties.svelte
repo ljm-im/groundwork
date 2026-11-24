@@ -5,10 +5,10 @@
 
 <script lang="ts">
     import * as session from "../state/session.svelte.ts";
-    import { type DescriptionTarget } from "../state/descriptions.ts";
+    import { type PromptTarget } from "../../core/edit/history.ts";
     import Prompt from "./Prompt.svelte";
 
     let { editor, target, showLabel, setLabelVisibility }: {
-        editor: session.Editor; target: DescriptionTarget; showLabel: boolean; setLabelVisibility: (visible: boolean) => void;
+        editor: session.Editor; target: PromptTarget; showLabel: boolean; setLabelVisibility: (visible: boolean) => void;
     } = $props();
 </script>

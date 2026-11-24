@@ -1,17 +1,13 @@
 import { type Design, type ResolvedDesign } from "../design/v5.ts";
-import { type Region, type RegionShape } from "../design/regions.ts";
+import { type Region, rasterRegion, shapeLayout } from "../design/regions.ts";
 import { type Terrain } from "../design/results.ts";
+import { type Grid } from "../math/geometry.ts";
 import { resolveDesign } from "../design/parameters.ts";
-import { buildingShape } from "../design/shapes.ts";
-import { eachCell, sampleDefined, type Grid } from "../math/geometry.ts";
-import { canvasGrid, makeShape, rasterRegion } from "./regions.ts";
 import { applyLayer, evaluateLayer, type FieldState } from "./functions.ts";
 import { shoreDistance } from "./shore.ts";
 
 export function layout(d: ResolvedDesign) {
-    const shapes = new Map<string, RegionShape>();
-    for (const n of d.geoNodes) shapes.set(n.id, makeShape(n, shapes, d.grid.step / 8));
-    const grid = canvasGrid(d, shapes);
+    const { grid, shapes } = shapeLayout(d);
     const regions = new Map([...shapes].map(([id, shape]) => [id, rasterRegion(grid, shape)]));
     return { grid, regions };
 }
@@ -41,34 +37,12 @@ function resolvedStack(d: ResolvedDesign) {
     return { ...state, regions, batterResiduals };
 }
 
-export function finishTerrain(d: ResolvedDesign, stack: ReturnType<typeof evaluateStack>): Terrain {
-    const { grid, defined, regions, batterResiduals } = stack;
-    const heights = stack.fields.height.slice(), fields = { ...stack.fields, height: heights };
-    const buildings = d.buildings.map(b => buildingShape(b)), padMask = new Uint8Array(grid.size);
+export function finishTerrain(stack: ReturnType<typeof evaluateStack>): Terrain {
+    const { grid, defined, regions, batterResiduals, fields } = stack, heights = fields.height;
     const shore = shoreDistance(grid, Uint8Array.from(heights, h => +(h > 0)), defined);
-    const clearance = new Float32Array(grid.size).fill(1e5);
-    const pads = buildings.map(b => {
-        const data = b.data, cells: number[] = [], pad = data.pad ?? (b.polygon ? 1.3 : data.radius! + 1.3);
-        eachCell(grid, b.box, Math.max(16, pad), (k, x, y) => {
-            if (!defined[k]) return;
-            const gap = b.signedDistance(x, y);
-            clearance[k] = Math.min(clearance[k], gap - (data.blockMargin ?? 0));
-            if (b.polygon ? gap < pad : Math.hypot(x - data.center[0], y - data.center[1]) <= pad) {
-                cells.push(k);
-                padMask[k] = 1;
-            }
-        });
-        if (cells.length) {
-            const center = data.summit ? sampleDefined(grid, heights, defined, ...data.center) : undefined;
-            const h = center ?? cells.reduce((sum, k) => sum + heights[k], 0) / cells.length;
-            for (const k of cells) heights[k] = h;
-        }
-        return cells;
-    });
-    return { grid, defined, fields, stackHeights: stack.fields.height, heights, shore, clearance, padMask, pads, buildings, regions, batterResiduals };
+    return { grid, defined, fields, heights, shore, regions, batterResiduals };
 }
 
 export function generateTerrain(d: Design) {
-    const numeric = resolveDesign(d);
-    return finishTerrain(numeric, resolvedStack(numeric));
+    return finishTerrain(evaluateStack(d));
 }

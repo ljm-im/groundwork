@@ -21,11 +21,8 @@ function compare(cache: TerrainCache, d: Design) {
 test("Incremental layers match a fresh stack byte for byte after every fixture edit", fixtureOptions("round14-coast.json", "round14-land.json", "regressions.json"), async () => {
     const rules = (await readRegressions()).fixtures;
     for (const fixture of await designFixtures()) {
-        const d = parseDesign(fixture.text), cache = new TerrainCache(), raw = new TerrainCache();
-        const check = () => {
-            compare(raw, { ...d, buildings: [] });
-            compare(cache, d);
-        };
+        const d = parseDesign(fixture.text), cache = new TerrainCache();
+        const check = () => compare(cache, d);
         const rule = rules[fixture.name.replace("round14-", "").replace(".json", "")];
         const erosion = d.geoNodes.find(n => n.function.type === "erosion")!;
         check();
@@ -89,7 +86,7 @@ test("Cached noise follows its amplitude field and the order of a flat terrace",
     assert(cells.every(k => muted.heights[k] === 8));
 });
 
-test("Moved, deleted and reordered writes restore old cells and keep earlier Island snapshots isolated", () => {
+test("Moved, deleted and reordered writes restore old cells and keep earlier Project snapshots isolated", () => {
     const d = syntheticDesign(), cache = new TerrainCache(), first = compare(cache, d);
     const saved = first.heights.slice();
     d.geoNodes.push(layer("B", rect(-13, -12, 3, 1), { type: "flat", amount: 12 }),
@@ -98,11 +95,9 @@ test("Moved, deleted and reordered writes restore old cells and keep earlier Isl
     [d.geoNodes[1], d.geoNodes[2]] = [d.geoNodes[2], d.geoNodes[1]];
     compare(cache, d);
     d.geoNodes.splice(1, 1);
-    const result = compare(cache, d);
+    compare(cache, d);
     assert.deepEqual(first.heights, saved);
-    assert.equal(result.buildings[0].data, d.buildings[0]);
-    const clone = structuredClone(d), rebound = compare(cache, clone);
-    assert.equal(rebound.buildings[0].data, clone.buildings[0]);
+    compare(cache, structuredClone(d));
     assert.deepEqual(cache.recomputed, []);
     d.geoNodes[0].construction = rect(-50, -33, 52, 34);
     compare(cache, d);

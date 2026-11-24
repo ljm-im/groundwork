@@ -1,19 +1,20 @@
-<dialog bind:this={remove} id="remove-dialog" class="dialog" onclose={() => {
+<dialog bind:this={remove} id="remove-dialog" class="dialog" aria-labelledby="remove-heading" onclose={() => {
     const pending = editor.removal;
     editor.removal = null;
     if (remove.returnValue === "remove") pending?.perform?.();
 }}>
-    <h2 id="remove-heading">{editor.removal?.title ?? ""}</h2><div class="sub">{editor.removal?.detail ?? "确认后，以下道路的门节点将转为原地的自由端点。"}</div>
-    <ul id="affected-items">{#each editor.removal?.items ?? [] as item, i (i)}<li>{item}</li>{/each}</ul>
+    <h2 id="remove-heading">{editor.removal?.title ?? ""}</h2>
+    <div class="sub">{editor.removal?.detail ?? ""}</div>
+    {#if editor.removal?.items?.length}
+        <ul id="affected-items">
+            {#each editor.removal.items as item, i (i)}
+                <li><button onclick={() => {
+                    remove.close("reference"); item.locate();
+                }}>{item.text}</button></li>
+            {/each}
+        </ul>
+    {/if}
     <form method="dialog"><button value="cancel">{editor.removal?.perform ? "取消" : "关闭"}</button>{#if editor.removal?.perform}<button class="confirm-danger" value="remove">{editor.removal.action ?? "确认删除"}</button>{/if}</form>
-</dialog>
-<dialog bind:this={convert} id="convert-dialog" class="dialog" onclose={() => {
-    const pending = editor.conversion;
-    editor.conversion = null;
-    pending?.finish(convert.returnValue === "convert");
-}}>
-    <h2>转换为门？</h2><div id="convert-detail" class="sub">{editor.conversion?.text ?? ""}</div>
-    <form method="dialog"><button value="keep">保留节点</button><button value="convert">转换为门</button></form>
 </dialog>
 <dialog bind:this={discard} id="discard-changes" class="dialog" aria-labelledby="discard-title" onclose={() => editor.fileRequest = null}>
     <h2 id="discard-title">放弃未保存的修改？</h2>
@@ -72,8 +73,10 @@
             justify-content: flex-end;
         }
         #affected-items {
-            padding-left: var(--space-6);
+            padding: 0;
+            list-style: none;
         }
+        #affected-items button { border: 0; width: 100%; justify-content: start; text-align: start; }
         .draft-actions {
             display: flex;
             justify-content: flex-end;
@@ -86,7 +89,7 @@
 <script lang="ts">
     import * as session from "../state/session.svelte.ts";
     let { editor }: { editor: session.Editor } = $props();
-    let remove: HTMLDialogElement, convert: HTMLDialogElement, discard: HTMLDialogElement;
+    let remove: HTMLDialogElement, discard: HTMLDialogElement;
     $effect(() => {
         if (editor.fileRequest && !discard.open) discard.showModal();
     });
@@ -94,12 +97,6 @@
         if (editor.removal && !remove.open) {
             remove.returnValue = "cancel";
             remove.showModal();
-        }
-    });
-    $effect(() => {
-        if (editor.conversion && !convert.open) {
-            convert.returnValue = "keep";
-            convert.showModal();
         }
     });
 </script>

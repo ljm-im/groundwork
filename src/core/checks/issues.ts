@@ -1,59 +1,10 @@
-import { type Route, type Issue } from "../design/results.ts";
-import { type Design, type ResolvedDesign, type Point } from "../design/v5.ts";
+import { type Issue } from "../design/results.ts";
+import { type Point } from "../math/geometry.ts";
 
-type IssueContext = ({ design: Design; resolved: ResolvedDesign } | { design: ResolvedDesign }) & { routes: Route[]; issues: Issue[] };
-interface IssueShape { points: Point[]; closed?: boolean; width?: number; road?: string }
-
-import { bounds, pointAt } from "../math/geometry.ts";
-import { buildingShape, nodePose } from "../design/model.ts";
-
-export function objectIssues(island: IssueContext, selection?: { kind: string; id: string } | null) {
-    if (!selection)
-        return [];
-    const { kind, id } = selection;
-    if (kind === "edge" || kind === "via")
-        return island.issues.filter(i => i.road === id || i.other === id || i.spans?.some(s => s.road === id));
-    const nodes = kind === "building" ? island.design.nodes.filter(n => n.type === "door" && n.building === id).map(n => n.id) : kind === "node" ? [id] : [];
-    return island.issues.filter(i => {
-        if (kind === "building" && i.building === id || kind === "geoNode" && i.geoNode === id || nodes.includes(i.node!) || nodes.includes(i.otherNode!))
-            return true;
-        return (i.spans ?? []).some(s => {
-            const r = island.routes.find(r => r.id === s.road);
-            if (!r)
-                return false;
-            return nodes.includes(r.edge.from) && s.from < .01 || nodes.includes(r.edge.to) && s.to >= r.length - .01;
-        });
-    });
+export function objectIssues(project: { issues: Issue[] }, selection?: { kind: string; id: string } | null) {
+    return selection?.kind === "geoNode" ? project.issues.filter(i => i.geoNode === selection.id) : [];
 }
 
-export function issueShapes(island: IssueContext, issue: Issue) {
-    const shapes: IssueShape[] = [];
-    for (const span of issue.spans ?? []) {
-        const r = island.routes.find(r => r.id === span.road);
-        if (!r)
-            continue;
-        const points = [pointAt(r.points, r.s, span.from), ...r.points.filter((p, i) => r.s[i] > span.from && r.s[i] < span.to), pointAt(r.points, r.s, span.to)];
-        shapes.push({ points, width: r.edge.width, road: r.id });
-    }
-    const design = "resolved" in island ? island.resolved : island.design;
-    const b = design.buildings.find(b => b.id === issue.building);
-    if (b) {
-        if (b.shape === "rect")
-            shapes.push({ points: buildingShape(b).polygon!, closed: true });
-        else
-            for (const radius of [b.radius!, ...(b.shape === "ring" ? [b.inner!] : [])]) {
-                shapes.push({ points: Array.from({ length: 64 }, (_, i) => [b.center[0] + radius * Math.cos(i * Math.PI / 32), b.center[1] + radius * Math.sin(i * Math.PI / 32)]), closed: true });
-            }
-    }
-    if (issue.otherNode)
-        shapes.push({ points: [issue.point, nodePose(design, issue.otherNode).point] });
-    if (!shapes.length)
-        shapes.push({ points: [issue.point] });
-    return shapes;
-}
-
-export function issueView(island: IssueContext, issue: Issue, w: number, h: number, baseScale: number) {
-    const [x, y] = issue.point, box = bounds([issue.point, ...issueShapes(island, issue).flatMap(shape => shape.points)]);
-    const dx = Math.max(12, x - box[0], box[2] - x), dy = Math.max(9, y - box[1], box[3] - y);
-    return { center: issue.point.slice() as Point, zoom: Math.max(.5, Math.min(7, (w * .40) / (dx * baseScale), (h * .38) / (dy * baseScale))) };
+export function issueView(issue: Issue, w: number, h: number, baseScale: number) {
+    return { center: [...issue.point] as Point, zoom: Math.max(.5, Math.min(7, (w * .40) / (12 * baseScale), (h * .38) / (9 * baseScale))) };
 }

@@ -2,10 +2,10 @@
     {#snippet title()}<PropertyTitle name="项目" icon="project" />{/snippet}
     <Part title="描述"><Prompt {editor} target={{ group: "design" }} /></Part>
     <Part title="随机">
-        {#if d.inputs.seed}<NumberInput {editor} label="种子" address={["inputs", "seed", "value"]} self="input:seed" step={d.inputs.seed.range?.[2] ?? 1} range={d.inputs.seed.range} />{/if}
+        <NumberInput {editor} label="种子" labelIcon="inputs" builtin address={["inputs", seedId, "value"]} self={"input:" + seedId}
+            step={d.inputs[seedId].range[2]} range={d.inputs[seedId].range} />
     </Part>
     <Part title="地形计算"><NumberInput {editor} label="采样间距" unit="m" kind="literal" address={["grid", "step"]} /></Part>
-    <Routing {editor} />
 </PropertyPane>
 
 <script lang="ts">
@@ -15,11 +15,11 @@
     import NumberInput from "./NumberInput.svelte";
     import PropertyPane from "./PropertyPane.svelte";
     import PropertyTitle from "./PropertyTitle.svelte";
-    import Routing from "./Routing.svelte";
+    import { seedId } from "../../core/design/defaults.ts";
 
     let { editor }: { editor: session.Editor } = $props();
     let d = $derived.by(() => {
         editor.revision;
-        return editor.island.design;
+        return editor.project.design;
     });
 </script>

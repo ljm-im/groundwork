@@ -5,6 +5,7 @@ export const palette = {
     text: "#233d37",
     textSecondary: "#657570",
     border: "#d9dfd7",
+    borderRegion: "#c4ccc1",
     accent: "#226659",
     accentHover: "rgb(34 102 89 / 50%)",
     stripArea: "rgb(34 102 89 / 10%)",
@@ -50,19 +51,7 @@ export const baseMap = {
     sand: [232, 222, 190],
     fieldContours: "#38597d",
     heightContours: ["#64909a", "rgba(70,58,40,.13)", "rgba(70,58,40,.25)", "rgba(70,58,40,.53)"],
-    woodsOutline: "rgba(40,60,30,.48)",
     boundary: "#806d50",
-    deckEdge: "#806546",
-    roadEdge: "#9b896c",
-    roadSurface: "#f0e4cc",
-    stairTread: "#89775a",
-    vegetationRoom: "#b5d49a",
-    vegetationOutline: "#4f7a3a",
-    vegetationBloom: "#d9a3b8",
-    yardTree: "#9cc584",
-    rectBuilding: "#4b453a",
-    ringBuilding: "#485453",
-    circleBuilding: "#7a3a28",
     sectionLine: "rgba(40,75,74,.6)",
     fineGrid: "rgba(54,99,104,.10)",
     mainGrid: "rgba(54,99,104,.23)"
@@ -70,8 +59,5 @@ export const baseMap = {
 
 export const sectionColors = {
     ground: "#cec5a8",
-    groundOutline: "#978e71",
-    trunk: "#806d4e"
+    groundOutline: "#978e71"
 } as const;
-
-export { treeStyles } from "../core/vegetation/vegetation.ts";

@@ -5,18 +5,23 @@ import { defaultArcBulge, pathHandle } from "../design/path.ts";
 
 export type ShapeTool = "pen" | "rect" | "circle" | "sector";
 export function penNode(id: string, p: Point, drag?: Point): PathNode {
-    if (!drag) return { id, p, mode: "auto" };
+    if (!drag) return { id, p, mode: "corner", next: "line" };
     const out: Point = [drag[0] - p[0], drag[1] - p[1]];
-    return { id, p, mode: "manual", out, in: [-out[0], -out[1]] };
+    return { id, p, mode: "manual", next: "curve", out, in: [-out[0], -out[1]] };
 }
 export function closedPen(nodes: PathNode[]): Path {
     if (nodes.length < 3) throw Error("闭合路径至少需要三个节点");
-    return { closed: true, nodes };
+    return penPath(nodes);
+}
+export function penPath(nodes: PathNode[]): Path {
+    return { closed: true, nodes: nodes.map((node, i) => ({
+        ...node, next: node.mode === "corner" && nodes[(i + 1) % nodes.length].mode === "corner" ? "line" : "curve"
+    })) };
 }
 export function shapePath(tool: Exclude<ShapeTool, "pen">, a: Point, b: Point, id: () => string, end?: Point): Path {
     const corner = (p: Point): PathNode => ({ id: id(), p, mode: "corner", next: "line" });
     const arc = (p: Point, bulge: number): PathNode => ({ ...corner(p), next: "arc", bulge });
-    if (distance(a, b) < 1e-6) throw Error("请拖出形状的大小");
+    if (distance(a, b) < 1e-6) throw Error("请选取不同的起点和终点");
     if (tool === "rect") {
         if (a[0] === b[0] || a[1] === b[1]) throw Error("矩形需要有宽度和高度");
         return { closed: true, nodes: [a, [b[0], a[1]], b, [a[0], b[1]]].map(p => corner(p as Point)) };
@@ -34,6 +39,20 @@ export function moveHandle(path: Path, i: number, side: "in" | "out", target: Po
         size ? [-delta[0] * length / size, -delta[1] * length / size] : [0, 0];
     v.mode = independent ? "corner" : "manual";
     v[side] = delta;
+}
+export function setNodeMode(path: Path, i: number, mode: PathNode["mode"]) {
+    const node = path.nodes[i];
+    if (node.mode === mode) return;
+    node.mode = mode;
+    delete node.in;
+    delete node.out;
+    if (mode === "manual") {
+        const count = path.nodes.length;
+        const previous = path.nodes[(i + count - 1) % count].p, next = path.nodes[(i + 1) % count].p;
+        const out: Point = [(next[0] - previous[0]) / 6, (next[1] - previous[1]) / 6];
+        node.out = out;
+        node.in = [-out[0], -out[1]];
+    }
 }
 export function arcHandle(a: Point, b: Point, bulge: number): Point {
     return [(a[0] + b[0] + (b[1] - a[1]) * bulge) / 2, (a[1] + b[1] - (b[0] - a[0]) * bulge) / 2];
@@ -80,7 +99,7 @@ export function translateGeo(n: GeoNode, delta: Point) {
     const f = n.function;
     if (f.type === "coast") {
         for (const v of f.shore.nodes) move(v.p);
-        if (f.harbor) move(f.harbor.center);
+        move(f.harbor.center);
     }
     if (f.type === "mountain") {
         for (const ridge of f.ridges) for (const v of ridge.line.points) move(v.p);

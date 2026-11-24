@@ -1,35 +1,42 @@
 {#if !properties}
-    <Part title="自定义输入" icon="inputs" count={Object.keys(d.inputs).length}>
+    <Search id="variable-search" label="查找自定义输入或场" bind:value={editor.variableFilter} />
+    <Part title="自定义输入">
         {#snippet actions()}
             <button class="icon-button" data-add="input" data-tip="新建自定义输入" aria-label="新建自定义输入" onclick={() => editor.addDeclaration("input")}><Icon name="plus" /></button>
         {/snippet}
-        {#each Object.entries(d.inputs) as [id, v] (id)}
+        {#each inputs as [id, v] (id)}
             <div class="declaration" class:is-selected={h?.kind === "input" && h.id === id}>
-                <button class="object-row" data-select-input={id} aria-pressed={h?.kind === "input" && h.id === id} onclick={() => editor.select({ kind: "input", id })}>
+                <button class="object-row" data-select-input={id} aria-pressed={h?.kind === "input" && h.id === id} onclick={() => editor.select({ kind: "input", id })}
+                    oncontextmenu={e => {
+                        e.preventDefault(); editor.openMenu({ kind: "input", id }, e.clientX, e.clientY);
+                    }}>
                     <Icon name="inputs" /><span>{v.label ?? id}</span>
                 </button>
                 <div data-input={id}><NumberInput {editor} label={v.label ?? id} address={["inputs", id, "value"]} self={"input:" + id}
-                    range={v.range} step={v.range?.[2] ?? (id === "seed" ? 1 : .1)} compact /></div>
+                    range={v.range} step={v.range[2]} compact /></div>
             </div>
-        {/each}
+        {:else}{#if fields.length}<div class="list-empty">没有匹配的结果</div>{/if}{/each}
     </Part>
-    <Part title="场" icon="field" count={Object.keys(d.fields).length + 1}>
+    <Part title="场">
         {#snippet actions()}
             <button class="icon-button" data-add="field" data-tip="新建场" aria-label="新建场" onclick={() => editor.addDeclaration("field")}><Icon name="plus" /></button>
         {/snippet}
-        {#each ["height", ...Object.keys(d.fields)] as id (id)}
-            <button class="object-row" data-select-field={id} aria-pressed={h?.kind === "field" && h.id === id} onclick={() => editor.select({ kind: "field", id })}>
-                <Icon name="field" />{id === "height" ? "高度" : d.fields[id].label ?? id}
-                {#if id !== "height"}<small class="list-detail">{typeof d.fields[id].default === "string" ? displayExpression(d.fields[id].default, d) : displayNumber(editor.island.resolved.fields[id].default, .1)}</small>{/if}
+        {#each fields as id (id)}
+            <button class="object-row" data-select-field={id} aria-pressed={h?.kind === "field" && h.id === id} onclick={() => editor.select({ kind: "field", id })}
+                oncontextmenu={e => {
+                    e.preventDefault();
+                    if (id !== "height") editor.openMenu({ kind: "field", id }, e.clientX, e.clientY);
+                }}>
+                <Icon name="field" builtin={id === "height"} />{id === "height" ? "高度" : d.fields[id].label ?? id}
+                {#if id !== "height"}<small class="list-detail">{typeof d.fields[id].default === "string" ? displayExpression(d.fields[id].default, d) : displayNumber(editor.project.resolved.fields[id].default, .1)}</small>{/if}
             </button>
-        {/each}
+        {:else}<div class="list-empty">没有匹配的结果</div>{/each}
     </Part>
 {:else if h?.kind === "field" && h.id === "height"}
     <PropertyPane {editor}>
-        {#snippet title()}<PropertyTitle name="高度" icon="field" />{/snippet}
-        <div class="sub">内置场（单位 m）</div>
+        {#snippet title()}<PropertyTitle name="高度" icon="field" builtin />{/snippet}
     </PropertyPane>
-{:else if h}
+{:else if h?.kind === "input" || h?.kind === "field"}
     {@const variable = h.kind === "input"}
     {@const table = variable ? "inputs" : "fields"}
     {@const item = d[table][h.id]}
@@ -44,27 +51,12 @@
             {#if variable}
                 {@const v = d.inputs[h!.id]}
                 <Part>
-                    <NumberInput {editor} label="当前值" address={[table, h!.id, "value"]} self={"input:" + h!.id} range={v.range}
-                        step={v.range?.[2] ?? (h!.id === "seed" ? 1 : .1)} />
+                    <NumberInput {editor} label="当前值" address={[table, h!.id, "value"]} self={"input:" + h!.id} range={v.range} step={v.range[2]} />
                 </Part>
                 <Part title="取值范围">
-                    {#snippet actions()}
-                        {#if v.range}
-                            <button class="icon-button danger" data-tip="清空范围" aria-label="清空范围" onclick={() => editor.edit(d => {
-                                delete d.inputs[h!.id].range;
-                            })}><Icon name="delete" /></button>
-                        {:else}
-                            <button class="icon-button" data-tip="添加范围" aria-label="添加范围" onclick={() => editor.edit(d => {
-                                const value = editor.island.resolved.inputs[h!.id].value;
-                                d.inputs[h!.id].range = [Math.min(0, value), Math.max(10, value), .1];
-                            })}><Icon name="plus" /></button>
-                        {/if}
-                    {/snippet}
-                    {#if v.range}
-                        {#each ["最小值", "最大值", "步长"] as label, i (label)}
-                            <NumberInput {editor} {label} address={[table, h!.id, "range", i]} kind="literal" step={v.range[2]} />
-                        {/each}
-                    {/if}
+                    {#each ["最小值", "最大值", "步长"] as label, i (label)}
+                        <NumberInput {editor} {label} address={[table, h!.id, "range", i]} kind="literal" step={v.range[2]} />
+                    {/each}
                 </Part>
             {:else}<NumberInput {editor} label="默认值" address={[table, h!.id, "default"]} />{/if}
         </PropertyPane>
@@ -88,6 +80,8 @@
 <script lang="ts">
     import * as session from "../state/session.svelte.ts";
     import { displayExpression, displayNumber } from "../state/numbers.ts";
+    import { seedId } from "../../core/design/defaults.ts";
+    import Search from "./Search.svelte";
     import Part from "./Part.svelte";
     import Icon from "./Icon.svelte";
     import PropertyPane from "./PropertyPane.svelte";
@@ -96,6 +90,9 @@
     let { editor, properties = false }: { editor: session.Editor; properties?: boolean } = $props();
     let d = $derived.by(() => {
         editor.revision;
-        return editor.island.design;
+        return editor.project.design;
     }), h = $derived(editor.selection);
+    const matches = (id: string, name: string) => (name + " " + id).toLowerCase().includes(editor.variableFilter.trim().toLowerCase());
+    let inputs = $derived(Object.entries(d.inputs).filter(([id, input]) => id !== seedId && matches(id, input.label ?? id)));
+    let fields = $derived(["height", ...Object.keys(d.fields)].filter(id => matches(id, id === "height" ? "高度" : d.fields[id].label ?? id)));
 </script>

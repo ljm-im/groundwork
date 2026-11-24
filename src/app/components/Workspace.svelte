@@ -5,15 +5,10 @@
             onpointerdown={e => begin(e, "bottom")} ondblclick={() => toggle("bottomClosed")} onkeydown={e => keyboard(e, "bottom")} ></button>
         <div class="bottom-pane" hidden={layout.bottomClosed}>
             <nav class="bottom-tabs" aria-label="剖面类型">
-                {#each bottomTabs as [id, name] (id)}
-                    <button data-bottom-tab={id} aria-pressed={editor.bottomTab === id} onclick={() => {
-                        editor.bottomTab = id;
-                    }}>{name}</button>
-                {/each}
-                {#if editor.bottomTab === "sections"}<small>海拔 / m</small>{/if}
+                <span class="bottom-tab" data-bottom-tab="sections" aria-current="true">剖面</span>
+                <small>海拔 / m</small>
             </nav>
-            <div class="plot-pane" hidden={editor.bottomTab !== "sections"}><Sections {editor} /></div>
-            {#if editor.bottomTab === "profile"}<Longitudinal {editor} />{/if}
+            <div class="plot-pane"><Sections {editor} /></div>
         </div>
     </div>
     <button class="split vertical" data-split="right" aria-label="调整右栏宽度" data-tip="调整右栏宽度"
@@ -44,20 +39,24 @@
             touch-action: none;
             user-select: none;
         }
-        .split::before { content: ""; position: absolute; background: var(--border); }
+        .split::before { content: ""; position: absolute; background: var(--border-region); }
         .split:is(:hover, :focus-visible)::before { background: var(--border-strong); }
         .split.horizontal { cursor: row-resize; width: 100%; }
         .split.horizontal::before { inset: 50% 0 auto; height: 1px; }
         .split.vertical { cursor: col-resize; }
         .split.vertical::before { inset: 0 auto 0 50%; width: 1px; }
         .bottom-pane { display: grid; grid-template-rows: var(--row-h) minmax(0, 1fr); background: var(--bg-panel); min-height: 0; }
-        .bottom-pane[hidden], .plot-pane[hidden] { display: none; }
+        .bottom-pane[hidden] { display: none; }
         .plot-pane { min-width: 0; min-height: 0; }
         .bottom-tabs { display: flex; align-items: stretch; padding: 0 var(--space-3); gap: var(--space-2); background: var(--bg-sunken); }
-        .bottom-tabs button { border: 0; border-radius: 0; background: transparent; color: var(--text-secondary); }
-        .bottom-tabs button[aria-pressed="true"] { color: var(--text); background: var(--bg-selected); box-shadow: inset 0 -2px var(--accent); }
-        .bottom-tabs button:focus-visible { box-shadow: inset 0 0 0 2px var(--focus-ring); }
-        .bottom-tabs button[aria-pressed="true"]:focus-visible { box-shadow: inset 0 -2px var(--accent), inset 0 0 0 2px var(--focus-ring); }
+        .bottom-tab {
+            display: flex;
+            align-items: center;
+            padding-inline: var(--space-2);
+            color: var(--text);
+            background: var(--bg-selected);
+            box-shadow: inset 0 -2px var(--accent);
+        }
         .bottom-tabs small { margin: auto 0 auto auto; color: var(--text-secondary); }
         @media (max-width: 680px) {
             .workspace { display: flex; flex-direction: column; height: auto; }
@@ -69,20 +68,18 @@
 </style>
 
 <script lang="ts">
-    import { tick } from "svelte";
+    import { onMount, tick } from "svelte";
     import { readLayout, saveLayout } from "../state/layout.ts";
     import { clamp } from "../../core/math/geometry.ts";
     import * as session from "../state/session.svelte.ts";
     import MapCanvas from "./MapCanvas.svelte";
     import Sections from "./Sections.svelte";
-    import Longitudinal from "./Longitudinal.svelte";
     import Sidebar from "./Sidebar.svelte";
     import ContextMenu from "./ContextMenu.svelte";
 
     let { editor }: { editor: session.Editor } = $props();
     let main: HTMLElement;
     let layout = $state(readLayout());
-    const bottomTabs = [["sections", "剖面"], ["profile", "纵断面"]] as const;
     type Split = "bottom" | "upper" | "right";
     function toggle(key: "bottomClosed" | "propertiesClosed") {
         layout[key] = !layout[key]; saveLayout(layout);
@@ -120,7 +117,12 @@
         }
         if (e.key === "Enter" && split !== "right") toggle(split === "upper" ? "propertiesClosed" : "bottomClosed");
     }
+    onMount(() => {
+        editor.revealProperties = () => {
+            if (layout.propertiesClosed) toggle("propertiesClosed");
+        };
+    });
     $effect(() => {
-        if (!layout.bottomClosed && editor.bottomTab === "sections") void tick().then(() => editor.sections());
+        if (!layout.bottomClosed) void tick().then(() => editor.sections());
     });
 </script>

@@ -2,7 +2,7 @@
     {#snippet title()}
         <PropertyTitle name={section.label} icon="section" rename={label => editor.edit(d => {
             d.sections.find(s => s.id === section.id)!.label = label;
-        })} />
+        })} remove={() => editor.removeSelected()} />
     {/snippet}
     {#snippet children(tab)}
         {#if tab === "label"}
@@ -27,6 +27,6 @@
     let { editor }: { editor: session.Editor } = $props();
     let section = $derived.by(() => {
         editor.revision;
-        return editor.island.design.sections.find(s => s.id === editor.selection?.id)!;
+        return editor.project.design.sections.find(s => s.id === editor.selection?.id)!;
     });
 </script>

@@ -19,7 +19,9 @@ export function anchoredPopup(menu: HTMLElement, config: { anchor: HTMLElement; 
         }
         const desired = Math.min(320, menu.scrollHeight + menu.offsetHeight - menu.clientHeight);
         const r = popupBounds(box, top, bottom, desired);
-        menu.style.left = r.left + "px"; menu.style.top = r.top + "px"; menu.style.maxHeight = r.height + "px";
+        const width = menu.getBoundingClientRect().width;
+        const left = r.left + width <= innerWidth - 4 ? r.left : Math.max(4, box.left + box.width - width);
+        menu.style.left = left + "px"; menu.style.top = r.top + "px"; menu.style.maxHeight = r.height + "px";
     }
     function outside(event: PointerEvent) {
         const path = event.composedPath();

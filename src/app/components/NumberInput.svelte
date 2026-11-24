@@ -1,6 +1,6 @@
 {#snippet formatted(text: string, operators: boolean)}
-    {#each text.split(/(\{(?:input|field|geo|edge|node|building):[^{}]+\})/g) as part, i (i)}
-        {#if part.startsWith("{") && part.endsWith("}")}<ReferenceChip refKey={part.slice(1, -1)} design={catalog} {slots} />
+    {#each text.split(/(\{(?:input|field|geo):[^{}]+\})/g) as part, i (i)}
+        {#if part.startsWith("{") && part.endsWith("}")}<ReferenceChip refKey={part.slice(1, -1)} design={base} {slots} />
         {:else}{operators ? part.replaceAll("*", "×").replaceAll("/", "÷") : part}{/if}
     {/each}
 {/snippet}
@@ -20,7 +20,7 @@
         }}><Icon name="collapse" /></button>{/if}
 {/snippet}
 <div class="number-row" class:compact data-parameter={address.join(".")} bind:this={root}>
-    <div class="number-line parameter-row">{#if !compact}<span class="number-label param-name">{label}</span>{/if}
+    <div class="number-line parameter-row">{#if !compact}<span class="number-label param-name">{#if labelIcon}<Icon name={labelIcon} {builtin} />{/if}{label}</span>{/if}
         <div class="number-box input-box" class:invalid={!!error} class:warning={outside} bind:this={box}>
             <button class="step" aria-label={"减小" + label} data-tip="减小" onpointerdown={e => beginGesture(e, -1)} onclick={e => keyboardStep(e, -1)}><Icon name="chevronLeft" /></button>
             {#if editing && !expanded}
@@ -30,7 +30,7 @@
                     onclick={e => {
                         if (!e.detail) void startEdit();
                     }}>
-                    {#if typeof shown === "number"}{displayNumber(shown * displayFactor, step)}
+                    {#if typeof shown === "number"}{displayNumber(shown, step)}
                     {:else}{@render formatted(shown, true)}{/if}
                 </button>
             {/if}
@@ -55,17 +55,19 @@
             {#each groups as group (group.title)}
                 <div class="menu-group"><div class="group-name">{group.title}</div>
                     {#each group.items as item (item.key)}
-                        <button role="option" class:create-option={item.key.startsWith("+")} aria-selected={options[active]?.key === item.key} data-option={item.key}
+                        <button role="option" aria-selected={options[active]?.key === item.key} data-option={item.key}
                             onmouseenter={() => active = options.indexOf(item)} onclick={() => choose(item)}>
-                            <Icon name={item.icon} />{item.name}{#if item.branch}<span class="sub-arrow"><Icon name="chevronRight" /></span>{/if}
+                            <Icon name={item.icon} builtin={item.builtin} />{item.name}{#if item.branch}<span class="sub-arrow"><Icon name="chevronRight" /></span>{/if}
                         </button>
                     {/each}
                 </div>
             {/each}
+            {#if !options.length}<div class="list-empty">没有匹配的结果</div>{/if}
         </div>
     {/if}
 </div>
 <style>
+    .number-label { display: flex; align-items: center; gap: var(--space-1); }
     .compact .number-line { grid-template-columns: minmax(0, 1fr); }
     .number-box { display: flex; align-items: stretch; min-width: 0; padding: 0; }
     .number-box.warning { border-color: var(--warning); }
@@ -114,37 +116,34 @@
     import { onDestroy, tick } from "svelte";
     import * as session from "../state/session.svelte.ts";
     import { type Design, type Expression } from "../../core/design/v5.ts";
-    import { canReference, expressionGraph, parameters, readAt, writeAt, type Address, type Owner } from "../../core/design/parameters.ts";
+    import { canReference, expressionGraph, parameters, readAt, writeAt, type Address } from "../../core/design/parameters.ts";
     import { evaluate, sampleValue } from "../../core/design/expression.ts";
     import { parseDesign } from "../../core/design/model.ts";
-    import { addInput, addField } from "../../core/edit/geoNodes.ts";
-    import { offsetBuildingParts } from "../../core/edit/buildings.ts";
+    import { seedId } from "../../core/design/defaults.ts";
     import { adjustNumber, chipSpans, displayNumber, editorSelection, flagOverflow, editorText, NumberDrag, numericCaret, numericText, repeatButton, selectionOffsets, type Range } from "../state/numbers.ts";
     import { anchoredPopup } from "../state/popup.ts";
-    import Icon from "./Icon.svelte";
+    import Icon, { type IconName } from "./Icon.svelte";
     import ReferenceChip from "./ReferenceChip.svelte";
-    let { editor, address, label, kind = "number", step = .1, range, unit = "", self, owner, displayFactor = 1, compact = false }: {
-        editor: session.Editor; address: Address; label: string; kind?: "number" | "field" | "literal"; step?: number;
-        range?: Range; unit?: string; self?: string; owner?: string; displayFactor?: number; compact?: boolean;
+    let { editor, address, label, labelIcon, builtin = false, kind = "number", step = .1, range, unit = "", self, owner, compact = false }: {
+        editor: session.Editor; address: Address; label: string; labelIcon?: IconName; builtin?: boolean; kind?: "number" | "field" | "literal"; step?: number;
+        range?: Range; unit?: string; self?: string; owner?: string; compact?: boolean;
     } = $props();
     let face = $state<HTMLButtonElement>(), expandedBox = $state<HTMLElement>();
     let root: HTMLElement, box = $state<HTMLElement>(null!), input = $state<HTMLElement>(null!), mirror = $state<HTMLElement>(null!);
-    let base = $derived(editor.island.design), authored = $derived(readAt(base, address) as Expression | undefined);
-    let value = $derived(authored ?? (readAt(editor.island.resolved, address) as number | undefined) ??
+    let base = $derived(editor.project.design), authored = $derived(readAt(base, address) as Expression | undefined);
+    let value = $derived(authored ?? (readAt(editor.project.resolved, address) as number | undefined) ??
         (self ? expressionGraph(base).get(self) as number : 0));
     let editing = $state(false), expanded = $state(false), draft = $state(""), error = $state(""), opened = $state(false), parent = $state(""), query = $state("");
     let queryStart = 0, queryEnd = 0;
     let active = $state(0);
-    let catalogDraft = $state.raw<Design>(), catalog = $derived(catalogDraft ?? base), slots = $derived(parameters(catalog));
+    let slots = $derived(parameters(base));
     let gesturing = $state(false), live = $state<Expression>(0), shown = $derived(gesturing ? live : value);
     let result = $derived(currentResult(shown));
     let outside = $derived(result !== undefined && range && (result < range[0] || result > range[1]));
-    let tip = $derived(typeof shown === "string" ? (result === undefined ? "= 未定义" : "= " + displayNumber(result * displayFactor, step, unit)) : undefined);
+    let tip = $derived(typeof shown === "string" ? (result === undefined ? "= 未定义" : "= " + displayNumber(result, step, unit)) : undefined);
     let origin: Design | undefined, cleanup: (() => void) | undefined, version = 0;
-    type IconName = "inputs" | "field" | "terrain" | "edge" | "node" | "building" | "property" | "plus";
-    type Option = { key: string; name: string; icon: IconName; branch?: boolean };
+    type Option = { key: string; name: string; icon: IconName; builtin?: boolean; branch?: boolean };
     type Group = { title: string; items: Option[] };
-    const categories: [Owner, string, IconName][] = [["geo", "地件", "terrain"], ["edge", "道路", "edge"], ["node", "节点", "node"], ["building", "建筑", "building"]];
     let groups = $derived.by((): Group[] => {
         if (!opened) return [];
         const filter = (v: Option) => (v.name + " " + v.key).toLowerCase().includes(query.toLowerCase());
@@ -152,45 +151,40 @@
         const leaves = [...slots.values()].filter(s => !s.field && allowed(s.key));
         if (parent) return [{ title: leaves.find(s => s.owner + ":" + s.id === parent)?.name ?? "属性",
             items: leaves.filter(s => s.owner + ":" + s.id === parent).map(s => ({ key: s.key, name: s.label, icon: "property" as const })).filter(filter) }];
-        const items: Option[] = leaves.filter(s => s.owner === "input").map(s => ({ key: s.key, name: s.name, icon: "inputs" }));
-        const result: Group[] = [{ title: "自定义输入", items: [...items.filter(filter), { key: "+input", name: "新建自定义输入", icon: "plus" }] }];
+        const items: Option[] = leaves.filter(s => s.owner === "input").map(s => ({
+            key: s.key, name: s.name, icon: "inputs", builtin: s.id === seedId
+        }));
+        const result: Group[] = [{ title: "输入", items: items.filter(filter) }];
         if (kind === "field") {
-            const fields = ["height", ...Object.keys(catalog.fields)].map(id => ({ key: "field:" + id, name: catalog.fields[id]?.label ?? (id === "height" ? "高度" : id), icon: "field" as const }));
-            result.push({ title: "场", items: [...fields.filter(filter), { key: "+field", name: "新建场", icon: "plus" }] });
+            const fields = ["height", ...Object.keys(base.fields)].map(id => ({
+                key: "field:" + id, name: id === "height" ? "高度" : base.fields[id].label ?? id, icon: "field" as const, builtin: id === "height"
+            }));
+            result.push({ title: "场", items: fields.filter(filter) });
         }
-        for (const [category, title, icon] of categories) {
-            const elements = leaves.filter(s => s.owner === category);
-            const ids = [...new Set(elements.map(s => s.id))];
-            result.push({ title, items: ids.map(id => ({ key: category + ":" + id, name: elements.find(s => s.id === id)!.name, icon, branch: true }))
-                .filter(item => filter(item) || elements.some(s => s.id === item.key.slice(category.length + 1) && s.label.includes(query))) });
-        }
-        return result;
+        const nodes = leaves.filter(s => s.owner === "geo");
+        const itemsById = new Map(nodes.map(s => [s.id, { key: "geo:" + s.id, name: s.name, icon: "terrain" as const, branch: true }]));
+        result.push({ title: "地件", items: [...itemsById].filter(([id, item]) =>
+            filter(item) || nodes.some(s => s.id === id && s.label.includes(query))).map(([, item]) => item) });
+        return result.filter(group => group.items.length);
     });
     let options = $derived(groups.flatMap(g => g.items));
     function currentResult(v: Expression | undefined) {
         if (v === undefined || typeof v === "number") return v;
         try {
-            return sampleValue(evaluate(v, expressionGraph(catalog).get), field => owner ? editor.island.inputAt(owner, field, editor.geoCenter(owner)) : undefined);
+            return sampleValue(evaluate(v, expressionGraph(base).get), field => owner ? editor.project.inputAt(owner, field, editor.geoCenter(owner)) : undefined);
         }
         catch {
             return undefined;
         }
     }
-    function candidate(v: Expression, from = catalog) {
+    function candidate(v: Expression, from = base) {
         const d = structuredClone(from);
         writeAt(d, address, v);
-        const [group, index, key] = address;
-        if (group === "buildings" && typeof index === "number" && (key === "angle" || key === "radius")) {
-            const b = d.buildings[index], slot = "building:" + b.id + "." + key;
-            const before = from.buildings[index][key] === undefined ? 0 : expressionGraph(from).get(slot);
-            const after = expressionGraph(d).get(slot);
-            if (typeof before === "number" && typeof after === "number") offsetBuildingParts(b, key, after - before);
-        }
         return parseDesign(d, true);
     }
     function parseDraft() {
         const value = numericText(draft, kind === "literal");
-        return typeof value === "number" ? value / displayFactor : value;
+        return value;
     }
     function validate() {
         try {
@@ -216,7 +210,7 @@
     async function startEdit(chip?: { start: number; end: number }) {
         if (editing) return;
         expanded = face?.hasAttribute("data-overflow") ?? false;
-        editing = true; draft = String(typeof value === "number" ? value * displayFactor : value); error = "";
+        editing = true; draft = String(value); error = "";
         await paint(chip?.start ?? draft.length, chip?.end);
     }
     function placeEditor(popup: HTMLElement) {
@@ -281,7 +275,7 @@
     function finish(save: boolean) {
         if (!editing) return;
         let next: Design | undefined;
-        if (save && (catalogDraft || draft !== String(typeof value === "number" ? value * displayFactor : value))) {
+        if (save && draft !== String(value)) {
             try {
                 next = candidate(parseDraft());
             }
@@ -289,7 +283,7 @@
                 error = (e as Error).message;
             }
         }
-        editing = expanded = false; closeMenu(); catalogDraft = undefined; error = "";
+        editing = expanded = false; closeMenu(); error = "";
         if (next && JSON.stringify(next) !== JSON.stringify(base)) editor.commitNumber(next);
     }
     function insertText(text: string, replaceLiteral = false) {
@@ -306,19 +300,7 @@
         if (item.branch) {
             parent = item.key; active = 0; query = ""; return;
         }
-        let key = item.key;
-        if (key.startsWith("+")) {
-            const d = structuredClone(catalog);
-            if (key === "+input") {
-                const formula = queryEnd > queryStart ? draft.slice(0, queryStart) + draft.slice(queryEnd) : draft;
-                const entered = numericText(formula, false);
-                const effective = currentResult(typeof entered === "number" ? entered / displayFactor : entered) ?? currentResult(value) ?? 0;
-                key = "input:" + addInput(d, effective);
-            }
-            else key = "field:" + addField(d);
-            catalogDraft = d;
-        }
-        insertText("{" + key + "}", true);
+        insertText("{" + item.key + "}", true);
     }
     function onInput() {
         draft = editorText(input);
@@ -383,7 +365,7 @@
         }
     }
     function advance(n: number) {
-        const next = adjustNumber(live, n, step / displayFactor, range);
+        const next = adjustNumber(live, n, step, range);
         if (next === live) return;
         try {
             const d = candidate(next, origin); live = next; error = ""; editor.previewNumber(d);
@@ -395,7 +377,7 @@
     function keyboardStep(e: MouseEvent, direction: number) {
         if (e.detail) return;
         try {
-            editor.commitNumber(candidate(adjustNumber(value, direction, step / displayFactor, range)));
+            editor.commitNumber(candidate(adjustNumber(value, direction, step, range)));
         }
         catch (e) {
             error = (e as Error).message;

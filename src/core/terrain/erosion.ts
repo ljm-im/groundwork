@@ -1,4 +1,4 @@
-import { type Erosion } from "../design/types.ts";
+import { type Erosion } from "../design/v5.ts";
 import { type Grid } from "../math/geometry.ts";
 import { random } from "../math/noise.ts";
 

@@ -8,36 +8,29 @@
             {/each}
         </nav>
         <div bind:this={editor.panel} id="panel" class="panel-content">
-            {#if editor.island}{#key editor.revision}
+            {#if editor.project}
                 <div class="panel-heading">
                     <h2>{tabs.find(([id]) => id === editor.tab)?.[1]}</h2>
-                    {#if editor.tab === "network"}
-                        <button class="icon-button" data-action="reroute-all" data-tip="重新选线" aria-label="重新选线" onclick={() => editor.rerouteAll()}><Icon name="reroute" /></button>
-                    {:else if editor.tab === "buildings"}
-                        <button class="icon-button" data-action="place" data-tip="放置建筑" aria-label="放置建筑" onclick={() => editor.setTool("building")}><Icon name="plus" /></button>
-                    {:else if editor.tab === "issues" && editor.candidates?.length}
-                        <button class="icon-button" data-action="all-issues" data-tip="全部校验" aria-label="全部校验" onclick={() => editor.changeTab("issues")}><Icon name="chevronLeft" /></button>
-                    {/if}
+                    {#if editor.tab === "terrain"}<CreationMenu label="新建地件" options={geoTools} choose={start} />
+                    {:else if editor.tab === "marks"}<CreationMenu label="新建标记" options={markTools} choose={start} />{/if}
                 </div>
-                {#if editor.tab === "terrain"}<GeoList {editor} />
-                {:else if editor.tab === "inputs"}<Declarations {editor} />
-                {:else if editor.tab === "network"}<Network {editor} listOnly />
-                {:else if editor.tab === "buildings"}<Buildings {editor} listOnly />
-                {:else if editor.tab === "marks"}<Marks {editor} />
-                {:else if editor.tab === "issues"}<Issues {editor} />
-                {:else}<Layers {editor} />{/if}
-            {/key}{/if}
+                {#key editor.revision}
+                    {#if editor.tab === "terrain"}<GeoList {editor} />
+                    {:else if editor.tab === "inputs"}<Declarations {editor} />
+                    {:else if editor.tab === "marks"}<Marks {editor} />
+                    {:else if editor.tab === "issues"}<Issues {editor} />
+                    {:else}<Layers {editor} />{/if}
+                {/key}
+            {/if}
         </div>
     </div>
     <button class="split horizontal" data-split="upper" data-tip="调整属性区" aria-label="调整属性区" onpointerdown={onresize} ondblclick={ontoggle} onkeydown={onkey}></button>
     <div id="properties" hidden={layout.propertiesClosed}>
-        {#if editor.island}
+        {#if editor.project}
             {#if editor.selection?.kind === "geoNode"}<GeoProperties {editor} />
             {:else if editor.selection?.kind === "input" || editor.selection?.kind === "field"}<Declarations {editor} properties />
-            {:else if editor.selection?.kind === "building"}<Buildings {editor} />
             {:else if editor.selection?.kind === "mark"}<Marks {editor} properties />
             {:else if editor.selection?.kind === "section"}<SectionProperties {editor} />
-            {:else if editor.selection && ["edge", "via", "node"].includes(editor.selection.kind)}<Network {editor} />
             {:else}<Terrain {editor} />{/if}
         {/if}
     </div>
@@ -65,9 +58,12 @@
             gap: var(--space-1);
             overflow: auto;
             background: var(--bg-sunken);
+            box-shadow: inset -1px 0 var(--border-region);
         }
         .side-tabs button { position: relative; }
-        .side-tabs .icon { width: var(--icon-toolbar); height: var(--icon-toolbar); }
+        .side-tabs button[aria-pressed="true"] { box-shadow: inset 2px 0 var(--accent); }
+        .side-tabs button[aria-pressed="true"]:focus-visible { box-shadow: inset 2px 0 var(--accent), 0 0 0 2px var(--focus-ring); }
+        .side-tabs .icon { width: var(--icon-tab); height: var(--icon-tab); }
         .side-tabs .count-dot { position: absolute; top: var(--space-1); right: var(--space-1); }
         .panel-content { min-width: 0; min-height: 0; overflow: auto; overflow-wrap: anywhere; }
         #panel { padding-block: var(--space-1) var(--panel-inset); }
@@ -76,7 +72,7 @@
         #panel .panel-inset { margin-block: var(--space-1); }
         #panel .panel-heading + .part { margin-top: var(--space-2); }
         #properties { min-width: 0; min-height: 0; }
-        #properties .part > .issue-row, #properties .part > .route-row {
+        #properties .part > .issue-row {
             width: calc(100% + 2 * var(--panel-inset));
             margin-inline: calc(-1 * var(--panel-inset));
         }
@@ -87,12 +83,12 @@
     import * as session from "../state/session.svelte.ts";
     import { type Layout } from "../state/layout.ts";
     import { changeField } from "../state/fields.ts";
-    import Network from "./Network.svelte";
-    import Buildings from "./Buildings.svelte";
     import Terrain from "./Terrain.svelte";
     import Issues from "./Issues.svelte";
     import Layers from "./Layers.svelte";
     import Icon from "./Icon.svelte";
+    import CreationMenu from "./CreationMenu.svelte";
+    import { type Tool } from "../types.ts";
     import GeoList from "./GeoList.svelte";
     import GeoProperties from "./GeoProperties.svelte";
     import Declarations from "./Declarations.svelte";
@@ -102,10 +98,17 @@
     let { editor, layout, onresize, ontoggle, onkey }: {
         editor: session.Editor; layout: Layout; onresize: (e: PointerEvent) => void; ontoggle: () => void; onkey: (e: KeyboardEvent) => void;
     } = $props();
-    const tabs = [["terrain", "地件", "terrain"], ["inputs", "自定义输入", "inputs"], ["network", "路网", "edge"], ["buildings", "建筑", "building"], ["marks", "标记", "marks"], ["issues", "校验", "issues"], ["layers", "显示", "display"]] as const;
+    const tabs = [["terrain", "地件", "terrain"], ["inputs", "变量", "inputs"], ["marks", "标记", "marks"],
+        ["issues", "校验", "issues"], ["layers", "显示", "display"]] as const;
+    const geoTools = [["pen", "钢笔", "pen"], ["rect", "矩形", "rect"], ["circle", "圆", "circle"], ["sector", "扇形", "sector"], ["strip", "条带", "strip"]] as const;
+    const markTools = [["textMark", "文字标记", "textMark"], ["scaleMark", "比例尺", "scaleMark"]] as const;
+    function start(tool: Tool) {
+        editor.setTool(tool);
+        editor.map.canvas.focus({ preventScroll: true });
+    }
     let errors = $derived.by(() => {
         editor.revision;
-        return editor.island?.issues.some(issue => issue.severity === "error");
+        return editor.project?.issues.some(issue => issue.severity === "error");
     });
     function changed(e: Event) {
         if (e.target instanceof HTMLInputElement) changeField(editor, e.target);

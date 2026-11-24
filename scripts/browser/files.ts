@@ -3,6 +3,10 @@ import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createServer } from "vite";
+import { seedId } from "../../src/core/design/defaults.ts";
+import { Project } from "../../src/core/project.ts";
+import { ProjectMap } from "../../src/render/map.ts";
+import { type Point } from "../../src/core/design/v5.ts";
 import { parseDesign, serializeDesign } from "../../src/core/design/model.ts";
 import { startChromium } from "./chromium.ts";
 import { test } from "node:test";
@@ -29,6 +33,16 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
     await mkdir(artifactDir, { recursive: true });
     const browser = await startChromium();
     const { cdp, evaluate, click, mouse, key, wait } = browser;
+    async function mapPoint(design: ReturnType<typeof parseDesign>, point: Point, screen = false): Promise<Point> {
+        const [x, y, width, height] = await evaluate(() => {
+            const box = document.querySelector("#map")!.getBoundingClientRect();
+            return [box.x, box.y, box.width, box.height];
+        });
+        const map = Object.assign(Object.create(ProjectMap.prototype) as ProjectMap, { width, height, project: new Project(design).view() });
+        map.fit(false);
+        const [px, py] = screen ? point : map.screen(point);
+        return [x + px, y + py];
+    }
     const report = { browser: browser.version, viewport: [1440, 960], checks: {} as Record<string, unknown> };
     let visit = 0, step = "";
     function check(name: string) {
@@ -62,8 +76,12 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
     async function prompt(text: string, blur = true) {
         await click("[data-tab=terrain]");
         if (!await evaluate(() => !!document.querySelector("textarea[data-prompt=design]"))) {
-            await click("#map");
-            await key("Escape");
+            const [x, y] = await evaluate(() => {
+                const box = document.querySelector("#map")!.getBoundingClientRect();
+                return [box.left + 8, box.top + 8];
+            });
+            await mouse("mousePressed", x, y);
+            await mouse("mouseReleased", x, y);
         }
         await click("textarea[data-prompt=design]");
         await evaluate(() => (document.activeElement as HTMLTextAreaElement).select());
@@ -87,17 +105,17 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
             intro: document.querySelector<HTMLElement>(".empty-state")!.innerText,
             actions: [...document.querySelectorAll<HTMLButtonElement>(".empty-state button")].map(el => [el.innerText, el.disabled]),
             header: ["new", "open", "save", "undo", "redo"].map(id => (document.getElementById(id) as HTMLButtonElement).disabled),
-            tools: [...document.querySelectorAll<HTMLButtonElement>("[data-tool]")].map(el => el.disabled),
+            hasToolbar: !!document.querySelector(".map-tools"),
             emptyPlots: !document.querySelector("#plots")!.children.length,
             issueMarker: !!document.querySelector("#issue-dot"),
             fileInputs: document.querySelectorAll("input[type=file]").length,
             mapPixel: [...document.querySelector<HTMLCanvasElement>("#map")!.getContext("2d")!.getImageData(30, 30, 1, 1).data]
         }));
         assert.equal(empty.filename, "未打开文件");
-        assert.match(empty.intro, /示例/);
+        assert.equal(empty.intro.split(/\s+/).join(" "), "新建 打开");
         assert.deepEqual(empty.actions, [["新建", false], ["打开", false]]);
         assert.deepEqual(empty.header, [false, false, true, true, true]);
-        assert(empty.tools.length > 0 && empty.tools.every(Boolean));
+        assert.equal(empty.hasToolbar, false);
         assert(empty.emptyPlots);
         assert.equal(empty.issueMarker, false);
         assert.equal(empty.fileInputs, 0);
@@ -107,7 +125,7 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
         assert.equal(await prop("exampleReads"), 0);
         const screenshot = await cdp("Page.captureScreenshot", { format: "png", fromSurface: true });
         await writeFile(join(artifactDir, "empty.png"), Buffer.from(screenshot.data, "base64"));
-        for (const tab of ["buildings", "terrain", "layers", "issues", "network"]) {
+        for (const tab of ["marks", "terrain", "layers", "issues", "inputs"]) {
             await click("[data-tab=" + tab + "]");
             assert.equal(await evaluate(() => document.querySelector("#panel")!.children.length), 0);
         }
@@ -138,21 +156,19 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
         assert.deepEqual(pristine, { bytes: Buffer.byteLength(fixture), sha256: sha(fixture) });
         report.checks.open = { writes: 0, ...pristine, events: await prop("events") };
 
-        check("Drag a building, undo and redo");
-        await click("[data-tab=buildings]");
-        await click("[data-building]");
-        const [x, y] = await evaluate(() => {
-            const box = document.querySelector("#map")!.getBoundingClientRect();
-            return [box.x + box.width / 2, box.y + box.height / 2 + 24];
-        });
+        check("Drag a mark, undo and redo");
+        const authored = parseDesign(fixture), mark = authored.marks.find(m => m.kind === "scale")!;
+        await click("[data-tab=marks]");
+        await click("[data-mark=" + JSON.stringify(mark.id) + "]");
+        const [x, y] = await mapPoint(authored, mark.point, mark.follow === "screen");
         await mouse("mousePressed", x, y);
         await mouse("mouseMoved", x + 21, y - 12);
         await mouse("mouseReleased", x + 21, y - 12);
         await saved(1);
         const moved = await disk(a), edited = JSON.parse(moved), expected = JSON.parse(canonical);
-        const before = expected.buildings[0].center, after = edited.buildings[0].center;
+        const before = expected.marks.find((m: { id: string }) => m.id === mark.id).point, after = edited.marks.find((m: { id: string }) => m.id === mark.id).point;
         assert.notDeepEqual(before, after);
-        expected.buildings[0].center = after;
+        expected.marks.find((m: { id: string }) => m.id === mark.id).point = after;
         assert.equal(moved, serializeDesign(expected));
         const movedDigest = await fileDigest(a);
         assert.equal(movedDigest.sha256, sha(serializeDesign(expected)));
@@ -167,7 +183,7 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
         assert.equal(await draft(), null);
         const redoDigest = await fileDigest(a);
         assert.deepEqual(redoDigest, movedDigest);
-        report.checks.move = { building: expected.buildings[0].id, before, after, movedSha256: movedDigest.sha256, undoSha256: undoDigest.sha256, redoSha256: redoDigest.sha256 };
+        report.checks.move = { mark: mark.id, before, after, movedSha256: movedDigest.sha256, undoSha256: undoDigest.sha256, redoSha256: redoDigest.sha256 };
 
         check("Persist a description on blur");
         await prompt("描述 A 已更新。", false);
@@ -356,7 +372,7 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
             assert.equal(await evaluate(() => document.querySelectorAll("#plots canvas").length), design.sections.length);
             const screenshot = await cdp("Page.captureScreenshot", { format: "png", fromSurface: true });
             await writeFile(join(artifactDir, key + ".png"), Buffer.from(screenshot.data, "base64"));
-            const [variable, rule] = Object.entries(design.inputs).find(([, v]) => v.range && typeof v.value === "number")!;
+            const [variable, rule] = Object.entries(design.inputs).find(([id, v]) => id !== seedId && typeof v.value === "number")!;
             const [min, max, step] = rule.range!, current = Number(rule.value), direction = current + step <= max ? 1 : -1;
             const value = Number((current + direction * step).toPrecision(15));
             assert(value >= min);
@@ -381,7 +397,7 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
         await seed(older, JSON.stringify({ version: 4 }));
         await set({ openName: older });
         await click("#open");
-        await wait(() => document.querySelector("#toast")?.textContent?.includes("暂不支持 v4 设计，等待迁移"));
+        await wait(() => document.querySelector("#toast")?.textContent?.includes("不支持的版本"));
         await filename("land.json");
         assert.equal(await prop("writes"), 1);
         report.checks.older = { active: "land.json", message: await evaluate(() => document.querySelector("#toast")!.textContent) };
@@ -390,7 +406,7 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
         const sparse = syntheticDesign();
         Reflect.deleteProperty(sparse.geoNodes[1].function, "amount");
         sparse.fields.F = { default: 0 }; Reflect.deleteProperty(sparse.fields.F, "default");
-        sparse.edges[0].via = [[2, 20]];
+        sparse.sections = [{ id: "A", label: "A", marks: [], points: [[6, 12], [24, 12]] }];
         await navigate();
         await seed("sparse.json", JSON.stringify(sparse));
         await set({ openName: "sparse.json" }); await click("#open"); await filename("sparse.json");
@@ -401,19 +417,17 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
         assert.match(await evaluate(() => document.querySelector("[data-parameter$=\".function.amount\"] .numeric-face")!.textContent!.trim()), /^1(?:\.0+)?$/);
         await click("[data-tab=inputs]");
         assert.equal(await evaluate(() => document.querySelector("[data-select-field=\"F\"] small")!.textContent), "0.0");
-        for (const [tab, row, propertyTab, geometry] of [["buildings", "[data-building=\"A\"]", "building", "中心"], ["network", "[data-edge=\"E\"]", "edge", "路线控制点"], ["network", "[data-node=\"a\"]", "node", "位置"]]) {
-            await click("[data-tab=" + tab + "]");
-            if (row.startsWith("[data-node")) await click("#panel details > summary");
-            await click(row);
-            await click("[data-property-tab=" + propertyTab + "]");
-            const control = "#properties .geometry-select[aria-label=\"" + geometry + "\"]";
-            await click(control);
-            assert.equal(await evaluate(s => document.querySelector(s)!.getAttribute("aria-pressed"), control), "true");
-            assert.equal(await evaluate(() => [...document.querySelectorAll("#properties .number-label")].filter(n => /^(中心 )?[XY]$/.test(n.textContent!)).length), 0);
-            assert.equal(await evaluate(() => document.querySelectorAll("[title]").length), 0);
-        }
+        const [sx, sy] = await mapPoint(sparse, sparse.sections[0].points[0]);
+        await mouse("mousePressed", sx, sy);
+        await mouse("mouseReleased", sx, sy);
+        await click("[data-property-tab=section]");
+        const control = "#properties .geometry-select[aria-label=剖面线]";
+        await click(control);
+        assert.equal(await evaluate(s => document.querySelector(s)!.getAttribute("aria-pressed"), control), "true");
+        assert.equal(await evaluate(() => [...document.querySelectorAll("#properties .number-label")].filter(n => /^(中心 )?[XY]$/.test(n.textContent!)).length), 0);
+        assert.equal(await evaluate(() => document.querySelectorAll("[title]").length), 0);
         assert.equal(await prop("writes"), 0);
-        report.checks.sparseGeometry = { flat: 1, field: 0, geometryRows: 3 };
+        report.checks.sparseGeometry = { flat: 1, field: 0, geometryRows: 1 };
         check("Unsupported browser");
         await cdp("Page.addScriptToEvaluateOnNewDocument", { source: "window.showSaveFilePicker = undefined" });
         await navigate();

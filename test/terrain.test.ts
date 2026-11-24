@@ -4,31 +4,29 @@ import { type Path, type Point, type GeoNode } from "../src/core/design/v5.ts";
 import { parseDesign } from "../src/core/design/model.ts";
 import { distance, nearest, sampleDefined, spline } from "../src/core/math/geometry.ts";
 import { fbm, noise } from "../src/core/math/noise.ts";
-import { signedBoundaryDistance } from "../src/core/terrain/regions.ts";
-import { flattenPath } from "../src/core/terrain/path.ts";
+import { signedBoundaryDistance } from "../src/core/design/regions.ts";
+import { flattenPath } from "../src/core/design/path.ts";
 import { evaluateStack, generateTerrain } from "../src/core/terrain/terrain.ts";
 import { terrainIssues } from "../src/core/checks/terrain.ts";
 import { terrainSurface } from "../src/core/terrain/surface.ts";
-import { Island } from "../src/core/island.ts";
-import { exportIsland } from "../src/core/export.ts";
+import { Project } from "../src/core/project.ts";
 import { erosion, layer, rect, syntheticDesign } from "./scenarios.ts";
 
 function design(nodes: GeoNode[], step = 1) {
     const d = syntheticDesign();
     d.grid.step = step;
     d.geoNodes = nodes;
-    d.nodes = []; d.edges = []; d.buildings = [];
     return d;
 }
 const base = () => layer("G", rect(-30, -30, 30, 30), { type: "ground", value: 2 });
 const circle = (r: number): Path => ({ closed: true, nodes: [-r, r].map((x, i) => ({ id: "c" + i, p: [x, 0], next: "arc", mode: "corner", bulge: 1 })) });
 
-test("A seed reproduces terrain and graded heights", () => {
+test("A seed reproduces the final height field", () => {
     const g = base();
     const detail = layer("N", g.construction, { type: "noise", amplitude: 1.5, scale: 9, seed: "{input:seed} + 7" });
     const d = design([g, detail]);
-    const initial = new Island(d);
-    assert.deepEqual(new Island(structuredClone(d)).graded.heights, initial.graded.heights);
+    const initial = new Project(d);
+    assert.deepEqual(new Project(structuredClone(d)).terrain.heights, initial.terrain.heights);
     d.inputs.seed.value++;
     assert.notDeepEqual(generateTerrain(d).heights, initial.terrain.heights);
     detail.function.seed = "{input:seed} + 6";
@@ -165,7 +163,7 @@ test("Blend is monotone, split holds both side values, and a batter measures its
     strip.construction.widths = [0, 6];
     const terrain = generateTerrain(d), fill = across(terrain, [.25, 1.25, 2.25, 3.25]);
     for (let i = 1; i < fill.length; i++) assert(Math.abs((fill[i - 1] - fill[i]) / .5 - 1) < .02);
-    const issues = terrainIssues(d, terrain, terrain.heights).filter(i => i.kind === "short-batter");
+    const issues = terrainIssues(d, terrain).filter(i => i.kind === "short-batter");
     assert.equal(issues.length, 1);
     assert.match(issues[0].message, /放坡不到底.*2\.00/);
     strip.construction.widths = [0, 12];
@@ -185,7 +183,7 @@ test("Height diagnostics count uncovered cardinal pairs once and ignore non-heig
     const band = layer("B", { type: "strip", of: ["A"], widths: [1, 1] }, { type: "split" }, "f");
     const d = design([base(), top, band]); d.fields.f = { default: 1 };
     const issues = () => {
-        const t = generateTerrain(d); return terrainIssues(d, t, t.heights).filter(i => i.kind === "untreated-height");
+        const t = generateTerrain(d); return terrainIssues(d, t).filter(i => i.kind === "untreated-height");
     };
     const raw = issues();
     assert.equal(raw.length, 1);
@@ -213,7 +211,7 @@ test("Canvas and ordinary height writes respect ground order, holes and other fi
     assert.equal(sampleDefined(t.grid, t.heights, t.defined, -40, 0), undefined);
     const i = t.grid.index(4, 4);
     assert.deepEqual([t.defined[i], t.heights[i], t.fields.f[i], t.shore[i]], [0, 0, 0, 0]);
-    assert.equal(terrainSurface(t, t.heights)(i), undefined);
+    assert.equal(terrainSurface(t)(i), undefined);
 });
 
 test("A zero strength disk protects every cell of an eroded slope", () => {
@@ -230,29 +228,16 @@ test("A zero strength disk protects every cell of an eroded slope", () => {
 
 test("All functions operate on a design with no declared fields", () => {
     const all = rect(-20, -20, 20, 20), nodes = [base(),
-        layer("C", all, { type: "coast", shore: circle(12), roughness: 2 }),
+        layer("C", all, { type: "coast", shore: circle(12), roughness: 2, harbor: { center: [0, 0], radius: 0, span: 3 } }),
         layer("M", all, { type: "mountain", ridges: [], peaks: [], floor: 0 }), layer("N", all, { type: "noise", amplitude: 1, scale: 8 }), layer("K", all, { type: "cliff", factor: .7 }),
         layer("E", all, erosion), layer("I", all, { type: "islets", density: 1, reach: 5 }), layer("F", all, { type: "flat", amount: 5 }),
         layer("A", all, { type: "add", amount: 1, feather: 3 }), layer("S", all, { type: "slope", kind: "path", line: { points: [{ p: [-2, 0], h: 2 }, { p: [2, 0], h: 3 }] } })];
     for (const type of ["blend", "batter", "split"] as const)
         nodes.push(layer(type, { type: "strip", of: ["F"], widths: [2, 2] }, type === "batter" ? { type, grade: .4 } : { type }));
-    const d = parseDesign(design(nodes)), a = new Island(d), b = new Island(parseDesign(d));
-    assert.deepEqual(a.graded.heights, b.graded.heights);
+    const d = parseDesign(design(nodes)), a = new Project(d), b = new Project(parseDesign(d));
+    assert.deepEqual(a.terrain.heights, b.terrain.heights);
     assert(a.terrain.heights.every(Number.isFinite));
     assert.deepEqual(Object.keys(a.terrain.fields), ["height"]);
-});
-
-test("A route cannot cross a canvas gap and a failed alignment leaves the ground intact", () => {
-    const d = syntheticDesign(), g = d.geoNodes[0];
-    g.construction = { type: "free", paths: [rect(-30, -30, -2, 30).paths[0],
-        { ...rect(2, -30, 30, 30).paths[0], nodes: rect(2, -30, 30, 30).paths[0].nodes.map(v => ({ ...v, id: "b" + v.id })) }] };
-    const i = new Island(parseDesign(d)), out = exportIsland(i, { commit: "", sha256: "" });
-    assert(i.routes[0].offCanvas && i.routes[0].parts.some(p => p.failed));
-    assert.equal(out.roads.length, 0);
-    assert(i.issues.some(issue => issue.kind === "no-route" && issue.message.includes("未定义")));
-    assert(!i.issues.some(issue => issue.kind.endsWith("-grade")));
-    assert.deepEqual(i.graded.heights, i.terrain.heights);
-    assert(i.trees.every(tree => i.terrain.defined[i.terrain.grid.index(...tree.point)]));
 });
 
 test("Ridge variation follows distance, wavelength and seed independently of collinear vertices", () => {

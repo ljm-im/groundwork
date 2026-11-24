@@ -1,10 +1,9 @@
 import { type Design, type GeoFunction, type GeoNode, type Path, type Point, type Strip, type Expression, type Polyline } from "../design/v5.ts";
-import { functionDefaults } from "../design/defaults.ts";
+import { defaultInputRange, functionDefaults, seedId } from "../design/defaults.ts";
 import { type Terrain } from "../design/results.ts";
-import { bounds, sampleDefined } from "../math/geometry.ts";
+import { sampleDefined } from "../math/geometry.ts";
 import { expressionGraph, referenceUses } from "../design/parameters.ts";
 import { evaluate, sampleValue } from "../design/expression.ts";
-import { flattenPath } from "../design/path.ts";
 
 export function nextId(used: Iterable<string>, prefix: string) {
     const ids = new Set(used);
@@ -27,22 +26,10 @@ export function nodeIds(d: Design) {
 }
 
 export function sampleField(t: Terrain, field: string, p: Point) {
-    const values = field === "height" ? t.stackHeights : t.fields[field];
+    const values = t.fields[field];
     return values ? sampleDefined(t.grid, values, t.defined, ...p) : undefined;
 }
 export const tenth = (value: number | undefined) => Math.round((value ?? 0) * 10) / 10;
-
-export function pathCenter(path: Path, tolerance: number): Point {
-    const edges = flattenPath(path, tolerance);
-    let area = 0, x = 0, y = 0;
-    for (const { a, b } of edges) {
-        const cross = a[0] * b[1] - b[0] * a[1];
-        area += cross; x += (a[0] + b[0]) * cross; y += (a[1] + b[1]) * cross;
-    }
-    if (Math.abs(area) > 1e-8) return [x / (3 * area), y / (3 * area)];
-    const box = bounds(path.nodes.map(v => v.p));
-    return [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2];
-}
 
 function insert(d: Design, node: GeoNode, above?: string) {
     const index = d.geoNodes.findIndex(n => n.id === above);
@@ -95,17 +82,17 @@ export function reorderGeo(d: Design, id: string, index: number) {
         throw Error("条带必须在它引用的地件之上");
     d.geoNodes = stack;
 }
-export function dependentStrips(d: Design, id: string) {
-    const ids = new Set([id]);
-    for (const n of d.geoNodes) if (n.construction.type === "strip" && n.construction.of.some(ref => ids.has(ref))) ids.add(n.id);
-    return d.geoNodes.filter(n => n.id !== id && ids.has(n.id));
+export function stripUsers(d: Design, id: string) {
+    return d.geoNodes.filter(n => n.construction.type === "strip" && n.construction.of.some(ref => ref === id));
 }
-export function deleteGeo(d: Design, id: string, cascade: boolean) {
-    const refs = dependentStrips(d, id);
-    const uses = [id, ...(cascade ? refs.map(n => n.id) : [])].flatMap(key => referenceUses(d, "geo", key));
+export function deleteGeo(d: Design, id: string) {
+    const node = d.geoNodes.find(n => n.id === id);
+    if (!node) return;
+    if (node.function.type === "ground" && !d.geoNodes.some(n => n.id !== id && n.function.type === "ground"))
+        throw Error("设计必须保留至少一个使用 ground 的地件");
+    const uses = [...referenceUses(d, "geo", id), ...stripUsers(d, id).map(n => "“" + n.label + "”.边")];
     if (uses.length) throw Error("仍被引用：\n" + uses.join("\n"));
-    if (refs.length && !cascade) return false;
-    d.geoNodes = d.geoNodes.filter(n => n.id !== id && !refs.includes(n));
+    d.geoNodes = d.geoNodes.filter(n => n.id !== id);
     return true;
 }
 export function rangeUsers(d: Design, owner: string, nodes: string[]) {
@@ -123,13 +110,14 @@ export function declarationUses(d: Design, kind: "input" | "field", id: string) 
 }
 export function removeDeclaration(d: Design, kind: "input" | "field", id: string) {
     if (kind === "field" && id === "height") throw Error("高度是内置场");
+    if (kind === "input" && id === seedId) throw Error("种子是内置输入");
     const uses = declarationUses(d, kind, id);
     if (uses.length) throw Error("仍被引用：\n" + uses.join("\n"));
     delete (kind === "input" ? d.inputs : d.fields)[id];
 }
 export function addInput(d: Design, value = 0) {
     const id = nextId(Object.keys(d.inputs), "v");
-    d.inputs[id] = { label: "自定义输入 " + id.slice(1), value, range: [Math.min(0, Math.floor(value)), Math.max(10, Math.ceil(value) + 5), .1] };
+    d.inputs[id] = { label: "自定义输入 " + id.slice(1), value, range: defaultInputRange(id) };
     return id;
 }
 export function addField(d: Design) {
@@ -149,10 +137,10 @@ export function allowedFunctions(n: GeoNode) {
     return functions.filter(type => (n.construction.type === "strip" ? type !== "ground" : !["split", "blend", "batter"].includes(type)) &&
         ((n.field ?? "height") === "height" || fieldFunctions.includes(type)));
 }
-export function defaultFunction(type: GeoFunction["type"], geometry?: { shore?: Path; line?: Polyline }): GeoFunction | undefined {
+export function defaultFunction(type: GeoFunction["type"], geometry?: { shore?: Path; line?: Polyline; center?: Point }): GeoFunction | undefined {
     switch (type) {
         case "ground": return { type, ...functionDefaults.ground };
-        case "coast": return geometry?.shore && { type, seed: "{input:seed}", shore: geometry.shore, ...functionDefaults.coast };
+        case "coast": return geometry?.shore && { type, seed: "{input:seed}", shore: geometry.shore, harbor: { center: geometry.center ?? [0, 0], radius: 0, span: 3 }, ...functionDefaults.coast };
         case "mountain": return { type, seed: "{input:seed}", ridges: [], peaks: [], ...functionDefaults.mountain };
         case "cliff": return { type, seed: "{input:seed}", ...functionDefaults.cliff };
         case "erosion": return { type, seed: "{input:seed}", ...functionDefaults.erosion };

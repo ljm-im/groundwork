@@ -1,4 +1,4 @@
-<textarea rows="4" aria-label="描述" {placeholder} data-prompt={target.group} value={descriptionOwner(editor.island.design, target).prompt ?? ""}
+<textarea rows="4" aria-label="描述" {placeholder} data-prompt={target.group} value={promptOwner(editor.project.design, target).prompt ?? ""}
     onblur={event => editor.describe(target, event.currentTarget.value)}></textarea>
 
 <style>
@@ -7,7 +7,7 @@
 
 <script lang="ts">
     import * as session from "../state/session.svelte.ts";
-    import { descriptionOwner, type DescriptionTarget } from "../state/descriptions.ts";
+    import { promptOwner, type PromptTarget } from "../../core/edit/history.ts";
 
-    let { editor, target, placeholder }: { editor: session.Editor; target: DescriptionTarget; placeholder?: string } = $props();
+    let { editor, target, placeholder }: { editor: session.Editor; target: PromptTarget; placeholder?: string } = $props();
 </script>

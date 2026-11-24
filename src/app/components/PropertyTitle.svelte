@@ -1,5 +1,5 @@
 <div class="property-title">
-    <Icon name={icon} />
+    <Icon name={icon} {builtin} />
     {#if rename}
         <input aria-label={label} data-tip={label} value={name} onchange={e => {
             const text = e.currentTarget.value.trim();
@@ -31,8 +31,8 @@
 
 <script lang="ts">
     import Icon, { type IconName } from "./Icon.svelte";
-    let { icon, name, label = "标签", rename, remove, copy, toggle, disabled = false }: {
-        icon: IconName; name: string; label?: string; rename?: (name: string) => void;
+    let { icon, name, label = "标签", rename, remove, copy, toggle, builtin = false, disabled = false }: {
+        icon: IconName; builtin?: boolean; name: string; label?: string; rename?: (name: string) => void;
         remove?: () => void; copy?: () => void; toggle?: () => void; disabled?: boolean;
     } = $props();
     let toggleTitle = $derived((disabled ? "启用“" : "禁用“") + name + "”");

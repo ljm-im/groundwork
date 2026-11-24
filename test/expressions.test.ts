@@ -6,8 +6,7 @@ import { parseDesign, serializeDesign } from "../src/core/design/model.ts";
 import { newDesign } from "../src/core/design/newDesign.ts";
 import { type Design } from "../src/core/design/v5.ts";
 import { deleteGeo } from "../src/core/edit/geoNodes.ts";
-import { exportIsland } from "../src/core/export.ts";
-import { Island } from "../src/core/island.ts";
+import { defaultInputRange } from "../src/core/design/defaults.ts";
 import { TerrainCache } from "../src/core/terrain/cache.ts";
 import { generateTerrain } from "../src/core/terrain/terrain.ts";
 import { layer, rect, syntheticDesign } from "./scenarios.ts";
@@ -26,31 +25,28 @@ test("Arithmetic and linear fields observe precedence, signed scalars and undefi
         assert.throws(() => evaluate(bad, ref), error);
 });
 
-test("Author inputs form one graph across stacks, array parameters, road nodes, roads and buildings", () => {
+test("Author inputs form one graph across stacks, array parameters and marks", () => {
     const d: Design = syntheticDesign();
     d.geoNodes[1].function = { type: "flat", amount: "{input:A}" };
     d.geoNodes.push(layer("M", rect(-8, -8, 8, 8), { type: "mountain", peaks: [], ridges: [{
-        widths: [1, "{building:A.height} * 2"], widthNoise: { amount: 0, wavelength: 20 }, heightNoise: { amount: 0, wavelength: 20 },
+        widths: [1, "{input:b}"], widthNoise: { amount: 0, wavelength: 20 }, heightNoise: { amount: 0, wavelength: 20 },
         line: { points: [{ p: [0, 0], h: 2 }, { p: [2, 2], h: "{input:b}" }] }
     }] }));
-    d.inputs.b = { value: "{edge:E.width} + {node:a.direction}" };
-    d.nodes[0].direction = "{input:A} - 6";
-    d.edges[0].width = "{geo:T.amount}";
-    d.buildings[0].height = "{input:b} / 2";
-    d.inputs.c = { value: "{geo:M.ridges.0.widths.1} + 1" };
+    d.inputs.b = { range: defaultInputRange("b"), value: "{geo:T.amount} + 1" };
+    d.inputs.c = { range: defaultInputRange("c"), value: "{geo:M.ridges.0.widths.1} + 1" };
+    d.marks.push({ id: "B", label: "B", kind: "text", follow: "ground", point: [1, 2], elevation: "{input:c} - 1" });
     const parsed = parseDesign(serializeDesign(d)), before = serializeDesign(parsed), numeric = resolveDesign(parsed);
     assert.equal(numeric.inputs.c.value, 9);
-    assert.equal(numeric.buildings[0].height, 4); assert.equal(numeric.edges[0].width, 7);
-    const m = new Island(parsed), out = exportIsland(m, { sha256: "", commit: "" });
-    assert.equal(out.buildings[0].height, 4); assert.equal(out.roads[0].width, 7);
-    assert.equal(m.routes[0].edge.width, 7);
+    const mark = numeric.marks[0];
+    assert(mark.kind === "text");
+    assert.equal(mark.elevation, 8);
     assert.equal(serializeDesign(parsed), before);
     const { slots } = expressionGraph(d);
     assert(!canReference(slots, "geo:T.amount", "input:c"));
     assert(!canReference(slots, "input:b", "input:b"));
     assert(canReference(slots, "input:b", "input:A"));
-    assert(referenceUses(d, "geo", "T").some(p => p.includes("edges[0].width")));
-    assert.throws(() => deleteGeo(d, "T", true), /edges\[0\].width/);
+    assert(referenceUses(d, "geo", "T").some(p => p.includes("inputs.b.value")));
+    assert.throws(() => deleteGeo(d, "T"), /inputs.b.value/);
 });
 
 test("Format and type errors identify the authored slot and cycles name every participant", () => {
@@ -68,16 +64,16 @@ test("Format and type errors identify the authored slot and cycles name every pa
         assert.throws(() => parseDesign(d), /geoNodes\[1\]\.function\.amount.*未知/);
     }
     b.function.amount = 1;
-    for (const [obj, key] of [[d.nodes[0], "point"], [d.buildings[0], "center"], [d.edges[0], "via"]] as const) {
-        const invalid = structuredClone(d), group = key === "point" ? invalid.nodes : key === "center" ? invalid.buildings : invalid.edges;
-        Object.assign(group.find(o => o.id === obj.id)!, { [key]: key === "via" ? [["{input:A}", 0]] : ["{input:A}", 0] });
-        assert.throws(() => parseDesign(invalid), /坐标/);
-    }
+    const invalid = structuredClone(d);
+    const region = invalid.geoNodes[0].construction;
+    assert(region.type === "free");
+    Object.assign(region.paths[0].nodes[0], { p: ["{input:A}", 0] });
+    assert.throws(() => parseDesign(invalid), /construction.paths\[0\].nodes\[0\]/);
     assert.throws(() => parseDesign({ ...d, seed: 5 }), /seed.*移除/);
     assert.throws(() => parseDesign({ ...d, marks: [{ id: "A", label: "A", kind: "text", point: ["{input:A}", 0] }] }), /marks\[0\].point/);
     d.inputs.A.value = " 2.5 ";
     assert.equal(parseDesign(d).inputs.A.value, 2.5);
-    b.id = "T.B"; d.inputs.c = { value: "{geo:T.B.amount}" }; a.function.value = 0;
+    b.id = "T.B"; d.inputs.c = { range: defaultInputRange("c"), value: "{geo:T.B.amount}" }; a.function.value = 0;
     assert.deepEqual(referenceUses(d, "geo", "T"), []);
     assert(referenceUses(d, "geo", "T.B").some(v => v.includes("inputs.c.value")));
 });
@@ -109,7 +105,7 @@ test("Omitted parameters can be referenced and old ridge tuples fail at their or
     const graph = expressionGraph(d);
     for (const [key, value] of [["heightNoise.amount", 14], ["heightNoise.wavelength", 20], ["widthNoise.amount", 0], ["widthNoise.wavelength", 8]])
         assert.equal(graph.get("geo:T.ridges.0." + key), value);
-    d.inputs.c = { value: "{geo:T.floor} + {geo:T.seed} + {geo:T.ridges.0.heightNoise.wavelength}" };
+    d.inputs.c = { range: defaultInputRange("c"), value: "{geo:T.floor} + {geo:T.seed} + {geo:T.ridges.0.heightNoise.wavelength}" };
     assert.equal(resolveDesign(parseDesign(d)).inputs.c.value, -980);
     for (const key of ["widthNoise", "heightNoise"]) {
         const bad = structuredClone(d), f = bad.geoNodes[1].function;
@@ -121,19 +117,16 @@ test("Omitted parameters can be referenced and old ridge tuples fail at their or
     assert.throws(() => parseDesign(d), /widthNoise.wavelength/);
 });
 
-test("Geometry, road and building inputs expose concrete defaults without changing authored height stops", () => {
+test("Geometry inputs expose concrete defaults without changing authored height stops", () => {
     const d: Design = syntheticDesign(), n = d.geoNodes[1];
     n.function = { type: "slope", kind: "path", ease: true, line: { points: [
         { p: [0, 0], h: 2 }, { p: [2, 0] }, { p: [8, 0], h: 10 }
     ] } };
-    d.inputs.b = { value: "{geo:T.line.points.1.h} + {building:A.pad} + {edge:E.stairUntil}" };
+    d.inputs.b = { range: defaultInputRange("b"), value: "{geo:T.line.points.1.h} + {geo:T.line.points.0.h}" };
     const g = expressionGraph(d), resolved = resolveDesign(parseDesign(d)), t = resolved.geoNodes[1].function;
     assert(t.type === "slope" && t.kind === "path");
     assert.equal(g.get("geo:T.line.points.1.h"), 3.25);
-    assert.equal(resolved.inputs.b.value, 4.55);
-    assert.equal(g.get("building:A.treeRadius"), Math.hypot(6, 4) / 2 + 1.5);
-    assert.equal(resolved.routing.clearLead, 1.5);
-    assert.equal(resolved.nodes[1].direction, 0); assert.equal(resolved.nodes[1].directionMode, "auto");
+    assert.equal(resolved.inputs.b.value, 5.25);
     assert.equal(t.line.points[1].h, 3.25);
     const unchanged = generateTerrain(d).heights;
     const noMidpoint = structuredClone(d);
@@ -143,8 +136,6 @@ test("Geometry, road and building inputs expose concrete defaults without changi
     slope.line.points.splice(1, 1);
     assert.deepEqual(generateTerrain(noMidpoint).heights, unchanged);
     assert.equal(n.function.line.points[1].h, undefined, "The source retains its two authored height stops");
-    Object.assign(d.roadClasses.stair, { rampLimit: null });
-    assert.equal(resolveDesign(parseDesign(d)).roadClasses.stair.rampLimit, 1000);
     const ridge = { line: n.function.line, widths: [4, 4] };
     Object.assign(n, { function: { type: "mountain", ridges: [ridge], peaks: [] } });
     d.inputs.b.value = "{geo:T.ridges.0.line.points.1.h}";

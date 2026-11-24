@@ -1,7 +1,7 @@
 import { type Expression } from "./v5.ts";
 
 export const literalPattern = /^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/;
-const tokenPattern = /\s+|\{(?:input|field|geo|building|node|edge):[^{}]+\}|(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?|[-+*/()]/gy;
+const tokenPattern = /\s+|\{[^{}]+\}|(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?|[-+*/()]/gy;
 export interface Token { text: string; start: number; end: number }
 export function tokens(source: string): Token[] {
     const result: Token[] = [];
@@ -10,6 +10,8 @@ export function tokens(source: string): Token[] {
         const match = tokenPattern.exec(source);
         if (!match) throw Error("第 " + (start + 1) + " 个字符无法识别");
         const text = match[0], end = start + text.length;
+        if (text.startsWith("{") && !/^\{(?:input|field|geo):[^{}]+\}$/.test(text))
+            throw Error("第 " + (start + 1) + " 个字符无法识别，未知的变量 " + text);
         if (text.trim()) result.push({ text, start, end });
         start = end;
     }

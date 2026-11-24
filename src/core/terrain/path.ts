@@ -1,1 +1,0 @@
-export { flattenPath, pathHandle, type Segment } from "../design/path.ts";

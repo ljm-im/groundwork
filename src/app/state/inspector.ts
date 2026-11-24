@@ -5,29 +5,29 @@ const issues = ["issues", "校验", "issues"] as const;
 const single = [["general", "", "project"]] as const;
 const tabs = {
     geoNode: [label, ["region", "区域", "region"], ["function", "函数", "function"], issues],
-    building: [label, ["building", "建筑", "building"], ["doors", "门", "door"], issues],
-    edge: [label, ["edge", "道路", "edge"], issues],
-    node: [label, ["node", "节点", "node"], issues],
     section: [label, ["section", "剖面线", "section"]]
 } as const;
 
 export type PropertyTab = (typeof tabs)[keyof typeof tabs][number][0] | "general";
-export type SubitemGroup = "ridges" | "peaks" | "doors";
+export type SubitemGroup = "ridges" | "peaks" | "advanced";
 
 export function propertyTabs(selection: Selection | null) {
     switch (selection?.kind) {
         case "geoNode": return tabs.geoNode;
-        case "building": return tabs.building;
-        case "edge":
-        case "via": return tabs.edge;
-        case "node": return tabs.node;
         case "section": return tabs.section;
         default: return single;
     }
 }
 
 export function tabForSelection(selection: Selection | null, current: PropertyTab): PropertyTab {
-    if (selection?.kind === "via") return "edge";
     const available = propertyTabs(selection);
     return available.some(([tab]) => tab === current) ? current : available[0][0];
 }
+
+export const nodeModes = [["corner", "尖角", "nodeCorner"], ["auto", "自动平滑", "nodeAuto"], ["manual", "手动平滑", "nodeManual"]] as const;
+export const segmentTypes = [["line", "直线", "segmentLine"], ["curve", "曲线", "segmentCurve"], ["arc", "圆弧", "segmentArc"]] as const;
+
+export const advancedErosion = [
+    ["droplets", "水滴数"], ["inertia", "惯性"], ["capacity", "携沙能力"], ["minCapacity", "最小携沙量"],
+    ["deposition", "沉积率"], ["erosion", "侵蚀率"], ["evaporation", "蒸发率"], ["gravity", "重力"], ["lifetime", "寿命", "m"]
+] as const;

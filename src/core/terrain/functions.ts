@@ -6,8 +6,8 @@ import { type Region } from "../design/regions.ts";
 import { distance, nearest, polygonField, sampleDefined, smooth, type Grid } from "../math/geometry.ts";
 import { fbm, noise, noise1D } from "../math/noise.ts";
 import { erode } from "./erosion.ts";
-import { flattenPath } from "./path.ts";
-import { signedBoundaryDistance } from "./regions.ts";
+import { flattenPath } from "../design/path.ts";
+import { signedBoundaryDistance } from "../design/regions.ts";
 import { shoreDistance } from "./shore.ts";
 
 export interface FieldState {
@@ -85,7 +85,7 @@ export function evaluateLayer(n: GeoNode<number>, region: Region, state: FieldSt
                     const [x, y] = grid.point(k), dc = -edge[k], harbor = f.harbor;
                     let perturbation = 0;
                     if (Math.abs(dc) < reach) {
-                        const attenuation = harbor ? smooth((distance([x, y], harbor.center) - harbor.radius) / harbor.span) : 1;
+                        const attenuation = harbor.radius > 0 ? smooth((distance([x, y], harbor.center) - harbor.radius) / harbor.span) : 1;
                         const wx = x + 14 * fbm(n2, x / 70, y / 70, 3), wy = y + 14 * fbm(n2, x / 70 + 5.2, y / 70 + 1.3, 3);
                         perturbation = (input(f.roughness, k) ?? 0) * attenuation * fbm(n1, wx / 38, wy / 38, 5) * 1.7;
                     }

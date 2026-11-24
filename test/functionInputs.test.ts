@@ -5,7 +5,7 @@ import { type GeoFunction, type GeoNode, type Point } from "../src/core/design/v
 import { createGrid } from "../src/core/math/geometry.ts";
 import { TerrainCache } from "../src/core/terrain/cache.ts";
 import { evaluateLayer, type FieldState } from "../src/core/terrain/functions.ts";
-import { makeShape, rasterRegion } from "../src/core/terrain/regions.ts";
+import { makeShape, rasterRegion } from "../src/core/design/regions.ts";
 import { evaluateStack } from "../src/core/terrain/terrain.ts";
 import { erosion, layer, polygon, rect, syntheticDesign } from "./scenarios.ts";
 
@@ -85,17 +85,16 @@ test("Every built-in function uses its parameters and ordinary functions read th
 });
 
 test("Flat, both slopes and coast pass a one-metre ground lift through the stack and cache", () => {
-    const coast: Fn = { type: "coast", shore, roughness: 0 };
+    const coast: Fn = { type: "coast", shore, roughness: 0, harbor: { center: [0, 0], radius: 0, span: 3 } };
     for (const fn of [cases.flat.fn, cases.slope.fn, radial.fn, coast]) {
         const d = syntheticDesign(), ground = d.geoNodes[0];
         d.geoNodes = [ground, layer("A", area, fn)];
-        d.buildings = []; d.nodes = []; d.edges = [];
         const cache = new TerrainCache();
         const before = cache.generate(d), cells = before.regions.get("A")!.cells;
         assert(ground.function.type === "ground");
         ground.function.value = Number(ground.function.value) + 1;
         const after = cache.generate(d);
-        assert.deepEqual(after.stackHeights, evaluateStack(d).fields.height);
-        assert(cells.every(k => Math.abs(after.stackHeights[k] - before.stackHeights[k] - 1) < 1e-6), fn.type);
+        assert.deepEqual(after.heights, evaluateStack(d).fields.height);
+        assert(cells.every(k => Math.abs(after.heights[k] - before.heights[k] - 1) < 1e-6), fn.type);
     }
 });

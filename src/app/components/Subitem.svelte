@@ -1,7 +1,7 @@
 <div class="subitem">
     <div class="subitem-heading">
         <button class="subitem-toggle" aria-expanded={open} {onclick}>
-            <Icon name={open ? "collapse" : "expand"} />{#if icon}<Icon name={icon} />{/if}<span>{label}</span>
+            <Icon name={open ? "collapse" : "expand"} /><span>{label}</span>
         </button>
         {#if actions}<div class="row-actions">{@render actions()}</div>{/if}
     </div>
@@ -40,8 +40,8 @@
 
 <script lang="ts">
     import { type Snippet } from "svelte";
-    import Icon, { type IconName } from "./Icon.svelte";
-    let { label, icon, open, onclick, children, actions }: {
-        label: string; icon?: IconName; open: boolean; onclick: () => void; children: Snippet; actions?: Snippet;
+    import Icon from "./Icon.svelte";
+    let { label, open, onclick, children, actions }: {
+        label: string; open: boolean; onclick: () => void; children: Snippet; actions?: Snippet;
     } = $props();
 </script>

@@ -3,7 +3,7 @@ import "../configs/register-svelte.ts";
 import { History } from "../src/core/edit/history.ts";
 import assert from "node:assert/strict";
 import { fixtureOptions, readFixture } from "../configs/read-fixture.ts";
-import { Island } from "../src/core/island.ts";
+import { Project } from "../src/core/project.ts";
 import { parseDesign, serializeDesign } from "../src/core/design/model.ts";
 import { FileWrites } from "../src/app/state/fileWrites.ts";
 
@@ -17,31 +17,31 @@ test("Authored and default designs survive a JSON round trip", fixtureOptions("r
 });
 
 
-test("V5 design bytes and tree order survive reopening", fixtureOptions("round14-coast.json"), async () => {
+test("V5 design bytes and terrain survive reopening", fixtureOptions("round14-coast.json"), async () => {
     const raw = await readFixture("round14-coast.json");
     const d = parseDesign(raw);
-    const island = new Island(d);
+    const project = new Project(d);
     assert.equal(serializeDesign(parseDesign(serializeDesign(d))), serializeDesign(d));
-    assert.deepEqual(new Island(parseDesign(serializeDesign(d))).trees, island.trees);
+    assert.deepEqual(new Project(parseDesign(serializeDesign(d))).terrain.heights, project.terrain.heights);
 });
 
-test("Saving a reopened v5 design reproduces its bytes and trees", fixtureOptions("round14-coast.json"), async () => {
+test("Saving a reopened v5 design reproduces its bytes and issues", fixtureOptions("round14-coast.json"), async () => {
     const input = await readFixture("round14-coast.json");
-    const design = parseDesign(input), island = new Island(design);
+    const design = parseDesign(input), project = new Project(design);
     const exported = serializeDesign(design);
     assert.equal(serializeDesign(parseDesign(exported)), exported);
-    assert.deepEqual(new Island(parseDesign(input)).trees, island.trees);
+    assert.deepEqual(new Project(parseDesign(input)).issues, project.issues);
 
 });
 
-test("Object and text imports produce identical designs, routes and trees", fixtureOptions("round14-coast.json"), async () => {
+test("Object and text imports produce identical designs, heights and masks", fixtureOptions("round14-coast.json"), async () => {
     const text = await readFixture("round14-coast.json");
     const source: unknown = JSON.parse(text);
     const document = parseDesign(source), fromText = parseDesign(text);
     assert.equal(serializeDesign(document), serializeDesign(fromText));
-    const island = new Island(document), reference = new Island(fromText);
-    assert.deepEqual(island.routes, reference.routes);
-    assert.deepEqual(island.trees, reference.trees);
+    const project = new Project(document), reference = new Project(fromText);
+    assert.deepEqual(project.terrain.fields, reference.terrain.fields);
+    assert.deepEqual(project.terrain.defined, reference.terrain.defined);
     assert.equal(JSON.stringify(source), JSON.stringify(JSON.parse(text)));
 });
 
@@ -52,7 +52,7 @@ test("Saving and reopening the unchanged v5 source preserves every byte", fixtur
     editor.history = new History(parseDesign(raw));
     t.mock.method(editor, "working", async (_label: string, work: () => void) => work());
     t.mock.method(editor, "replace", (design: ReturnType<typeof parseDesign>) => {
-        editor.island = new Island(design);
+        editor.project = new Project(design);
     });
     t.mock.method(editor, "message", () => {});
     t.mock.method(editor.files, "remember", () => {});
@@ -78,10 +78,10 @@ test("Saving and reopening the unchanged v5 source preserves every byte", fixtur
         await editor.files.save();
         assert.equal(bytes, raw);
     }
-    editor.describe({ group: "design" }, "新的全岛描述");
+    editor.describe({ group: "design" }, "新的项目描述");
     await editor.files.save();
     assert.equal(JSON.parse(bytes).version, 5);
-    assert.equal(parseDesign(bytes).prompt, "新的全岛描述");
+    assert.equal(parseDesign(bytes).prompt, "新的项目描述");
     const legacy = "\uFEFF" + raw.replaceAll("\n", "\r\n") + "\r\n";
     bytes = legacy;
     await editor.files.open(handle);

@@ -1,7 +1,7 @@
 {#each issues as issue (issue)}
-    <button class="issue-row" class:is-selected={editor.issue === issue} data-issue={editor.island.issues.indexOf(issue)} onclick={() => editor.issueAt(issue)}>
+    <button class="issue-row" class:is-selected={editor.selectedIssues.includes(issue)} aria-pressed={editor.selectedIssues.includes(issue)} data-issue={editor.project.issues.indexOf(issue)} onclick={() => editor.issueAt(issue)}>
         <span class={issue.severity === "error" ? "issue-error" : "issue-notice"}><Icon name="issues" /></span>
-        <span><b>{issue.label ?? editor.island.routes.find(r => r.id === issue.road)?.edge.label ?? issue.road}</b><small>{issue.message}</small></span>
+        <span><b>{issue.label ?? "项目"}</b><small>{issue.message}</small></span>
     </button>
 {/each}
 

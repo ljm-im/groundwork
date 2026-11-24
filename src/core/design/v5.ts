@@ -1,45 +1,27 @@
-import { type Building as Footprint, type ClearingShape, type Disk, type Edge as Road, type Erosion, type Named, type Planting as PlantingRules, type Point, type RoadClass, type RoadNode as NetworkNode, type Routing, type Section as LegacySection } from "./types.ts";
+import { type Point } from "../math/geometry.ts";
 
-export { type ClearingShape, type Disk, type Ellipse, type Polygon, type Sector, type Erosion, type Named, type Point, type RoadClass, type RoadMode, type RoadPair, type Routing, type Segment, type Species } from "./types.ts";
+export { type Point } from "../math/geometry.ts";
 export type Expression = number | string;
 type NumericProperties<T, N> = { [K in keyof T]: Exclude<T[K], undefined> extends number ? N : T[K] };
 export interface Labeled { id: string; label: string; showLabel?: boolean }
-export type Door<N = number> = NumericProperties<Omit<Footprint["doors"][number], "name">, N> & { label?: string; showLabel?: boolean };
-export type Building<N = number> = NumericProperties<Omit<Footprint, keyof Labeled | "name" | "showTitle" | "zone" | "size" | "doors">, N> & Labeled & { size?: [N, N]; doors: Door<N>[] };
-export type Edge<N = number> = NumericProperties<Omit<Road, keyof Labeled | "name">, N> & Labeled;
-export type RoadNode<N = number> = NumericProperties<Omit<NetworkNode, keyof Labeled | "name" | "yard" | "at" | "type">, N> & Labeled & { type: Exclude<NetworkNode["type"], "gate">; directionMode?: "auto" | "manual" };
-export type Planting = Omit<PlantingRules, "zones">;
-export type Section = Omit<LegacySection, "name"> & Labeled;
-interface MarkBase extends Labeled { point: Point }
+export interface Section extends Labeled {
+    points: [Point, Point];
+    marks: [station: number, label: string, point?: Point][];
+    prompt?: string;
+}
+export type MarkFollow = "screen" | "ground";
+interface MarkBase extends Labeled { point: Point; follow: MarkFollow }
 export interface TextMark<N = Expression> extends MarkBase {
     kind: "text";
-    building?: string;
-    offset?: Point;
-    spot?: boolean;
-    minZoom?: number;
-    titleOnly?: boolean;
     elevation?: N;
     showElevation?: boolean;
 }
 export interface ScaleMark<N = Expression> extends MarkBase { kind: "scale"; length?: N }
 export type Mark<N = Expression> = TextMark<N> | ScaleMark<N>;
 
-export function markPoint(mark: Mark, buildings: readonly { id: string; center: Point }[]): Point {
-    const building = mark.kind === "text" && buildings.find(b => b.id === mark.building);
-    if (!building || mark.kind !== "text") return mark.point;
-    const [x, y] = mark.offset ?? [0, 0];
-    return [building.center[0] + x, building.center[1] + y];
-}
-export interface Clearing extends Named { shape: ClearingShape; cover?: "ambient" }
-export interface Vegetation {
-    density: { natural: number };
-    rooms: Disk[];
-    yardTree: Disk;
-    plantings: Planting[];
-    clearings: Clearing[];
-}
+export const defaultFollow = (kind: Mark["kind"]): MarkFollow => kind === "scale" ? "screen" : "ground";
 
-export interface CustomInput<N = Expression> { value: N; label?: string; range?: [number, number, number] }
+export interface CustomInput<N = Expression> { value: N; label?: string; range: [number, number, number] }
 export interface PathNode {
     id: string;
     p: Point;
@@ -61,10 +43,33 @@ export type Construction<N = Expression> = { type: "free"; paths: Path[] } | Str
 export interface RidgeNoise<N> { amount: N; wavelength: N }
 export interface Ridge<N> { line: Polyline<N>; widths: [N, N]; widthNoise: RidgeNoise<N>; heightNoise: RidgeNoise<N> }
 export interface Peak<N> { at: { p: Point; h: N }; radius: N; noise: N; scale: N }
+export interface Erosion {
+    /** Number of simulated droplets. */
+    droplets: number;
+    /** Fraction of the previous direction retained. */
+    inertia: number;
+    /** Sediment capacity multiplier. */
+    capacity: number;
+    /** Minimum sediment carrying capacity. */
+    minCapacity: number;
+    /** Fraction of surplus sediment deposited per step. */
+    deposition: number;
+    /** Fraction of the sediment deficit eroded per step. */
+    erosion: number;
+    /** Fraction of water lost per step. */
+    evaporation: number;
+    /** Acceleration coefficient used to update droplet speed. */
+    gravity: number;
+    /** Maximum droplet travel distance in metres. */
+    lifetime: number;
+    /** Erosion brush radius in metres. */
+    radius: number;
+}
+
 export type GeoFunction<N = Expression> = (
     { type: "ground"; value: N } |
     { type: "flat"; amount: N } |
-    { type: "coast"; shore: Path; roughness: Expression; harbor?: { center: Point; span: N; radius: N } } |
+    { type: "coast"; shore: Path; roughness: Expression; harbor: { center: Point; span: N; radius: N } } |
     { type: "mountain"; ridges: Ridge<N>[]; peaks: Peak<N>[]; floor?: N } |
     { type: "cliff"; factor: Expression; seaLevel?: N } |
     ({ type: "erosion"; strength?: Expression; floor?: N } & NumericProperties<Erosion, N>) |
@@ -92,16 +97,9 @@ export interface DesignData<N> {
     inputs: Record<string, CustomInput<N>>;
     fields: Record<string, { label?: string; default: N }>;
     geoNodes: GeoNode<N>[];
-    buildings: Building<N>[];
-    nodes: RoadNode<N>[];
-    edges: Edge<N>[];
-    roadClasses: Record<string, RoadClass>;
-    routing: NumericProperties<Routing, N>;
-    vegetation: Vegetation;
     sections: Section[];
     marks: Mark<N>[];
 }
 
 export interface Design extends DesignData<Expression> {}
 export type ResolvedDesign = DesignData<number>;
-export type NetworkDesign = Pick<ResolvedDesign, "nodes" | "edges" | "buildings" | "roadClasses" | "routing">;

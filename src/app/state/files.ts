@@ -133,7 +133,8 @@ export class DesignFiles {
         e.busy = action === "new" ? "正在新建设计…" : "正在打开项目设计…";
         try {
             if (action === "new") {
-                this.install(newDesign(), "未命名");
+                const box = e.map?.canvas?.getBoundingClientRect();
+                this.install(newDesign(box && [box.width * .1, box.height * .9]), "未命名");
                 e.message("已新建设计");
             }
             else {
@@ -162,19 +163,17 @@ export class DesignFiles {
         // Keep a UTF-8 BOM, original whitespace and line endings for an untouched design.
         const text = new TextDecoder("utf-8", { ignoreBOM: true }).decode(await file.arrayBuffer());
         const json = text.replace(/^\uFEFF/, ""), design = parseDesign(json, true);
-        const source = JSON.parse(json) as Design;
-        const original = serializeDesign(source) === JSON.stringify(source, null, 2) &&
-            JSON.stringify(source) === JSON.stringify(design) ? text : null;
+        const original = serializeDesign(design) === JSON.stringify(JSON.parse(json), null, 2) ? text : null;
         this.install(design, file.name, { handle, writable, original });
         this.editor.message(writable ? "已打开“" + file.name + "”" : permissionWarning);
     }
     private writeTo(target: DesignHandle, manual = false) {
-        const e = this.editor, handle = this.handle, history = e.history, island = e.island;
+        const e = this.editor, handle = this.handle, history = e.history, project = e.project;
         const canonical = history.states[history.index];
         this.status("正在保存");
         return this.writes.request(target, this.original ?? canonical, result => {
-            if (island !== e.island || handle !== this.handle) {
-                // Undo and terrain edits can rebuild the Island within the same file and history.
+            if (project !== e.project || handle !== this.handle) {
+                // Undo and terrain edits can rebuild the Project within the same file and history.
                 if (history !== e.history || handle !== this.handle) return;
             }
             if (!result.ok) {
@@ -199,7 +198,7 @@ export class DesignFiles {
     }
     async save() {
         const e = this.editor;
-        if (!e.island || e.busy || e.gesture || e.draft || e.fileRequest) return;
+        if (!e.project || e.busy || e.gesture || e.draft || e.fileRequest) return;
         const history = e.history, handle = this.handle;
         if (!handle && this.choosingSaveFor === history) return;
         if (!handle) this.choosingSaveFor = history;

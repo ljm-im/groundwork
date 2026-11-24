@@ -1,7 +1,5 @@
 export const layerDefaults = {
-    network: true,
     geoNodes: false,
-    buildings: false,
     sections: true,
     contours: true,
     labels: true,
@@ -11,10 +9,8 @@ export const layerDefaults = {
     fineGrid: false
 };
 export const layerNames = {
-    network: "路网节点与途经点",
     geoNodes: "地件轮廓",
-    buildings: "建筑占地",
-    sections: "剖面线与端点",
+    sections: "剖面线",
     labels: "标签",
     marks: "标记",
     issues: "校验标记"

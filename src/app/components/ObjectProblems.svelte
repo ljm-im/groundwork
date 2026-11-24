@@ -1,5 +1,5 @@
 <Part>
-    {#if issues.length}<IssueRows {editor} {issues} />{:else}<div class="sub">通过全部检查</div>{/if}
+    {#if issues.length}<IssueRows {editor} {issues} />{:else}<div class="list-empty">没有匹配的结果</div>{/if}
 </Part>
 
 <script lang="ts">
@@ -8,5 +8,5 @@
     import Part from "./Part.svelte";
     import IssueRows from "./IssueRows.svelte";
     let { editor }: { editor: session.Editor } = $props();
-    let issues = $derived(objectIssues(editor.island, editor.selection));
+    let issues = $derived(objectIssues(editor.project, editor.selection));
 </script>

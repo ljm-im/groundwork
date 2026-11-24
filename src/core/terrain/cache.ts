@@ -5,7 +5,7 @@ import { type Region, type RegionShape } from "../design/regions.ts";
 import { type Terrain } from "../design/results.ts";
 import { sampleDefined, type Box, type Grid } from "../math/geometry.ts";
 import { applyLayer, evaluateLayer, type LayerOutput } from "./functions.ts";
-import { canvasGrid, intersects, makeShape, rasterRegion } from "./regions.ts";
+import { canvasGrid, intersects, makeShape, rasterRegion } from "../design/regions.ts";
 import { finishTerrain, initialFields } from "./terrain.ts";
 
 interface Geometry { key: string; shape: RegionShape; revision: number; region?: Region }
@@ -29,7 +29,7 @@ function readBox(n: GeoNode<number>, shape: RegionShape, grid: Grid): Box {
 }
 
 // Keep each layer's writes, never its entire composite. Replaying them in current
-// stack order restores overwritten or deleted areas without mutating an older Island.
+// stack order restores overwritten or deleted areas without mutating an older project.
 export class TerrainCache {
     private geometry = new Map<string, Geometry>();
     private layers = new Map<string, Layer>();
@@ -139,6 +139,6 @@ export class TerrainCache {
         this.designKey = this.terrainKey(d);
         this.recomputed = recomputed;
         this.timings = times;
-        return finishTerrain(d, { ...state, regions, batterResiduals });
+        return finishTerrain({ ...state, regions, batterResiduals });
     }
 }

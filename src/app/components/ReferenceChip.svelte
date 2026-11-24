@@ -1,4 +1,4 @@
-<span class="ref-chip" data-ref={refKey} contenteditable="false"><Icon name={info.icon} /><span>{info.name}{info.property ? "." + info.property : ""}</span></span>
+<span class="ref-chip" data-ref={refKey} contenteditable="false"><Icon name={info.icon} builtin={info.builtin} /><span>{info.name}{info.property ? "." + info.property : ""}</span></span>
 
 <style>
     .ref-chip {

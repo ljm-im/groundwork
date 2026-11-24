@@ -1,7 +1,7 @@
 <FieldRow {label}>
     <button class="input-box choice-face" aria-label={label} aria-expanded={open} aria-haspopup="listbox" {...attributes}
         bind:this={anchor} onclick={() => open = !open}>
-        <Icon name={selected?.icon ?? icon} />
+        {#if icon}<Icon name={icon} builtin={selected?.builtin} />{/if}
         <span>{selected?.name ?? value}</span>
         <Icon name="collapse" />
     </button>
@@ -14,14 +14,9 @@
             <button role="option" aria-selected={item.id === value} onclick={() => {
                 close(); if (item.id !== value) choose(item.id);
             }}>
-                <Icon name={item.icon ?? icon} />{item.name}
+                {#if icon}<Icon name={icon} builtin={item.builtin} />{/if}{item.name}
             </button>
         {/each}
-        {#if create}
-            <button role="option" aria-selected="false" class="create-option" onclick={() => {
-                close(); create?.();
-            }}><Icon name="plus" />{newLabel}</button>
-        {/if}
     </div>
 {/if}
 <svelte:window onkeydowncapture={keyboard} />
@@ -36,10 +31,10 @@
     import { anchoredPopup } from "../state/popup.ts";
     import FieldRow from "./FieldRow.svelte";
     import Icon, { type IconName } from "./Icon.svelte";
-    let { label, group, icon = "property", value, options, newLabel, choose, create, attributes }: {
+    let { label, group, icon, value, options, choose, attributes }: {
         label: string; group?: string; icon?: IconName; value: string;
-        options: { id: string; name: string; icon?: IconName }[]; newLabel?: string;
-        choose: (v: string) => void; create?: () => void; attributes?: Record<string, string>;
+        options: { id: string; name: string; builtin?: boolean }[];
+        choose: (v: string) => void; attributes?: Record<string, string>;
     } = $props();
     let anchor = $state<HTMLButtonElement>(null!), menu = $state<HTMLElement>(), open = $state(false);
 

@@ -1,10 +1,10 @@
 import { execFileSync } from "node:child_process";
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { resolve, relative, sep, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
-import { palette, treeStyles } from "../src/render/palette.ts";
+import { palette } from "../src/render/palette.ts";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const tests = resolve(root, "test"), core = resolve(root, "src/core");
@@ -16,12 +16,10 @@ const allowed: Record<string, string[]> = {
     math: [],
     design: ["math"],
     terrain: ["math", "design"],
-    roads: ["math", "design"],
-    vegetation: ["math", "design"],
-    checks: ["math", "design", "roads"],
+    checks: ["math", "design"],
     edit: ["math", "design"],
-    "export.ts": ["math", "design", "terrain", "roads", "vegetation", "checks", "edit", "island.ts"],
-    "island.ts": ["math", "design", "terrain", "roads", "vegetation", "checks", "edit"]
+    "export.ts": ["math", "design", "terrain", "project.ts"],
+    "project.ts": ["math", "design", "terrain", "checks"]
 };
 const testTools = new Set(["read-fixture", "fixtureSchema", "register-svelte", "boundaries"].map(name => resolve(root, "configs", name + ".ts")));
 
@@ -63,8 +61,8 @@ function checkDirectory(directory: string, graph: Map<string, Set<string>>) {
             else if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument)) dependency(node.argument.literal);
             else if (ts.isCallExpression(node)) {
                 if (node.expression.kind === ts.SyntaxKind.ImportKeyword) dependency(node.arguments[0]);
-                if (!inCore && ts.isIdentifier(node.expression) && ["readFixture", "readLegacyFixture", "fixtureOptions"].includes(node.expression.text)) {
-                    const filename = node.expression.text === "fixtureOptions" ? /^(?:v4\/)?[\w-]+\.json$/ : /^[\w-]+\.json$/;
+                if (!inCore && ts.isIdentifier(node.expression) && ["readFixture", "fixtureOptions"].includes(node.expression.text)) {
+                    const filename = /^[\w-]+\.json$/;
                     if (!node.arguments.length || !node.arguments.every(arg => ts.isStringLiteral(arg) && filename.test(arg.text)))
                         fail(node, "Use a JSON filename from .local/fixtures/.");
                 }
@@ -99,9 +97,13 @@ export function checkEditorSource() {
     const tracked = execFileSync("git", ["ls-files", "-z", "--", "src"], { cwd: root, encoding: "utf8" }).split("\0").filter(Boolean);
     assert(tracked.length);
     for (const file of tracked) {
-        const source = readFileSync(resolve(root, file), "utf8");
+        const path = resolve(root, file);
+        if (!existsSync(path)) continue;
+        const source = readFileSync(path, "utf8");
+        assert.doesNotMatch(file, /island/i, file);
+        assert.doesNotMatch(source, /island/i, file);
         assert.doesNotMatch(source, /[「」·]/u, file);
-        if (/\.(?:ts|svelte)$/u.test(file) && !file.includes("/migrations/")) assert.doesNotMatch(source, /岛/u, file);
+        if (/\.(?:ts|svelte)$/u.test(file)) assert.doesNotMatch(source, /岛/u, file);
         assert.doesNotMatch(source, /<input\b[^>]*\btype=["']range["']/u, file);
         assert.doesNotMatch(source, /(?:disabled[^\n]*关闭|关闭[^\n]*disabled)/u, file);
     }
@@ -127,10 +129,9 @@ export function checkDesignTokens() {
         }
     }
     const definitions = new Map([...readFileSync(tokens, "utf8").matchAll(/(--[a-z-]+):\s*([^;]+);/g)].map(match => [match[1], match[2].trim()]));
-    for (const key of ["bgApp", "bgPanel", "bgSelected", "text", "textSecondary", "border", "accent", "warning", "danger"] as const) {
+    for (const key of ["bgApp", "bgPanel", "bgSelected", "text", "textSecondary", "border", "borderRegion", "accent", "warning", "danger"] as const) {
         const token = "--" + key.replace(/[A-Z]/g, letter => "-" + letter.toLowerCase());
         assert.equal(definitions.get(token), palette[key], token);
     }
-    for (const [species, [color]] of Object.entries(treeStyles))
-        assert.equal(definitions.get("--map-tree-" + species), color, species);
+
 }

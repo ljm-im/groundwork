@@ -153,8 +153,8 @@ input[type="radio"]:checked::after {
 .panel-heading { min-height: var(--row-h); padding-inline: var(--panel-inset); }
 .part { display: grid; gap: var(--space-1); min-width: 0; }
 .part + .part { margin-top: var(--space-4); }
-.part-title { min-height: var(--control-h); color: var(--text-secondary); }
-.part-title h3 { display: flex; align-items: center; gap: var(--space-1); }
+.part-title { min-height: var(--control-h); color: var(--text); }
+.list-empty { padding: var(--space-6) var(--panel-inset); font-size: var(--text-sm); line-height: var(--leading-sm); color: var(--text-secondary); }
 .number, .param-name, .unit { color: var(--text-secondary); }
 
 .parameter-row {
@@ -170,7 +170,7 @@ input[type="radio"]:checked::after {
 .control-unit { grid-column: 3; }
 .parameter-row > :nth-child(2) { min-width: 0; }
 
-.list-row, .object-row, .route-row, .issue-row {
+.list-row, .object-row, .issue-row {
     display: flex;
     width: 100%;
     min-height: var(--row-h);
@@ -184,14 +184,14 @@ input[type="radio"]:checked::after {
     background: transparent;
 }
 
-:is(.list-row, .object-row, .route-row, .issue-row):hover { background: var(--bg-hover); }
-:is(.list-row, .object-row, .route-row, .issue-row):is([aria-pressed="true"], .is-selected) { background: var(--bg-selected); }
-:is(.list-row, .object-row, .route-row, .issue-row) small {
+:is(.list-row, .object-row, .issue-row):hover { background: var(--bg-hover); }
+:is(.list-row, .object-row, .issue-row):is([aria-pressed="true"], .is-selected) { background: var(--bg-selected); }
+:is(.list-row, .object-row, .issue-row) small {
     color: var(--text-secondary);
     min-width: 0;
 }
 .list-detail { margin-left: auto; text-align: right; }
-.route-dot, .count-dot {
+.count-dot {
     display: inline-block;
     flex: none;
     width: 6px;
@@ -236,7 +236,7 @@ input[type="radio"]:checked::after {
 }
 .menu button:focus-visible { box-shadow: inset 0 0 0 2px var(--focus-ring); }
 .menu button:is([aria-selected="true"], [aria-pressed="true"]) { background: var(--bg-selected); }
-.menu .group-name, .menu .create-option { color: var(--text-secondary); }
+.menu .group-name { color: var(--text-secondary); }
 .menu .group-name {
     font-size: var(--text-xs);
     line-height: var(--leading-xs);

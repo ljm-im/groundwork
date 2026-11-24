@@ -3,8 +3,8 @@ import { type Issue, type Terrain } from "../design/results.ts";
 
 export const untreatedHeightLimit = .5;
 
-export function terrainIssues(d: Design, t: Terrain, heights: Float32Array): Issue[] {
-    const { width, height, size } = t.grid, covered = new Uint8Array(size), issues: Issue[] = [];
+export function terrainIssues(d: Design, t: Terrain): Issue[] {
+    const { heights } = t, { width, height, size } = t.grid, covered = new Uint8Array(size), issues: Issue[] = [];
     const nodes = d.geoNodes.filter(n => !n.disabled && (n.field ?? "height") === "height" && n.function.type !== "ground");
     for (const n of d.geoNodes) {
         if (!n.disabled && (n.field ?? "height") === "height" && n.construction.type === "strip") for (const k of t.regions.get(n.id)!.cells) covered[k] = 1;

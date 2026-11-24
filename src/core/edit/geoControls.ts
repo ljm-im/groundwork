@@ -16,7 +16,7 @@ export function geometryPath(n: GeoNode, index: number): Path | undefined {
 export function parameterLines(n: GeoNode) {
     const f = n.function;
     if (f.type === "mountain") return [...f.ridges.map(r => r.line), ...f.peaks.map(p => ({ points: [p.at] }))];
-    if (f.type === "coast" && f.harbor) return [{ points: [{ p: f.harbor.center }] }];
+    if (f.type === "coast") return [{ points: [{ p: f.harbor.center }] }];
     if (f.type === "slope") return f.kind === "path" ? [f.line] : [{ points: [{ p: f.center }] }];
     return [];
 }
@@ -98,9 +98,7 @@ export function removeParameterPoint(d: Design, n: GeoNode, h: GeoControl) {
     if (f.type === "mountain" && h.path >= f.ridges.length) {
         removeGeometryItem(d, n, ["peaks"], h.path - f.ridges.length); return;
     }
-    if (f.type === "coast") {
-        delete f.harbor; return;
-    }
+    if (f.type === "coast") throw Error("港湾需要保留圆心");
     if (f.type === "slope" && f.kind === "radial") throw Error("径向坡面需要保留圆心");
     const line = f.type === "mountain" ? f.ridges[h.path]?.line : f.type === "slope" && f.kind === "path" ? f.line : undefined;
     if (!line) return;

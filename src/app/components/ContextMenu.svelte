@@ -6,34 +6,49 @@
 {#if editor.menu && editor.selection}
     {#key editor.menu}
         {@const h = editor.selection}
-        <div class="context-menu popup menu" role="group" aria-label="对象菜单" bind:this={menu} use:place={editor.menu}>
+        {@const control = editor.menu.control}
+        <div class="context-menu popup menu" role="group" aria-label="编辑菜单" bind:this={menu} use:place={editor.menu}>
             {#if h.kind === "geoNode"}
-                {@const node = editor.island.design.geoNodes.find(n => n.id === h.id)!}
+                {@const node = geoAt(editor.project.design, h.id)}
                 {#if editor.menu.map && node.construction.type === "free"}
                     <div class="menu-group">
                         <button onclick={() => run(() => editor.setTool("addPath", h.id))}><Icon name="plus" />添加路径</button>
-                        {#if editor.menu.segment && editor.menu.segment.path >= 0 && node.construction.paths.length >= 2}
-                            <button class="danger" onclick={() => run(() => editor.removePath(h.id, editor.menu!.segment!.path))}><Icon name="delete" />删除路径</button>
+                        {#if control && control.role !== "body" && control.role !== "parameter" && control.path >= 0 && node.construction.paths.length >= 2}
+                            <button class="danger" onclick={() => run(() => editor.removePath(h.id, control.path))}><Icon name="delete" />删除路径</button>
                         {/if}
                     </div>
                 {/if}
-                {#if editor.menu.segment}
-                    <div class="menu-group">
-                        {#each modes as [type, name] (type)}
-                            <button onclick={() => run(() => editor.segment(type))}><Icon name="polyline" />{name}</button>
-                        {/each}
-                    </div>
+                {#if control && (control.role === "vertex" || control.role === "segment")}
+                    {@const point = geometryPath(node, control.path)?.nodes[control.index]}
+                    {#if point}
+                        <div class="menu-group">
+                            <div class="group-name">节点类型</div>
+                            {#each nodeModes as [mode, name, icon] (mode)}
+                                <button aria-pressed={point.mode === mode} onclick={() => run(() => editor.pathNodeMode(control, mode))}><Icon name={icon} />{name}</button>
+                            {/each}
+                        </div>
+                        <div class="menu-group">
+                            <div class="group-name">后一段</div>
+                            {#each segmentTypes as [type, name, icon] (type)}
+                                <button aria-pressed={(point.next ?? "curve") === type} onclick={() => run(() => editor.segment(control, type))}><Icon name={icon} />{name}</button>
+                            {/each}
+                            {#if point.next === "arc"}<button onclick={() => run(() => editor.segment(control, "tangent"))}><Icon name="tangent" />相切</button>{/if}
+                        </div>
+                        {#if control.role === "vertex"}
+                            <div class="menu-group"><button class="danger" onclick={() => run(() => editor.removeGeo(h.id, control))}><Icon name="delete" />删除节点</button></div>
+                        {/if}
+                    {/if}
                 {/if}
             {/if}
             <div class="menu-group">
                 {#if h.kind === "geoNode"}
-                    {@const node = editor.island.design.geoNodes.find(n => n.id === h.id)!}
+                    {@const node = geoAt(editor.project.design, h.id)}
                     <button onclick={() => run(() => editor.duplicate(h.id))}><Icon name="copy" />复制</button>
                     <button aria-pressed={!!node.disabled} onclick={() => run(() => editor.toggle(h.id))}><Icon name="exclude" />{node.disabled ? "启用" : "禁用"}</button>
                 {:else if h.kind === "mark"}
                     <button onclick={() => run(() => editor.copyMark(h.id))}><Icon name="copy" />复制</button>
                 {/if}
-                <button class="danger" onclick={() => run(() => remove(h))}><Icon name="delete" />删除</button>
+                {#if editor.canRemove(h)}<button class="danger" onclick={() => run(() => editor.removeElement(h))}><Icon name="delete" />删除</button>{/if}
             </div>
         </div>
     {/key}
@@ -46,20 +61,14 @@
 <script lang="ts">
     import Icon from "./Icon.svelte";
     import * as session from "../state/session.svelte.ts";
-    import { type Selection } from "../types.ts";
+    import { geoAt } from "../state/geoTools.ts";
+    import { geometryPath } from "../../core/edit/geoControls.ts";
+    import { nodeModes, segmentTypes } from "../state/inspector.ts";
+
     let { editor }: { editor: session.Editor } = $props();
     let menu = $state<HTMLElement>();
-    const modes = [["line", "直线"], ["curve", "曲线"], ["arc", "圆弧"], ["tangent", "相切圆弧"]] as const;
     function run(fn: () => void) {
         fn(); editor.menu = null;
-    }
-    function remove(selection: Selection) {
-        if (selection.kind === "geoNode") editor.removeGeo(selection.id);
-        else if (selection.kind === "building" && selection.role?.startsWith("door:")) {
-            const b = editor.island.design.buildings.find(item => item.id === selection.id)!;
-            editor.removePart(b, b.doors.find(door => door.id === selection.role!.slice(5)));
-        }
-        else editor.removeSelected();
     }
     function place(element: HTMLElement, at: { x: number; y: number }) {
         function position() {

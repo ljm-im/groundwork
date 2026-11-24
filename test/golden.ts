@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFixture, writeGolden, readRegressions } from "../configs/read-fixture.ts";
 import { evaluateStack } from "../src/core/terrain/terrain.ts";
-import { Island } from "../src/core/island.ts";
+import { Project } from "../src/core/project.ts";
 import { parseDesign, serializeDesign } from "../src/core/design/model.ts";
-import { exportIsland, serializeExport } from "../src/core/export.ts";
+import { exportProject, serializeExport } from "../src/core/export.ts";
 
 const digest = (bytes: string | Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 const values = (value: unknown) => digest(JSON.stringify(value));
@@ -19,17 +19,15 @@ export async function snapshots() {
     return Object.fromEntries(Object.entries(inputs).map(([name, raw]) => {
         const design = parseDesign(raw);
         const serialized = digest(serializeDesign(design));
-        const island = new Island(design);
+        const project = new Project(design), terrain = project.terrain, fields = evaluateStack(design).fields;
+        assert.equal(terrain.heights, terrain.fields.height);
+        for (const [field, values] of Object.entries(fields)) assert.equal(bytes(terrain.fields[field]), bytes(values), field);
         return [name, {
-            fields: Object.fromEntries(Object.entries(evaluateStack(design).fields).map(([key, array]) => [key, bytes(array)])),
-            defined: bytes(island.terrain.defined),
-            padHeights: bytes(island.terrain.heights),
-            routes: island.routes.map(r => ({ id: r.id, points: values(r.points), profile: values(r.h), route: values(r) })),
-            gradedHeights: bytes(island.graded.heights),
-            trees: values(island.trees),
-            issues: values(island.issues),
+            fields: Object.fromEntries(Object.entries(fields).map(([key, array]) => [key, bytes(array)])),
+            defined: bytes(terrain.defined),
+            issues: values(project.issues),
             serialized,
-            exported: digest(serializeExport(exportIsland(island, { sha256: digest(raw), commit: exportCommit })))
+            exported: digest(serializeExport(exportProject(project, { sha256: digest(raw), commit: exportCommit })))
         }];
     }));
 }

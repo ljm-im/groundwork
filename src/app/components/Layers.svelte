@@ -3,9 +3,9 @@
         <label class="toggle"><input type="checkbox" data-layer="contours" checked={editor.layers.contours} />显示等值线</label>
         <PropertySelect label="显示的场" group="场" icon="field" value={editor.displayField} options={fields} choose={field => editor.showField(field)} />
     </Part>
-    {#each groups as [title, keys] (title)}
-        <Part {title}>{#each keys as key (key)}<label class="toggle"><input type="checkbox" data-layer={key} checked={editor.layers[key]} />{layerNames[key]}</label>{/each}</Part>
-    {/each}
+    <Part title="平面图">
+        {#each mapLayers as key (key)}<label class="toggle"><input type="checkbox" data-layer={key} checked={editor.layers[key]} />{layerNames[key]}</label>{/each}
+    </Part>
     <Part title="网格">
         <label class="toggle"><input type="checkbox" data-layer="grid" checked={editor.layers.grid} />显示网格</label>
         <label class="toggle"><input type="checkbox" data-layer="fineGrid" checked={editor.layers.fineGrid} />显示细分网格</label>
@@ -31,11 +31,8 @@
     import PropertySelect from "./PropertySelect.svelte";
 
     let { editor }: { editor: session.Editor } = $props();
-    let fields = $derived([{ id: "height", name: "高度" },
-        ...Object.entries(editor.island.design.fields).map(([id, f]) => ({ id, name: f.label ?? id }))]);
+    let fields = $derived([{ id: "height", name: "高度", builtin: true },
+        ...Object.entries(editor.project.design.fields).map(([id, f]) => ({ id, name: f.label ?? id }))]);
     const gridModes = [{ id: "meters", name: "固定米数" }, { id: "pixels", name: "固定像素" }];
-    const groups = [
-        ["编辑控制点", ["network", "geoNodes", "buildings", "sections"]],
-        ["平面图", ["labels", "marks", "issues"]]
-    ] as const;
+    const mapLayers = ["geoNodes", "sections", "labels", "marks", "issues"] as const;
 </script>

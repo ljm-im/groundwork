@@ -4,7 +4,7 @@
             {#each tabs as [tab, label, icon] (tab)}
                 <button class="icon-button" data-property-tab={tab} data-tip={label} aria-label={label}
                     aria-pressed={editor.propertyTab === tab} onclick={() => editor.changePropertyTab(tab)}>
-                    <Icon name={icon} />{#if tab === "issues" && errors}<i class="count-dot" aria-label="有校验错误"></i>{/if}
+                    <Icon name={icon} builtin={icon === "function"} />{#if tab === "issues" && errors}<i class="count-dot" aria-label="有校验错误"></i>{/if}
                 </button>
             {/each}
         </nav>
@@ -12,7 +12,7 @@
     <div class="property-column">
         {#key editor.revision}{@render title()}{/key}
         <div id="property-content" class="panel-content property-content" bind:this={editor.properties}>
-            {#key editor.revision}{@render children(editor.propertyTab)}{/key}
+            {#key editor.revision}{#if children}{@render children(editor.propertyTab)}{/if}{/key}
         </div>
     </div>
 </div>
@@ -33,10 +33,10 @@
     import * as session from "../state/session.svelte.ts";
     import Icon from "./Icon.svelte";
 
-    let { editor, title, children }: { editor: session.Editor; title: Snippet; children: Snippet<[PropertyTab]> } = $props();
+    let { editor, title, children }: { editor: session.Editor; title: Snippet; children?: Snippet<[PropertyTab]> } = $props();
     let tabs = $derived(propertyTabs(editor.selection));
     let errors = $derived.by(() => {
         editor.revision;
-        return objectIssues(editor.island, editor.selection).some(issue => issue.severity === "error");
+        return objectIssues(editor.project, editor.selection).some(issue => issue.severity === "error");
     });
 </script>

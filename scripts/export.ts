@@ -4,8 +4,8 @@ import { execFileSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseDesign } from "../src/core/design/model.ts";
-import { Island } from "../src/core/island.ts";
-import { exportIsland, serializeExport } from "../src/core/export.ts";
+import { Project } from "../src/core/project.ts";
+import { exportProject, serializeExport } from "../src/core/export.ts";
 
 async function main(args: string[]) {
     if (args.length !== 2) throw new Error("用法：pnpm run export <设计文件> <输出文件>");
@@ -21,7 +21,7 @@ async function main(args: string[]) {
     const design = parseDesign(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
     const root = fileURLToPath(new URL("../", import.meta.url));
     const commit = execFileSync("git", ["-C", root, "rev-parse", "--verify", "HEAD"], { encoding: "utf8" }).trim();
-    const exported = exportIsland(new Island(design), { sha256: createHash("sha256").update(bytes).digest("hex"), commit });
+    const exported = exportProject(new Project(design), { sha256: createHash("sha256").update(bytes).digest("hex"), commit });
     const temp = join(dirname(output), ".groundwork-" + randomUUID() + ".tmp");
     const file = await open(temp, "wx");
     try {

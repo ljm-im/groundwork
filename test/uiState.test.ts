@@ -1,29 +1,26 @@
 import { test } from "node:test";
 import "../configs/register-svelte.ts";
 import assert from "node:assert/strict";
-import { fixtureOptions, readFixture } from "../configs/read-fixture.ts";
 import { createGrid, distance } from "../src/core/math/geometry.ts";
-import { handles } from "../src/core/edit/controls.ts";
+import { sectionHandles } from "../src/core/edit/controls.ts";
 import { resolveDesign } from "../src/core/design/parameters.ts";
 import { History } from "../src/core/edit/history.ts";
 import { propertyTabs } from "../src/app/state/inspector.ts";
-import { Island } from "../src/core/island.ts";
-import { parseDesign } from "../src/core/design/model.ts";
+import { Project } from "../src/core/project.ts";
 import { pixelGridSpacing } from "../src/app/state/layers.ts";
 import { geoLabelPoint } from "../src/render/labelLayout.ts";
-import { makeShape, rasterRegion } from "../src/core/terrain/regions.ts";
-import { IslandMap } from "../src/render/map.ts";
+import { makeShape, rasterRegion } from "../src/core/design/regions.ts";
+import { ProjectMap } from "../src/render/map.ts";
 import { render } from "svelte/server";
 import { polygon, rect, syntheticDesign } from "./scenarios.ts";
 
-test("Map focus, hit radius and the selected inspector issue", fixtureOptions("round14-land.json"), async () => {
-    const original = await readFixture("round14-land.json");
-    const author = parseDesign(original), baseline = new Island(author);
+test("Map focus, hit radius and the selected inspector issue", async () => {
+    const baseline = new Project(syntheticDesign());
     const session = await import("../src/app/state/session.svelte.ts");
-    const { default: Network } = await import("../src/app/components/Network.svelte");
-    const selected = baseline.issues.find(i => !!i.road)!;
-    const view = Object.assign(Object.create(IslandMap.prototype) as IslandMap, {
-        island: baseline.view(), width: 1000, height: 700, layers: { issues: true }, draw() { }, clearIssue() {
+    const { default: GeoProperties } = await import("../src/app/components/GeoProperties.svelte");
+    const selected = baseline.issues.find(i => !!i.geoNode)!;
+    const view = Object.assign(Object.create(ProjectMap.prototype) as ProjectMap, {
+        project: baseline.view(), width: 1000, height: 700, layers: { issues: true }, draw() { }, clearIssue() {
             view.activeIssue = null;
         }
     });
@@ -45,66 +42,64 @@ test("Map focus, hit radius and the selected inspector issue", fixtureOptions("r
             Reflect.deleteProperty(globalThis, "requestAnimationFrame");
     }
     const ui = new session.Editor();
-    Object.assign(ui, { island: baseline, tab: "network", issue: selected });
-    ui.setSelection({ kind: "edge", id: selected.road! });
+    Object.assign(ui, { project: baseline, map: view, tab: "terrain", issue: selected, selectedIssues: [selected] });
+    ui.setSelection({ kind: "geoNode", id: selected.geoNode! });
     ui.changePropertyTab("issues");
-    const { body: markup } = render(Network, { props: { editor: ui } });
+    const { body: markup } = render(GeoProperties, { props: { editor: ui } });
     assert.match(markup, /data-property-tab="issues"[^>]*aria-pressed="true"/);
-    assert.doesNotMatch(markup, /路线长度/);
+    assert.doesNotMatch(markup, /构造方式/);
     assert(markup.match(/<button[^>]*>/g)!.some(tag => tag.includes("issue-row is-selected") && tag.includes("data-issue=\"" + baseline.issues.indexOf(selected) + "\"")));
-    ui.changePropertyTab("edge");
-    const { body: route } = render(Network, { props: { editor: ui } });
-    assert.match(route, /路线长度/);
+    ui.changePropertyTab("region");
+    const { body: route } = render(GeoProperties, { props: { editor: ui } });
+    assert.match(route, /构造方式/);
     assert.doesNotMatch(route, /data-issue=/);
 });
 
-test("Variable preview keeps the alignment and release matches a freshly opened design", () => {
-    const design = syntheticDesign(), preview = new Island(design), line = preview.routes[0].points;
+test("Variable preview keeps cached geometry and matches a freshly opened design", () => {
+    const design = syntheticDesign(), preview = new Project(design), region = preview.terrain.regions.get("T");
     design.inputs.A.value++;
-    preview.inputs();
-    assert.equal(preview.routes[0].points, line);
-    preview.inputs(true);
-    const full = new Island(structuredClone(design));
-    assert.deepEqual(preview.graded.heights, full.graded.heights);
-    assert.deepEqual(preview.routes, full.routes);
-    assert.deepEqual(preview.trees, full.trees);
+    preview.update();
+    assert.equal(preview.terrain.regions.get("T"), region);
+    const full = new Project(structuredClone(design));
+    assert.deepEqual(preview.terrain.heights, full.terrain.heights);
+    assert.deepEqual(preview.terrain.defined, full.terrain.defined);
     assert.deepEqual(preview.issues, full.issues);
 });
 
-test("A committed prompt, undo and redo preserve the live island and all geometry", async t => {
+test("A committed prompt, undo and redo preserve the live project and all geometry", async t => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
-    const editor = new Editor(), design = syntheticDesign(), island = new Island(design);
-    editor.island = island;
+    const editor = new Editor(), design = syntheticDesign(), project = new Project(design);
+    Object.assign(editor, { project, map: { draw() {} } });
     editor.busy = null;
     editor.history = new History(design);
     t.mock.method(editor.files, "remember", () => {});
-    const generation = [t.mock.method(editor, "replace"), t.mock.method(editor, "rebuild"), t.mock.method(island, "reroute"), t.mock.method(island, "replant")];
-    const target = { group: "buildings" as const, id: design.buildings[0].id };
-    const heights = island.terrain.heights, routes = island.routes, trees = island.trees;
+    const generation = [t.mock.method(editor, "replace"), t.mock.method(project, "update")];
+    const target = { group: "geoNodes" as const, id: design.geoNodes[0].id };
+    const { heights, fields, regions } = project.terrain;
     editor.describe(target, "第一行\n第二行");
     editor.describe(target, "第一行\n第二行");
     assert.equal(editor.history.states.length, 2);
-    assert.equal(design.buildings[0].prompt, "第一行\n第二行");
+    assert.equal(design.geoNodes[0].prompt, "第一行\n第二行");
     editor.navigate(false);
-    assert(!Object.hasOwn(design.buildings[0], "prompt"));
+    assert(!Object.hasOwn(design.geoNodes[0], "prompt"));
     editor.navigate(true);
-    assert.equal(design.buildings[0].prompt, "第一行\n第二行");
+    assert.equal(design.geoNodes[0].prompt, "第一行\n第二行");
     editor.describe(target, "");
-    assert(!Object.hasOwn(design.buildings[0], "prompt"));
+    assert(!Object.hasOwn(design.geoNodes[0], "prompt"));
     editor.navigate(false);
     editor.describe(target, "覆盖分支");
     assert.equal(editor.canRedo, false);
-    assert.deepEqual(generation.map(spy => spy.mock.callCount()), [0, 0, 0, 0]);
-    assert.equal(editor.island, island);
-    assert.equal(island.terrain.heights, heights);
-    assert.equal(island.routes, routes);
-    assert.equal(island.trees, trees);
+    assert.deepEqual(generation.map(spy => spy.mock.callCount()), [0, 0]);
+    assert.equal(editor.project, project);
+    assert.equal(project.terrain.heights, heights);
+    assert.equal(project.terrain.fields, fields);
+    assert.equal(project.terrain.regions, regions);
 });
 
 test("Terrain work runs synchronously on a hit and defers cold history steps for two frames", async t => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
     const editor = new Editor(), design = syntheticDesign(), frames: FrameRequestCallback[] = [];
-    Object.assign(editor, { map: { clearIssue() {}, draw() {} } });
+    Object.assign(editor, { map: { clearIssue() {}, draw() {}, scale: 4 } });
     t.mock.method(editor, "refresh", () => {});
     t.mock.method(editor.files, "remember", () => {});
     const previous = globalThis.requestAnimationFrame;
@@ -126,11 +121,12 @@ test("Terrain work runs synchronously on a hit and defers cold history steps for
     }
     editor.replace(design, true);
     editor.history = new History(design);
-    const regions = editor.island.terrain.regions.get("G");
-    design.buildings[0].height++;
-    const hot = editor.rebuild();
+    const regions = editor.project.terrain.regions.get("G");
+    const hot = editor.edit(d => {
+        d.geoNodes[0].label = "A";
+    });
     assert.equal(editor.history.index, 1);
-    assert.equal(editor.island.terrain.regions.get("G"), regions);
+    assert.equal(editor.project.terrain.regions.get("G"), regions);
     editor.navigate(false);
     assert.equal(editor.history.index, 0);
     editor.navigate(true);
@@ -139,12 +135,14 @@ test("Terrain work runs synchronously on a hit and defers cold history steps for
     assert.equal(frames.length, 0);
     await hot;
 
-    editor.island.design.inputs.A.value = Number(editor.island.design.inputs.A.value) + 1;
-    await finishCold(editor.rebuild(), "正在更新地件…", 1);
+    await finishCold(editor.edit(d => {
+        d.inputs.A.value = Number(d.inputs.A.value) + 1;
+    }), "正在更新地件…", 1);
     await finishCold(editor.navigate(false), "正在更新地件…", 2);
     assert.equal(editor.history.index, 1);
-    editor.island.design.inputs.seed.value = Number(editor.island.design.inputs.seed.value) + 1;
-    await finishCold(editor.rebuild(), "正在更新地件…", 1);
+    await finishCold(editor.edit(d => {
+        d.inputs.seed.value = Number(d.inputs.seed.value) + 1;
+    }), "正在更新地件…", 1);
     assert.equal(editor.history.index, 2);
     assert.equal(editor.canRedo, false);
 });
@@ -152,7 +150,7 @@ test("Terrain work runs synchronously on a hit and defers cold history steps for
 test("Opening, creating and recovering a design each starts with empty terrain caches", async t => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
     const editor = new Editor(), design = syntheticDesign(), text = JSON.stringify(design);
-    Object.assign(editor, { map: { clearIssue() {}, draw() {} } });
+    Object.assign(editor, { map: { clearIssue() {}, draw() {}, scale: 4 } });
     Object.assign(editor.files, { supported: true });
     t.mock.method(editor, "refresh", () => {});
     t.mock.method(editor, "message", () => {});
@@ -171,14 +169,14 @@ test("Opening, creating and recovering a design each starts with empty terrain c
         }
     };
     editor.replace(design, true);
-    const surfaces = [editor.island.terrain];
+    const surfaces = [editor.project.terrain];
     await editor.files.open(file);
-    surfaces.push(editor.island.terrain);
+    surfaces.push(editor.project.terrain);
     await editor.files.choose("new");
-    surfaces.push(editor.island.terrain);
+    surfaces.push(editor.project.terrain);
     editor.draft = { filename: file.name, text, date: "" };
     await editor.files.restore();
-    surfaces.push(editor.island.terrain);
+    surfaces.push(editor.project.terrain);
     for (const field of ["fields", "defined", "regions"] as const)
         assert.equal(new Set(surfaces.map(s => s[field])).size, 4, field);
     assert.equal(editor.draft, null);
@@ -199,14 +197,14 @@ test("Drawing or canceling a parameter keeps its owner and activates only the co
     const { geoControls } = await import("../src/core/edit/geoControls.ts");
     const editor = new Editor(), design = syntheticDesign(), n = design.geoNodes[1];
     n.function = { type: "mountain", ridges: [], peaks: [] };
-    Object.assign(editor, { map: { clearIssue() {}, draw() {} } });
+    Object.assign(editor, { map: { clearIssue() {}, draw() {}, scale: 4 } });
     t.mock.method(editor, "refresh", () => {});
     t.mock.method(editor.files, "remember", () => {});
     t.mock.method(editor, "terrainWork", async (_d: unknown, fn: () => void) => {
         fn();
     });
-    editor.replace(design); editor.map.island = editor.island.view(); editor.history = new History(design);
-    const selected = { kind: "geoNode", id: n.id };
+    editor.replace(design); editor.map.project = editor.project.view(); editor.history = new History(design);
+    const selected = { kind: "geoNode", id: n.id } as const;
     editor.select(selected);
     for (const cancel of [true, false]) {
         editor.setTool("ridge", n.id); assert.deepEqual(editor.selection, selected);
@@ -218,7 +216,7 @@ test("Drawing or canceling a parameter keeps its owner and activates only the co
         assert.equal(editor.tool, "select"); assert.deepEqual(editor.selection, selected);
         assert.equal(editor.history.index, cancel ? 0 : 1);
     }
-    const owner = editor.island.design.geoNodes[1], target = editor.map.geometry;
+    const owner = editor.project.design.geoNodes[1], target = editor.map.geometry;
     assert.deepEqual(target, { kind: "parameter", index: 0 });
     const handles = geoControls(owner, target);
     assert.equal(handles.length, 3); assert(handles.every(c => c.role === "parameter" && c.path === 0));
@@ -228,20 +226,18 @@ test("Drawing or canceling a parameter keeps its owner and activates only the co
         assert.deepEqual(editor.selection, selected); assert.equal(editor.history.index, 1);
     }
     assert.equal(editor.map.draft!.nodes.length, 1); await editor.completeDrawing();
-    assert.equal(geoControls(editor.island.design.geoNodes[1], editor.map.geometry).length, 1);
+    assert.equal(geoControls(editor.project.design.geoNodes[1], editor.map.geometry).length, 1);
 });
 
-test("Isolating a building centre, route, waypoint or section exposes only its own map handles", () => {
+test("Isolating a section exposes only its own map handles", () => {
     const d = syntheticDesign();
-    d.sections = [{ id: "S", label: "S", points: [[0, 0], [0, 5]], marks: [] }];
-    d.edges[0].via = [[2, 3], [3, 4]];
-    const design = resolveDesign(d), only = (kind: string, id: string, index = 0) =>
-        handles(design, {}, null, { kind, id, index }).map(h => [h.kind, h.id, h.role, h.index]);
-    assert.deepEqual(only("building", "A"), [["building", "A", "center", 0]]);
-    assert.deepEqual(only("node", "a"), [["node", "a", "endpoint", 0]]);
-    assert.deepEqual(only("via", "E", 1), [["via", "E", "vertex", 1]]);
-    assert.deepEqual(only("edge", "E"), [["node", "a", "endpoint", 0], ["via", "E", "vertex", 0], ["via", "E", "vertex", 1], ["node", "b", "endpoint", 0]]);
-    assert.deepEqual(only("section", "S"), [["section", "S", "vertex", 0], ["section", "S", "vertex", 1]]);
+    d.sections = [{ id: "S", label: "S", points: [[0, 0], [0, 5]], marks: [] },
+        { id: "T", label: "T", points: [[1, 0], [1, 5]], marks: [] }];
+    const design = resolveDesign(d);
+    assert.deepEqual(sectionHandles(design, false, { kind: "section", id: "S" }).map(h => [h.kind, h.id, h.role, h.index]),
+        [["section", "S", "vertex", 0], ["section", "S", "vertex", 1]]);
+    assert.equal(sectionHandles(design, true).length, 4);
+    assert.equal(sectionHandles(design, false).length, 0);
 });
 
 test("Fixed pixel grids choose the closest nice spacing at each zoom", () => {
@@ -257,7 +253,7 @@ test("Fixed pixel grids choose the closest nice spacing at each zoom", () => {
 });
 
 test("Zoom stays between 5 and 3000 percent and keeps its anchor fixed", () => {
-    const map = Object.assign(Object.create(IslandMap.prototype) as IslandMap, { center: [0, 0], width: 800, height: 450, scale: 3, referenceScale: 3,
+    const map = Object.assign(Object.create(ProjectMap.prototype) as ProjectMap, { center: [0, 0], width: 800, height: 450, scale: 3, referenceScale: 3,
         draw() {} });
     const anchor = map.world(200, 300);
     map.zoomAt(.001, 200, 300);
@@ -288,7 +284,7 @@ test("Terrain labels use the even-odd centroid, the nearest cell in a hole and t
     assert.deepEqual(geoLabelPoint(rasterRegion(grid, shape), grid), [6, -6]);
 });
 
-test("The inspector keeps compatible tabs, chooses the first available tab, and opens a waypoint on its road", async () => {
+test("The inspector keeps compatible tabs and chooses the first available tab", async () => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
     const editor = new Editor();
     editor.setSelection({ kind: "geoNode", id: "A" });
@@ -296,14 +292,12 @@ test("The inspector keeps compatible tabs, chooses the first available tab, and 
     editor.changePropertyTab("function");
     editor.setSelection({ kind: "geoNode", id: "B" });
     assert.equal(editor.propertyTab, "function");
-    editor.setSelection({ kind: "building", id: "C" });
-    assert.equal(editor.propertyTab, "label");
     editor.changePropertyTab("issues");
-    editor.setSelection({ kind: "edge", id: "D" });
+    editor.setSelection({ kind: "geoNode", id: "C" });
     assert.equal(editor.propertyTab, "issues");
-    editor.setSelection({ kind: "via", id: "D", index: 0 });
-    assert.equal(editor.propertyTab, "edge");
-    for (const kind of ["mark", "input", "field", null]) {
+    editor.setSelection({ kind: "section", id: "D" });
+    assert.equal(editor.propertyTab, "label");
+    for (const kind of ["mark", "input", "field", null] as const) {
         const selection = kind ? { kind, id: "E" } : null;
         editor.setSelection(selection);
         assert.equal(editor.propertyTab, "general");
@@ -314,7 +308,7 @@ test("The inspector keeps compatible tabs, chooses the first available tab, and 
 test("Expanding and collapsing inspector subitems leaves the authored design and undo history intact", async () => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
     const editor = new Editor(), design = syntheticDesign();
-    editor.island = new Island(design);
+    editor.project = new Project(design);
     editor.history = new History(design);
     const before = structuredClone(design), history = [...editor.history.states];
     assert.equal(editor.subitemOpen("A", "ridges", 0), false);
@@ -324,7 +318,64 @@ test("Expanding and collapsing inspector subitems leaves the authored design and
     assert.equal(editor.subitemOpen("B", "ridges", 1), false);
     editor.toggleSubitem("A", "ridges", 1);
     assert.equal(editor.subitemOpen("A", "ridges", 1), false);
-    assert.deepEqual(editor.island.design, before);
+    assert.deepEqual(editor.project.design, before);
     assert.deepEqual(editor.history.states, history);
     assert.equal(editor.history.canUndo, false);
+});
+
+test("Selection history restores edited elements and list tabs preserve the selection", async t => {
+    const { Editor } = await import("../src/app/state/session.svelte.ts");
+    const d = syntheticDesign(), editor = new Editor();
+    Object.assign(editor, { map: { draw() {}, clearIssue() {} } });
+    t.mock.method(editor, "refresh", () => {});
+    t.mock.method(editor, "terrainWork", async (_d: unknown, fn: () => void) => fn());
+    t.mock.method(editor.files, "remember", () => {});
+    editor.replace(d, true);
+    editor.history = new History(d);
+    editor.select({ kind: "geoNode", id: "T" });
+    editor.select({ kind: "geoNode", id: "G" }, true, true);
+    const original = editor.selection;
+    editor.changeTab("marks");
+    assert.equal(editor.selection, original);
+    assert.deepEqual(editor.geoSelection, ["G", "T"]);
+    await editor.addMark("text", [4, 5]);
+    const created = editor.selection;
+    assert.equal(created?.kind, "mark");
+    await editor.navigate(false);
+    assert.deepEqual(editor.selection, original);
+    assert.deepEqual(editor.geoSelection, ["G", "T"]);
+    await editor.navigate(true);
+    assert.deepEqual(editor.selection, created);
+    assert.deepEqual(editor.geoSelection, []);
+    await editor.removeElement(created!);
+    assert.equal(editor.selection, null);
+    await editor.navigate(false);
+    assert.deepEqual(editor.selection, created);
+    await editor.navigate(true);
+    assert.equal(editor.selection, null);
+});
+
+test("Mark follow changes preserve the displayed anchor and screen coordinates ignore camera changes", async t => {
+    const { Editor } = await import("../src/app/state/session.svelte.ts");
+    const d = syntheticDesign(), editor = new Editor();
+    const map = Object.assign(Object.create(ProjectMap.prototype) as ProjectMap, { center: [0, 0], width: 800, height: 450, scale: 3, referenceScale: 3,
+        draw() {}, clearIssue() {} });
+    Object.assign(editor, { map });
+    t.mock.method(editor, "refresh", () => {});
+    t.mock.method(editor, "terrainWork", async (_d: unknown, fn: () => void) => fn());
+    t.mock.method(editor.files, "remember", () => {});
+    editor.replace(d, true);
+    editor.history = new History(d);
+    await editor.addMark("scale", [64, 80]);
+    const id = editor.selection!.id, anchor = editor.project.design.marks[0].point;
+    assert.deepEqual(map.markScreen(editor.project.design.marks[0]), anchor);
+    map.zoomAt(2);
+    map.center = [16, 18]; map.width = 1900;
+    assert.deepEqual(map.markScreen(editor.project.design.marks[0]), anchor);
+    await editor.setMarkFollow(id, "ground");
+    const mark = editor.project.design.marks[0];
+    assert.notDeepEqual(mark.point, anchor);
+    assert(distance(map.markScreen(mark), anchor) < 1e-9);
+    await editor.setMarkFollow(id, "screen");
+    assert(distance(editor.project.design.marks[0].point, anchor) < 1e-9);
 });

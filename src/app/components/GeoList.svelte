@@ -18,17 +18,17 @@
                 <button class="object-row" data-geo-node={n.id} aria-pressed={editor.geoSelection.includes(n.id)}
                     onclick={e => editor.select({ kind: "geoNode", id: n.id }, true, e.shiftKey)}
                     oncontextmenu={e => {
-                        e.preventDefault(); editor.select({ kind: "geoNode", id: n.id }); editor.menu = { x: e.clientX, y: e.clientY };
+                        e.preventDefault(); editor.openMenu({ kind: "geoNode", id: n.id }, e.clientX, e.clientY);
                     }}>
                     <Icon name="terrain" /><span class="geo-name">{n.label}</span>
                     {#if problems.includes(n.id)}<span class="issue-error" data-tip="结构错误"><Icon name="issues" /></span>{/if}
-                    <small class="list-detail"><Icon name="function" />{n.function.type}{#if n.function.type === "flat"}<span class="flat-amount" use:flagOverflow>{flatAmount(n.function.amount ?? functionDefaults.flat.amount)}</span>{/if}</small>
+                    <small class="list-detail"><Icon name="function" builtin />{n.function.type}{#if n.function.type === "flat"}<span class="flat-amount" use:flagOverflow>{flatAmount(n.function.amount ?? functionDefaults.flat.amount)}</span>{/if}</small>
                     {#if c.type === "strip"}<small class="along">沿 {c.of.map(id => "“" + (d.geoNodes.find(n => n.id === id)?.label ?? id) + "”").join("、")}</small>{/if}
                     {#if n.field && n.field !== "height"}<small class="field-detail"><Icon name="field" />{d.fields[n.field]?.label ?? n.field}</small>{/if}
                 </button>
             </div>
         {/if}
-    {/each}
+    {:else}<div class="list-empty">没有匹配的结果</div>{/each}
 </div>
 
 <style>
@@ -62,15 +62,20 @@
     import Icon from "./Icon.svelte";
     import Search from "./Search.svelte";
     let { editor }: { editor: session.Editor } = $props();
-    let d = $derived(editor.island.design), stack = $derived(d.geoNodes.toReversed());
+    let d = $derived(editor.project.design), stack = $derived(d.geoNodes.toReversed());
     let anchor = $derived(stack.find(n => n.id === editor.viewport)), hiddenCount = $derived(anchor ? stack.indexOf(anchor) + 1 : 0);
-    let problems = $derived(editor.island.issues.filter(i => i.kind === "geo-reference").map(i => i.geoNode));
+    let problems = $derived(editor.project.issues.filter(i => i.kind === "geo-reference").map(i => i.geoNode));
     let order = $derived.by(() => {
         const result: { key: string; node?: GeoNode }[] = stack.map(n => ({ key: "n:" + n.id, node: n }));
         result.splice(hiddenCount, 0, { key: "viewport" });
         return result;
     });
-    let rows = $derived(order.filter(r => !r.node || [r.node.label, r.node.function.type, r.node.id, d.fields[r.node.field ?? ""]?.label].some(x => x?.toLowerCase().includes(editor.terrainFilter.trim().toLowerCase()))));
+    let rows = $derived.by(() => {
+        const query = editor.terrainFilter.trim().toLowerCase();
+        const matches = order.filter(r => r.node && [r.node.label, r.node.function.type, r.node.id, d.fields[r.node.field ?? ""]?.label]
+            .some(x => x?.toLowerCase().includes(query)));
+        return matches.length ? order.filter(row => !row.node || matches.includes(row)) : [];
+    });
     let mark = $state("");
     let dragged: string | null | undefined;
     let insertion: { index: number; viewport: string | null; at: number } | undefined;

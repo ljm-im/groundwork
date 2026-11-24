@@ -34,12 +34,7 @@ export async function designFixtures() {
 interface Edits { expressionEdit?: { target: string; source: string; variable: string }; variables: string[]; move: string; swap: [string, string]; remove: string }
 interface Regressions {
     exportCommit: string;
-    perfEdge: string;
     fixtures: Record<string, Edits>;
-}
-
-export function readLegacyFixture(name: "round4.json" | "round6.json" | "street-v1.json") {
-    return readFile(new URL("v4/" + name, fixtures), "utf8");
 }
 
 export async function readRegressions(): Promise<Regressions> {

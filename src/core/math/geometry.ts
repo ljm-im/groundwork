@@ -15,7 +15,6 @@ export interface GridSpec {
 }
 export type Grid = ReturnType<typeof createGrid>;
 
-export const radians = Math.PI / 180;
 export const clamp = (x: number, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, x));
 export const smooth = (x: number) => {
     const t = clamp(x); return t * t * (3 - 2 * t);
@@ -24,7 +23,6 @@ export const distance = (a: Point, b: Point) => Math.hypot(b[0] - a[0], b[1] - a
 export const mixPoint = (a: Point, b: Point, t: number): Point => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
 export const advance = (p: Point, angle: number, length: number): Point => [p[0] + Math.cos(angle) * length, p[1] + Math.sin(angle) * length];
 export const bearing = (a: Point, b: Point) => Math.atan2(b[1] - a[1], b[0] - a[0]);
-export const angleDiff = (a: number, b: number) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
 
 export function bounds(points: Point[]): Box {
     let x0 = Infinity,
@@ -71,28 +69,6 @@ export function stations(points: Point[]) {
     const s = new Float64Array(points.length);
     for (let i = 1; i < s.length; i++) s[i] = s[i - 1] + distance(points[i - 1], points[i]);
     return s;
-}
-
-export function pointAt(points: Point[], s: Float64Array, station: number): Point {
-    if (station <= 0) return points[0];
-    if (station >= s.at(-1)!) return points.at(-1)!;
-    let i = 1;
-    while (s[i] < station) i++;
-    return mixPoint(points[i - 1], points[i], (station - s[i - 1]) / (s[i] - s[i - 1]));
-}
-
-export function resample(points: Point[], step = 1): Point[] {
-    if (points.length < 2) return points.map(p => p.slice() as Point);
-    const s = stations(points),
-        length = s.at(-1)!,
-        out = [points[0].slice() as Point];
-    let i = 1;
-    for (let d = step; d < length - .3 * step; d += step) {
-        while (s[i] < d) i++;
-        out.push(mixPoint(points[i - 1], points[i], (d - s[i - 1]) / (s[i] - s[i - 1])));
-    }
-    out.push(points.at(-1)!.slice() as Point);
-    return out;
 }
 
 export function spline(points: Point[], closed: boolean, divisions: number): Point[] {
@@ -160,29 +136,6 @@ export function gradient(g: Grid, h: Float32Array, defined: Uint8Array, k: numbe
 }
 
 // Visit every cell traversed by the segment, including short crossings through a corner.
-export function canvasSegment(g: Grid, mask: Uint8Array, a: Point, b: Point) {
-    if (!onCanvas(g, mask, ...a) || !onCanvas(g, mask, ...b)) return false;
-    let i = g.col(a[0]), j = g.row(a[1]);
-    const endI = g.col(b[0]), endJ = g.row(b[1]), dx = b[0] - a[0], dy = b[1] - a[1];
-    const sx = Math.sign(dx), sy = -Math.sign(dy);
-    const strideX = g.step / Math.abs(dx), strideY = g.step / Math.abs(dy);
-    let tx = sx ? (g.xMin + (i + (sx > 0 ? 1 : 0)) * g.step - a[0]) / dx : Infinity;
-    let ty = sy ? (g.yMax - (j + (sy > 0 ? 1 : 0)) * g.step - a[1]) / dy : Infinity;
-    while (i !== endI || j !== endJ) {
-        const t = Math.min(i === endI ? Infinity : tx, j === endJ ? Infinity : ty);
-        if (i !== endI && tx <= t) {
-            i += sx; tx += strideX;
-        }
-        if (j !== endJ && ty <= t) {
-            j += sy; ty += strideY;
-        }
-        if (!mask[j * g.width + i]) return false;
-    }
-    return true;
-}
-
-// Exclude missing neighbours from interpolation. At a zero-width strip edge only
-// centres on the requested side contribute, so a hard step retains its authored value.
 export function sampleDefined(grid: Grid, field: ArrayLike<number>, mask: Uint8Array, x: number, y: number,
     side?: (p: Point) => boolean): number | undefined {
     if (!onCanvas(grid, mask, x, y)) return undefined;
