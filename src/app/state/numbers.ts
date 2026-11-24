@@ -114,12 +114,15 @@ export function selectionOffsets(el: HTMLElement): [number, number] {
 }
 export function flagOverflow(el: HTMLElement) {
     const measure = () => el.toggleAttribute("data-overflow", el.scrollWidth > el.clientWidth);
-    const resize = new ResizeObserver(measure), content = new MutationObserver(measure);
+    const resize = new ResizeObserver(measure), label = el.firstElementChild;
+    const content = label ? undefined : new MutationObserver(measure);
     resize.observe(el);
-    content.observe(el, { childList: true, subtree: true, characterData: true });
+    // The numeric label keeps its natural width so overflow is measured after layout.
+    if (label) resize.observe(label);
+    else content?.observe(el, { childList: true, subtree: true, characterData: true });
     measure();
     return { destroy() {
-        resize.disconnect(); content.disconnect();
+        resize.disconnect(); content?.disconnect();
     } };
 }
 

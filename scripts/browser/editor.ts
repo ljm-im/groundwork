@@ -263,6 +263,12 @@ async function checkEditor(url: string) {
         await key("Enter"); await idle(); await saved();
         const bound = parseDesign(await disk(), true).geoNodes.find(n => n.id === "T")?.function;
         assert(bound?.type === "flat" && bound.amount === "{input:A}", JSON.stringify(bound) + " " + await text("#properties [role=alert]"));
+        await click("#properties .numeric-face [data-ref=\"input:A\"]");
+        await wait(() => {
+            const chip = document.querySelector(".numeric-edit [data-ref=\"input:A\"]"), selection = document.getSelection();
+            return chip && selection?.rangeCount && !selection.isCollapsed && selection.getRangeAt(0).intersectsNode(chip);
+        });
+        await key("Escape");
 
         console.log("Localized errors and referenced input deletion");
         await click(".number-row[data-parameter$=\".function.feather\"] .numeric-face");

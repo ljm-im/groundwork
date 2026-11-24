@@ -35,8 +35,10 @@
                 onclick={e => {
                     if (!e.detail) void startEdit();
                 }}>
-                {#if typeof shown === "number"}{displayValue(shown, step)}
-                {:else}{@render formatted(shown, true)}{/if}
+                <span class="numeric-label">
+                    {#if typeof shown === "number"}{displayValue(shown, step)}
+                    {:else}{@render formatted(shown, true)}{/if}
+                </span>
             </button>
         {/if}
         <button class="step" aria-label={"增大" + label} data-tip="增大" onpointerdown={e => beginGesture(e, 1)} onclick={e => keyboardStep(e, 1)}><Icon name="chevronRight" /></button>
@@ -88,6 +90,7 @@
         line-height: var(--leading-md);
     }
     .numeric-face { cursor: ew-resize; user-select: none; overflow: hidden; touch-action: none; }
+    .numeric-label { display: inline-block; }
     .numeric-face:global([data-overflow]) { text-align: left; mask-image: linear-gradient(to right, var(--text) calc(100% - var(--space-4)), transparent); }
     .expanded-edit { padding: var(--space-2); overflow: auto; }
     .expanded-line { height: auto; }
@@ -383,7 +386,7 @@
         const initial = value;
         live = initial; gesturing = true;
         const button = e.currentTarget as HTMLButtonElement, drag = new NumberDrag(), id = e.pointerId;
-        const chip = direction ? undefined : chipAt(button, e.target);
+        const chip = direction ? undefined : chipAt(button.firstElementChild as HTMLElement, e.target);
         button.setPointerCapture(id);
         const stop = direction ? repeatButton(() => advance(direction)) : undefined;
         let x = e.clientX, y = e.clientY, requested = false, locked = document.pointerLockElement === button;
