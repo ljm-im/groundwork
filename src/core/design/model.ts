@@ -31,6 +31,9 @@ export function parseDesign(text: unknown, allowBrokenReferences = false): Desig
             rejectRetired(item, ["name"], at);
             check(typeof item.label === "string", "无效", { ...at, path: ["label"] });
             check(!Object.hasOwn(item, "showLabel") || typeof item.showLabel === "boolean", "无效", { ...at, path: ["showLabel"] });
+            if (key !== "marks" && "labelOffset" in item)
+                check(Array.isArray(item.labelOffset) && item.labelOffset.length === 2 &&
+                    Number.isFinite(item.labelOffset[0]) && Number.isFinite(item.labelOffset[1]), "只能填写两个有限数", { ...at, path: ["labelOffset"] });
             seen.add(item.id);
         });
     }
@@ -116,6 +119,7 @@ export function parseDesign(text: unknown, allowBrokenReferences = false): Desig
 }
 export function serializeDesign(d: Design | null) {
     const terrain = new Set<object>(d?.geoNodes);
+    const sections = new Set<object>(d?.sections);
     const fields = new Set<object>(Object.values(d?.fields ?? {}));
     const marks = new Map<object, Design["marks"][number]["kind"]>(d?.marks.map(mark => [mark, mark.kind]));
     const ranges = new Map<object, number[]>(Object.entries(d?.inputs ?? {}).map(([id, input]) => [input, defaultInputRange(id)]));
@@ -124,6 +128,7 @@ export function serializeDesign(d: Design | null) {
         if (key === "prompt" && value === "" || key === "disabled" && value === false ||
             key === "showLabel" && value === !terrain.has(this)) return undefined;
         if (key === "field" && terrain.has(this) && value === heightId) return undefined;
+        if (key === "labelOffset" && (terrain.has(this) || sections.has(this)) && point(value) && value[0] === 0 && value[1] === 0) return undefined;
         if (key === "precision" && fields.has(this) && value === defaultFieldPrecision) return undefined;
         const kind = marks.get(this);
         if (key === "follow" && kind && value === defaultFollow(kind)) return undefined;

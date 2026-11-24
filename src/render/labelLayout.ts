@@ -1,5 +1,5 @@
 import { type Region, type Segment } from "../core/design/regions.ts";
-import { distance, mixPoint, type Grid, type Point } from "../core/math/geometry.ts";
+import { distance, mixPoint, projection, type Grid, type Point } from "../core/math/geometry.ts";
 
 function midpoint(segments: Segment[]): Point | undefined {
     const lengths = segments.map(({ a, b }) => distance(a, b));
@@ -50,22 +50,27 @@ function areaCenter(boundary: Segment[]): Point | undefined {
 }
 
 const positions = new WeakMap<Region, Point | undefined>();
+export function constrainGeoLabel(region: Region, grid: Grid, target: Point, fallback?: Point) {
+    if (region.shape.contains(target)) return target;
+    let closest: Point | undefined, gap = Infinity;
+    for (const cell of region.cells) {
+        const point = grid.point(cell), here = distance(target, point);
+        if (!closest || here < gap) {
+            closest = point; gap = here;
+        }
+    }
+    return closest ?? fallback;
+}
+
 export function geoLabelPoint(region: Region, grid: Grid): Point | undefined {
     if (positions.has(region)) return positions.get(region);
     const { shape } = region;
     const center = shape.spine ? midpoint(shape.spine) : areaCenter(shape.boundary().flat());
-    let point = center;
-    if (center && !shape.spine && !shape.contains(center)) {
-        let best = Infinity;
-        point = undefined;
-        for (const cell of region.cells) {
-            const p = grid.point(cell), gap = distance(p, center);
-            if (gap < best) {
-                best = gap;
-                point = p;
-            }
-        }
-    }
+    const point = center && !shape.spine ? constrainGeoLabel(region, grid, center) : center;
     positions.set(region, point);
     return point;
+}
+
+export function constrainSectionLabel([a, b]: [Point, Point], target: Point) {
+    return mixPoint(a, b, projection(...target, a, b));
 }

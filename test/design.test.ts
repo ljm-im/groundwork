@@ -143,6 +143,26 @@ test("Labels omit their defaults and marks round-trip with expressions and ancho
     assert.throws(() => parseDesign({ ...saved, marks: [{ ...saved.marks[1], showLabel: "false" }] }), /marks\[0\].showLabel/);
 });
 
+test("Map names save and validate finite two-coordinate offsets", () => {
+    const d = syntheticDesign();
+    d.sections.push({ id: "S", label: "S", points: [[0, 0], [1, 1]], labelOffset: [0, 0] });
+    d.geoNodes[0].labelOffset = [0, 0];
+    const saved = serializeDesign(d);
+    assert(!saved.includes("labelOffset"));
+    d.geoNodes[0].labelOffset = [2, -3];
+    d.sections[0].labelOffset = [.25, .25];
+    const reopened = parseDesign(serializeDesign(d));
+    assert.deepEqual(reopened.geoNodes[0].labelOffset, [2, -3]);
+    assert.deepEqual(reopened.sections[0].labelOffset, [.25, .25]);
+    for (const owner of [d.geoNodes[0], d.sections[0]]) {
+        for (const invalid of [null, [1], [1, 2, 3], [Infinity, 2], [1, NaN], ["1", 2], Array(2)]) {
+            Object.assign(owner, { labelOffset: invalid });
+            assert.throws(() => parseDesign(d), /labelOffset.*只能填写两个有限数/);
+        }
+        delete owner.labelOffset;
+    }
+});
+
 test("Built-in seed, ranges and harbors materialize on read and omit their defaults on write", () => {
     const d = syntheticDesign(), raw = JSON.parse(serializeDesign(d));
     delete raw.inputs.seed;

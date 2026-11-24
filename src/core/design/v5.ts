@@ -4,7 +4,8 @@ export { type Point } from "../math/geometry.ts";
 export type Expression = number | string;
 type NumericProperties<T, N> = { [K in keyof T]: Exclude<T[K], undefined> extends number ? N : T[K] };
 export interface Labeled { id: string; label: string; showLabel?: boolean }
-export interface Section extends Labeled {
+interface MapLabel extends Labeled { labelOffset?: Point }
+export interface Section extends MapLabel {
     points: [Point, Point];
     prompt?: string;
 }
@@ -79,7 +80,7 @@ export type GeoFunction<N = Expression> = (
     { type: "blend" | "split" } |
     { type: "batter"; grade: N }
 ) & { seed?: N };
-export interface GeoNode<N = Expression> extends Labeled {
+export interface GeoNode<N = Expression> extends MapLabel {
     disabled?: true;
     prompt?: string;
     field: string;

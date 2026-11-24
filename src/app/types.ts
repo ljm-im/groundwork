@@ -3,6 +3,7 @@ import { type GeoNode, type Point } from "../core/design/v5.ts";
 import { type Handle } from "../core/edit/types.ts";
 import { type DrawTool } from "./state/geoTools.ts";
 import { type layerDefaults } from "./state/layers.ts";
+import { type LabelTarget } from "../render/map.ts";
 
 export { type Design, type Expression, type Mark, type Point } from "../core/design/v5.ts";
 export { type Issue } from "../core/design/results.ts";
@@ -18,6 +19,7 @@ export type Layer = keyof typeof layerDefaults;
 interface GestureStart { screen: Point; pointer: number; changed?: boolean }
 export type Gesture = GestureStart & (
   { geo: GeoNode; control: GeoControl } |
+  { label: LabelTarget; offset: Point } |
   { pan: true; middle?: boolean; center: number[]; click?: () => void } |
   { handle: Handle; offset: Point }
 );

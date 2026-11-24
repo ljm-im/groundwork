@@ -4,6 +4,7 @@ import { createServer } from "vite";
 import { parseDesign, serializeDesign } from "../../src/core/design/model.ts";
 import { Project } from "../../src/core/project.ts";
 import { ProjectMap } from "../../src/render/map.ts";
+import { geoLabelPoint } from "../../src/render/labelLayout.ts";
 import { type Point } from "../../src/core/design/v5.ts";
 import { layer, rect, syntheticDesign } from "../../test/scenarios.ts";
 import { startChromium } from "./chromium.ts";
@@ -591,9 +592,10 @@ async function checkEditor(url: string) {
         assert.deepEqual(await pixel(left, mid), solid);
         assert.equal(await disk(), restored);
 
-        console.log("Strip construction, segment menu, and the section list");
+        console.log("Strip construction, segment menu, section list and draggable names");
         const adjacent = syntheticDesign();
         const west = layer("A", rect(-30, -12, 0, 12), { type: "flat", amount: 2 });
+        west.showLabel = true;
         adjacent.geoNodes.push(west, layer("B", rect(0, -12, 24, 12), { type: "flat", amount: 5 }));
         adjacent.marks.push({ id: "M", kind: "scale", label: "比例尺", point: [94, 120], follow: "screen" });
         await evaluate(async bytes => {
@@ -646,6 +648,15 @@ async function checkEditor(url: string) {
         assert.equal(section.label, "剖面线 1");
         assert.equal(await evaluate(() => document.querySelector("[data-section]")?.getAttribute("aria-pressed")), "true");
         assert.match(await text("#plots .plot-title"), /剖面线 1/);
+        const beforeSectionLabel = await disk(), [sx, sy] = at(section.points[0]);
+        await browser.mouse("mousePressed", sx + 15, sy - 8);
+        await browser.mouse("mouseMoved", sx + 15 + 12 * camera.scale, sy - 8 - 7 * camera.scale);
+        await browser.mouse("mouseReleased", sx + 15 + 12 * camera.scale, sy - 8 - 7 * camera.scale);
+        await idle(); await saved();
+        const sectionOffset = parseDesign(await disk()).sections[0].labelOffset;
+        assert(sectionOffset && Math.hypot(sectionOffset[0] - 12, sectionOffset[1]) < .2, JSON.stringify(sectionOffset));
+        await undo();
+        assert.equal(await disk(), beforeSectionLabel);
         await click("#mark-search"); await cdp("Input.insertText", { text: "剖面线" });
         assert.equal(await evaluate(() => document.querySelectorAll("#panel :is([data-mark],[data-section])").length), 1);
         await tap(await buttonCenter("[data-section]"), 1, "right");
@@ -653,6 +664,25 @@ async function checkEditor(url: string) {
         assert.equal(parseDesign(await disk()).sections.length, 0);
         assert.equal(await text("#panel .list-empty"), "没有匹配的结果");
 
+        await panel("terrain"); await click("[data-geo-node=B]");
+        const defaultLabel = geoLabelPoint(project.terrain.regions.get("A")!, project.terrain.grid)!;
+        const from = at(defaultLabel), to = at([defaultLabel[0] + 9, defaultLabel[1] + 4]);
+        const beforeLabel = await disk();
+        await browser.mouse("mousePressed", ...from); await browser.mouse("mouseMoved", ...to);
+        assert.equal(await evaluate(() => document.querySelector("[data-geo-node=B]")?.getAttribute("aria-pressed")), "true");
+        await browser.mouse("mouseReleased", ...to); await idle(); await saved();
+        const afterLabel = await disk(), original = parseDesign(beforeLabel).geoNodes.find(n => n.id === "A")!, moved = parseDesign(afterLabel).geoNodes.find(n => n.id === "A")!;
+        assert.deepEqual(moved.construction, original.construction);
+        assert(moved.labelOffset && Math.hypot(moved.labelOffset[0] - 9, moved.labelOffset[1] - 4) < .2, JSON.stringify(moved.labelOffset));
+        assert.equal(await evaluate(() => document.querySelector("[data-geo-node=A]")?.getAttribute("aria-pressed")), "true");
+        await undo();
+        assert.equal(await disk(), beforeLabel);
+        await click("#redo"); await idle(); await saved();
+        assert.equal(await disk(), afterLabel);
+        await click("#open"); await wait(n => window.probe.opens === n + 2, opens); await idle();
+        const labelWrites = await evaluate(() => window.probe.writes);
+        await click("#save"); await wait(n => window.probe.writes === n + 1, labelWrites); await saved();
+        assert.equal(await disk(), afterLabel);
     }
     finally {
         await browser.close();

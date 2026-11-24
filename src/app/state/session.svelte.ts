@@ -23,7 +23,7 @@ import { displayReading } from "./numbers.ts";
 import { objectIssues } from "../../core/checks/issues.ts";
 import { propertyTabs, tabForSelection, type PropertyTab, type SubitemGroup } from "./inspector.ts";
 import { drawSections } from "../../render/sections.ts";
-import { ProjectMap } from "../../render/map.ts";
+import { ProjectMap, type LabelTarget } from "../../render/map.ts";
 import { DesignFiles, type FileAction, type SaveState } from "./files.ts";
 import { errorText, type Design, type Gesture, type ProjectModel, type Issue, type Layer, type Mark, type MapView, type Point, type Selection, type Tab, type Tool } from "../types.ts";
 
@@ -677,6 +677,14 @@ export class Editor {
     insertNode(id: string, control: GeoControl) {
         this.edit(d => {
             insertPathNode(geometryPath(geoAt(d, id), control.path)!, control.index, control.point, nodeIds(d)());
+        });
+    }
+    moveLabel(target: LabelTarget, offset: Point) {
+        return this.edit(d => {
+            const item = target.kind === "geoNode" ? geoAt(d, target.id) : d.sections.find(section => section.id === target.id)!;
+            if (offset[0] || offset[1]) item.labelOffset = offset;
+            else delete item.labelOffset;
+            return target;
         });
     }
     focus(kind: Selection["kind"], id: string) {

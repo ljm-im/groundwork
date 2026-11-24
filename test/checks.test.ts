@@ -37,7 +37,8 @@ test("Groundwork names and section names follow separate map switches", () => {
         { id: "B", label: "B", points: [[1, 0], [1, 5]], showLabel: false }];
     const project = new Project(d);
     const names: string[] = [];
-    const ctx = { save() {}, restore() {}, strokeText() {}, fillText: (value: string) => names.push(value) } as unknown as CanvasRenderingContext2D;
+    const ctx = { save() {}, restore() {}, strokeText() {}, measureText: () => ({ width: 8 }),
+        fillText: (value: string) => names.push(value) } as unknown as CanvasRenderingContext2D;
     const map = Object.assign(Object.create(ProjectMap.prototype) as ProjectMap, { layers: { labels: true, sections: true }, screen: () => [0, 0] });
     for (const [labels, sections, expected] of [[true, true, ["G", "A"]], [false, true, ["A"]], [true, false, ["G"]], [false, false, []]] as const) {
         map.layers.labels = labels; map.layers.sections = sections;

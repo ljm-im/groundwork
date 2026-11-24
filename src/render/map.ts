@@ -11,7 +11,7 @@ import { issueView, objectIssues } from "../core/checks/issues.ts";
 import { type GeoDraft } from "../app/state/geoTools.ts";
 import { type GeoControl, type GeometryTarget } from "../core/edit/geoControls.ts";
 import { contourLabels, fieldContours } from "./fieldContours.ts";
-import { geoLabelPoint } from "./labelLayout.ts";
+import { constrainGeoLabel, constrainSectionLabel, geoLabelPoint } from "./labelLayout.ts";
 import { drawGeoOverlay, drawHandle } from "./geoOverlay.ts";
 import { baseMap, canvasText, contourStyle, overlay, palette } from "./palette.ts";
 import { displayReading, displayValue } from "../app/state/numbers.ts";
@@ -23,6 +23,8 @@ import { type Region } from "../core/design/regions.ts";
 import { type Grid } from "../core/math/geometry.ts";
 
 type Context = CanvasRenderingContext2D;
+export type LabelTarget = { kind: "geoNode" | "section"; id: string };
+type LabelHit = LabelTarget & { point: Point; box: Box };
 
 const labelFont = (bold = false) => (bold ? canvasText.semibold : canvasText.regular) + " " + canvasText.sm + "px " + canvasText.font;
 const issueColor = (issue: Issue) => issue.severity === "error" ? palette.danger : palette.warning;
@@ -130,6 +132,7 @@ export class ProjectMap {
     vertex?: GeoControl;
     dragNode?: GeoNode;
     dragMark?: { id: string; point: Point };
+    dragLabel?: LabelTarget & { point: Point; offset: Point };
     draft?: GeoDraft;
     declare center: Point;
     declare width: number;
@@ -141,6 +144,7 @@ export class ProjectMap {
     declare controls: Handle[];
 
     private markBoxes: { mark: Handle; box: Box }[] = [];
+    private labelBoxes: LabelHit[] = [];
     private contourText?: { contours: ReturnType<typeof fieldContours>; camera: [number, number, number, number]; placed: ReturnType<typeof contourLabels> };
 
     constructor(canvas: HTMLCanvasElement, layers: typeof layerDefaults, gridDisplay: GridDisplay) {
@@ -339,7 +343,7 @@ export class ProjectMap {
         ctx.textBaseline = "middle";
         this.drawOverlays();
         drawGeoOverlay(this);
-        if (this.layers.labels || this.layers.sections) this.drawLabels(ctx, d, t);
+        this.drawLabels(ctx, d, t);
         this.drawMarks(ctx);
         if (contours && this.layers.contourLabels) this.drawContourLabels(ctx, contours);
         document.getElementById("zoom-value")!.textContent = displayReading(this.zoomFactor() * 100, 1, "%");
@@ -385,17 +389,59 @@ export class ProjectMap {
         lines(step, baseMap.mainGrid);
     }
     private drawLabels(ctx: Context, d: ProjectView["design"], terrain: Terrain) {
+        this.labelBoxes = [];
+        const draw = (target: LabelTarget, name: string, point: Point) => {
+            if (!name) return;
+            const [x, y] = this.screen(point);
+            const section = target.kind === "section", left = section ? x + 7 : x, middle = section ? y - 8 : y;
+            ctx.save();
+            ctx.textAlign = section ? "left" : "center";
+            mapText(ctx, name, left, middle);
+            const width = ctx.measureText(name).width, start = section ? left : left - width / 2;
+            const half = canvasText.sm / 2;
+            this.labelBoxes.push({ ...target, point, box: [start - 2, middle - half - 2, start + width + 2, middle + half + 2] });
+            ctx.restore();
+        };
         if (this.layers.labels) for (const n of d.geoNodes) if (n.showLabel && !n.disabled) {
-            const region = terrain.regions.get(n.id), point = region && geoLabelPoint(region, terrain.grid);
-            if (point) mapText(ctx, n.label, ...this.screen(point));
+            const target = { kind: "geoNode", id: n.id } as const, region = terrain.regions.get(n.id);
+            const origin = region && geoLabelPoint(region, terrain.grid);
+            if (origin && region) {
+                const drag = this.dragLabel;
+                const point = drag?.kind === target.kind && drag.id === n.id ? drag.point :
+                    n.labelOffset ? constrainGeoLabel(region, terrain.grid, addOffset(origin, n.labelOffset), origin)! : origin;
+                draw(target, n.label, point);
+            }
         }
         if (this.layers.sections) for (const section of d.sections) if (section.showLabel !== false) {
-            const [x, y] = this.screen(section.points[0]);
-            ctx.save();
-            ctx.textAlign = "left";
-            mapText(ctx, section.label, x + 7, y - 8);
-            ctx.restore();
+            const target = { kind: "section", id: section.id } as const, drag = this.dragLabel;
+            const point = drag?.kind === "section" && drag.id === section.id ? drag.point :
+                section.labelOffset ? constrainSectionLabel(section.points, addOffset(section.points[0], section.labelOffset)) : section.points[0];
+            draw(target, section.label, point);
         }
+    }
+    hitLabel(x: number, y: number) {
+        return this.labelBoxes.findLast(({ box: [left, top, right, bottom] }) => x >= left && x <= right && y >= top && y <= bottom);
+    }
+    moveLabel(target: LabelTarget, at: Point) {
+        const { terrain, design } = this.project;
+        let origin: Point | undefined, point: Point | undefined;
+        if (target.kind === "geoNode") {
+            const region = terrain.regions.get(target.id);
+            if (region) {
+                origin = geoLabelPoint(region, terrain.grid);
+                point = constrainGeoLabel(region, terrain.grid, at, origin);
+            }
+        }
+        else {
+            const section = design.sections.find(s => s.id === target.id);
+            if (section) {
+                origin = section.points[0];
+                point = constrainSectionLabel(section.points, at);
+            }
+        }
+        if (!origin || !point) return;
+        this.dragLabel = { ...target, point, offset: [point[0] - origin[0], point[1] - origin[1]] };
+        this.draw();
     }
 
     markScreen(mark: Pick<Mark, "point" | "follow">): Point {
@@ -494,6 +540,10 @@ export class ProjectMap {
         const hit = this.project.design.sections.findLast(s => nearest(...p, s.points).distance * this.scale <= 5);
         if (hit) return { kind: "section", id: hit.id };
     }
+}
+
+function addOffset([x, y]: Point, [dx, dy]: Point): Point {
+    return [x + dx, y + dy];
 }
 
 function markReading(mark: TextMark<number>) {

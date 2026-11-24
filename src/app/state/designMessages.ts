@@ -45,6 +45,7 @@ export function designProblemText({ location, message }: DesignProblem, d: Desig
     }
     if (!property && key === "label") property = "名称";
     if (!property && key === "showLabel") property = "显示名称";
+    if (!property && key === "labelOffset") property = "名称位置";
     const prefix = context === "location" ? quotedLocation(label ?? id, property) : property;
     return prefix ? prefix + " " + message : message;
 }

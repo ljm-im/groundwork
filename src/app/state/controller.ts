@@ -102,6 +102,12 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
     function updateHover() {
         hoverFrame = 0;
         if (editor.tool !== "select" || editor.gesture || editor.busy) return;
+        const label = !hoverAlternate && !map.hitMark(...hoverPoint) && map.hitLabel(...hoverPoint);
+        if (label) {
+            canvas.style.cursor = "grab";
+            map.hoverSelection(label);
+            return;
+        }
         const hit = pick(hoverPoint, hoverAlternate);
         if (hit?.kind === "geo") map.hoverSelection({ kind: "geoNode", id: hit.id });
         else if (hit?.kind === "handle") map.hoverSelection(hit.h);
@@ -142,6 +148,14 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             beginPan(ev, screen, () => {
                 if (editor.tool === tool) void editor.addMark(kind, point);
             });
+            return;
+        }
+        const label = !ev.altKey && !map.hitMark(...screen) && map.hitLabel(...screen);
+        if (label) {
+            ev.preventDefault();
+            const { kind, id, point } = label;
+            editor.gesture = { label: { kind, id }, offset: [point[0] - p[0], point[1] - p[1]], screen, pointer: ev.pointerId };
+            canvas.setPointerCapture(ev.pointerId);
             return;
         }
         const hit = pick(screen, ev.altKey);
@@ -271,6 +285,12 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         }
         if (!editor.gesture.changed && distance(screen, editor.gesture.screen) < 2) return;
         editor.gesture.changed = true;
+        if ("label" in editor.gesture) {
+            const { label, offset } = editor.gesture;
+            canvas.style.cursor = "grabbing";
+            map.moveLabel(label, [p[0] + offset[0], p[1] + offset[1]]);
+            return;
+        }
         if ("geo" in editor.gesture) {
             const { geo, control } = editor.gesture, copy = structuredClone(geo);
             const at = control.role === "vertex" && !ev.ctrlKey ? snapPoint(map.project.terrain, map.project.design, p, map.scale, geo.id) : p;
@@ -313,6 +333,16 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         canvas.style.cursor = "";
         if ("pan" in g) {
             if (!g.changed && ev.type === "pointerup") g.click?.();
+            return;
+        }
+        if ("label" in g) {
+            const drag = map.dragLabel;
+            map.dragLabel = undefined;
+            if (ev.type === "pointerup") {
+                if (drag) editor.moveLabel(g.label, drag.offset);
+                else editor.select(g.label);
+            }
+            else map.draw();
             return;
         }
         if ("geo" in g) {

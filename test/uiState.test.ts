@@ -8,7 +8,7 @@ import { History } from "../src/core/edit/history.ts";
 import { propertyTabs } from "../src/app/state/inspector.ts";
 import { Project } from "../src/core/project.ts";
 import { pixelGridSpacing } from "../src/app/state/layers.ts";
-import { geoLabelPoint } from "../src/render/labelLayout.ts";
+import { constrainGeoLabel, constrainSectionLabel, geoLabelPoint } from "../src/render/labelLayout.ts";
 import { makeShape, rasterRegion } from "../src/core/design/regions.ts";
 import { ProjectMap } from "../src/render/map.ts";
 import { render } from "svelte/server";
@@ -286,6 +286,17 @@ test("Terrain labels use the even-odd centroid, the nearest cell in a hole and t
     const shape = makeShape({ field: "height", id: "B", label: "B", function: { type: "blend" },
         construction: { type: "strip", of: ["A"], widths: [1, 2], range: { from: "0", to: "2" } } }, new Map([["A", make([outer])]]), .125);
     assert.deepEqual(geoLabelPoint(rasterRegion(grid, shape), grid), [6, -6]);
+});
+
+test("Map name anchors stay in their region or on their section", () => {
+    const project = new Project(syntheticDesign()), { grid, regions } = project.terrain;
+    const region = regions.get("T")!;
+    assert.deepEqual(constrainGeoLabel(region, grid, [-18, -5]), [-18, -5]);
+    const closest = constrainGeoLabel(region, grid, [100, 100])!;
+    assert(region.cells.some(cell => distance(grid.point(cell), closest) === 0));
+    assert(region.cells.every(cell => distance(grid.point(cell), [100, 100]) >= distance(closest, [100, 100])));
+    assert.deepEqual(constrainSectionLabel([[0, 0], [10, 0]], [3, 4]), [3, 0]);
+    assert.deepEqual(constrainSectionLabel([[0, 0], [10, 0]], [12, -3]), [10, 0]);
 });
 
 test("The inspector keeps compatible tabs and chooses the first available tab", async () => {
