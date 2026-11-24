@@ -17,7 +17,6 @@ import { TerrainCache } from "../src/core/terrain/cache.ts";
 import { generateTerrain } from "../src/core/terrain/terrain.ts";
 import { Project } from "../src/core/project.ts";
 import { exportProject } from "../src/core/export.ts";
-import { niceStep } from "../src/core/math/interval.ts";
 
 function historyEdit(d: Design, edit: () => void) {
     const before = serializeDesign(d), history = new History(d);
@@ -280,10 +279,6 @@ test("Curves, handles, tangency, insertion and six-pixel snap use the editable g
     historyEdit(d, () => {
         moveHandle(path, 2, "in", [-11, -8], true);
     }); assert.equal(path.nodes[2].mode, "corner");
-});
-
-test("Contour intervals round up to readable steps", () => {
-    assert.deepEqual([.01, .22, 1.1, 2.3, 5.1, 23].map(niceStep), [.01, .25, 2, 2.5, 10, 25]);
 });
 
 test("Removing a mountain member keeps references to siblings and reports references to the removed member", () => {

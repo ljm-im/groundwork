@@ -51,11 +51,26 @@ export const baseMap = {
     rock: [163, 157, 143],
     sand: [232, 222, 190],
     fieldRamp: { light: [238, 242, 230], dark: [104, 140, 128] },
-    fieldContours: "#38597d",
     boundary: "#806d50",
     sectionLine: "rgba(40,75,74,.6)",
     fineGrid: "rgba(54,99,104,.10)",
     mainGrid: "rgba(54,99,104,.23)"
+} as const;
+
+export const contourStyle = {
+    minSpacing: 5,
+    labelSpacing: 18,
+    labelDistance: 180,
+    labelInset: 40,
+    labelRank: 2,
+    lines: [
+        { color: "rgb(16 28 28 / 16%)", width: .9 },
+        { color: "rgb(16 28 28 / 26%)", width: 1.1 },
+        { color: "rgb(16 28 28 / 42%)", width: 1.5 },
+        { color: "rgb(16 28 28 / 48%)", width: 1.8 },
+        { color: "rgb(16 28 28 / 54%)", width: 2.2 }
+    ],
+    zero: { color: "#64909a", width: 1.4 }
 } as const;
 
 export const sectionColors = {

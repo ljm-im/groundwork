@@ -182,7 +182,20 @@ async function checkEditor(url: string) {
         console.log("Displayed field, undefined readings, and mark follow");
         await moveMap(.5, .5);
         assert.match(await text("#position"), /^X -?\d+\.\d m\s+Y -?\d+\.\d m\s+高度 4\.5 m$/);
-        await panel("layers"); await choose("显示的场", "系数");
+        await panel("layers");
+        const contourToggle = "input[data-layer=contours]", labelToggle = "input[data-layer=contourLabels]";
+        const annotation = () => evaluate(s => {
+            const input = document.querySelector<HTMLInputElement>(s)!;
+            return [input.checked, input.disabled];
+        }, labelToggle);
+        assert.deepEqual(await annotation(), [true, false]);
+        assert.equal(await text(".toggle:has(" + labelToggle + ")"), "标注数值");
+        await click(contourToggle); assert.deepEqual(await annotation(), [true, true]);
+        await click(contourToggle); assert.deepEqual(await annotation(), [true, false]);
+        await click(labelToggle); assert.deepEqual(await annotation(), [false, false]);
+        assert.equal(await evaluate(() => JSON.parse(localStorage.getItem("groundwork/map-display-v1")!).layers.contourLabels), false);
+        await click(labelToggle);
+        await choose("显示的场", "系数");
         await moveMap(.5, .5);
         assert.match(await text("#position"), /系数 0\.5%$/);
         await moveMap(.01, .01);

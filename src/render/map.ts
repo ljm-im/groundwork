@@ -1,7 +1,7 @@
 import { type GeoNode, type Mark, type TextMark, type Point } from "../core/design/v5.ts";
 import { displaySteps, markParameters } from "../core/design/functionTable.ts";
-import { heightId } from "../core/design/defaults.ts";
-import { type FieldSamples, type Issue, type Terrain } from "../core/design/results.ts";
+import { fieldPrecision, heightId } from "../core/design/defaults.ts";
+import { type Issue, type Terrain } from "../core/design/results.ts";
 import { type Handle, type Selection } from "../core/edit/types.ts";
 import { type ProjectView } from "../core/project.ts";
 import { type GridDisplay, type layerDefaults, pixelGridSpacing } from "../app/state/layers.ts";
@@ -13,7 +13,7 @@ import { type GeoControl, type GeometryTarget } from "../core/edit/geoControls.t
 import { fieldContours } from "./fieldContours.ts";
 import { geoLabelPoint } from "./labelLayout.ts";
 import { drawGeoOverlay, drawHandle } from "./geoOverlay.ts";
-import { baseMap, canvasText, overlay, palette } from "./palette.ts";
+import { baseMap, canvasText, contourStyle, overlay, palette } from "./palette.ts";
 import { displayReading, displayValue } from "../app/state/numbers.ts";
 import { sectionHandles } from "../core/edit/controls.ts";
 import { relief } from "./relief.ts";
@@ -131,8 +131,6 @@ export class ProjectMap {
     dragNode?: GeoNode;
     dragMark?: { id: string; point: Point };
     draft?: GeoDraft;
-    private contours?: ReturnType<typeof fieldContours>;
-    private contourSamples?: FieldSamples;
     declare center: Point;
     declare width: number;
     declare height: number;
@@ -284,15 +282,12 @@ export class ProjectMap {
             ctx.restore();
         }
         if (this.layers.grid) this.drawGrid(ctx, scale);
-        if (this.layers.contours && samples) {
-            if (this.contourSamples !== samples) {
-                this.contourSamples = samples;
-                this.contours = fieldContours(t, this.displayField);
-            }
-            for (const line of this.contours!.lines) {
-                ctx.strokeStyle = baseMap.fieldContours; ctx.lineWidth = 1.25 / scale; ctx.stroke(line.path);
-            }
-        }
+        const contours = this.layers.contours && samples ? fieldContours(g, samples, fieldPrecision(d.fields[this.displayField]), scale) : undefined;
+        contours?.paths.forEach((path, rank) => {
+            if (!path) return;
+            const style = contourStyle.lines[rank] ?? contourStyle.zero;
+            ctx.strokeStyle = style.color; ctx.lineWidth = style.width / scale; ctx.stroke(path);
+        });
         const draggedRegionId = this.dragNode?.construction.type === "free" ? this.dragNode.id : undefined;
         for (const n of d.geoNodes) {
             if (n.disabled && !this.emptyCanvas) continue;
@@ -336,9 +331,18 @@ export class ProjectMap {
         drawGeoOverlay(this);
         if (this.layers.labels) this.drawLabels(ctx, d, t);
         this.drawMarks(ctx);
-        if (this.layers.contours && samples && this.contours)
-            for (const { label, value } of this.contours.lines) if (label) mapText(ctx, displayValue(value, this.contours.step), ...this.screen(label));
+        if (contours && this.layers.contourLabels) this.drawContourLabels(ctx, contours);
         document.getElementById("zoom-value")!.textContent = displayReading(this.zoomFactor() * 100, 1, "%");
+    }
+    private drawContourLabels(ctx: Context, { base, labels }: ReturnType<typeof fieldContours>) {
+        const { labelDistance, labelInset } = contourStyle, accepted: Point[] = [];
+        for (const { point, value } of labels) {
+            const p = this.screen(point), [x, y] = p;
+            if (x < labelInset || x > this.width - labelInset || y < labelInset || y > this.height - labelInset) continue;
+            if (accepted.some(other => distance(p, other) < labelDistance)) continue;
+            accepted.push(p);
+            mapText(ctx, displayReading(value, base), x, y);
+        }
     }
     private drawGrid(ctx: Context, scale: number) {
         const { mode, meters, pixels } = this.gridDisplay;

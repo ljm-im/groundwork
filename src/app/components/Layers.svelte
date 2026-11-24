@@ -1,7 +1,8 @@
 <div class="panel-inset">
     <Part title="场">
-        <label class="toggle"><input type="checkbox" data-layer="contours" checked={editor.layers.contours} />显示等值线</label>
         <PropertySelect label="显示的场" group="场" icon="field" value={editor.displayField} options={fields} choose={field => editor.showField(field)} />
+        <label class="toggle"><input type="checkbox" data-layer="contours" checked={editor.layers.contours} />显示等值线</label>
+        <label class="toggle"><input type="checkbox" data-layer="contourLabels" checked={editor.layers.contourLabels} disabled={!editor.layers.contours} />标注数值</label>
     </Part>
     <Part title="平面图">
         {#each mapLayers as key (key)}<label class="toggle"><input type="checkbox" data-layer={key} checked={editor.layers[key]} />{layerNames[key]}</label>{/each}
@@ -19,6 +20,7 @@
 </div>
 
 <style>
+    .toggle:has(input:disabled) { color: var(--text-disabled); }
     input[type="number"] { appearance: textfield; }
     input::-webkit-inner-spin-button, input::-webkit-outer-spin-button { appearance: none; }
 </style>

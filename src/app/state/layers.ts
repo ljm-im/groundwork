@@ -2,6 +2,7 @@ export const layerDefaults = {
     geoNodes: false,
     sections: true,
     contours: true,
+    contourLabels: true,
     labels: true,
     marks: true,
     issues: true,
