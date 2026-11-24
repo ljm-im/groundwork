@@ -2,11 +2,11 @@ import { tick } from "svelte";
 import { Project, type ProjectView } from "../../core/project.ts";
 import { TerrainCache } from "../../core/terrain/cache.ts";
 import { History } from "../../core/edit/history.ts";
-import { readAt, writeAt, type Address } from "../../core/design/address.ts";
+import { readAt, type Address } from "../../core/design/address.ts";
 import { readDisplaySettings, saveDisplaySettings } from "./layers.ts";
 import { type GridDisplay } from "../../core/edit/display.ts";
 import { constructionCenter } from "../../core/design/regions.ts";
-import { fieldPrecision, heightId, isBuiltin } from "../../core/design/defaults.ts";
+import { heightId, isBuiltin } from "../../core/design/defaults.ts";
 import { defaultFollow, type GeoNode, type GeoFunction, type PathNode } from "../../core/design/v5.ts";
 import { geoParameter, slotName, type Slot } from "../../core/design/parameters.ts";
 import { parseDesign } from "../../core/design/model.ts";
@@ -16,60 +16,17 @@ import { addInput, addField, copyGeo, defaultFunction, deleteGeo, enableGeo, isL
 import { setNodeMode, setSegment } from "../../core/edit/paths.ts";
 import { drawingReady, drawingTools, finishDraft, geoAt, startDrawing, updatePreview } from "./geoTools.ts";
 import { type DrawTool, type GeoDraft } from "../../core/edit/types.ts";
-import { displaySteps, markParameters } from "../../core/design/functionTable.ts";
+import { markParameters } from "../../core/design/functionTable.ts";
 import { functionGeometry } from "../../core/edit/functionGeometry.ts";
 import { sampleField } from "../../core/design/results.ts";
 import { designErrorText } from "./designMessages.ts";
 import { quotedLocation } from "../../core/design/problems.ts";
-import { displayReading } from "../../core/design/display.ts";
+import { drawingStatus } from "./mapText.ts";
 import { objectIssues } from "../../core/checks/issues.ts";
 import { propertyTabs, tabForSelection, type PropertyTab, type SubitemGroup } from "./inspector.ts";
 import { ProjectMap, type LabelPreview, type LabelTarget, type MapView } from "../../render/map.ts";
 import { DesignFiles, type FileAction, type SaveState } from "./files.ts";
 import { errorText, type Design, type Gesture, type ProjectModel, type Issue, type Layer, type Mark, type Point, type Selection, type Tab, type Tool } from "../types.ts";
-
-const hints: Record<Tool, string> = {
-    select: "单击选择，中键平移，滚轮缩放",
-    pen: "单击放尖角，拖出控制柄，回车、双击或单击首点闭合",
-    rect: "拖动或单击矩形的两个对角",
-    circle: "拖出半径或单击圆心和圆周",
-    sector: "拖出半径或单击圆心和圆周，再单击确定终止角",
-    strip: "单击一个或两个地件，再单击起止节点，Tab 交换，回车确认",
-    addPath: "单击放尖角，拖出控制柄，回车、双击或单击首点闭合",
-    shore: "单击放点，回车、双击或单击首点闭合海岸线",
-    ridge: "单击放置山脊顶点，回车或双击完成",
-    slopeLine: "单击放置坡线顶点，回车或双击完成",
-    peak: "单击放置山峰",
-    center: "单击选择圆心",
-    harbor: "单击选择港湾圆心",
-    textMark: "单击放置文字标记",
-    scaleMark: "单击放置比例尺",
-    section: "单击起点和终点"
-};
-
-function drawingStatus(mode: Exclude<Tool, "select">, name: string, owner?: string, member?: number) {
-    const label = "“" + name + "”", pen = "回车、双击或单击首点结束", line = "回车或双击结束", point = "单击地图放置";
-    const text = {
-        pen: ["新建地件（钢笔）", pen, true],
-        rect: ["新建地件（矩形）", "单击或拖出两个对角", false],
-        circle: ["新建地件（圆）", "单击或拖出圆心和半径", false],
-        sector: ["新建地件（扇形）", "单击圆心和圆周，再单击终止角", false],
-        strip: owner ? ["重选" + label + "的边", "单击起止节点，Tab 交换，回车确认", true] :
-            ["新建地件（条带）", "单击一个或两个地件，再单击起止节点，回车确认", true],
-        addPath: ["给" + label + "添加路径", pen, true],
-        shore: ["重画" + label + "的海岸线", pen, true],
-        ridge: [member === undefined ? "给" + label + "添加山脊" : "重画" + label + "的山脊线", line, true],
-        peak: [member === undefined ? "给" + label + "添加山峰" : "移动" + label + "的山峰", point, false],
-        slopeLine: ["重画" + label + "的坡线", line, true],
-        center: ["选择" + label + "的圆心", point, false],
-        harbor: ["选择" + label + "的港湾圆心", point, false],
-        textMark: ["新建文字标记", point, false],
-        scaleMark: ["新建比例尺", point, false],
-        section: ["新建剖面线", "单击起点和终点", false]
-    } as const;
-    const [title, end, finish] = text[mode];
-    return { title, end, finish, owner, member };
-}
 
 type RemovalItem = { text: string; locate: () => void };
 export type DescriptionTarget = { group: "design" } | { group: "geoNodes" | "sections"; id: string };
@@ -82,12 +39,15 @@ export function timed<T>(name: string, work: () => T): T {
 }
 
 export class Editor {
-    // The engine mutates large grids in place. Publish an inspector revision only after a completed edit.
     project = $state.raw<ProjectModel>(null!);
     tab = $state<Tab>("terrain");
     tool = $state<Tool>("select");
-    drawing = $state.raw<ReturnType<typeof drawingStatus>>();
     geoDraft = $state<GeoDraft>();
+    drawing = $derived.by(() => {
+        if (this.tool === "select") return;
+        const { owner, member } = this.geoDraft ?? {};
+        return drawingStatus(this.tool, owner ? geoAt(this.project.design, owner).label : "", owner, member);
+    });
     drawingReady = $derived(this.geoDraft ? drawingReady(this.geoDraft) : false);
     selection = $state.raw<Selection | null>(null);
     propertyTab = $state<PropertyTab>("general");
@@ -114,10 +74,11 @@ export class Editor {
     private issueStart = $state<number>();
     viewport = $state<string | null>(null);
     menu = $state.raw<{ x: number; y: number; map?: boolean; control?: GeoControl } | null>(null);
-    revision = $state(0);
-    hint = $state(hints.select);
-    position = $state("");
-    private pointerPosition?: Point;
+    private pointerPosition = $state.raw<Point>();
+    cursor = $derived.by(() => {
+        const point = this.pointerPosition, project = this.mapProject;
+        if (point && project) return { point, sample: sampleField(project.terrain, this.displayField, point) };
+    });
     busy = $state<string | null>(null);
     toast = $state.raw<{ text: string; point?: Point } | null>(null);
     removal = $state.raw<{ title: string; items?: RemovalItem[]; detail: string; action?: string; perform?: () => void } | null>(null);
@@ -217,12 +178,11 @@ export class Editor {
         if (address[1] === -1) return;
         this.editMetadata(address, value || undefined, group);
     }
-    private editMetadata(address: Address, value: unknown, group?: symbol) {
-        const design = this.project.design;
-        if (readAt(design, address) === value) return;
-        writeAt(design, address, value);
+    private editMetadata(address: Address, value: string | undefined, group?: symbol) {
+        if (readAt(this.project.design, address) === value) return;
+        this.project = this.project.withPrompt(address, value);
         const selection = this.selection;
-        this.syncHistory(this.history.record(design, { before: selection, after: selection, metadata: address, group }));
+        this.syncHistory(this.history.record(this.project.design, { before: selection, after: selection, metadata: address, group }));
     }
     changePropertyTab(tab: PropertyTab) {
         if (tab === this.propertyTab || !propertyTabs(this.selection).some(([id]) => id === tab)) return;
@@ -298,9 +258,8 @@ export class Editor {
             if (h.kind === "mark" || h.kind === "section") this.tab = "marks";
             if (["input", "field"].includes(h.kind)) this.tab = "inputs";
         }
-        this.revision++;
     }
-    refresh(reset = false, sidebar = true) {
+    reconcileProject(reset = false) {
         if (this.selectedIssues.some(i => !this.project.issues.includes(i))) {
             this.selectedIssues = [];
             this.issueStart = undefined;
@@ -309,8 +268,6 @@ export class Editor {
         if (!Object.hasOwn(this.project.design.fields, this.displayField)) this.displayField = heightId;
         this.hovered = undefined;
         this.map.frame(this.project.terrain, reset);
-        if (this.pointerPosition) this.readPosition(this.pointerPosition);
-        if (sidebar) this.revision++;
     }
     focusObjectGeometry(target: Selection) {
         this.setTool("select");
@@ -319,7 +276,6 @@ export class Editor {
     }
     focusGeometry(target?: GeometryTarget) {
         this.setTool("select"); this.geometry = target;
-        this.revision++;
     }
     toolActive(mode: Tool, owner?: string, member?: number) {
         return this.tool === mode && this.drawing?.owner === owner && this.drawing?.member === member;
@@ -331,9 +287,6 @@ export class Editor {
         this.geoDraft = undefined;
         this.vertex = undefined;
         this.tool = mode;
-        this.drawing = mode === "select" ? undefined : drawingStatus(mode, owner ? geoAt(this.project.design, owner).label : "", owner, member);
-        this.hint = mode === "select" ? hints.select :
-            (mode === "strip" && owner ? this.drawing!.end : hints[mode]) + "，Esc 取消";
         if (drawingTools.includes(mode as DrawTool)) {
             this.geoDraft = startDrawing(this, mode as DrawTool, owner, member);
             updatePreview(this, this.geoDraft);
@@ -377,7 +330,6 @@ export class Editor {
             if (!design) return;
             timed("terrain-editor:level-preview", () => {
                 this.numberPreview = new Project(design, this.terrainCache);
-                if (this.pointerPosition) this.readPosition(this.pointerPosition);
             });
         });
     }
@@ -412,7 +364,7 @@ export class Editor {
         if (reset) {
             this.terrainCache.clear();
             this.displayField = heightId; this.viewport = null;
-            this.pointerPosition = undefined; this.position = "";
+            this.pointerPosition = undefined;
             if (this.properties) this.properties.scrollTop = 0;
             if (this.panel) this.panel.scrollTop = 0;
         }
@@ -423,7 +375,7 @@ export class Editor {
         this.openSubitems = new Set();
         this.memberKeys.clear();
         this.issueStart = undefined;
-        this.refresh(reset);
+        this.reconcileProject(reset);
         if (reset) this.setTool("select");
     }
     previewNumber(design: Design) {
@@ -433,7 +385,7 @@ export class Editor {
     commitNumber(design: Design) {
         this.clearNumberPreview();
         this.project = new Project(design, this.terrainCache);
-        this.refresh();
+        this.reconcileProject();
         this.record();
     }
     navigate(forward: boolean) {
@@ -444,9 +396,8 @@ export class Editor {
         const state = selected === undefined ? this.selection : selected;
         if (step?.metadata) {
             const restored = this.history.step(forward)!;
-            writeAt(this.project.design, step.metadata, readAt(restored, step.metadata));
+            this.project = this.project.withPrompt(step.metadata, readAt(restored, step.metadata) as string | undefined);
             this.restoreSelection(state);
-            this.revision++;
             this.syncHistory(true);
             return;
         }
@@ -465,12 +416,12 @@ export class Editor {
                 this.project = next;
                 if (selected !== undefined) this.select(selected);
                 after?.();
-                this.refresh();
+                this.reconcileProject();
                 this.record(before);
             });
         }
         catch (error) {
-            this.message(designErrorText(error, this.project.design)); this.revision++;
+            this.message(designErrorText(error, this.project.design));
         }
     }
     editNode(id: string, fn: (n: GeoNode) => void) {
@@ -542,11 +493,10 @@ export class Editor {
     }
     showField(field: string) {
         this.displayField = field;
-        if (this.pointerPosition) this.readPosition(this.pointerPosition);
     }
     showThrough(id: string | null) {
         if (this.tool !== "select") this.cancelDrawing();
-        this.viewport = id; this.issueStart = undefined; this.refresh();
+        this.viewport = id; this.issueStart = undefined; this.reconcileProject();
     }
     locateGeo(id: string) {
         const b = this.project.terrain.regions.get(id)?.shape.box;
@@ -579,15 +529,9 @@ export class Editor {
         if (control.role === "vertex" && control.path >= 0) {
             this.changePropertyTab("region");
         }
-        this.revision++;
     }
-    readPosition(p: Point) {
-        const { design } = this.project, field = design.fields[this.displayField];
-        const sample = sampleField(this.mapProject.terrain, this.displayField, p);
-        this.pointerPosition = p;
-        const coordinate = (value: number) => displayReading(value, displaySteps.coordinates, displaySteps.coordinateUnit);
-        this.position = "X " + coordinate(p[0]) + "  Y " + coordinate(p[1]) + "  " + field.label + " " +
-            displayReading(sample, fieldPrecision(field), field.unit);
+    readPosition(point: Point) {
+        this.pointerPosition = point;
     }
     private referenceItem(slot: Slot): RemovalItem {
         return { text: slotName(slot), locate: () => {

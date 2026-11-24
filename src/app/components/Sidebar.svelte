@@ -21,24 +21,24 @@
                 {#if search}
                     <Search id={search.id} label={search.label} value={editor[search.key]} change={value => editor[search!.key] = value} />
                 {/if}
-                {#key editor.revision}
-                    {#if editor.tab === "terrain"}<GeoList {editor} />
-                    {:else if editor.tab === "inputs"}<Declarations {editor} />
-                    {:else if editor.tab === "marks"}<Marks {editor} />
-                    {:else if editor.tab === "issues"}<Issues {editor} />
-                    {:else}<Layers {editor} />{/if}
-                {/key}
+                {#if editor.tab === "terrain"}<GeoList {editor} />
+                {:else if editor.tab === "inputs"}<Declarations {editor} />
+                {:else if editor.tab === "marks"}<Marks {editor} />
+                {:else if editor.tab === "issues"}<Issues {editor} />
+                {:else}<Layers {editor} />{/if}
             {/if}
         </div>
     </div>
     <button class="split horizontal" data-split="upper" data-tip="调整属性区" aria-label="调整属性区" onpointerdown={onresize} ondblclick={ontoggle} onkeydown={onkey}></button>
     <div id="properties" hidden={layout.propertiesClosed}>
         {#if editor.project}
-            {#if editor.selection?.kind === "geoNode"}<GeoProperties {editor} />
-            {:else if editor.selection?.kind === "input" || editor.selection?.kind === "field"}<Declarations {editor} properties />
-            {:else if editor.selection?.kind === "mark"}<Marks {editor} properties />
-            {:else if editor.selection?.kind === "section"}<SectionProperties {editor} />
-            {:else}<Terrain {editor} />{/if}
+            {#key inspected}
+                {#if editor.selection?.kind === "geoNode"}<GeoProperties {editor} />
+                {:else if editor.selection?.kind === "input" || editor.selection?.kind === "field"}<Declarations {editor} properties />
+                {:else if editor.selection?.kind === "mark"}<Marks {editor} properties />
+                {:else if editor.selection?.kind === "section"}<SectionProperties {editor} />
+                {:else}<Terrain {editor} />{/if}
+            {/key}
         {/if}
     </div>
 </aside>
@@ -123,8 +123,6 @@
         editor.setTool(tool as Tool);
         editor.map.canvas.focus({ preventScroll: true });
     }
-    let errors = $derived.by(() => {
-        editor.revision;
-        return editor.project?.issues.some(issue => issue.severity === "error");
-    });
+    let errors = $derived(editor.project?.issues.some(issue => issue.severity === "error"));
+    let inspected = $derived(editor.selection ? editor.selection.kind + ":" + editor.selection.id : null);
 </script>

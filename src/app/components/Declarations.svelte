@@ -84,10 +84,7 @@
     import PropertyTitle from "./PropertyTitle.svelte";
     import NumberInput from "./NumberInput.svelte";
     let { editor, properties = false }: { editor: session.Editor; properties?: boolean } = $props();
-    let d = $derived.by(() => {
-        editor.revision;
-        return editor.project.design;
-    }), h = $derived(editor.selection);
+    let d = $derived(editor.project.design), h = $derived(editor.selection);
     const matches = (id: string, name: string) => matchesSearch(editor.variableFilter, name + " " + id);
     let inputs = $derived(declarationEntries("input", d.inputs).filter(([id, input]) => matches(id, input.label ?? id)));
     let fields = $derived(declarationEntries("field", d.fields).filter(([id, field]) => matches(id, field.label)));

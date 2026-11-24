@@ -1,3 +1,4 @@
+import { copyAt, type Address } from "./design/address.ts";
 import { resolveDesign } from "./design/parameters.ts";
 import { validateGeo } from "./design/validateGeo.ts";
 import { type Design, type ResolvedDesign, type Point } from "./design/v5.ts";
@@ -39,6 +40,13 @@ export class Project {
         this.terrain = this.cache.generateResolved(this.evaluated(this.resolved));
         const broken = new Set(this.structural.map(i => i.geoNode));
         this.issues = [...this.structural, ...terrainIssues(this.resolved, this.terrain).filter(i => !broken.has(i.geoNode))];
+    }
+
+    withPrompt(path: Address, value: string | undefined): Project {
+        const next: Project = Object.assign(Object.create(Project.prototype), this);
+        next.design = copyAt(this.design, path, value);
+        next.resolved = copyAt(this.resolved, path, value);
+        return next;
     }
 
     view(): ProjectView {

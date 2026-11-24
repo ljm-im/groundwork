@@ -58,6 +58,11 @@ async function checkEditor(url: string) {
     const idle = () => wait(() => !!document.querySelector<HTMLElement>("#busy")?.hidden);
     const saved = () => wait(() => document.querySelector("#save-state")?.textContent === "已保存");
     const disk = () => evaluate(() => window.disk("regression.json"));
+    async function keyboardStep(selector: string) {
+        await evaluate(s => document.querySelector<HTMLButtonElement>(s)!.focus(), selector);
+        await key("Enter"); await idle(); await saved();
+        assert(await evaluate(s => document.activeElement === document.querySelector(s), selector), "The numeric step keeps focus after committing");
+    }
     async function compose(text: string, pinyin: string, during?: () => Promise<void>) {
         await cdp("Input.imeSetComposition", { text: pinyin, selectionStart: pinyin.length, selectionEnd: pinyin.length });
         await during?.();
@@ -108,6 +113,10 @@ async function checkEditor(url: string) {
         assert.equal(parseDesign(await disk(), true).inputs.seed.value, 32);
         await click("#undo"); await idle(); await saved();
         assert.equal(await text("#properties .property-title h2"), "种子");
+        assert.equal(parseDesign(await disk(), true).inputs.seed.value, 31);
+        await keyboardStep("#properties button[aria-label=增大当前值]");
+        assert.equal(parseDesign(await disk(), true).inputs.seed.value, 32);
+        await keyboardStep("#properties button[aria-label=减小当前值]");
         assert.equal(parseDesign(await disk(), true).inputs.seed.value, 31);
 
         await click("#properties button[aria-label=当前值]");
@@ -167,7 +176,22 @@ async function checkEditor(url: string) {
         await wait(() => (document.querySelector(".property-title input") as HTMLInputElement)?.value === "新台");
         const prompt = "#properties textarea[aria-label=描述]";
         await click(prompt);
-        await compose("场地", "changdi");
+        await evaluate(s => {
+            const textarea = document.querySelector<HTMLTextAreaElement>(s)!;
+            textarea.addEventListener("compositionstart", () => textarea.dataset.composing = "true");
+            textarea.addEventListener("compositionend", () => textarea.dataset.composing = "false");
+        }, prompt);
+        await compose("场地", "changdi", async () => {
+            const prior = await text("#position");
+            await moveMap(.33, .61);
+            await wait(prior => document.querySelector("#position")!.textContent?.trim() !== prior, prior);
+            const active = await evaluate(s => {
+                const textarea = document.querySelector<HTMLTextAreaElement>(s)!;
+                return [document.activeElement === textarea, textarea.dataset.composing, textarea.value];
+            }, prompt);
+            assert.deepEqual(active, [true, "true", "changdi"]);
+        });
+        await evaluate(s => document.querySelector<HTMLTextAreaElement>(s)!.setSelectionRange(1, 1), prompt);
         await wait(async () => {
             if (document.querySelector("#save-state")?.textContent !== "已保存") return false;
             try {
@@ -178,6 +202,12 @@ async function checkEditor(url: string) {
                 throw error;
             }
         });
+        const caret = await evaluate(s => {
+            const textarea = document.querySelector<HTMLTextAreaElement>(s)!;
+            return [document.activeElement === textarea, textarea.selectionStart, textarea.selectionEnd];
+        }, prompt);
+        assert.deepEqual(caret, [true, 1, 1]);
+        await evaluate(s => document.querySelector<HTMLTextAreaElement>(s)!.setSelectionRange(2, 2), prompt);
         await compose("描述", "miaoshu");
         assert(await evaluate(s => document.activeElement?.matches(s), prompt));
         await key("s", 2); await saved();
@@ -190,6 +220,26 @@ async function checkEditor(url: string) {
         assert.equal(parseDesign(await disk(), true).geoNodes.find(n => n.id === "T")?.prompt, undefined);
         await click("#redo"); await saved();
         assert.equal(parseDesign(await disk(), true).geoNodes.find(n => n.id === "T")?.prompt, "场地描述");
+
+        console.log("A pending name survives another edit");
+        await panel("inputs");
+        const title = "#properties .property-title input";
+        await click(title);
+        await evaluate(s => document.querySelector<HTMLInputElement>(s)!.select(), title);
+        await cdp("Input.insertText", { text: "未提交名称" });
+        await evaluate(() => document.querySelector<HTMLButtonElement>("[data-input=seed] button[aria-label=增大种子]")?.click());
+        await idle(); await saved();
+        assert.equal(parseDesign(await disk(), true).inputs.seed.value, 32);
+        assert.equal(parseDesign(await disk(), true).geoNodes.find(n => n.id === "T")?.label, "新台");
+        assert.deepEqual(await evaluate(s => {
+            const input = document.querySelector<HTMLInputElement>(s)!;
+            return [document.activeElement === input, input.value];
+        }, title), [true, "未提交名称"]);
+        await evaluate(s => document.querySelector<HTMLInputElement>(s)!.select(), title);
+        await cdp("Input.insertText", { text: "新台" });
+        await panel("terrain");
+        await click("#undo"); await idle(); await saved();
+        assert.equal(parseDesign(await disk(), true).inputs.seed.value, 31);
 
         await terrainTab();
         assert.equal(await hasBuiltinMark("[data-property-tab=function]"), false);
@@ -684,6 +734,26 @@ async function checkEditor(url: string) {
         const labelWrites = await evaluate(() => window.probe.writes);
         await click("#save"); await wait(n => window.probe.writes === n + 1, labelWrites); await saved();
         assert.equal(await disk(), afterLabel);
+
+        console.log("Parameter edits preserve terrain list scroll");
+        const long = syntheticDesign();
+        for (let i = 0; i < 35; i++)
+            long.geoNodes.push(layer("P" + i, rect(0, 0, 4, 4), { type: "flat", amount: 1 }));
+        await evaluate(async bytes => {
+            const root = await navigator.storage.getDirectory();
+            const file = await root.getFileHandle("regression.json");
+            const stream = await file.createWritable();
+            await stream.write(bytes); await stream.close();
+        }, serializeDesign(long));
+        await click("#open"); await wait(n => window.probe.opens === n + 3, opens); await idle();
+        await panel("terrain"); await click("[data-geo-node=G]"); await terrainTab();
+        const scroll = () => evaluate(() => document.querySelector("#panel")!.scrollTop);
+        const beforeScroll = await scroll();
+        assert(beforeScroll > 0);
+        await keyboardStep("#properties button[aria-label=增大数值]");
+        assert.equal(await scroll(), beforeScroll);
+        assert.equal(parseDesign(await disk(), true).geoNodes[0].function.type, "ground");
+        assert.equal(await text("#properties button.numeric-face[aria-label=数值]"), "4.1");
     }
     finally {
         await browser.close();

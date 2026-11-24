@@ -25,8 +25,5 @@
     import GeometryInput from "./GeometryInput.svelte";
 
     let { editor }: { editor: session.Editor } = $props();
-    let section = $derived.by(() => {
-        editor.revision;
-        return editor.project.design.sections.find(s => s.id === editor.selection?.id)!;
-    });
+    let section = $derived(editor.project.design.sections.find(s => s.id === editor.selection?.id)!);
 </script>

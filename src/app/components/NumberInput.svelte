@@ -12,7 +12,7 @@
         }} oninput={e => {
             if (!composing && !(e instanceof InputEvent && e.isComposing)) onInput();
         }} oncompositionstart={() => composing = true} oncompositionend={() => {
-            composing = false; onInput();
+            composing = false; onInput(); syncEdit(value);
         }} onkeydown={key} onpointerdown={selectChip} onblur={() => {
             if (editing) finish(true);
         }} onpaste={e => {
@@ -113,7 +113,7 @@
 </style>
 
 <script lang="ts">
-    import { onDestroy, tick } from "svelte";
+    import { onDestroy, tick, untrack } from "svelte";
     import * as session from "../state/session.svelte.ts";
     import { type Design, type Expression } from "../../core/design/v5.ts";
     import { canReference, expressionGraph, parameters, readAt, writeAt, type Address } from "../../core/design/parameters.ts";
@@ -142,7 +142,7 @@
     let value = $derived(setting?.value ?? authored ?? (address ? readAt(editor.project.resolved, address) as number | undefined : undefined) ??
         (self ? expressionGraph(base).get(self) as number : fallback));
     let editing = $state(false), expanded = $state(false), draft = $state(""), error = $state(""), opened = $state(false), parent = $state(""), query = $state("");
-    let queryStart = 0, queryEnd = 0, composing = false;
+    let queryStart = 0, queryEnd = 0, composing = false, editedValue: Expression;
     let slots = $derived(parameters(base));
     let gesturing = $state(false), live = $state<Expression>(0), shown = $derived(gesturing ? live : value);
     let result = $derived(currentResult(shown));
@@ -226,9 +226,22 @@
     async function startEdit(chip?: { start: number; end: number }) {
         if (editing) return;
         expanded = face?.hasAttribute("data-overflow") ?? false;
-        editing = true; draft = String(value); error = "";
+        editing = true; editedValue = value; draft = String(value); error = "";
         await paint(chip?.start ?? draft.length, chip?.end);
     }
+    function syncEdit(next: Expression) {
+        if (!editing || composing || next === editedValue) return;
+        editedValue = next;
+        const [start, end] = input ? selectionOffsets(input) : [0, 0];
+        draft = String(next);
+        closeMenu();
+        error = "";
+        void paint(Math.min(start, draft.length), Math.min(end, draft.length));
+    }
+    $effect(() => {
+        const next = value;
+        untrack(() => syncEdit(next));
+    });
     function chipAt(input: HTMLElement, target: EventTarget | null) {
         return target instanceof Node ? chipSpans(input).find(chip => chip.node.contains(target)) : undefined;
     }

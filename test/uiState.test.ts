@@ -54,7 +54,7 @@ test("Variable preview keeps cached geometry and matches a freshly opened design
     assert.deepEqual(preview.issues, full.issues);
 });
 
-test("A committed prompt, undo and redo preserve the live project and all geometry", async t => {
+test("A committed prompt, undo and redo preserve all terrain references", async t => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
     const editor = new Editor(), design = syntheticDesign(), project = new Project(design);
     Object.assign(editor, { project, map: { draw() {} } });
@@ -69,18 +69,19 @@ test("A committed prompt, undo and redo preserve the live project and all geomet
     editor.describe(target, "第一行\n第二行", focus);
     editor.describe(target, "第一行\n第二行", focus);
     assert.equal(editor.history.states.length, 2);
-    assert.equal(design.geoNodes[0].prompt, "第一行\n第二行");
+    assert.equal(editor.project.design.geoNodes[0].prompt, "第一行\n第二行");
     editor.navigate(false);
-    assert(!Object.hasOwn(design.geoNodes[0], "prompt"));
+    assert(!Object.hasOwn(editor.project.design.geoNodes[0], "prompt"));
     editor.navigate(true);
-    assert.equal(design.geoNodes[0].prompt, "第一行\n第二行");
+    assert.equal(editor.project.design.geoNodes[0].prompt, "第一行\n第二行");
     editor.describe(target, "");
-    assert(!Object.hasOwn(design.geoNodes[0], "prompt"));
+    assert(!Object.hasOwn(editor.project.design.geoNodes[0], "prompt"));
     editor.navigate(false);
     editor.describe(target, "覆盖分支");
     assert.equal(editor.canRedo, false);
     assert.deepEqual(generation.map(spy => spy.mock.callCount()), [0, 0]);
-    assert.equal(editor.project, project);
+    assert(!Object.hasOwn(design.geoNodes[0], "prompt"));
+    assert.equal(editor.project.terrain, project.terrain);
     assert.equal(project.terrain.fields.height.values, heights);
     assert.equal(project.terrain.fields, fields);
     assert.equal(project.terrain.regions, regions);
@@ -90,7 +91,7 @@ test("Terrain work runs synchronously on a hit and defers cold history steps for
     const { Editor } = await import("../src/app/state/session.svelte.ts");
     const editor = new Editor(), design = syntheticDesign(), frames: FrameRequestCallback[] = [];
     Object.assign(editor, { map: { scale: 4 } });
-    t.mock.method(editor, "refresh", () => {});
+    t.mock.method(editor, "reconcileProject", () => {});
     t.mock.method(editor.files, "remember", () => {});
     const previous = globalThis.requestAnimationFrame;
     globalThis.requestAnimationFrame = cb => frames.push(cb);
@@ -142,7 +143,7 @@ test("Opening, creating and recovering a design each starts with empty terrain c
     const editor = new Editor(), design = syntheticDesign(), text = JSON.stringify(design);
     Object.assign(editor, { map: { scale: 4 } });
     Object.assign(editor.files, { supported: true });
-    t.mock.method(editor, "refresh", () => {});
+    t.mock.method(editor, "reconcileProject", () => {});
     t.mock.method(editor, "message", () => {});
     t.mock.method(editor.files, "remember", () => {});
     t.mock.method(editor, "working", async (_label: string, fn: () => void) => fn());
@@ -189,7 +190,7 @@ test("Drawing or canceling a parameter keeps its owner and activates only the co
     const editor = new Editor(), design = syntheticDesign(), n = design.geoNodes[1];
     n.function = { type: "mountain", ridges: [], peaks: [] };
     Object.assign(editor, { map: { scale: 4 } });
-    t.mock.method(editor, "refresh", () => {});
+    t.mock.method(editor, "reconcileProject", () => {});
     t.mock.method(editor.files, "remember", () => {});
     t.mock.method(editor, "terrainWork", async (_d: unknown, fn: () => void) => {
         fn();
@@ -330,7 +331,7 @@ test("Selection history restores edited elements and list tabs preserve the sele
     const { Editor } = await import("../src/app/state/session.svelte.ts");
     const d = syntheticDesign(), editor = new Editor();
     Object.assign(editor, { map: { draw() {}, clearIssue() {} } });
-    t.mock.method(editor, "refresh", () => {});
+    t.mock.method(editor, "reconcileProject", () => {});
     t.mock.method(editor, "terrainWork", async (_d: unknown, fn: () => void) => fn());
     t.mock.method(editor.files, "remember", () => {});
     editor.replace(d, true);
@@ -361,7 +362,7 @@ test("Mark follow changes preserve the displayed anchor and screen coordinates i
     const map: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), { center: [0, 0], width: 800, height: 450, scale: 3, referenceScale: 3,
         cameraChanged() {}, clearIssue() {} });
     Object.assign(editor, { map });
-    t.mock.method(editor, "refresh", () => {});
+    t.mock.method(editor, "reconcileProject", () => {});
     t.mock.method(editor, "terrainWork", async (_d: unknown, fn: () => void) => fn());
     t.mock.method(editor.files, "remember", () => {});
     editor.replace(d, true);

@@ -16,6 +16,18 @@ export function writeAt(root: object, path: Address, value: unknown) {
     else Reflect.set(parent, key, value);
 }
 
+export function copyAt<T extends object>(root: T, path: Address, value: unknown): T {
+    const [key, ...rest] = path;
+    const copy = (Array.isArray(root) ? root.slice() : { ...root }) as T;
+    if (rest.length) {
+        const child = readAt(root, [key]) as object | undefined;
+        Reflect.set(copy, key, copyAt(child ?? (typeof rest[0] === "number" ? [] : {}), rest, value));
+    }
+    else if (value === undefined) Reflect.deleteProperty(copy, key);
+    else Reflect.set(copy, key, value);
+    return copy;
+}
+
 export function jsonPath(path: Address) {
     return path.map((k, i) => typeof k === "number" ? "[" + k + "]" : (i ? "." : "") + k).join("");
 }

@@ -10,9 +10,9 @@
         </nav>
     {/if}
     <div class="property-column">
-        {#key editor.revision}{@render title()}{/key}
+        {@render title()}
         <div id="property-content" class="panel-content property-content" bind:this={editor.properties}>
-            {#key editor.revision}{#if children}{@render children(editor.propertyTab)}{/if}{/key}
+            {#if children}{@render children(editor.propertyTab)}{/if}
         </div>
     </div>
 </div>
@@ -35,8 +35,5 @@
 
     let { editor, title, children }: { editor: session.Editor; title: Snippet; children?: Snippet<[PropertyTab]> } = $props();
     let tabs = $derived(propertyTabs(editor.selection));
-    let errors = $derived.by(() => {
-        editor.revision;
-        return objectIssues(editor.project, editor.selection).some(issue => issue.severity === "error");
-    });
+    let errors = $derived(objectIssues(editor.project, editor.selection).some(issue => issue.severity === "error"));
 </script>

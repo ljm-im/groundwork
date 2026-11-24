@@ -147,10 +147,7 @@
         return specs.filter(p => p.key[0] === group && p.type !== "geometry" && p.key.slice(2).every(part => part !== "*") && p.key.at(-1) !== "h")
             .map(p => [group, i, ...p.key.slice(2)]);
     }
-    let vertex = $derived.by(() => {
-        editor.revision;
-        return editor.vertex;
-    });
+    let vertex = $derived(editor.vertex);
     let pathNode = $derived(vertex?.role === "vertex" ? geometryPath(n, vertex.path)?.nodes[vertex.index] : undefined);
     function nameOf(id: string) {
         return geoAt(d, id)?.label ?? id;

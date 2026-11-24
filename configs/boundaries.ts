@@ -112,7 +112,11 @@ function checkMapState() {
     for (const entry of readdirSync(resolve(root, "src/app"), { recursive: true, withFileTypes: true })) {
         if (!entry.isFile() || !/\.(?:ts|svelte)$/.test(entry.name)) continue;
         const path = resolve(entry.parentPath, entry.name);
-        assert.doesNotMatch(readFileSync(path, "utf8"), assignment, relative(root, path));
+        const source = readFileSync(path, "utf8"), name = relative(root, path);
+        assert.doesNotMatch(source, assignment, name);
+        assert.doesNotMatch(source, /\b(?:editor|this)\s*\.\s*revision\b|\{#key\s+editor\s*\./, name);
+        if (["controller.ts", "geoTools.ts"].includes(entry.name))
+            assert.doesNotMatch(source, /\.\s*(?:hint|position)\s*=(?!=|>)/, name);
     }
 }
 

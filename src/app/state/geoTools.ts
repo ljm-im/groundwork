@@ -201,12 +201,12 @@ export function draftPointer(e: Editor, phase: "down" | "move" | "up", raw: Poin
         if (draft.radius) complete = true;
         else if (!dragged && !draft.sizing) {
             draft.sizing = true;
-            e.hint = tool === "rect" ? "单击确定对角，Esc 取消" : "单击确定半径，Esc 取消";
+
         }
         else if (tool === "sector") {
             if (distance(draft.start!, at) < 1e-6) throw Error("请选取不同的圆心和起始点");
             draft.radius = at;
-            e.hint = "单击确定终止角，Esc 取消";
+
         }
         else complete = true;
     }

@@ -77,7 +77,7 @@ test("Dragging and repeating preview several values but release records one hist
         if (oldCancel) globalThis.cancelAnimationFrame = oldCancel;
         else Reflect.deleteProperty(globalThis, "cancelAnimationFrame");
     });
-    t.mock.method(editor, "refresh", () => {}); t.mock.method(editor.files, "remember", () => {});
+    t.mock.method(editor, "reconcileProject", () => {}); t.mock.method(editor.files, "remember", () => {});
     t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
     let calls = 0, preview = design;
     const stop = repeatButton(() => {

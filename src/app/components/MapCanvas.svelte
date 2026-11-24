@@ -27,7 +27,7 @@
         <button class="icon-button" id="plus" aria-label="放大" data-tip="放大" onclick={() => editor.project && editor.map.zoomAt(1.4)}><Icon name="plus" /></button>
         <button class="icon-button" id="fit" aria-label="适应" data-tip="适应" onclick={() => editor.project && editor.map.fit(editor.project.terrain)}><Icon name="fit" /></button>
     </div>
-    <div class="coords"><span id="busy" role="status" hidden={!editor.busy}>{busyText}</span><span id="mode-hint">{editor.hint}</span><span id="position">{editor.position}</span></div>
+    <div class="coords"><span id="busy" role="status" hidden={!editor.busy}>{busyText}</span><span id="mode-hint">{hint}</span><span id="position">{position}</span></div>
     <Messages {editor} />
 </section>
 
@@ -113,6 +113,7 @@
 <script lang="ts">
     import { onMount } from "svelte";
     import { displayReading } from "../../core/design/display.ts";
+    import { drawingHint, positionText } from "../state/mapText.ts";
     import { attachController } from "../state/controller.ts";
     import * as session from "../state/session.svelte.ts";
     import Icon from "./Icon.svelte";
@@ -120,6 +121,8 @@
 
     let { editor }: { editor: session.Editor } = $props();
     let busyText = $derived(editor.busy === "正在生成地形…" || editor.busy === "正在更新地件…" ? "计算中" : editor.busy ?? "");
+    let hint = $derived(drawingHint(editor.tool, editor.geoDraft, editor.drawing?.end));
+    let position = $derived(positionText(editor.cursor, editor.project?.design.fields[editor.displayField]));
     let canvas: HTMLCanvasElement;
     let zoom = $state(1);
     let frame = 0;

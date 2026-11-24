@@ -1,6 +1,6 @@
-{#if editor.menu && editor.selection}
-    {#key editor.menu}
-        <Menu label="编辑菜单" variant="context-menu" point={editor.menu} {groups}
+{#if menu && editor.selection}
+    {#key menu}
+        <Menu label="编辑菜单" variant="context-menu" point={menu} {groups}
             close={() => editor.menu = null} choose={choose} />
     {/key}
 {/if}
@@ -13,9 +13,10 @@
     import Menu, { type MenuItem } from "./Menu.svelte";
 
     let { editor }: { editor: session.Editor } = $props();
+    let menu = $derived(editor.menu);
     type Action = MenuItem & { run: () => void };
     let groups = $derived.by(() => {
-        const menu = editor.menu, h = editor.selection;
+        const h = editor.selection;
         const result: { title?: string; items: Action[] }[] = [], actions: Action[] = [];
         if (!menu || !h) return result;
         const control = menu.control;

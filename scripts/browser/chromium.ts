@@ -95,9 +95,11 @@ export async function startChromium() {
     }
     async function key(key: string, modifiers = 0) {
         const code = key.length === 1 ? "Key" + key.toUpperCase() : key;
-        const special: Record<string, number> = { Tab: 9, Escape: 27, Delete: 46 };
+        const special: Record<string, number> = { Tab: 9, Enter: 13, Escape: 27, Delete: 46 };
         const windowsVirtualKeyCode = special[key] ?? key.toUpperCase().charCodeAt(0);
-        for (const type of ["keyDown", "keyUp"]) await cdp("Input.dispatchKeyEvent", { type, key, code, modifiers, windowsVirtualKeyCode });
+        for (const type of ["keyDown", "keyUp"]) await cdp("Input.dispatchKeyEvent", {
+            type, key, code, modifiers, windowsVirtualKeyCode, ...(type === "keyDown" && key === "Enter" && { text: "\r" })
+        });
     }
     async function close() {
         try {
