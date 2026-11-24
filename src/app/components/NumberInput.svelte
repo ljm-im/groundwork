@@ -114,11 +114,11 @@
 
 <script lang="ts">
     import { onDestroy, tick, untrack } from "svelte";
+    import { SvelteMap, SvelteSet } from "svelte/reactivity";
     import * as session from "../state/session.svelte.ts";
-    import { type Design, type Expression } from "../../core/design/v5.ts";
-    import { canReference, expressionGraph, parameters, readAt, writeAt, type Address } from "../../core/design/parameters.ts";
+    import { type Expression } from "../../core/design/v5.ts";
+    import { readAt, type Address } from "../../core/design/parameters.ts";
     import { evaluate, sampleValue } from "../../core/design/expression.ts";
-    import { parseDesign } from "../../core/design/model.ts";
     import { declarationEntries, isBuiltin } from "../../core/design/defaults.ts";
     import { adjustInputStep, adjustNumber, chipSpans, composingKey, editorSelection, flagOverflow, editorText, NumberDrag, numericCaret, numericText, repeatButton, selectionOffsets, type Range } from "../state/numbers.ts";
     import { displayReading, displayValue } from "../../core/design/display.ts";
@@ -140,23 +140,24 @@
     let box = $state<HTMLElement>(null!), input = $state<HTMLElement>(null!), mirror = $state<HTMLElement>(null!);
     let base = $derived(editor.project.design), authored = $derived(address ? readAt(base, address) as Expression | undefined : undefined);
     let value = $derived(setting?.value ?? authored ?? (address ? readAt(editor.project.resolved, address) as number | undefined : undefined) ??
-        (self ? expressionGraph(base).get(self) as number : fallback));
+        (self ? editor.numberEdits.get(self) as number : fallback));
     let editing = $state(false), expanded = $state(false), draft = $state(""), error = $state(""), opened = $state(false), parent = $state(""), query = $state("");
     let queryStart = 0, queryEnd = 0, composing = false, editedValue: Expression;
-    let slots = $derived(parameters(base));
+    let slots = $derived(editor.numberEdits.slots);
     let gesturing = $state(false), live = $state<Expression>(0), shown = $derived(gesturing ? live : value);
     let result = $derived(currentResult(shown));
     let reading = $derived(result?.value);
     let outside = $derived(reading !== undefined && range && (reading < range[0] || reading > range[1]));
     let tip = $derived(typeof shown === "string" ? (reading === undefined ? "= 未定义" :
         "= " + (result?.sampled ? displayReading(reading, step, unit) : displayValue(reading, step, unit))) : undefined);
-    let origin: Design | undefined, cleanup: (() => void) | undefined, version = 0;
+    let cleanup: (() => void) | undefined, version = 0;
     type Option = { key: string; name: string; icon: IconName; builtin?: boolean; branch?: boolean };
     type Group = { title: string; items: Option[] };
     let groups = $derived.by((): Group[] => {
         if (!opened) return [];
         const filter = (v: Option) => matchesSearch(query, v.name + " " + v.key);
-        const allowed = (key: string) => canReference(slots, self, key);
+        const excluded = self ? editor.numberEdits.affected([self]) : undefined;
+        const allowed = (key: string) => !excluded?.has(key);
         const leaves = [...slots.values()].filter(s => !s.field && allowed(s.key));
         if (parent) return [{ title: leaves.find(s => s.owner + ":" + s.id === parent)?.name ?? "属性",
             items: leaves.filter(s => s.owner + ":" + s.id === parent).map(s => ({ key: s.key, name: s.label, icon: "property" as const })).filter(filter) }];
@@ -171,32 +172,40 @@
             }));
             result.push({ title: "场", items: fields.filter(filter) });
         }
-        const nodes = leaves.filter(s => s.owner === "geo");
-        const itemsById = new Map(nodes.map(s => [s.id, { key: "geo:" + s.id, name: s.name, icon: "terrain" as const, branch: true }]));
-        result.push({ title: "地件", items: [...itemsById].filter(([id, item]) =>
-            filter(item) || nodes.some(s => s.id === id && matchesSearch(query, s.label))).map(([, item]) => item) });
+        const nodes = new SvelteMap<string, Option>(), matched = new SvelteSet<string>();
+        for (const s of leaves) if (s.owner === "geo") {
+            const item = { key: "geo:" + s.id, name: s.name, icon: "terrain" as const, branch: true };
+            if (!nodes.has(s.id)) nodes.set(s.id, item);
+            if (filter(item) || matchesSearch(query, s.label)) matched.add(s.id);
+        }
+        result.push({ title: "地件", items: [...nodes].filter(([id]) => matched.has(id)).map(([, item]) => item) });
         return result.filter(group => group.items.length);
     });
     let options = $derived(groups.flatMap(g => g.items));
+    let fieldReading = $derived.by(() => {
+        const project = editor.project, id = owner;
+        const center = id ? editor.geoCenter(id) : undefined;
+        const readings: Record<string, number | undefined> = Object.create(null);
+        return (field: string) => {
+            if (!id || !center) return;
+            if (!Object.hasOwn(readings, field)) readings[field] = project.inputAt(id, field, center);
+            return readings[field];
+        };
+    });
     function currentResult(v: Expression) {
         if (typeof v === "number") return { value: v, sampled: false };
         try {
-            const expression = evaluate(v, expressionGraph(base).get);
-            const value = sampleValue(expression, field => owner ? editor.project.inputAt(owner, field, editor.geoCenter(owner)) : undefined);
+            const expression = evaluate(v, editor.numberEdits.get);
+            const value = sampleValue(expression, fieldReading);
             return { value, sampled: typeof expression !== "number" };
         }
         catch {
             return undefined;
         }
     }
-    function candidate(v: Expression, from = base) {
-        if (!address) {
-            setting?.validate(Number(v));
-            return;
-        }
-        const d = structuredClone(from);
-        writeAt(d, address, v);
-        return parseDesign(d, true);
+    function candidate(v: Expression) {
+        if (address) return editor.numberEdits.validate(address, v);
+        setting?.validate(Number(v));
     }
     function parseDraft() {
         const value = numericText(draft, kind === "literal");
@@ -259,19 +268,18 @@
     }
     function finish(save: boolean) {
         if (!editing) return;
-        let next: Design | undefined, committed: Expression | undefined;
+        let committed: Expression | undefined;
         if (save && draft !== String(value)) {
             try {
                 const parsed = parseDraft();
-                next = candidate(parsed);
-                committed = parsed;
+                committed = candidate(parsed)?.value ?? parsed;
             }
             catch (e) {
                 error = designErrorText(e, base, "message");
             }
         }
         editing = expanded = false; closeMenu(); error = "";
-        if (next && JSON.stringify(next) !== JSON.stringify(base)) editor.commitNumber(next);
+        if (address && committed !== undefined) editor.commitNumber(address, committed);
         if (setting && typeof committed === "number" && committed !== value) setting.change(committed);
     }
     function insertText(text: string, replaceLiteral = false) {
@@ -346,9 +354,9 @@
         const next = adjusted(live, n);
         if (next === live) return;
         try {
-            const d = candidate(next, origin);
+            const change = candidate(next);
             live = next; error = "";
-            if (d) editor.previewNumber(d);
+            if (change) editor.previewNumber(change);
         }
         catch (e) {
             error = designErrorText(e, base, "message");
@@ -357,8 +365,8 @@
     function keyboardStep(e: MouseEvent, direction: number) {
         if (e.detail) return;
         try {
-            const next = adjusted(value, direction), d = candidate(next);
-            if (d) editor.commitNumber(d);
+            const next = adjusted(value, direction), change = candidate(next);
+            if (address && change) editor.commitNumber(address, change.value);
             else if (typeof next === "number") setting?.change(next);
         }
         catch (e) {
@@ -373,7 +381,7 @@
         }
         if (editing) finish(false);
         const initial = value;
-        origin = base; live = initial; gesturing = true;
+        live = initial; gesturing = true;
         const button = e.currentTarget as HTMLButtonElement, drag = new NumberDrag(), id = e.pointerId;
         const chip = direction ? undefined : chipAt(button, e.target);
         button.setPointerCapture(id);
@@ -406,14 +414,12 @@
             if (button.hasPointerCapture(id)) button.releasePointerCapture(id);
             const changed = live !== initial;
             gesturing = false; error = "";
-            if (changed || direction || drag.moved) {
-                if (setting) {
-                    if (!cancel && typeof live === "number" && changed) setting.change(live);
-                }
-                else editor.commitNumber(cancel ? origin! : candidate(live, origin)!);
+            if (address) editor.clearNumberPreview();
+            if (!cancel && changed) {
+                if (address) editor.commitNumber(address, live);
+                else if (typeof live === "number") setting?.change(live);
             }
             else if (!cancel && !direction && !drag.moved) void startEdit(chip);
-            origin = undefined;
         }
         const up = (ev: PointerEvent) => {
             if (ev.pointerId === id) end(false);
@@ -427,6 +433,8 @@
         };
     }
     onDestroy(() => {
-        cleanup?.();
+        if (!cleanup) return;
+        cleanup();
+        if (address) editor.clearNumberPreview();
     });
 </script>

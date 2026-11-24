@@ -29,14 +29,14 @@ export class Project {
         return broken.size ? { ...design, geoNodes: design.geoNodes.map(n => broken.has(n.id) ? { ...n, disabled: true as const } : n) } : design;
     }
 
-    constructor(design: Design, cache = new TerrainCache()) {
+    constructor(design: Design, cache = new TerrainCache(), resolved?: ResolvedDesign) {
         this.cache = cache;
         this.design = design;
-        this.update();
+        this.update(resolved);
     }
 
-    update() {
-        this.resolved = resolveDesign(this.design);
+    update(resolved = resolveDesign(this.design)) {
+        this.resolved = resolved;
         this.terrain = this.cache.generateResolved(this.evaluated(this.resolved));
         const broken = new Set(this.structural.map(i => i.geoNode));
         this.issues = [...this.structural, ...terrainIssues(this.resolved, this.terrain).filter(i => !broken.has(i.geoNode))];

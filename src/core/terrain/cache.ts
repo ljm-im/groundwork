@@ -74,13 +74,17 @@ export class TerrainCache {
     }
 
     preview(d: ResolvedDesign) {
-        // Preview can have a different canvas. Copy geometry entries before replacing their raster.
+        return this.fork().generateResolved(d);
+    }
+
+    fork() {
+        // A preview can have a different canvas. Copy geometry entries before replacing their raster.
         const copy = new TerrainCache();
         copy.geometry = new Map([...this.geometry].map(([id, g]) => [id, { ...g }]));
         copy.layers = this.layers;
         copy.gridKey = this.gridKey;
         copy.serial = this.serial;
-        return copy.generateResolved(d);
+        return copy;
     }
 
     generate(d: Design) {

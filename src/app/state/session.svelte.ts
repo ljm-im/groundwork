@@ -2,13 +2,14 @@ import { tick } from "svelte";
 import { Project, type ProjectView } from "../../core/project.ts";
 import { TerrainCache } from "../../core/terrain/cache.ts";
 import { History } from "../../core/edit/history.ts";
-import { readAt, type Address } from "../../core/design/address.ts";
+import { copyAt, readAt, writeAt, type Address } from "../../core/design/address.ts";
 import { readDisplaySettings, saveDisplaySettings } from "./layers.ts";
 import { type GridDisplay } from "../../core/edit/display.ts";
 import { constructionCenter } from "../../core/design/regions.ts";
 import { heightId, isBuiltin } from "../../core/design/defaults.ts";
 import { defaultFollow, type GeoNode, type GeoFunction, type PathNode } from "../../core/design/v5.ts";
 import { geoParameter, slotName, type Slot } from "../../core/design/parameters.ts";
+import { numberEdits, type NumberChange } from "../../core/design/numberEdit.ts";
 import { parseDesign } from "../../core/design/model.ts";
 import { type GeoControl, type GeometryTarget, copyGeometryItem, geometryPath, insertPathNode, removeGeometryItem, removeParameterPoint } from "../../core/edit/geoControls.ts";
 import { addInput, addField, copyGeo, defaultFunction, deleteGeo, enableGeo, isLastInitializer, nextId, nodeIds, rangeUsers,
@@ -26,7 +27,7 @@ import { objectIssues } from "../../core/checks/issues.ts";
 import { propertyTabs, tabForSelection, type PropertyTab, type SubitemGroup } from "./inspector.ts";
 import { ProjectMap, type LabelPreview, type LabelTarget, type MapView } from "../../render/map.ts";
 import { DesignFiles, type FileAction, type SaveState } from "./files.ts";
-import { errorText, type Design, type Gesture, type ProjectModel, type Issue, type Layer, type Mark, type Point, type Selection, type Tab, type Tool } from "../types.ts";
+import { errorText, type Design, type Expression, type Gesture, type ProjectModel, type Issue, type Layer, type Mark, type Point, type Selection, type Tab, type Tool } from "../types.ts";
 
 type RemovalItem = { text: string; locate: () => void };
 export type DescriptionTarget = { group: "design" } | { group: "geoNodes" | "sections"; id: string };
@@ -97,10 +98,13 @@ export class Editor {
     revealProperties?: () => void;
     revealSections?: () => void;
     gesture: Gesture | null = null;
-    private pendingNumber?: Design;
-    private numberPreview = $state.raw<ProjectModel>();
+    numberEdits = $derived(numberEdits(this.project.design, this.project.resolved));
+    private pendingNumber?: { source: ProjectModel; change: NumberChange };
+    private numberPreview = $state.raw<{ source: ProjectModel; project: ProjectModel }>();
+    private previewCache?: TerrainCache;
     mapProject = $derived.by((): ProjectView => {
-        const project = this.numberPreview ?? this.project;
+        const preview = this.numberPreview;
+        const project = preview?.source === this.project ? preview.project : this.project;
         return project && (this.viewport ? project.viewBelow(this.viewport) : project.view());
     });
     mapDesign = $derived.by(() => {
@@ -325,18 +329,23 @@ export class Editor {
     private scheduleNumber() {
         this.frame ||= requestAnimationFrame(() => {
             this.frame = 0;
-            const design = this.pendingNumber;
+            const pending = this.pendingNumber;
             this.pendingNumber = undefined;
-            if (!design) return;
+            if (pending?.source !== this.project) return;
+            const { source, change } = pending;
             timed("terrain-editor:level-preview", () => {
-                this.numberPreview = new Project(design, this.terrainCache);
+                if (this.numberPreview?.source !== source) this.previewCache = this.terrainCache.fork();
+                const design = copyAt(source.design, change.address, change.value);
+                const resolved = change.resolved.reduce((d, { address, value }) => copyAt(d, address, value), source.resolved);
+                this.numberPreview = { source, project: new Project(design, this.previewCache, resolved) };
             });
         });
     }
-    private clearNumberPreview() {
+    clearNumberPreview() {
         if (this.frame) cancelAnimationFrame(this.frame);
         this.frame = 0;
         this.pendingNumber = this.numberPreview = undefined;
+        this.previewCache = undefined;
     }
     async working(label: string | null, fn: () => void) {
         if (this.busy) return;
@@ -378,15 +387,15 @@ export class Editor {
         this.reconcileProject(reset);
         if (reset) this.setTool("select");
     }
-    previewNumber(design: Design) {
-        this.pendingNumber = design;
+    previewNumber(change: NumberChange) {
+        this.pendingNumber = { source: this.project, change };
         this.scheduleNumber();
     }
-    commitNumber(design: Design) {
+    commitNumber(address: Address, value: Expression) {
         this.clearNumberPreview();
-        this.project = new Project(design, this.terrainCache);
-        this.reconcileProject();
-        this.record();
+        if (readAt(this.project.design, address) !== value) return this.edit(d => {
+            writeAt(d, address, value);
+        }, undefined, true);
     }
     navigate(forward: boolean) {
         if (this.busy || this.gesture) return;
@@ -406,19 +415,20 @@ export class Editor {
             this.syncHistory(true);
         });
     }
-    edit(fn: (d: Design) => Selection | null | void, after?: () => void) {
+    edit(fn: (d: Design) => Selection | null | void, after?: () => void, immediate = false) {
         if (this.busy) return;
         try {
             const before = this.selection, draft = structuredClone(this.project.design), selected = fn(draft);
             const d = parseDesign(draft, true);
-            return this.terrainWork(d, () => {
-                const next = new Project(d, this.terrainCache);
-                this.project = next;
+            const commit = () => {
+                this.project = new Project(d, this.terrainCache);
                 if (selected !== undefined) this.select(selected);
                 after?.();
                 this.reconcileProject();
                 this.record(before);
-            });
+            };
+            if (immediate) commit();
+            else return this.terrainWork(d, commit);
         }
         catch (error) {
             this.message(designErrorText(error, this.project.design));

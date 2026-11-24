@@ -42,7 +42,7 @@
     import * as session from "../state/session.svelte.ts";
     import { heightId } from "../../core/design/defaults.ts";
     import { isBuiltinFunction, parameterStep } from "../../core/design/functionTable.ts";
-    import { geoParameter, parameters } from "../../core/design/parameters.ts";
+    import { geoParameter } from "../../core/design/parameters.ts";
     import { flagOverflow, referenceLabel } from "../state/numbers.ts";
     import { displayValue } from "../../core/design/display.ts";
     import { reorderGeo } from "../../core/edit/geoNodes.ts";
@@ -54,7 +54,7 @@
     import EmptyState from "./EmptyState.svelte";
     let { editor }: { editor: session.Editor } = $props();
     let d = $derived(editor.project.design), stack = $derived(d.geoNodes.toReversed());
-    let slots = $derived(parameters(d));
+    let slots = $derived(editor.numberEdits.slots);
     let anchor = $derived(stack.find(n => n.id === editor.viewport)), hiddenCount = $derived(anchor ? stack.indexOf(anchor) + 1 : 0);
     let problems = $derived.by(() => {
         const byNode = new SvelteMap<string, string[]>();

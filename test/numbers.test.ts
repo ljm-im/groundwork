@@ -2,6 +2,12 @@ import { test } from "node:test";
 import { functionTable, parameterStep, parameterUnit } from "../src/core/design/functionTable.ts";
 import assert from "node:assert/strict";
 import { adjustInputStep, adjustNumber, NumberDrag, numericText, repeatButton } from "../src/app/state/numbers.ts";
+import { copyAt, writeAt, type Address } from "../src/core/design/address.ts";
+import { parseDesign } from "../src/core/design/model.ts";
+import { numberEdits } from "../src/core/design/numberEdit.ts";
+import { resolveDesign } from "../src/core/design/parameters.ts";
+import { type Expression } from "../src/core/design/v5.ts";
+import { designErrorText } from "../src/app/state/designMessages.ts";
 import { displayReading, displayValue } from "../src/core/design/display.ts";
 import { Project } from "../src/core/project.ts";
 import { ProjectMap } from "../src/render/map.ts";
@@ -69,7 +75,11 @@ test("Dragging and repeating preview several values but release records one hist
     const editor = new editorModule.Editor();
     editor.project = new Project(design); editor.history = new History(design);
     const oldFrame = globalThis.requestAnimationFrame, oldCancel = globalThis.cancelAnimationFrame;
-    globalThis.requestAnimationFrame = () => 1;
+    let previewFrame: FrameRequestCallback | undefined;
+    globalThis.requestAnimationFrame = frame => {
+        previewFrame = frame;
+        return 1;
+    };
     globalThis.cancelAnimationFrame = () => {};
     t.after(() => {
         if (oldFrame) globalThis.requestAnimationFrame = oldFrame;
@@ -79,16 +89,23 @@ test("Dragging and repeating preview several values but release records one hist
     });
     t.mock.method(editor, "reconcileProject", () => {}); t.mock.method(editor.files, "remember", () => {});
     t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
-    let calls = 0, preview = design;
+    const address: Address = ["inputs", "A", "value"];
+    let calls = 0, value = design.inputs.A.value;
     const stop = repeatButton(() => {
-        calls++;
-        preview = structuredClone(design); preview.inputs.A.value += calls;
-        editor.previewNumber(preview);
+        value = design.inputs.A.value + ++calls;
+        editor.previewNumber(editor.numberEdits.validate(address, value));
     });
     assert.equal(calls, 1); t.mock.timers.tick(399); assert.equal(calls, 1);
     t.mock.timers.tick(1); assert.equal(calls, 2); t.mock.timers.tick(80); assert.equal(calls, 3);
     stop(); t.mock.timers.tick(300); assert.equal(calls, 3); assert.equal(editor.history.index, 0);
-    editor.commitNumber(preview);
+    previewFrame!(0);
+    assert.equal(editor.project.design.inputs.A.value, design.inputs.A.value);
+    const expected = new Project(copyAt(design, address, value));
+    assert.deepEqual(editor.mapProject.terrain.fields.height, expected.terrain.fields.height);
+    editor.clearNumberPreview();
+    assert.equal(editor.mapProject.terrain, editor.project.terrain);
+    assert.equal(editor.history.index, 0);
+    editor.commitNumber(address, value);
     assert.equal(editor.history.index, 1); assert.equal(editor.history.step(false)!.inputs.A.value, design.inputs.A.value);
 });
 test("Camera framing survives empty and changing canvases and the viewport hides each row above it", () => {
@@ -147,4 +164,54 @@ test("Input steps advance among positive powers of ten times one, two, or five",
     assert.equal(adjustInputStep(.13, -1), .1);
     assert.equal(adjustInputStep(.1, 3), 1);
     assert.equal(adjustInputStep(Number.MIN_VALUE, -1), Number.MIN_VALUE);
+});
+
+test("Numeric drafts and committed edits agree on resolution and error wording", () => {
+    const source = syntheticDesign();
+    source.inputs.B = { value: 2, range: [-1, 6, 1] };
+    source.inputs.C = { value: 4, range: [-1, 6, 1] };
+    source.fields.F = { label: "F" };
+    source.geoNodes.push(layer("S", { type: "strip", of: ["T"], widths: [0, 1] }, { type: "batter", grade: "{input:B}" }));
+    source.geoNodes.push(layer("U", rect(-1, -1, 2, 2), {
+        type: "slope", kind: "path", ease: true, line: { points: [{ p: [0, 0], h: 1 }, { p: [0, 1] }, { p: [0, 2] }, { p: [0, 3], h: "{input:C}" }] }
+    }));
+    source.geoNodes.push(layer("V", rect(0, 0, 4, 4), { type: "flat", amount: "6 / {input:C}" }));
+    source.marks.push({ id: "M", kind: "scale", label: "M", point: [0, 0], follow: "map", length: "{input:B}" });
+    const design = parseDesign(source), original = resolveDesign(design), edits = numberEdits(design, original);
+    const a: Address = ["inputs", "A", "value"], b: Address = ["inputs", "B", "value"], c: Address = ["inputs", "C", "value"];
+    const path = (i: number): Address => ["geoNodes", 3, "function", "line", "points", i, "h"];
+    const cases: [Address, Expression, string?][] = [
+        [a, "20", undefined], [b, ".5 * (2 + 3)", undefined], [a, "{input:missing}", "找不到自定义输入“missing”"],
+        [a, "{input:A}", "引用成环"], [a, "{geo:T.amount}", "是场类型参数，不能引用"], [a, "{field:F}", "这里不能用场"],
+        [a, "1 / 0", "除数不能为 0"], [c, 0, "除数不能为 0"], [b, -1, "无效"],
+        [["geoNodes", 2, "construction", "widths", 1], 0, "无效"], [["inputs", "B", "range", 2], 0, "无效"],
+        [["fields", "F", "precision"], 0, "必须是正的有限数"], [["grid", "step"], -1, "无效"], [["grid", "step"], .5, undefined],
+        [["marks", 0, "length"], -2, "无效"], [path(1), 6, undefined], [path(1), "{geo:U.line.points.2.h}", "引用成环"]
+    ];
+    const outcome = <T>(work: () => T) => {
+        try {
+            return { result: work(), message: "", detail: "" };
+        }
+        catch (error) {
+            return { message: designErrorText(error, design, "message"), detail: (error as Error).message };
+        }
+    };
+    for (const [address, value, expected] of cases) {
+        const draft = outcome(() => edits.validate(address, value));
+        const commit = outcome(() => {
+            const next = structuredClone(design);
+            writeAt(next, address, value);
+            return resolveDesign(parseDesign(next, true));
+        });
+        const label = JSON.stringify([address, value]);
+        assert.equal(draft.message, commit.message, label);
+        assert.equal(draft.detail, commit.detail, label);
+        if (expected) assert(draft.message.includes(expected), label);
+        else {
+            assert(draft.result && commit.result, label);
+            const projected = draft.result.resolved.reduce((d, patch) => copyAt(d, patch.address, patch.value), original);
+            assert.deepEqual(projected, commit.result, label);
+        }
+    }
+    assert.deepEqual(resolveDesign(design), original);
 });

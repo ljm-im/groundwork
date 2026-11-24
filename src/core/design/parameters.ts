@@ -8,7 +8,7 @@ import { type Design, type Expression, type GeoNode, type Polyline, type Resolve
 export { readAt, writeAt, type Address } from "./address.ts";
 export type Owner = "input" | "geo" | "mark";
 export type Slot = { key: string; owner: Owner; id: string; name: string; label: string; field: boolean; type: NumericParameter["type"];
-    path: Address; location: Location; value: Expression; virtual?: boolean };
+    path: Address; location: Location; value: Expression; virtual?: boolean; spec?: NumericParameter };
 
 export function geoParameter(node: GeoNode, path: Address) {
     const [group, ...key] = path;
@@ -35,23 +35,25 @@ export function geoParameterName(d: Design, node: GeoNode, path: Address, contex
     return [...prefix, spec.label].join(" ");
 }
 
-export function parameters(d: Design) {
+export function parameters(d: Design, geoIndex?: number) {
     const slots = new Map<string, Slot>();
     function add(location: Location & { kind: Owner; id: string }, name: string, root: Address, property: Address, label: string,
-        type: NumericParameter["type"], fallback: Expression, virtual = false) {
+        type: NumericParameter["type"], fallback: Expression, virtual = false, spec?: NumericParameter) {
         const path = [...root, ...location.path], input = readAt(d, path);
         const { kind: owner, id } = location;
         const key = owner + ":" + id + (property.length ? "." + property.join(".") : "");
         slots.set(key, { key, owner, id, name, label, field: type === "field", type, location, path,
-            value: (input === undefined ? fallback : input) as Expression, virtual });
+            value: (input === undefined ? fallback : input) as Expression, virtual, spec });
     }
-    for (const [id, v] of Object.entries(d.inputs)) add({ kind: "input", id, path: ["value"] }, v?.label ?? id, ["inputs", id], [], "当前值", "number", 0);
-    d.geoNodes.forEach((n, index) => {
+    if (geoIndex === undefined)
+        for (const [id, v] of Object.entries(d.inputs)) add({ kind: "input", id, path: ["value"] }, v?.label ?? id, ["inputs", id], [], "当前值", "number", 0);
+    const nodes: Iterable<[number, GeoNode]> = geoIndex === undefined ? d.geoNodes.entries() : [[geoIndex, d.geoNodes[geoIndex]]];
+    for (const [index, n] of nodes) {
         const f = n.function, c = n.construction;
         const at = (path: Address): Location & { kind: "geo" } => ({ kind: "geo", id: n.id, index, path });
         check(f && Object.hasOwn(functionTable, f.type), "无效", at(["function", "type"]));
         const addGeo = (path: Address, property: Address, p: NumericParameter, fallback = p.default, virtual = false) => {
-            add(at(path), n.label, ["geoNodes", index], property, geoParameterName(d, n, path) ?? p.label, p.type, fallback, virtual);
+            add(at(path), n.label, ["geoNodes", index], property, geoParameterName(d, n, path) ?? p.label, p.type, fallback, virtual, p);
         };
         const profiles = new Map<Polyline, ReturnType<typeof lineProfile>>();
         for (const p of functionParameters(f)) {
@@ -78,10 +80,10 @@ export function parameters(d: Design) {
             const path = ["construction", ...p.key];
             addGeo(path, path, p);
         }
-    });
-    d.marks.forEach((m, index) => {
+    }
+    if (geoIndex === undefined) d.marks.forEach((m, index) => {
         const p = markParameters[m.kind];
-        add({ kind: "mark", id: m.id, index, path: p.key }, m.label, ["marks", index], p.key, p.label, p.type, p.default);
+        add({ kind: "mark", id: m.id, index, path: p.key }, m.label, ["marks", index], p.key, p.label, p.type, p.default, false, p);
     });
     return slots;
 }
@@ -107,7 +109,7 @@ export function referenceSlots(d: Design, kind: Owner | "field", id: string) {
     }));
 }
 
-export function expressionGraph(d: Design, slots = parameters(d)) {
+export function expressionLookup(d: Design, slot: (key: string) => Slot | undefined, unchanged?: (key: string) => Value | undefined) {
     const values = new Map<string, Value>(), visiting: string[] = [];
     function get(key: string): Value {
         if (key.startsWith("field:")) {
@@ -115,13 +117,13 @@ export function expressionGraph(d: Design, slots = parameters(d)) {
             if (!Object.hasOwn(d.fields, id)) throw Error("找不到场“" + id + "”");
             return fieldValue(id);
         }
-        const s = slots.get(key);
+        const s = slot(key);
         if (!s) throw Error((key.startsWith("input:") ? "找不到自定义输入“" : "找不到数类型属性“") + key.slice(key.indexOf(":") + 1) + "”");
         if (s.field && visiting.length) throw Error(slotName(s) + " 是场类型参数，不能引用");
-        const found = values.get(key);
+        const found = values.get(key) ?? unchanged?.(key);
         if (found !== undefined) return found;
         const cycle = visiting.indexOf(key);
-        if (cycle >= 0) throw Error("引用成环：" + [...visiting.slice(cycle), key].map(k => slotName(slots.get(k)!)).join(" → "));
+        if (cycle >= 0) throw Error("引用成环：" + [...visiting.slice(cycle), key].map(k => slotName(slot(k)!)).join(" → "));
         visiting.push(key);
         try {
             let value = evaluate(s.value, get);
@@ -134,9 +136,30 @@ export function expressionGraph(d: Design, slots = parameters(d)) {
             visiting.pop();
         }
     }
-    return { slots, get };
+    return get;
 }
 
+export function expressionGraph(d: Design, slots = parameters(d)) {
+    return { slots, get: expressionLookup(d, key => slots.get(key)) };
+}
+
+export function resolveParameterValues(slots: Iterable<Slot>, get: (key: string) => Value) {
+    const values = new Map<Slot, Expression>(), errors: DesignProblem[] = [];
+    for (const slot of slots) {
+        try {
+            const value = get(slot.key);
+            // Field references stay in the expression for evaluation on the layer's input grid.
+            const result = typeof value === "number" ? value : String(slot.value).replace(/\{([^{}]+)\}/g,
+                (text, key: string) => key.startsWith("field:") ? text : "(" + get(key) + ")");
+            if (!slot.virtual) values.set(slot, result);
+        }
+        catch (error) {
+            errors.push({ location: slot.location, message: (error as Error).message });
+        }
+    }
+    if (errors.length) throw new DesignError(errors);
+    return values;
+}
 
 export function resolveDesign(source: Design, slots = parameters(source)): ResolvedDesign {
     const { get } = expressionGraph(source, slots), design = { ...source };
@@ -154,18 +177,7 @@ export function resolveDesign(source: Design, slots = parameters(source)): Resol
         }
         Reflect.set(target, path.at(-1)!, value);
     }
-    const errors: DesignProblem[] = [];
-    for (const s of slots.values()) {
-        try {
-            const value = get(s.key);
-            // Keep field references for the layer's input grid. All scalar references are now constants.
-            const result = typeof value === "number" ? value : String(s.value).replace(/\{([^{}]+)\}/g, (text, key: string) => key.startsWith("field:") ? text : "(" + get(key) + ")");
-            if (!s.virtual && result !== readAt(source, s.path)) replace(s.path, result);
-        }
-        catch (error) {
-            errors.push({ location: s.location, message: (error as Error).message });
-        }
-    }
-    if (errors.length) throw new DesignError(errors);
+    for (const [slot, result] of resolveParameterValues(slots.values(), get))
+        if (result !== readAt(source, slot.path)) replace(slot.path, result);
     return design as ResolvedDesign;
 }

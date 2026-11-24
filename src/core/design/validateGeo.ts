@@ -7,12 +7,17 @@ import { check, DesignError, type DesignProblem } from "./problems.ts";
 export const point = (p: unknown): p is Point => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite);
 export const record = (v: unknown) => !!v && typeof v === "object" && !Array.isArray(v);
 
+export const validInputRange = (range: unknown) =>
+    Array.isArray(range) && range.length === 3 && range.every(Number.isFinite) && range[0] < range[1] && range[2] > 0;
+export const validFieldPrecision = (precision: unknown) => precision === undefined || typeof precision === "number" && Number.isFinite(precision) && precision > 0;
+export const validStripWidths = (widths: unknown) => point(widths) && widths.every(w => w >= 0) && widths.some(w => w > 0);
+
 export function validateGeo(d: ResolvedDesign, allowBrokenReferences = false) {
     for (const [id, v] of Object.entries(d.inputs)) {
         const at = (path: Address) => ({ kind: "input" as const, id, path }), r = v?.range;
         check(id && Number.isFinite(v?.value), "无效", at(["value"]));
         check(v.label === undefined || typeof v.label === "string", "无效", at(["label"]));
-        check(Array.isArray(r) && r.length === 3 && r.every(Number.isFinite) && r[0] < r[1] && r[2] > 0, "无效", at(["range"]));
+        check(validInputRange(r), "无效", at(["range"]));
         if (isBuiltin("input", id)) check(v.label === reserved.input[seedId].label, "必须是“" + reserved.input[seedId].label + "”", at(["label"]));
     }
     for (const [id, field] of Object.entries(d.fields)) {
@@ -22,7 +27,7 @@ export function validateGeo(d: ResolvedDesign, allowBrokenReferences = false) {
         check(typeof field.label === "string", "无效", at(["label"]));
         check(field.unit === undefined || typeof field.unit === "string", "无效", at(["unit"]));
         const { precision } = field;
-        check(precision === undefined || Number.isFinite(precision) && precision > 0, "必须是正的有限数", at(["precision"]));
+        check(validFieldPrecision(precision), "必须是正的有限数", at(["precision"]));
         if (isBuiltin("field", id)) {
             const builtin = reserved.field[heightId];
             check(field.label === builtin.label, "必须是“" + builtin.label + "”", at(["label"]));
@@ -74,7 +79,7 @@ export function validateGeo(d: ResolvedDesign, allowBrokenReferences = false) {
         else {
             valid(Array.isArray(c.of) && [1, 2].includes(c.of.length) && c.of.every(id => typeof id === "string") && new Set(c.of).size === c.of.length, ["construction", "of"]);
             for (const ref of c.of) if (!upperPaths.has(ref)) missing(["construction", "of"], "找不到下方地件“" + ref + "”");
-            valid(point(c.widths) && c.widths.every(w => w >= 0) && c.widths.some(w => w > 0), ["construction", "widths"]);
+            valid(validStripWidths(c.widths), ["construction", "widths"]);
             if (c.range) {
                 const upper = [...upperPaths.keys()].reverse().find(id => c.of.some(ref => ref === id))!;
                 const { from, to } = c.range;
