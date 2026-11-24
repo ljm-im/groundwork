@@ -40,7 +40,7 @@ export function parseDesign(text: unknown, allowBrokenReferences = false): Desig
         check(point(mark.point), pos + ".point 只能填写数字坐标");
         check(mark.kind === "text" || mark.kind === "scale", pos + ".kind 无效");
         if (mark.follow === undefined) mark.follow = defaultFollow(mark.kind);
-        check(mark.follow === "screen" || mark.follow === "ground", pos + ".follow 无效");
+        check(mark.follow === "screen" || mark.follow === "map", pos + ".follow 无效");
         if (mark.kind === "text") {
             rejectRetired(mark, pos + ".", ["level", "var", "building", "offset", "spot", "minZoom", "titleOnly"]);
             check(mark.showElevation === undefined || typeof mark.showElevation === "boolean", pos + ".showElevation 无效");

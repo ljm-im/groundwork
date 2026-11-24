@@ -8,7 +8,7 @@ export interface Section extends Labeled {
     points: [Point, Point];
     prompt?: string;
 }
-export type MarkFollow = "screen" | "ground";
+export type MarkFollow = "screen" | "map";
 interface MarkBase extends Labeled { point: Point; follow: MarkFollow }
 export interface TextMark<N = Expression> extends MarkBase {
     kind: "text";
@@ -18,7 +18,7 @@ export interface TextMark<N = Expression> extends MarkBase {
 export interface ScaleMark<N = Expression> extends MarkBase { kind: "scale"; length?: N }
 export type Mark<N = Expression> = TextMark<N> | ScaleMark<N>;
 
-export const defaultFollow = (kind: Mark["kind"]): MarkFollow => kind === "scale" ? "screen" : "ground";
+export const defaultFollow = (kind: Mark["kind"]): MarkFollow => kind === "scale" ? "screen" : "map";
 
 export interface CustomInput<N = Expression> { value: N; label?: string; range: [number, number, number] }
 export interface PathNode {

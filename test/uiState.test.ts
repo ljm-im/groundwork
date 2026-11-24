@@ -372,7 +372,7 @@ test("Mark follow changes preserve the displayed anchor and screen coordinates i
     map.zoomAt(2);
     map.center = [16, 18]; map.width = 1900;
     assert.deepEqual(map.markScreen(editor.project.design.marks[0]), anchor);
-    await editor.setMarkFollow(id, "ground");
+    await editor.setMarkFollow(id, "map");
     const mark = editor.project.design.marks[0];
     assert.notDeepEqual(mark.point, anchor);
     assert(distance(map.markScreen(mark), anchor) < 1e-9);

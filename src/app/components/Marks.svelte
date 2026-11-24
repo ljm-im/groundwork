@@ -15,7 +15,7 @@
                     });
                 }} />显示高度</label>
                 <NumberInput {editor} label="高度" unit="m" address={["marks", index, "elevation"]} self={"mark:" + mark!.id + ".elevation"} />
-            {:else if mark!.follow === "ground"}
+            {:else if mark!.follow === "map"}
                 <NumberInput {editor} label="长度" unit="m" address={["marks", index, "length"]} self={"mark:" + mark!.id + ".length"} />
             {/if}
         </Part>
@@ -43,7 +43,7 @@
     import NumberInput from "./NumberInput.svelte";
 
     let { editor, properties = false }: { editor: session.Editor; properties?: boolean } = $props();
-    const follows = [{ id: "screen", name: "画面" }, { id: "ground", name: "地面" }];
+    const follows = [{ id: "screen", name: "屏幕" }, { id: "map", name: "地图" }];
     let marks = $derived(editor.project.design.marks);
     let filtered = $derived(marks.filter(m => [m.label, m.id, m.kind === "scale" ? "比例尺" : "文字标记"]
         .some(text => text.toLowerCase().includes(editor.markFilter.trim().toLowerCase()))));

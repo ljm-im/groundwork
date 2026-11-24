@@ -116,7 +116,7 @@ test("Declarations report all writers, nested inputs and marks, and bindings ret
     });
     d.geoNodes.pop();
     d.geoNodes.push(layer("B", rect(1, 1, 8, 8), { type: "mountain", ridges: [], peaks: [{ at: { p: [2, 2], h: bindHeight(variable) }, radius: 3, scale: 1, noise: 0 }], floor: bindHeight(variable) }));
-    d.marks.push({ id: "C", label: "C", kind: "text", point: [2, 2], follow: "ground", elevation: bindHeight(variable), showElevation: true });
+    d.marks.push({ id: "C", label: "C", kind: "text", point: [2, 2], follow: "map", elevation: bindHeight(variable), showElevation: true });
     n.function = { type: "noise", amplitude: bindField(field), scale: 3 }; n.field = field;
     for (const [kind, id, count] of [["input", variable, 3], ["field", field, 2]] as const) {
         const uses = declarationUses(d, kind, id), before = serializeDesign(d);

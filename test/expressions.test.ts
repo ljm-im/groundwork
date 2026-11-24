@@ -34,7 +34,7 @@ test("Author inputs form one graph across stacks, array parameters and marks", (
     }] }));
     d.inputs.b = { range: defaultInputRange("b"), value: "{geo:T.amount} + 1" };
     d.inputs.c = { range: defaultInputRange("c"), value: "{geo:M.ridges.0.widths.1} + 1" };
-    d.marks.push({ id: "B", label: "B", kind: "text", follow: "ground", point: [1, 2], elevation: "{input:c} - 1" });
+    d.marks.push({ id: "B", label: "B", kind: "text", follow: "map", point: [1, 2], elevation: "{input:c} - 1" });
     const parsed = parseDesign(serializeDesign(d)), before = serializeDesign(parsed), numeric = resolveDesign(parsed);
     assert.equal(numeric.inputs.c.value, 9);
     const mark = numeric.marks[0];

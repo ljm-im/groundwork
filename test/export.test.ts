@@ -14,10 +14,10 @@ const provenance = (input: string) => ({ sha256: createHash("sha256").update(inp
 function loadExample() {
     const design = syntheticDesign();
     design.prompt = prompt;
-    design.marks.push({ id: "B", label: "B", kind: "text", point: [2, 3], follow: "ground", elevation: "{input:A}" },
-        { id: "C", label: "C", kind: "scale", point: [5, 6], follow: "ground", length: 10 },
+    design.marks.push({ id: "B", label: "B", kind: "text", point: [2, 3], follow: "map", elevation: "{input:A}" },
+        { id: "C", label: "C", kind: "scale", point: [5, 6], follow: "map", length: 10 },
         { id: "D", label: "D", kind: "text", point: [2, 3], follow: "screen" },
-        { id: "E", label: "E", kind: "text", point: [9, 8], follow: "ground" });
+        { id: "E", label: "E", kind: "text", point: [9, 8], follow: "map" });
     const c = design.geoNodes[0].construction;
     if (c.type === "free") {
         const hole = polygon([[6, 5], [12, 5], [12, 10], [6, 10]]);
@@ -111,7 +111,7 @@ exportTest("validation issues and ground-following marks use resolved geometry",
 test("Mark bases can be reconstructed from rounded grid spacing and origin", () => {
     const d = syntheticDesign();
     d.grid.step = 1.00049;
-    d.marks.push({ id: "A", label: "A", kind: "text", follow: "ground", point: [-20.1234, -13.9876] });
+    d.marks.push({ id: "A", label: "A", kind: "text", follow: "map", point: [-20.1234, -13.9876] });
     const out = exportProject(new Project(d), provenance(serializeDesign(d)));
     assert.equal(out.terrain.step, 1);
     assert.equal(out.marks.length, 1);

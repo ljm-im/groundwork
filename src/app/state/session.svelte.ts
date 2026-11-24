@@ -581,7 +581,7 @@ export class Editor {
         if (kind === "mark") {
             const mark = this.project.design.marks.find(m => m.id === id)!;
             const [x, y] = this.map.markScreen(mark);
-            if (mark.follow === "ground" && (x < 0 || y < 0 || x > this.map.width || y > this.map.height))
+            if (mark.follow === "map" && (x < 0 || y < 0 || x > this.map.width || y > this.map.height))
                 this.map.focus(mark.point, this.map.zoomFactor());
         }
         else if (kind === "geoNode") {

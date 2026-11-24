@@ -6,7 +6,7 @@ import { syntheticDesign } from "./scenarios.ts";
 
 test("Text marks show the resolved authored elevation when enabled", () => {
     const d = syntheticDesign();
-    d.marks.push({ id: "A", label: "A", kind: "text", point: [1, 2], follow: "ground", elevation: "{input:A}", showElevation: true });
+    d.marks.push({ id: "A", label: "A", kind: "text", point: [1, 2], follow: "map", elevation: "{input:A}", showElevation: true });
     d.inputs.A.value = 9;
     const project = new Project(d), mark = project.resolved.marks[0];
     assert(mark.kind === "text");

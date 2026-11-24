@@ -62,7 +62,7 @@ test("Noise validates its inputs and rejects the retired inline noise parameter"
 test("Removing a referenced custom input lists every layer and mark location", () => {
     const d = syntheticDesign();
     delete d.inputs.A;
-    d.marks = [{ id: "B", label: "B", kind: "text", point: [1, 1], follow: "ground", elevation: "{input:A}", showElevation: true }];
+    d.marks = [{ id: "B", label: "B", kind: "text", point: [1, 1], follow: "map", elevation: "{input:A}", showElevation: true }];
     d.geoNodes.push(layer("C", rect(2, 2, 5, 5), { type: "add", amount: "{input:A}", feather: 0 }));
     assert.throws(() => parseDesign(d), error => error instanceof Error &&
         ["geoNodes[1].function.amount", "geoNodes[2].function.amount", "marks[0].elevation"].every(p => error.message.includes(p)));
@@ -110,7 +110,7 @@ test("Labels omit their defaults and marks round-trip with expressions and ancho
     const d: Design = syntheticDesign();
     d.sections.push({ id: "S", label: "S", points: [[0, 0], [1, 1]] });
     d.marks.push({ id: "M", kind: "scale", label: "M", point: [1, 1], follow: "screen", length: "{input:A} + 3" },
-        { id: "T", kind: "text", label: "T", point: [3, 2], follow: "ground", elevation: "{geo:T.amount} + 1", showElevation: true });
+        { id: "T", kind: "text", label: "T", point: [3, 2], follow: "map", elevation: "{geo:T.amount} + 1", showElevation: true });
     const others = [...d.sections, ...d.marks];
     // Unset and explicit defaults produce identical bytes for every kind.
     const defaults = serializeDesign(d);
@@ -130,9 +130,9 @@ test("Labels omit their defaults and marks round-trip with expressions and ancho
     assert.equal(text.elevation, 4);
     assert.deepEqual(text.point, [3, 2]);
     assert.deepEqual(newDesign([48, 72]).marks, [{ id: "mark-1", kind: "scale", label: "比例尺", point: [48, 72], follow: "screen", length: 10 }]);
-    assert.equal(scale.follow, "screen"); assert.equal(text.follow, "ground");
+    assert.equal(scale.follow, "screen"); assert.equal(text.follow, "map");
     assert(!bytes.includes("\"follow\""));
-    saved.marks[0].follow = "ground"; saved.marks[1].follow = "screen";
+    saved.marks[0].follow = "map"; saved.marks[1].follow = "screen";
     const switched = serializeDesign(saved);
     assert.deepEqual(parseDesign(switched).marks, saved.marks);
     assert.equal(serializeDesign(parseDesign(switched)), switched);
