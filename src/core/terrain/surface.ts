@@ -1,4 +1,5 @@
 import { type SurfaceCell, type Terrain } from "../design/results.ts";
+import { heightId } from "../design/defaults.ts";
 import { gradient } from "../math/geometry.ts";
 
 export const surfaceRules = {
@@ -10,10 +11,10 @@ export const surfaceRules = {
 };
 
 export function terrainSurface(t: Terrain) {
-    const { heights } = t;
+    const { values: heights, defined } = t.fields[heightId];
     return (k: number): SurfaceCell | undefined => {
-        if (!t.defined[k]) return;
-        const slope = Math.hypot(...gradient(t.grid, heights, t.defined, k));
+        if (!defined[k]) return;
+        const slope = Math.hypot(...gradient(t.grid, heights, defined, k));
         if (heights[k] < 0) return { type: 0, slope };
         if (slope > surfaceRules.rock.slopeAbove) return { type: 2, slope };
         const sand = surfaceRules.sand;

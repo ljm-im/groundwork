@@ -71,7 +71,7 @@
         .coords > span { overflow: hidden; text-overflow: ellipsis; white-space: pre; }
         #busy { grid-column: 2; grid-row: 1; }
         #mode-hint { grid-column: 1; grid-row: 1; }
-        #position { grid-column: 3; grid-row: 1; font-family: var(--font-coords); text-align: right; }
+        #position { grid-column: 3; grid-row: 1; font-family: var(--font-coords); text-align: right; white-space: pre; }
         @media (max-width: 680px) {
             .coords { gap: var(--space-1); padding-inline: var(--space-1); }
         }

@@ -26,8 +26,3 @@ export function tabForSelection(selection: Selection | null, current: PropertyTa
 
 export const nodeModes = [["corner", "尖角", "nodeCorner"], ["auto", "自动平滑", "nodeAuto"], ["manual", "手动平滑", "nodeManual"]] as const;
 export const segmentTypes = [["line", "直线", "segmentLine"], ["curve", "曲线", "segmentCurve"], ["arc", "圆弧", "segmentArc"]] as const;
-
-export const advancedErosion = [
-    ["droplets", "水滴数"], ["inertia", "惯性"], ["capacity", "携沙能力"], ["minCapacity", "最小携沙量"],
-    ["deposition", "沉积率"], ["erosion", "侵蚀率"], ["evaporation", "蒸发率"], ["gravity", "重力"], ["lifetime", "寿命", "m"]
-] as const;

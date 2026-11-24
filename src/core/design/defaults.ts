@@ -1,19 +1,19 @@
 import { type CustomInput } from "./v5.ts";
 
-export const seedId = "seed";
-export const seedLabel = "种子";
+export const seedId = "seed", heightId = "height";
+export const reserved = {
+    input: { [seedId]: { label: "种子", value: 1, range: [-10000, 10000, 1] as CustomInput["range"] } },
+    field: { [heightId]: { label: "高度", unit: "m" } }
+} as const;
 
-export function defaultInputRange(id: string): CustomInput["range"] {
-    return [-10000, 10000, id === seedId ? 1 : .1];
+export function isBuiltin(kind: keyof typeof reserved, id: string) {
+    return Object.hasOwn(reserved[kind], id);
 }
 
-export const ridgeNoiseDefaults = { amount: 0, wavelength: 20 };
-export const functionDefaults = {
-    ground: { value: 0 }, flat: { amount: 1 }, coast: { roughness: 6 }, mountain: { floor: -1000 },
-    cliff: { factor: .6, seaLevel: 0 },
-    erosion: { strength: 1, floor: -1000, droplets: 40000, inertia: .06, capacity: 5, minCapacity: .002,
-        deposition: .25, erosion: .35, evaporation: .02, gravity: 6, lifetime: 50, radius: 2 },
-    islets: { density: .5, reach: 12, threshold: .45, seaLevel: 0 }, slope: { radius: 5, value: 2, rate: -.2 },
-    add: { amount: 1, feather: 3 }, noise: { amplitude: 1, scale: 24, octaves: 5, feather: 0 },
-    batter: { grade: .5 }, blend: {}, split: {}
-};
+export function fieldEntries<T>(fields: Record<string, T>) {
+    return Object.entries(fields).sort(([a], [b]) => Number(isBuiltin("field", b)) - Number(isBuiltin("field", a)));
+}
+
+export function defaultInputRange(id: string): CustomInput["range"] {
+    return isBuiltin("input", id) ? [...reserved.input[seedId].range] : [-10000, 10000, .1];
+}

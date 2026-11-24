@@ -1,19 +1,21 @@
 import { type Design, type Point } from "../design/v5.ts";
+import { heightId } from "../design/defaults.ts";
+import { functionTable } from "../design/functionTable.ts";
 import { type Issue, type Terrain } from "../design/results.ts";
 
 const untreatedHeightLimit = .5;
 
 export function terrainIssues(d: Design, t: Terrain): Issue[] {
-    const { heights } = t, { width, height, size } = t.grid, covered = new Uint8Array(size), issues: Issue[] = [];
-    const nodes = d.geoNodes.filter(n => !n.disabled && (n.field ?? "height") === "height" && n.function.type !== "ground");
+    const { values: heights, defined } = t.fields[heightId], { width, height, size } = t.grid, covered = new Uint8Array(size), issues: Issue[] = [];
+    const nodes = d.geoNodes.filter(n => !n.disabled && n.field === heightId && !functionTable[n.function.type].initial);
     for (const n of d.geoNodes) {
-        if (!n.disabled && (n.field ?? "height") === "height" && n.construction.type === "strip") for (const k of t.regions.get(n.id)!.cells) covered[k] = 1;
+        if (!n.disabled && n.field === heightId && n.construction.type === "strip") for (const k of t.regions.get(n.id)!.cells) covered[k] = 1;
     }
     for (const n of nodes) {
         const region = t.regions.get(n.id)!;
         let count = 0, max = 0, point: Point = [0, 0];
         const measure = (k: number, other: number) => {
-            if (region.mask[other] || !t.defined[other] || covered[other]) return;
+            if (region.mask[other] || !defined[other] || covered[other]) return;
             const delta = Math.abs(heights[k] - heights[other]);
             if (delta <= untreatedHeightLimit) return;
             count++;
@@ -24,7 +26,7 @@ export function terrainIssues(d: Design, t: Terrain): Issue[] {
             }
         };
         for (const k of region.cells) {
-            if (!t.defined[k] || covered[k]) continue;
+            if (!defined[k] || covered[k]) continue;
             if (k % width > 0) measure(k, k - 1);
             if (k % width + 1 < width) measure(k, k + 1);
             if (k >= width) measure(k, k - width);

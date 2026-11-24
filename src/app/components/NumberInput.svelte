@@ -1,7 +1,7 @@
 {#snippet formatted(text: string, operators: boolean)}
     {#each text.split(/(\{(?:input|field|geo):[^{}]+\})/g) as part, i (i)}
         {#if part.startsWith("{") && part.endsWith("}")}<ReferenceChip refKey={part.slice(1, -1)} design={base} {slots} />
-        {:else}{operators ? part.replaceAll("*", "×").replaceAll("/", "÷") : part}{/if}
+        {:else}{operators ? displayValue(part, step) : part}{/if}
     {/each}
 {/snippet}
 {#snippet editControl()}
@@ -34,7 +34,7 @@
                     onclick={e => {
                         if (!e.detail) void startEdit();
                     }}>
-                    {#if typeof shown === "number"}{displayNumber(shown, step)}
+                    {#if typeof shown === "number"}{displayValue(shown, step)}
                     {:else}{@render formatted(shown, true)}{/if}
                 </button>
             {/if}
@@ -42,7 +42,7 @@
             {#if !expanded}{@render variableMenuButton()}
             {:else if kind !== "literal"}<span class="menu-spacer"></span>{/if}
         </div>
-        {#if !compact}<small class="unit control-unit">{unit}</small>{/if}
+        {#if !compact}<small class="unit control-unit" data-tip={unit || undefined}>{unit}</small>{/if}
     </div>
     {#if editing}<div hidden bind:this={mirror}>{@render formatted(draft, false)}</div>{/if}
     {#if editing && expanded}
@@ -77,7 +77,7 @@
     .number-box.warning { border-color: var(--warning); }
     .number-box.invalid { border-color: var(--danger); }
     .number-box button { min-height: 0; padding: 0; background: transparent; border: 0; }
-    .number-box .step, .number-box .reference-toggle, .menu-spacer { flex: 0 0 var(--unit-w); touch-action: none; }
+    .number-box .step, .number-box .reference-toggle, .menu-spacer { flex: 0 0 var(--step-w); touch-action: none; }
     .number-box .step { color: var(--text-secondary); }
     .number-box:hover .step { color: var(--text); }
     .number-box .reference-toggle, .menu-spacer { border-left: 1px solid var(--border); border-radius: 0; }
@@ -123,14 +123,15 @@
     import { canReference, expressionGraph, parameters, readAt, writeAt, type Address } from "../../core/design/parameters.ts";
     import { evaluate, sampleValue } from "../../core/design/expression.ts";
     import { parseDesign } from "../../core/design/model.ts";
-    import { seedId } from "../../core/design/defaults.ts";
-    import { adjustNumber, chipSpans, composingKey, displayNumber, editorSelection, flagOverflow, editorText, NumberDrag, numericCaret, numericText, repeatButton, selectionOffsets, type Range } from "../state/numbers.ts";
+    import { fieldEntries, isBuiltin } from "../../core/design/defaults.ts";
+    import { adjustInputStep, adjustNumber, chipSpans, composingKey, displayValue, editorSelection, flagOverflow, editorText, NumberDrag, numericCaret, numericText, repeatButton, selectionOffsets, type Range } from "../state/numbers.ts";
+    import { designErrorText } from "../state/designMessages.ts";
     import { anchoredPopup } from "../state/popup.ts";
     import Icon, { type IconName } from "./Icon.svelte";
     import ReferenceChip from "./ReferenceChip.svelte";
-    let { editor, address, label, labelIcon, builtin = false, kind = "number", step = .1, range, unit = "", self, owner, compact = false }: {
+    let { editor, address, label, labelIcon, builtin = false, kind = "number", step = .1, range, unit = "", self, owner, compact = false, inputStep = false }: {
         editor: session.Editor; address: Address; label: string; labelIcon?: IconName; builtin?: boolean; kind?: "number" | "field" | "literal"; step?: number;
-        range?: Range; unit?: string; self?: string; owner?: string; compact?: boolean;
+        range?: Range; unit?: string; self?: string; owner?: string; compact?: boolean; inputStep?: boolean;
     } = $props();
     let face = $state<HTMLButtonElement>(), expandedBox = $state<HTMLElement>();
     let root: HTMLElement, box = $state<HTMLElement>(null!), input = $state<HTMLElement>(null!), mirror = $state<HTMLElement>(null!);
@@ -144,7 +145,7 @@
     let gesturing = $state(false), live = $state<Expression>(0), shown = $derived(gesturing ? live : value);
     let result = $derived(currentResult(shown));
     let outside = $derived(result !== undefined && range && (result < range[0] || result > range[1]));
-    let tip = $derived(typeof shown === "string" ? (result === undefined ? "= 未定义" : "= " + displayNumber(result, step, unit)) : undefined);
+    let tip = $derived(typeof shown === "string" ? (result === undefined ? "= 未定义" : "= " + displayValue(result, step, unit)) : undefined);
     let origin: Design | undefined, cleanup: (() => void) | undefined, version = 0;
     type Option = { key: string; name: string; icon: IconName; builtin?: boolean; branch?: boolean };
     type Group = { title: string; items: Option[] };
@@ -156,12 +157,12 @@
         if (parent) return [{ title: leaves.find(s => s.owner + ":" + s.id === parent)?.name ?? "属性",
             items: leaves.filter(s => s.owner + ":" + s.id === parent).map(s => ({ key: s.key, name: s.label, icon: "property" as const })).filter(filter) }];
         const items: Option[] = leaves.filter(s => s.owner === "input").map(s => ({
-            key: s.key, name: s.name, icon: "inputs", builtin: s.id === seedId
+            key: s.key, name: s.name, icon: "inputs", builtin: isBuiltin("input", s.id)
         }));
         const result: Group[] = [{ title: "输入", items: items.filter(filter) }];
         if (kind === "field") {
-            const fields = ["height", ...Object.keys(base.fields)].map(id => ({
-                key: "field:" + id, name: id === "height" ? "高度" : base.fields[id].label ?? id, icon: "field" as const, builtin: id === "height"
+            const fields = fieldEntries(base.fields).map(([id, field]) => ({
+                key: "field:" + id, name: field.label, icon: "field" as const, builtin: isBuiltin("field", id)
             }));
             result.push({ title: "场", items: fields.filter(filter) });
         }
@@ -195,7 +196,7 @@
             candidate(parseDraft()); error = "";
         }
         catch (e) {
-            error = (e as Error).message;
+            error = designErrorText(e, base);
         }
     }
     function closeMenu() {
@@ -284,7 +285,7 @@
                 next = candidate(parseDraft());
             }
             catch (e) {
-                error = (e as Error).message;
+                error = designErrorText(e, base);
             }
         }
         editing = expanded = false; closeMenu(); error = "";
@@ -369,23 +370,26 @@
             closeMenu(); validate(); void paint(start);
         }
     }
+    function adjusted(v: Expression, steps: number) {
+        return inputStep ? adjustInputStep(Number(v), steps) : adjustNumber(v, steps, step, range);
+    }
     function advance(n: number) {
-        const next = adjustNumber(live, n, step, range);
+        const next = adjusted(live, n);
         if (next === live) return;
         try {
             const d = candidate(next, origin); live = next; error = ""; editor.previewNumber(d);
         }
         catch (e) {
-            error = (e as Error).message;
+            error = designErrorText(e, base);
         }
     }
     function keyboardStep(e: MouseEvent, direction: number) {
         if (e.detail) return;
         try {
-            editor.commitNumber(candidate(adjustNumber(value, direction, step, range)));
+            editor.commitNumber(candidate(adjusted(value, direction)));
         }
         catch (e) {
-            error = (e as Error).message;
+            error = designErrorText(e, base);
         }
     }
     function beginGesture(e: PointerEvent, direction: number) {

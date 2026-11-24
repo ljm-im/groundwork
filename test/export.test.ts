@@ -82,13 +82,13 @@ exportTest("the exported grid contains every height sample and classifies surfac
     assert.deepEqual(out.surfaceRules.priority, [0, 2, 1, 3]);
     const seen = new Set<number>();
     for (let j = 0; j < grid.height; j++) for (let i = 0; i < grid.width; i++) {
-        const k = j * grid.width + i, h = terrain.heights[k];
-        assert.equal(out.defined[j][i], terrain.defined[k]);
+        const k = j * grid.width + i, h = terrain.fields.height.values[k];
+        assert.equal(out.defined[j][i], terrain.fields.height.defined[k]);
         assert.equal(out.heights[j][i], round(h));
-        if (!terrain.defined[k]) {
+        if (!terrain.fields.height.defined[k]) {
             assert.equal(h, 0); continue;
         }
-        const slope = Math.hypot(...gradient(grid, terrain.heights, terrain.defined, k));
+        const slope = Math.hypot(...gradient(grid, terrain.fields.height.values, terrain.fields.height.defined, k));
         const expected = h < 0 ? 0 : slope > .75 ? 2 : Math.abs(terrain.shore[k]) <= 5 && slope < .3 && h < 2 ? 1 : 3;
         assert.equal(out.surface[j][i], expected);
         seen.add(expected);

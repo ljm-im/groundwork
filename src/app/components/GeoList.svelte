@@ -22,9 +22,9 @@
                     }}>
                     <Icon name="terrain" /><span class="geo-name">{n.label}</span>
                     {#if problems.includes(n.id)}<span class="issue-error" data-tip="结构错误"><Icon name="issues" /></span>{/if}
-                    <small class="list-detail"><Icon name="function" builtin />{n.function.type}{#if n.function.type === "flat"}<span class="flat-amount" use:flagOverflow>{flatAmount(n.function.amount ?? functionDefaults.flat.amount)}</span>{/if}</small>
+                    <small class="list-detail"><Icon name="function" builtin />{n.function.type}{#if n.function.type === "flat"}<span class="flat-amount" use:flagOverflow>{flatAmount(n, n.function.amount)}</span>{/if}</small>
                     {#if c.type === "strip"}<small class="along">沿 {c.of.map(id => "“" + (d.geoNodes.find(n => n.id === id)?.label ?? id) + "”").join("、")}</small>{/if}
-                    {#if n.field && n.field !== "height"}<small class="field-detail"><Icon name="field" />{d.fields[n.field]?.label ?? n.field}</small>{/if}
+                    {#if n.field !== heightId}<small class="field-detail"><Icon name="field" />{d.fields[n.field]?.label ?? n.field}</small>{/if}
                 </button>
             </div>
         {/if}
@@ -55,8 +55,9 @@
 <script lang="ts">
     import { onDestroy, onMount } from "svelte";
     import * as session from "../state/session.svelte.ts";
-    import { displayExpression, displayNumber, flagOverflow } from "../state/numbers.ts";
-    import { functionDefaults } from "../../core/design/defaults.ts";
+    import { heightId } from "../../core/design/defaults.ts";
+    import { geoParameter } from "../../core/design/parameters.ts";
+    import { displayValue, flagOverflow } from "../state/numbers.ts";
     import { reorderGeo } from "../../core/edit/geoNodes.ts";
     import { type Expression, type GeoNode } from "../../core/design/v5.ts";
     import Icon from "./Icon.svelte";
@@ -79,9 +80,11 @@
     let mark = $state("");
     let dragged: string | null | undefined;
     let insertion: { index: number; viewport: string | null; at: number } | undefined;
-    function flatAmount(value: Expression) {
-        if (typeof value === "number") return (value < 0 ? "" : "+") + displayNumber(value, .1);
-        return "+" + displayExpression(value, d);
+    function flatAmount(n: GeoNode, authored: Expression | undefined) {
+        const p = geoParameter(n, ["function", "amount"]);
+        if (!p || p.type === "geometry") return "";
+        const value = authored ?? p.default;
+        return (typeof value === "number" && value < 0 ? "" : "+") + displayValue(value, p.step, "", d);
     }
     const mime = "application/x-groundwork-stack";
     function start(e: DragEvent, id: string | null) {

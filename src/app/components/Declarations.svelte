@@ -21,32 +21,29 @@
         {#snippet actions()}
             <button class="icon-button" data-add="field" data-tip="新建场" aria-label="新建场" onclick={() => editor.addDeclaration("field")}><Icon name="plus" /></button>
         {/snippet}
-        {#each fields as id (id)}
+        {#each fields as [id, field] (id)}
             <button class="object-row" data-select-field={id} aria-pressed={h?.kind === "field" && h.id === id} onclick={() => editor.select({ kind: "field", id })}
                 oncontextmenu={e => {
                     e.preventDefault();
-                    if (id !== "height") editor.openMenu({ kind: "field", id }, e.clientX, e.clientY);
+                    if (!isBuiltin("field", id)) editor.openMenu({ kind: "field", id }, e.clientX, e.clientY);
                 }}>
-                <Icon name="field" builtin={id === "height"} />{id === "height" ? "高度" : d.fields[id].label ?? id}
-                {#if id !== "height"}<small class="list-detail">{typeof d.fields[id].default === "string" ? displayExpression(d.fields[id].default, d) : displayNumber(editor.project.resolved.fields[id].default, .1)}</small>{/if}
+                <Icon name="field" builtin={isBuiltin("field", id)} />{field.label}
             </button>
         {:else}<div class="list-empty">没有匹配的结果</div>{/each}
     </Part>
-{:else if h?.kind === "field" && h.id === "height"}
-    <PropertyPane {editor}>
-        {#snippet title()}<PropertyTitle name="高度" icon="field" builtin />{/snippet}
-    </PropertyPane>
 {:else if h?.kind === "input" || h?.kind === "field"}
     {@const variable = h.kind === "input"}
     {@const table = variable ? "inputs" : "fields"}
     {@const item = d[table][h.id]}
     {#if item}
+        {@const builtin = isBuiltin(h.kind, h.id)}
         <PropertyPane {editor}>
             {#snippet title()}
                 <PropertyTitle name={item.label ?? h!.id} icon={variable ? "inputs" : "field"} label={variable ? "自定义输入名称" : "场名称"}
-                    rename={name => editor.edit(d => {
-                        d[table][h!.id].label = name;
-                    })} remove={() => editor.removeSelected()} />
+                    {builtin} rename={variable && !builtin ? name => editor.edit(d => {
+                        d.inputs[h!.id].label = name;
+                    }) : undefined}
+                    remove={builtin ? undefined : () => editor.removeSelected()} />
             {/snippet}
             {#if variable}
                 {@const v = d.inputs[h!.id]}
@@ -55,10 +52,29 @@
                 </Part>
                 <Part title="取值范围">
                     {#each ["最小值", "最大值", "步长"] as label, i (label)}
-                        <NumberInput {editor} {label} address={[table, h!.id, "range", i]} kind="literal" step={v.range[2]} />
+                        <NumberInput {editor} {label} address={[table, h!.id, "range", i]} kind="literal" step={v.range[2]} inputStep={i === 2} />
                     {/each}
                 </Part>
-            {:else}<NumberInput {editor} label="默认值" address={[table, h!.id, "default"]} />{/if}
+            {:else}
+                {@const f = d.fields[h.id]}
+                <Part>
+                    <FieldRow label="标签"><input class="input-box" aria-label="标签" value={f.label} readonly={builtin} onchange={e => {
+                        const label = e.currentTarget.value.trim();
+                        if (label && label !== f.label) editor.edit(d => {
+                            d.fields[h!.id].label = label;
+                        });
+                        else e.currentTarget.value = f.label;
+                    }} /></FieldRow>
+                    <FieldRow label="单位"><input class="input-box" aria-label="单位" value={f.unit ?? ""} readonly={builtin} onchange={e => {
+                        const unit = e.currentTarget.value.trim();
+                        if (unit === (f.unit ?? "")) return;
+                        editor.edit(d => {
+                            if (unit) d.fields[h!.id].unit = unit;
+                            else delete d.fields[h!.id].unit;
+                        });
+                    }} /></FieldRow>
+                </Part>
+            {/if}
         </PropertyPane>
     {/if}
 {/if}
@@ -79,11 +95,11 @@
 
 <script lang="ts">
     import * as session from "../state/session.svelte.ts";
-    import { displayExpression, displayNumber } from "../state/numbers.ts";
-    import { seedId } from "../../core/design/defaults.ts";
+    import { fieldEntries, isBuiltin } from "../../core/design/defaults.ts";
     import Search from "./Search.svelte";
     import Part from "./Part.svelte";
     import Icon from "./Icon.svelte";
+    import FieldRow from "./FieldRow.svelte";
     import PropertyPane from "./PropertyPane.svelte";
     import PropertyTitle from "./PropertyTitle.svelte";
     import NumberInput from "./NumberInput.svelte";
@@ -93,6 +109,6 @@
         return editor.project.design;
     }), h = $derived(editor.selection);
     const matches = (id: string, name: string) => (name + " " + id).toLowerCase().includes(editor.variableFilter.trim().toLowerCase());
-    let inputs = $derived(Object.entries(d.inputs).filter(([id, input]) => id !== seedId && matches(id, input.label ?? id)));
-    let fields = $derived(["height", ...Object.keys(d.fields)].filter(id => matches(id, id === "height" ? "高度" : d.fields[id].label ?? id)));
+    let inputs = $derived(Object.entries(d.inputs).filter(([id, input]) => !isBuiltin("input", id) && matches(id, input.label ?? id)));
+    let fields = $derived(fieldEntries(d.fields).filter(([id, field]) => matches(id, field.label)));
 </script>

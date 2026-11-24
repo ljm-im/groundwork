@@ -67,7 +67,7 @@ export interface Erosion {
 
 export type GeoFunction<N = Expression> = (
     { type: "ground"; value: N } |
-    { type: "flat"; amount: N } |
+    { type: "flat"; amount: Expression; feather?: N } |
     { type: "coast"; shore: Path; roughness: Expression; harbor: { center: Point; span: N; radius: N } } |
     { type: "mountain"; ridges: Ridge<N>[]; peaks: Peak<N>[]; floor?: N } |
     { type: "cliff"; factor: Expression; seaLevel?: N } |
@@ -75,7 +75,6 @@ export type GeoFunction<N = Expression> = (
     { type: "islets"; density: Expression; reach: N; threshold?: N; seaLevel?: N } |
     { type: "slope"; kind: "path"; line: Polyline<N>; ease?: boolean } |
     { type: "slope"; kind: "radial"; center: Point; radius: N; value: N; rate: N } |
-    { type: "add"; amount: N; feather: N } |
     { type: "noise"; amplitude: Expression; scale: N; octaves?: N; feather?: N } |
     { type: "blend" | "split" } |
     { type: "batter"; grade: N }
@@ -83,22 +82,26 @@ export type GeoFunction<N = Expression> = (
 export interface GeoNode<N = Expression> extends Labeled {
     disabled?: true;
     prompt?: string;
-    field?: string;
+    field: string;
     construction: Construction<N>;
     function: GeoFunction<N>;
     fill?: string;
     outline?: boolean;
 }
+export interface FieldDeclaration { label: string; unit?: string }
 export interface DesignData<N> {
     version: 5;
     prompt?: string;
     grid: { step: number };
     inputs: Record<string, CustomInput<N>>;
-    fields: Record<string, { label?: string; default: N }>;
+    fields: Record<string, FieldDeclaration>;
     geoNodes: GeoNode<N>[];
     sections: Section[];
     marks: Mark<N>[];
 }
 
 export interface Design extends DesignData<Expression> {}
-export type ResolvedDesign = DesignData<number>;
+type ResolveFunction<F> = F extends GeoFunction<number> ? F & Required<Omit<F, "seed" | "ease">> : never;
+export type ResolvedFunction = ResolveFunction<GeoFunction<number>>;
+export type ResolvedGeoNode = Omit<GeoNode<number>, "function"> & { function: ResolvedFunction };
+export type ResolvedDesign = Omit<DesignData<number>, "geoNodes" | "marks"> & { geoNodes: ResolvedGeoNode[]; marks: Required<Mark<number>>[] };

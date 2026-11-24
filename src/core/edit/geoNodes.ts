@@ -1,8 +1,7 @@
 import { type Design, type GeoFunction, type GeoNode, type Path, type Point, type Strip, type Polyline } from "../design/v5.ts";
-import { defaultInputRange, functionDefaults, seedId } from "../design/defaults.ts";
-import { type Terrain } from "../design/results.ts";
-import { sampleDefined } from "../math/geometry.ts";
-import { referenceUses } from "../design/parameters.ts";
+import { defaultInputRange, heightId, isBuiltin } from "../design/defaults.ts";
+import { canWrite, fillFunctionParameters, functionTable, stripWidths } from "../design/functionTable.ts";
+import { referenceSlots, slotName, type Slot } from "../design/parameters.ts";
 
 export function nextId(used: Iterable<string>, prefix: string) {
     const ids = new Set(used);
@@ -24,10 +23,6 @@ export function nodeIds(d: Design) {
     };
 }
 
-export function sampleField(t: Terrain, field: string, p: Point) {
-    const values = t.fields[field];
-    return values ? sampleDefined(t.grid, values, t.defined, ...p) : undefined;
-}
 export const tenth = (value: number | undefined) => Math.round((value ?? 0) * 10) / 10;
 
 function insert(d: Design, node: GeoNode, above?: string) {
@@ -39,8 +34,8 @@ function identity(d: Design) {
     const id = nextId(d.geoNodes.map(n => n.id), "geo-");
     return { id, label: "地件 " + id.slice(4) };
 }
-export function createFree(d: Design, path: Path, field: string, above?: string) {
-    return insert(d, { ...identity(d), field, construction: { type: "free", paths: [path] }, function: { type: "flat", ...functionDefaults.flat } }, above);
+export function createFree(d: Design, path: Path, above?: string) {
+    return insert(d, { ...identity(d), field: heightId, construction: { type: "free", paths: [path] }, function: defaultFunction("flat") }, above);
 }
 export function stripConstruction(d: Design, ids: string[], range?: Strip["range"]): Strip<number> {
     const refs = d.geoNodes.filter(n => ids.includes(n.id)).reverse();
@@ -51,16 +46,16 @@ export function stripConstruction(d: Design, ids: string[], range?: Strip["range
         if (c.type !== "free" || !c.paths.some(p => [range.from, range.to].every(id => p.nodes.some(v => v.id === id))))
             throw Error("请选择同一条路径上的两个节点");
     }
-    return { type: "strip", of, widths: of.length === 1 ? [0, 6] : [1, 1], ...(range && { range }) };
+    return { type: "strip", of, widths: stripWidths(of.length === 2).map(p => Number(p.default)) as [number, number], ...(range && { range }) };
 }
 export function stripRange(points: string[], reverse = false): Strip["range"] {
     if (!points.length) return;
     if (points.length !== 2 || points[0] === points[1]) throw Error("请选择不同的起点和终点");
     return { from: points[+reverse], to: points[+!reverse] };
 }
-export function createStrip(d: Design, ids: string[], field: string, range?: Strip["range"]) {
+export function createStrip(d: Design, ids: string[], range?: Strip["range"]) {
     const construction = stripConstruction(d, ids, range);
-    return insert(d, { ...identity(d), field, construction, function: { type: ids.length === 1 ? "blend" : "split" } }, construction.of[0]);
+    return insert(d, { ...identity(d), field: heightId, construction, function: { type: ids.length === 1 ? "blend" : "split" } }, construction.of[0]);
 }
 export function copyGeo(d: Design, original: GeoNode) {
     const copy = structuredClone(original), id = nodeIds(d);
@@ -84,13 +79,17 @@ export function reorderGeo(d: Design, id: string, index: number) {
 export function stripUsers(d: Design, id: string) {
     return d.geoNodes.filter(n => n.construction.type === "strip" && n.construction.of.some(ref => ref === id));
 }
+export function isLastInitializer(d: Design, id: string) {
+    const initializers = d.geoNodes.filter(n => functionTable[n.function.type].initial);
+    return initializers.length === 1 && initializers[0].id === id;
+}
+
+export const requiredInitializer = "设计必须保留至少一个初始地件";
+
 export function deleteGeo(d: Design, id: string) {
-    const node = d.geoNodes.find(n => n.id === id);
-    if (!node) return;
-    if (node.function.type === "ground" && !d.geoNodes.some(n => n.id !== id && n.function.type === "ground"))
-        throw Error("设计必须保留至少一个使用 ground 的地件");
-    const uses = [...referenceUses(d, "geo", id), ...stripUsers(d, id).map(n => "“" + n.label + "”.边")];
-    if (uses.length) throw Error("仍被引用：\n" + uses.join("\n"));
+    if (!d.geoNodes.some(n => n.id === id)) return;
+    if (isLastInitializer(d, id)) throw Error(requiredInitializer);
+    requireUnused(removalUses(d, "geo", id));
     d.geoNodes = d.geoNodes.filter(n => n.id !== id);
     return true;
 }
@@ -102,17 +101,27 @@ export function rangeUsers(d: Design, owner: string, nodes: string[]) {
     });
 }
 
-export function declarationUses(d: Design, kind: "input" | "field", id: string) {
-    const uses = referenceUses(d, kind, id);
-    for (const n of d.geoNodes) if (kind === "field" && n.field === id) uses.push("“" + n.label + "”的输出场");
+export type RemovalUse = { kind: "parameter"; slot: Slot } | { kind: "strip" | "output"; node: GeoNode };
+
+export function removalUses(d: Design, kind: "geo" | "input" | "field", id: string): RemovalUse[] {
+    const uses: RemovalUse[] = referenceSlots(d, kind, id).map(slot => ({ kind: "parameter", slot }));
+    if (kind === "geo") return [...uses, ...stripUsers(d, id).map(node => ({ kind: "strip" as const, node }))];
+    if (kind === "field") return [...uses, ...d.geoNodes.filter(n => n.field === id).map(node => ({ kind: "output" as const, node }))];
     return uses;
 }
+
+export const removalUseName = (use: RemovalUse) => use.kind === "parameter" ? slotName(use.slot) :
+    "“" + use.node.label + "”." + (use.kind === "strip" ? "边" : "输出到");
+
+function requireUnused(uses: RemovalUse[]) {
+    if (uses.length) throw Error("仍被引用：\n" + uses.map(removalUseName).join("\n"));
+}
+
 export function removeDeclaration(d: Design, kind: "input" | "field", id: string) {
-    if (kind === "field" && id === "height") throw Error("高度是内置场");
-    if (kind === "input" && id === seedId) throw Error("种子是内置输入");
-    const uses = declarationUses(d, kind, id);
-    if (uses.length) throw Error("仍被引用：\n" + uses.join("\n"));
-    delete (kind === "input" ? d.inputs : d.fields)[id];
+    const table = kind === "input" ? d.inputs : d.fields;
+    if (isBuiltin(kind, id)) throw Error("“" + table[id].label + "”是内置" + (kind === "field" ? "场" : "输入"));
+    requireUnused(removalUses(d, kind, id));
+    delete table[id];
 }
 export function addInput(d: Design, value = 0) {
     const id = nextId(Object.keys(d.inputs), "v");
@@ -121,29 +130,28 @@ export function addInput(d: Design, value = 0) {
 }
 export function addField(d: Design) {
     const id = nextId(Object.keys(d.fields), "field");
-    d.fields[id] = { label: "场 " + id.slice(5), default: 0 };
+    d.fields[id] = { label: "场 " + id.slice(5) };
     return id;
 }
 
-const functions: GeoFunction["type"][] = ["ground", "coast", "mountain", "cliff", "erosion", "islets", "flat", "slope", "add", "noise", "blend", "split", "batter"];
-export const fieldFunctions = ["flat", "slope", "add", "noise", "blend", "split"];
 export function allowedFunctions(n: GeoNode) {
-    return functions.filter(type => (n.construction.type === "strip" ? type !== "ground" : !["split", "blend", "batter"].includes(type)) &&
-        ((n.field ?? "height") === "height" || fieldFunctions.includes(type)));
+    return (Object.keys(functionTable) as GeoFunction["type"][]).filter(type => {
+        const spec = functionTable[type];
+        return (!spec.construction || n.construction.type === spec.construction) && canWrite(type, n.field);
+    });
 }
-export function defaultFunction(type: GeoFunction["type"], geometry?: { shore?: Path; line?: Polyline; center?: Point }): GeoFunction | undefined {
-    switch (type) {
-        case "ground": return { type, ...functionDefaults.ground };
-        case "coast": return geometry?.shore && { type, seed: "{input:seed}", shore: geometry.shore, harbor: { center: geometry.center ?? [0, 0], radius: 0, span: 3 }, ...functionDefaults.coast };
-        case "mountain": return { type, seed: "{input:seed}", ridges: [], peaks: [], ...functionDefaults.mountain };
-        case "cliff": return { type, seed: "{input:seed}", ...functionDefaults.cliff };
-        case "erosion": return { type, seed: "{input:seed}", ...functionDefaults.erosion };
-        case "islets": return { type, seed: "{input:seed}", ...functionDefaults.islets };
-        case "flat": return { type, ...functionDefaults.flat };
-        case "slope": return geometry?.line && { type, kind: "path", line: geometry.line };
-        case "add": return { type, ...functionDefaults.add };
-        case "noise": return { type, seed: "{input:seed}", ...functionDefaults.noise };
-        case "blend": case "split": return { type };
-        case "batter": return { type, ...functionDefaults.batter };
+
+export function defaultFunction(type: GeoFunction["type"], geometry: { shore?: Path; line?: Polyline; center?: Point; slope?: "path" | "radial" } = {}): GeoFunction {
+    let f;
+    if (type === "coast") {
+        if (!geometry.shore || !geometry.center) throw Error("海岸线或港湾圆心缺失");
+        f = { type, shore: geometry.shore, harbor: { center: geometry.center } };
     }
+    else if (type === "slope") {
+        if (geometry.slope === "radial" && geometry.center) f = { type, kind: "radial", center: geometry.center };
+        else if (geometry.line) f = { type, kind: "path", line: geometry.line };
+        else throw Error("坡面几何缺失");
+    }
+    else f = { type };
+    return fillFunctionParameters(f as GeoFunction);
 }

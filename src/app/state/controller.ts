@@ -1,6 +1,7 @@
-import { composingKey, displayNumber } from "./numbers.ts";
+import { composingKey } from "./numbers.ts";
 import { defaultFollow } from "../../core/design/v5.ts";
-import { distance, onCanvas, sampleDefined } from "../../core/math/geometry.ts";
+import { heightId } from "../../core/design/defaults.ts";
+import { distance, onCanvas } from "../../core/math/geometry.ts";
 import { moveHandle } from "../../core/edit/controls.ts";
 import { editControl, geometryPath, hitControl, insertPathNode, type GeoControl } from "../../core/edit/geoControls.ts";
 import { setNodeMode } from "../../core/edit/paths.ts";
@@ -193,8 +194,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         const screen = localPoint(ev),
             p = map.world(...screen),
             d = editor.project.design;
-        const height = sampleDefined(map.project.terrain.grid, map.project.terrain.heights, map.project.terrain.defined, ...p);
-        editor.position = "X " + displayNumber(p[0], .1) + "   Y " + displayNumber(p[1], .1) + "   H " + displayNumber(height ?? NaN, .1, "m");
+        editor.readPosition(p);
         if (map.draft && !editor.gesture && !editor.busy) {
             try {
                 draftPointer(editor, "move", p, ev);
@@ -236,8 +236,8 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         if (mark) {
             map.dragMark = { id: h.id, point: target }; map.draw(); return;
         }
-        const { grid, defined } = editor.project.terrain;
-        if (!onCanvas(grid, defined, ...target)) return;
+        const { grid, fields } = editor.project.terrain;
+        if (!onCanvas(grid, fields[heightId].defined, ...target)) return;
         moveHandle(d, h, target);
         editor.schedule();
     }, { signal });

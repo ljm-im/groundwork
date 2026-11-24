@@ -1,13 +1,12 @@
-{#snippet param(address: Address, label: string, unit = "", field = false)}
-    <Parameter {editor} node={n} {address} {label} {unit} {field} />
+{#snippet param(address: Address)}
+    <Parameter {editor} node={n} {address} />
 {/snippet}
 {#snippet geometry(label: string, kind: GeometryTarget["kind"], index: number, icon: "point" | "polyline" | "closedPath", count: number, heightAt?: Address, redraw?: DrawTool, member?: number)}
     {@const active = editor.map.geometry?.kind === kind && editor.map.geometry.index === index}
     <GeometryInput {label} {icon} {count} {active} onclick={() => editor.focusGeometry({ kind, index })}
         redraw={redraw ? () => editor.setTool(redraw, n.id, member) : undefined} />
     {#if heightAt && active && vertex?.role === "parameter" && vertex.path === index && vertex.index < count}
-        {@render param(icon === "point" ? [...heightAt, "h"] : [...heightAt, vertex.index, "h"],
-            (icon === "point" ? "" : "顶点 " + (vertex.index + 1) + " ") + (n.function.type === "slope" ? "增量" : "高度"), height ? "m" : "")}
+        {@render param(icon === "point" ? [...heightAt, "h"] : [...heightAt, vertex.index, "h"])}
     {/if}
 {/snippet}
 {#snippet action(label: string, icon: "plus" | "delete", click: () => void)}
@@ -33,7 +32,7 @@
                     <GeometryInput label="边" icon="polyline" summary={stripSummary(c)} active={editor.tool === "strip" && editor.map.draft?.owner === n.id}
                         onclick={() => editor.setTool("strip", n.id)} />
                     {#each [0, 1] as i (i)}
-                        <Parameter {editor} node={n} address={["widths", i]} label={c.of.length === 1 ? ["向内", "向外"][i] : nameOf(c.of[i]!) + "一侧"} unit="m" construction />
+                        <Parameter {editor} node={n} address={["widths", i]} construction />
                     {/each}
                 {/if}
             </Part>
@@ -44,60 +43,35 @@
             <Part>
                 <PropertySelect label="函数" group="内置函数" icon="function" value={f.type} options={allowedFunctions(n).map(id => ({ id, name: id, builtin: true }))}
                     choose={id => editor.switchFunction(n, id as GeoFunction["type"])} />
-                <PropertySelect label="输出到" group="场" icon="field" value={n.field ?? "height"} options={[{ id: "height", name: "高度", builtin: true },
-                    ...(fieldFunctions.includes(f.type) ? Object.entries(d.fields).map(([id, field]) => ({ id, name: field.label ?? id })) : [])]}
+                <PropertySelect label="输出到" group="场" icon="field" value={n.field} options={fields}
                     choose={id => editor.editNode(n.id, v => v.field = id)} />
-                {#if f.type === "flat"}{@render param(["amount"], "增量", height ? "m" : "")}
-                {:else if f.type === "ground"}{@render param(["value"], "数值", "m")}
-                {:else if f.type === "coast"}
-                    {@render geometry("海岸线", "path", -1, "closedPath", f.shore.nodes.length, undefined, "shore")}
-                    {@render param(["roughness"], "海岸粗糙度", "m", true)}
-                    {@render geometry("港湾圆心", "parameter", 0, "point", 1, undefined, "harbor")}
-                    {@render param(["harbor", "radius"], "港湾半径", "m")}
-                    {@render param(["harbor", "span"], "过渡宽度", "m")}
-                {:else if f.type === "mountain"}
-                    {@render param(["floor"], "作用下限", "m")}
-                {:else if f.type === "cliff"}
-                    {@render param(["factor"], "悬崖系数", "", true)}{@render param(["seaLevel"], "海平面", "m")}
-                {:else if f.type === "erosion"}
-                    {@render param(["strength"], "侵蚀强度", "", true)}{@render param(["floor"], "作用下限", "m")}
-                    {@render param(["radius"], "笔刷半径", "m")}
-                {:else if f.type === "islets"}
-                    {@render param(["density"], "礁石密度", "", true)}{@render param(["reach"], "离岸距离", "m")}
-                    {@render param(["threshold"], "密度阈值")}{@render param(["seaLevel"], "海平面", "m")}
-                {:else if f.type === "slope"}
+                {#if f.type === "slope"}
                     <PropertySelect label="坡面形式" value={f.kind} options={[{ id: "path", name: "沿路径" }, { id: "radial", name: "径向" }]}
-                        choose={kind => {
-                            editor.setTool(kind === "radial" ? "center" : "slopeLine", n.id); editor.revision++;
-                        }} />
-                    {#if f.kind === "path"}
-                        {@render geometry("坡线", "parameter", 0, "polyline", f.line.points.length, ["line", "points"], "slopeLine")}
-                        {#each [["smooth", "平滑折线"], ["ease", "平滑增量过渡"]] as [key, label] (key)}
-                            <label class="toggle"><input type="checkbox" checked={key === "ease" ? !!f.ease : !!f.line.smooth} onchange={e => {
+                        choose={kind => editor.switchFunction(n, "slope", kind === "radial" ? "radial" : "path")} />
+                {/if}
+                {#each mainParameters as p (p.key.join("."))}
+                    {#if p.type !== "geometry"}{@render param(p.key)}
+                    {:else if f.type === "coast" && p.key[0] === "shore"}
+                        {@render geometry(p.label, "path", -1, "closedPath", f.shore.nodes.length, undefined, "shore")}
+                    {:else if f.type === "coast"}
+                        {@render geometry(p.label, "parameter", 0, "point", 1, undefined, "harbor")}
+                    {:else if f.type === "slope" && f.kind === "path"}
+                        {@render geometry(p.label, "parameter", 0, "polyline", f.line.points.length, ["line", "points"], "slopeLine")}
+                        {#each functionTable.slope.toggles ?? [] as toggle (toggle.label)}
+                            <label class="toggle"><input type="checkbox" checked={Boolean(readAt(f, toggle.key) ?? toggle.default)} onchange={e => {
                                 const value = e.currentTarget.checked;
-                                editor.editNode(n.id, item => {
-                                    if (item.function.type === "slope" && item.function.kind === "path") {
-                                        if (key === "ease") item.function.ease = value;
-                                        else item.function.line.smooth = value;
-                                    }
-                                });
-                            }} />{label}</label>
+                                editor.editNode(n.id, item => writeAt(item.function, toggle.key, value));
+                            }} />{toggle.label}</label>
                         {/each}
-                    {:else}
-                        {@render geometry("圆心", "parameter", 0, "point", 1, undefined, "center")}
-                        {@render param(["radius"], "半径", "m")}{@render param(["value"], "增量", height ? "m" : "")}{@render param(["rate"], "径向变化率", height ? "m/m" : "")}
+                    {:else if f.type === "slope"}
+                        {@render geometry(p.label, "parameter", 0, "point", 1, undefined, "center")}
                     {/if}
-                {:else if f.type === "add"}{@render param(["amount"], "增量", height ? "m" : "")}{@render param(["feather"], "羽化宽度", "m")}
-                {:else if f.type === "noise"}
-                    {@render param(["amplitude"], "振幅", height ? "m" : "", true)}{@render param(["scale"], "噪声尺度", "m")}
-                    {@render param(["octaves"], "倍频数")}{@render param(["feather"], "羽化宽度", "m")}
-                {:else if f.type === "batter"}{@render param(["grade"], "放坡坡度", "m/m")}{/if}
-                {#if ["coast", "mountain", "cliff", "islets", "erosion", "noise"].includes(f.type)}{@render param(["seed"], "种子")}{/if}
+                {/each}
             </Part>
-            {#if f.type === "erosion"}
+            {#if advancedParameters.length}
                 <Part>
                     <Subitem label="高级" open={editor.subitemOpen(n.id, "advanced", 0)} onclick={() => editor.toggleSubitem(n.id, "advanced", 0)}>
-                        {#each advancedErosion as [key, label, unit] (key)}{@render param([key], label, unit)}{/each}
+                        {#each advancedParameters as p (p.key.join("."))}{@render param(p.key)}{/each}
                     </Subitem>
                 </Part>
             {:else if f.type === "mountain"}
@@ -106,18 +80,15 @@
                     {#each f.ridges as ridge, j (j)}
                         <Subitem label={"山脊 " + (j + 1)} open={editor.subitemOpen(n.id, "ridges", j)} onclick={() => editor.toggleSubitem(n.id, "ridges", j)}>
                             {#snippet actions()}{@render action("删除山脊 " + (j + 1), "delete", () => removeMember("ridges", j))}{/snippet}
-                            {@render geometry("山脊线", "parameter", j, "polyline", ridge.line.points.length, ["ridges", j, "line", "points"], "ridge", j)}
+                            {@render geometry(geoParameter(n, ["function", "ridges", j, "line"])!.label, "parameter", j, "polyline", ridge.line.points.length, ["ridges", j, "line", "points"], "ridge", j)}
                             <label class="toggle"><input type="checkbox" checked={!!ridge.line.smooth} onchange={e => {
                                 const smooth = e.currentTarget.checked;
                                 editor.editNode(n.id, item => {
                                     if (item.function.type === "mountain") item.function.ridges[j].line.smooth = smooth;
                                 });
-                            }} />平滑折线</label>
-                            {@render param(["ridges", j, "widths", 0], "左侧宽度", "m")}{@render param(["ridges", j, "widths", 1], "右侧宽度", "m")}
-                            {#each ["widthNoise", "heightNoise"] as key (key)}
-                                {@const name = key === "widthNoise" ? "宽度起伏" : "高度起伏"}
-                                {@render param(["ridges", j, key, "amount"], name + "幅度", "%")}
-                                {@render param(["ridges", j, key, "wavelength"], name + "波长", "m")}
+                            }} />{functionTable.mountain.toggles?.[0].label}</label>
+                            {#each memberParameters("ridges", j) as key (key.join("."))}
+                                {@render param(key)}
                             {/each}
                         </Subitem>
                     {/each}
@@ -127,8 +98,10 @@
                     {#each f.peaks.keys() as j (j)}
                         <Subitem label={"山峰 " + (j + 1)} open={editor.subitemOpen(n.id, "peaks", j)} onclick={() => editor.toggleSubitem(n.id, "peaks", j)}>
                             {#snippet actions()}{@render action("删除山峰 " + (j + 1), "delete", () => removeMember("peaks", j))}{/snippet}
-                            {@render geometry("位置", "parameter", f.ridges.length + j, "point", 1, ["peaks", j, "at"], "peak", j)}
-                            {@render param(["peaks", j, "radius"], "半径", "m")}{@render param(["peaks", j, "noise"], "半径起伏", "m")}{@render param(["peaks", j, "scale"], "噪声尺度", "m")}
+                            {@render geometry(geoParameter(n, ["function", "peaks", j, "at", "p"])!.label, "parameter", f.ridges.length + j, "point", 1, ["peaks", j, "at"], "peak", j)}
+                            {#each memberParameters("peaks", j) as key (key.join("."))}
+                                {@render param(key)}
+                            {/each}
                         </Subitem>
                     {/each}
                 </Part>
@@ -139,11 +112,12 @@
 
 <script lang="ts">
     import * as session from "../state/session.svelte.ts";
-    import { allowedFunctions, fieldFunctions } from "../../core/edit/geoNodes.ts";
+    import { allowedFunctions } from "../../core/edit/geoNodes.ts";
     import { type GeoFunction, type Strip } from "../../core/design/v5.ts";
-    import { advancedErosion } from "../state/inspector.ts";
+    import { fieldEntries, isBuiltin } from "../../core/design/defaults.ts";
+    import { canWrite, functionParameters, functionTable } from "../../core/design/functionTable.ts";
     import { geoAt, type DrawTool } from "../state/geoTools.ts";
-    import { type Address } from "../../core/design/parameters.ts";
+    import { geoParameter, readAt, writeAt, type Address } from "../../core/design/parameters.ts";
     import { geometryPath, removeGeometryItem, type GeometryTarget } from "../../core/edit/geoControls.ts";
     import Icon from "./Icon.svelte";
     import FieldRow from "./FieldRow.svelte";
@@ -160,7 +134,16 @@
 
     let { editor }: { editor: session.Editor } = $props();
     let d = $derived(editor.project.design), n = $derived(geoAt(d, editor.selection!.id));
-    let c = $derived(n.construction), f = $derived(n.function), height = $derived((n.field ?? "height") === "height");
+    let c = $derived(n.construction), f = $derived(n.function);
+    let fields = $derived(fieldEntries(d.fields).filter(([id]) => canWrite(f.type, id))
+        .map(([id, field]) => ({ id, name: field.label, builtin: isBuiltin("field", id) })));
+    let specs = $derived(functionParameters(f));
+    let mainParameters = $derived(specs.filter(p => !p.advanced && !p.key.includes("*") && (p.type !== "geometry" || p.default !== "empty")));
+    let advancedParameters = $derived(specs.filter(p => p.advanced));
+    function memberParameters(group: "ridges" | "peaks", i: number) {
+        return specs.filter(p => p.key[0] === group && p.type !== "geometry" && p.key.slice(2).every(part => part !== "*") && p.key.at(-1) !== "h")
+            .map(p => [group, i, ...p.key.slice(2)]);
+    }
     let vertex = $derived.by(() => {
         editor.revision;
         return editor.map.vertex;

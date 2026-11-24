@@ -1,6 +1,7 @@
 import { test } from "node:test";
+import { functionTable, parameterUnit } from "../src/core/design/functionTable.ts";
 import assert from "node:assert/strict";
-import { adjustNumber, displayNumber, NumberDrag, numericText, repeatButton } from "../src/app/state/numbers.ts";
+import { adjustInputStep, adjustNumber, displayValue, NumberDrag, numericText, repeatButton } from "../src/app/state/numbers.ts";
 import { Project } from "../src/core/project.ts";
 import { ProjectMap } from "../src/render/map.ts";
 import { generateTerrain } from "../src/core/terrain/terrain.ts";
@@ -19,21 +20,21 @@ test("Number steps adjust the final signed literal, avoid zero divisors and pres
     assert.equal(adjustNumber("{geo:B.ridges.0.widths.1}", -1, .1), "{geo:B.ridges.0.widths.1} - 0.1");
     assert.equal(adjustNumber(2, 3, .5, [0, 2, .5]), 2);
     assert.equal(adjustNumber("{input:a} + 2", 3, .5, [0, 2, .5]), "{input:a} + 3.5");
-    assert.equal(displayNumber(1.2345, .1), "1.2"); assert.equal(displayNumber(2.6, 1), "3");
+    assert.equal(displayValue(1.2345, .1), "1.2345"); assert.equal(displayValue(2.6, 1), "2.6");
     assert.equal(adjustNumber(1.2345, 1, .1), 1.3345);
     assert.equal(numericText("1.2345", true), 1.2345);
     for (const expr of ["1 + 2", "{input:a}", "NaN", ""]) assert.throws(() => numericText(expr, true));
     assert.equal(numericText("3 × (2 − 1)", false), "3 * (2 - 1)");
 });
-test("Read-only values use the input step, keyboard minus, and unit spacing", () => {
-    assert.equal(displayNumber(55.00000000000001, .1, "m"), "55.0 m");
-    assert.equal(displayNumber(-2.6, 1), "-3");
-    assert.equal(displayNumber(-1.2345, .25), "-1.23");
-    assert.equal(displayNumber(2.5, .25), "2.50");
-    assert.equal(displayNumber(25, 1, "%"), "25%");
-    assert.equal(displayNumber(-.001, .1, "m"), "0.0 m");
-    assert.equal(displayNumber(1.4e-7, 1e-7), "0.0000001");
-    assert.equal(displayNumber(NaN, .1, "m"), "—");
+test("Displayed values keep authored precision, keyboard minus, and unit spacing", () => {
+    assert.equal(displayValue(55.00000000000001, .1, "m"), "55.0 m");
+    assert.equal(displayValue(-2.6, 1), "-2.6");
+    assert.equal(displayValue(-1.2345, .25), "-1.2345");
+    assert.equal(displayValue(2.5, .25), "2.50");
+    assert.equal(displayValue(25, 1, "%"), "25%");
+    assert.equal(displayValue(-.001, .1, "m"), "-0.001 m");
+    assert.equal(displayValue(1.4e-7, 1e-7), "0.0000001");
+    assert.equal(displayValue(NaN, .1, "m"), "–");
 });
 test("Pointer lock transitions discard the cursor jump without losing subsequent steps", () => {
     const drag = new NumberDrag();
@@ -95,8 +96,33 @@ test("Camera framing survives empty and changing canvases and the viewport hides
     const project = new Project(d), fromTop = d.geoNodes.toReversed();
     for (const [k, n] of fromTop.entries()) {
         const view = project.viewBelow(n.id), expected = generateTerrain({ ...d, geoNodes: fromTop.slice(k + 1).reverse() });
-        assert.deepEqual(view.terrain.defined, expected.defined); assert.deepEqual(view.terrain.heights, expected.heights);
+        assert.deepEqual(view.terrain.fields.height.defined, expected.fields.height.defined); assert.deepEqual(view.terrain.fields.height.values, expected.fields.height.values);
         assert.deepEqual(view.design.geoNodes.map(v => v.id), fromTop.slice(k + 1).reverse().map(v => v.id));
     }
-    assert(!project.viewBelow(d.geoNodes[0].id).terrain.defined.some(Boolean));
+    assert(!project.viewBelow(d.geoNodes[0].id).terrain.fields.height.defined.some(Boolean));
+});
+
+test("Every function parameter defines its display metadata and keeps its numeric default", () => {
+    for (const [type, definition] of Object.entries(functionTable)) for (const p of definition.parameters) {
+        const key = type + "." + p.key.join(".");
+        assert(p.label && p.key.length && Number.isFinite(p.step) && p.step > 0, key);
+        assert.equal(typeof p.unit, "string", key);
+        assert.equal(typeof p.advanced, "boolean", key);
+        assert(["number", "field", "geometry", "seed"].includes(p.type), key);
+        assert.notEqual(p.default, undefined, key);
+        if (typeof p.default === "number") assert.equal(Number(displayValue(p.default, p.step)), p.default, key);
+    }
+    const rate = functionTable.slope.parameters.find(p => p.key[0] === "rate")!;
+    assert.equal(parameterUnit(rate, "kg"), "kg/m");
+    assert.equal(parameterUnit(rate), "/m");
+    for (const v of [.06, .002, .333]) assert.equal(displayValue(v, .1), String(v));
+    assert.equal(displayValue("{input:A} * 0.333", .1), "{input:A} × 0.333");
+});
+
+test("Input steps advance among positive powers of ten times one, two, or five", () => {
+    assert.deepEqual([.05, .1, .2, .5, 1].map(value => adjustInputStep(value, -1)), [.02, .05, .1, .2, .5]);
+    assert.equal(adjustInputStep(.13, 1), .2);
+    assert.equal(adjustInputStep(.13, -1), .1);
+    assert.equal(adjustInputStep(.1, 3), 1);
+    assert.equal(adjustInputStep(Number.MIN_VALUE, -1), Number.MIN_VALUE);
 });

@@ -20,11 +20,9 @@ export async function snapshots() {
         const design = parseDesign(raw);
         const serialized = digest(serializeDesign(design));
         const project = new Project(design), terrain = project.terrain, fields = evaluateStack(design).fields;
-        assert.equal(terrain.heights, terrain.fields.height);
-        for (const [field, values] of Object.entries(fields)) assert.equal(bytes(terrain.fields[field]), bytes(values), field);
+        assert.deepEqual(terrain.fields, fields);
         return [name, {
-            fields: Object.fromEntries(Object.entries(fields).map(([key, array]) => [key, bytes(array)])),
-            defined: bytes(terrain.defined),
+            fields: Object.fromEntries(Object.entries(fields).map(([key, field]) => [key, { values: bytes(field.values), defined: bytes(field.defined) }])),
             issues: values(project.issues),
             serialized,
             exported: digest(serializeExport(exportProject(project, { sha256: digest(raw), commit: exportCommit })))

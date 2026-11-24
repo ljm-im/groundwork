@@ -1,5 +1,7 @@
 import { type GeoNode, type Mark, type TextMark, type Point } from "../core/design/v5.ts";
-import { type Issue, type Terrain } from "../core/design/results.ts";
+import { displaySteps, markParameters } from "../core/design/functionTable.ts";
+import { heightId } from "../core/design/defaults.ts";
+import { type FieldSamples, type Issue, type Terrain } from "../core/design/results.ts";
 import { type Handle, type Selection } from "../core/edit/types.ts";
 import { type ProjectView } from "../core/project.ts";
 import { type GridDisplay, type layerDefaults, pixelGridSpacing } from "../app/state/layers.ts";
@@ -12,7 +14,7 @@ import { fieldContours } from "./fieldContours.ts";
 import { geoLabelPoint } from "./labelLayout.ts";
 import { drawGeoOverlay, drawHandle } from "./geoOverlay.ts";
 import { baseMap, canvasText, overlay, palette } from "./palette.ts";
-import { displayNumber } from "../app/state/numbers.ts";
+import { displayReading, displayValue } from "../app/state/numbers.ts";
 import { sectionHandles } from "../core/edit/controls.ts";
 import { relief } from "./relief.ts";
 
@@ -105,6 +107,8 @@ function mapText(ctx: Context, text: string, x: number, y: number, bold = false,
     ctx.fillText(text, x, y);
 }
 
+const hasSamples = (t: Terrain) => Object.values(t.fields).some(field => field.defined.some(Boolean));
+
 export class ProjectMap {
     declare canvas: HTMLCanvasElement;
     declare ctx: Context;
@@ -116,7 +120,7 @@ export class ProjectMap {
     declare project: ProjectView;
     declare frameTerrain: Terrain;
     emptyCanvas = false;
-    displayField = "height";
+    displayField = heightId;
     geoSelection: string[] = [];
     referencedGeo = (): readonly string[] => [];
     private hovered?: Selection;
@@ -127,7 +131,7 @@ export class ProjectMap {
     dragMark?: { id: string; point: Point };
     draft?: GeoDraft;
     private contours?: ReturnType<typeof fieldContours>;
-    private contourValues?: Float32Array;
+    private contourSamples?: FieldSamples;
     declare cache: ReturnType<typeof relief>;
     declare center: Point;
     declare width: number;
@@ -151,7 +155,7 @@ export class ProjectMap {
         this.project = project;
         this.hovered = undefined;
         this.cache = relief(project.terrain);
-        this.emptyCanvas = !project.terrain.defined.some(Boolean);
+        this.emptyCanvas = !hasSamples(project.terrain);
         this.frame(frameTerrain, reset);
     }
     frame(terrain: Terrain, reset = false) {
@@ -171,7 +175,7 @@ export class ProjectMap {
     fit(draw = true) {
         const terrain = this.frameTerrain ?? this.project.terrain, g = terrain.grid;
         let box: Box = [g.xMin, g.yMin, g.xMax, g.yMax];
-        if (!terrain.defined.some(Boolean)) {
+        if (!hasSamples(terrain)) {
             const boxes = [...terrain.regions.values()].map(r => r.shape.box).filter(b => b.every(Number.isFinite));
             if (boxes.length) box = [Math.min(...boxes.map(b => b[0])), Math.min(...boxes.map(b => b[1])),
                 Math.max(...boxes.map(b => b[2])), Math.max(...boxes.map(b => b[3]))];
@@ -271,26 +275,24 @@ export class ProjectMap {
         ctx.scale(scale, -scale);
         ctx.lineCap = "round";
         ctx.lineJoin = "round";
-        ctx.save();
-        ctx.translate(g.xMin, g.yMax);
-        ctx.scale(1, -1);
-        ctx.drawImage(this.cache.raster, 0, 0, g.xMax - g.xMin, g.yMax - g.yMin);
-        ctx.restore();
+        if (this.displayField === heightId) {
+            ctx.save();
+            ctx.translate(g.xMin, g.yMax);
+            ctx.scale(1, -1);
+            ctx.drawImage(this.cache, 0, 0, g.xMax - g.xMin, g.yMax - g.yMin);
+            ctx.restore();
+        }
         if (this.layers.grid) this.drawGrid(ctx, scale);
-        if (this.layers.contours && this.displayField !== "height" && t.fields[this.displayField]) {
-            if (this.contourValues !== t.fields[this.displayField]) {
-                this.contourValues = t.fields[this.displayField];
+        const samples = Object.hasOwn(t.fields, this.displayField) && t.fields[this.displayField];
+        if (this.layers.contours && samples) {
+            if (this.contourSamples !== samples) {
+                this.contourSamples = samples;
                 this.contours = fieldContours(t, this.displayField);
             }
             for (const line of this.contours!.lines) {
                 ctx.strokeStyle = baseMap.fieldContours; ctx.lineWidth = 1.25 / scale; ctx.stroke(line.path);
             }
         }
-        else if (this.layers.contours) this.cache.lines.forEach((p, i) => {
-            ctx.strokeStyle = baseMap.heightContours[i];
-            ctx.lineWidth = (i === 3 ? .36 : .2);
-            ctx.stroke(p);
-        });
         for (const n of d.geoNodes) {
             if (n.disabled && !this.emptyCanvas) continue;
             if (!this.emptyCanvas && !n.fill && !n.outline && !this.layers.geoNodes) continue;
@@ -332,14 +334,9 @@ export class ProjectMap {
         drawGeoOverlay(this);
         if (this.layers.labels) this.drawLabels(ctx, d, t);
         this.drawMarks(ctx);
-        if (this.layers.contours && this.displayField !== "height" && this.contours) {
-            for (const { label, value } of this.contours.lines) if (label) mapText(ctx, displayNumber(value, this.contours.step), ...this.screen(label));
-            if (this.contours.constant !== undefined) {
-                ctx.textAlign = "right";
-                mapText(ctx, "该场在画布内处处为 " + displayNumber(this.contours.constant, .1), this.width - 16, 87);
-            }
-        }
-        document.getElementById("zoom-value")!.textContent = displayNumber(this.zoomFactor() * 100, 1, "%");
+        if (this.layers.contours && samples && this.contours)
+            for (const { label, value } of this.contours.lines) if (label) mapText(ctx, displayValue(value, this.contours.step), ...this.screen(label));
+        document.getElementById("zoom-value")!.textContent = displayReading(this.zoomFactor() * 100, 1, "%");
     }
     private drawGrid(ctx: Context, scale: number) {
         const { mode, meters, pixels } = this.gridDisplay;
@@ -403,12 +400,12 @@ export class ProjectMap {
             const color = selected ? palette.accent : palette.text;
             ctx.save();
             if (mark.kind === "scale") {
-                const length = mark.follow === "screen" ? pixelGridSpacing(this.scale, 80) : mark.length ?? 10;
+                const length = mark.follow === "screen" ? pixelGridSpacing(this.scale, 80) : mark.length;
                 const right = x + length * this.scale;
                 ctx.textAlign = "left";
                 stroke(ctx, [[x, y - 4], [x, y], [right, y], [right, y - 4]], palette.bgPanel, 4);
                 stroke(ctx, [[x, y - 4], [x, y], [right, y], [right, y - 4]], color, selected ? overlay.selectedWidth : 1.7);
-                const text = displayNumber(length, .1, "m");
+                const text = displayReading(length, displaySteps.length, markParameters.scale.unit);
                 mapText(ctx, text, right + 6, y - 2);
                 this.markBoxes.push({ mark: handle, box: [x - 5, y - 10, right + 10 + ctx.measureText(text).width, y + 7] });
             }
@@ -484,6 +481,6 @@ export class ProjectMap {
 }
 
 function markReading(mark: TextMark<number>) {
-    const text = mark.showElevation ? [mark.label, displayNumber(mark.elevation ?? 0, .1, "m")].filter(Boolean).join(" ") : mark.label;
+    const text = mark.showElevation ? [mark.label, displayValue(mark.elevation, markParameters.text.step, markParameters.text.unit)].filter(Boolean).join(" ") : mark.label;
     return { text };
 }

@@ -405,7 +405,7 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
         check("Show omitted numbers and edit point geometry on the map");
         const sparse = syntheticDesign();
         Reflect.deleteProperty(sparse.geoNodes[1].function, "amount");
-        sparse.fields.F = { default: 0 }; Reflect.deleteProperty(sparse.fields.F, "default");
+        sparse.fields.F = { label: "F" };
         sparse.sections = [{ id: "A", label: "A", points: [[6, 12], [24, 12]] }];
         await navigate();
         await seed("sparse.json", JSON.stringify(sparse));
@@ -416,7 +416,7 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
         await click("[data-property-tab=function]");
         assert.match(await evaluate(() => document.querySelector("[data-parameter$=\".function.amount\"] .numeric-face")!.textContent!.trim()), /^1(?:\.0+)?$/);
         await click("[data-tab=inputs]");
-        assert.equal(await evaluate(() => document.querySelector("[data-select-field=\"F\"] small")!.textContent), "0.0");
+        assert.equal(await evaluate(() => document.querySelector("[data-select-field=\"F\"]")!.textContent!.trim()), "F");
         const [sx, sy] = await mapPoint(sparse, sparse.sections[0].points[0]);
         await mouse("mousePressed", sx, sy);
         await mouse("mouseReleased", sx, sy);
@@ -427,7 +427,7 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
         assert.equal(await evaluate(() => [...document.querySelectorAll("#properties .number-label")].filter(n => /^(中心 )?[XY]$/.test(n.textContent!)).length), 0);
         assert.equal(await evaluate(() => document.querySelectorAll("[title]").length), 0);
         assert.equal(await prop("writes"), 0);
-        report.checks.sparseGeometry = { flat: 1, field: 0, geometryRows: 1 };
+        report.checks.sparseGeometry = { flat: 1, field: "F", geometryRows: 1 };
         check("Unsupported browser");
         await cdp("Page.addScriptToEvaluateOnNewDocument", { source: "window.showSaveFilePicker = undefined" });
         await navigate();

@@ -3,20 +3,20 @@ import { type Point } from "../core/design/v5.ts";
 import { niceStep } from "../core/math/interval.ts";
 
 export function fieldContours(t: Terrain, name: string) {
-    const field = t.fields[name], g = t.grid;
+    const { values: field, defined } = t.fields[name], g = t.grid;
     let low = Infinity, high = -Infinity;
-    for (let k = 0; k < field.length; k++) if (t.defined[k]) {
+    for (let k = 0; k < field.length; k++) if (defined[k]) {
         low = Math.min(low, field[k]); high = Math.max(high, field[k]);
     }
     const step = niceStep((high - low) / 10);
     const lines: { value: number; path: Path2D; label?: Point }[] = [];
-    if (low >= high) return { lines, step, constant: low === high ? low : undefined };
+    if (low >= high) return { lines, step };
     for (let n = Math.floor(low / step) + 1; n * step <= high; n++) {
         const value = n * step, path = new Path2D();
         let label: Point | undefined;
         for (let j = 0; j + 1 < g.height; j++) for (let i = 0; i + 1 < g.width; i++) {
             const k = i + j * g.width, cells = [k, k + 1, k + 1 + g.width, k + g.width];
-            if (cells.some(k => !t.defined[k])) continue;
+            if (cells.some(k => !defined[k])) continue;
             const corners = [[0, 0], [1, 0], [1, 1], [0, 1]];
             let start = true;
             for (let a = 0; a < 4; a++) {
@@ -33,5 +33,5 @@ export function fieldContours(t: Terrain, name: string) {
         }
         lines.push({ value, path, label: n % 3 === 0 ? label : undefined });
     }
-    return { lines, step, constant: undefined };
+    return { lines, step };
 }

@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { evaluate, fieldValue, sampleValue } from "../src/core/design/expression.ts";
-import { canReference, expressionGraph, referenceUses, resolveDesign } from "../src/core/design/parameters.ts";
+import { canReference, expressionGraph, referenceSlots, resolveDesign, slotName, type Owner } from "../src/core/design/parameters.ts";
+import { problemText } from "../src/core/design/problems.ts";
 import { parseDesign, serializeDesign } from "../src/core/design/model.ts";
 import { newDesign } from "../src/core/design/newDesign.ts";
 import { type Design } from "../src/core/design/v5.ts";
@@ -10,6 +11,10 @@ import { defaultInputRange } from "../src/core/design/defaults.ts";
 import { TerrainCache } from "../src/core/terrain/cache.ts";
 import { generateTerrain } from "../src/core/terrain/terrain.ts";
 import { layer, rect, syntheticDesign } from "./scenarios.ts";
+
+function referenceUses(d: Design, kind: Owner, id: string) {
+    return referenceSlots(d, kind, id).map(s => slotName(s) + "（" + problemText({ location: s.location, message: "" }).trimEnd() + "）");
+}
 
 test("Arithmetic and linear fields observe precedence, signed scalars and undefined samples", () => {
     const ref = (k: string) => k === "input:a" ? 3 : fieldValue(k.slice(6));
@@ -27,12 +32,12 @@ test("Arithmetic and linear fields observe precedence, signed scalars and undefi
 
 test("Author inputs form one graph across stacks, array parameters and marks", () => {
     const d: Design = syntheticDesign();
-    d.geoNodes[1].function = { type: "flat", amount: "{input:A}" };
+    d.geoNodes[1].function = { type: "ground", value: "{input:A}" };
     d.geoNodes.push(layer("M", rect(-8, -8, 8, 8), { type: "mountain", peaks: [], ridges: [{
         widths: [1, "{input:b}"], widthNoise: { amount: 0, wavelength: 20 }, heightNoise: { amount: 0, wavelength: 20 },
         line: { points: [{ p: [0, 0], h: 2 }, { p: [2, 2], h: "{input:b}" }] }
     }] }));
-    d.inputs.b = { range: defaultInputRange("b"), value: "{geo:T.amount} + 1" };
+    d.inputs.b = { range: defaultInputRange("b"), value: "{geo:T.value} + 1" };
     d.inputs.c = { range: defaultInputRange("c"), value: "{geo:M.ridges.0.widths.1} + 1" };
     d.marks.push({ id: "B", label: "B", kind: "text", follow: "map", point: [1, 2], elevation: "{input:c} - 1" });
     const parsed = parseDesign(serializeDesign(d)), before = serializeDesign(parsed), numeric = resolveDesign(parsed);
@@ -42,28 +47,30 @@ test("Author inputs form one graph across stacks, array parameters and marks", (
     assert.equal(mark.elevation, 8);
     assert.equal(serializeDesign(parsed), before);
     const { slots } = expressionGraph(d);
-    assert(!canReference(slots, "geo:T.amount", "input:c"));
+    assert(!canReference(slots, "geo:T.value", "input:c"));
     assert(!canReference(slots, "input:b", "input:b"));
     assert(canReference(slots, "input:b", "input:A"));
     assert(referenceUses(d, "geo", "T").some(p => p.includes("inputs.b.value")));
-    assert.throws(() => deleteGeo(d, "T"), /inputs.b.value/);
+    assert.throws(() => deleteGeo(d, "T"), /仍被引用[\s\S]*“b”/);
 });
 
 test("Format and type errors identify the authored slot and cycles name every participant", () => {
     const d: Design = syntheticDesign(), a = d.geoNodes[0], b = d.geoNodes[1];
-    a.function = { type: "ground", value: "{geo:T.amount} + 1" };
-    b.function = { type: "flat", amount: "{geo:G.value}" };
+    a.function = { type: "ground", value: "{geo:T.value} + 1" };
+    b.function = { type: "slope", kind: "radial", center: [0, 0], radius: 1, value: "{geo:G.value}", rate: 0 };
     assert.throws(() => parseDesign(d), /“G”.数值 → “T”.增量 → “G”.数值/);
-    b.function.amount = "{input:A}"; d.inputs.A.value = "{geo:G.value}";
+    b.function.value = "{input:A}"; d.inputs.A.value = "{geo:G.value}";
     assert.throws(() => parseDesign(d), e => e instanceof Error && ["“G”.数值", "“T”.增量", "“A”", "引用成环"].every(v => e.message.includes(v)));
     d.inputs.A.value = 4;
     for (const bad of ["{field:height}", "{geo:G.construction.paths.0.nodes.0.p.0}", "{building:A.padElevation}", "{edge:E.length}", "{node:a.point.1}", "1 + @"])
         assert.throws(() => parseDesign({ ...d, inputs: { A: { value: bad } } }), /inputs.A.value/);
+    b.function = { type: "flat", amount: 1 };
     for (const old of [{ var: "A", offset: 1 }, { field: "height", scale: .5 }]) {
         Object.assign(b.function, { amount: old });
         assert.throws(() => parseDesign(d), /geoNodes\[1\]\.function\.amount.*未知/);
     }
     b.function.amount = 1;
+    a.function.value = 0;
     const invalid = structuredClone(d);
     const region = invalid.geoNodes[0].construction;
     assert(region.type === "free");
@@ -73,7 +80,7 @@ test("Format and type errors identify the authored slot and cycles name every pa
     assert.throws(() => parseDesign({ ...d, marks: [{ id: "A", label: "A", kind: "text", point: ["{input:A}", 0] }] }), /marks\[0\].point/);
     d.inputs.A.value = " 2.5 ";
     assert.equal(parseDesign(d).inputs.A.value, 2.5);
-    b.id = "T.B"; d.inputs.c = { range: defaultInputRange("c"), value: "{geo:T.B.amount}" }; a.function.value = 0;
+    b.id = "T.B"; d.inputs.c = { range: defaultInputRange("c"), value: "{geo:T.B.feather}" }; a.function.value = 0;
     assert.deepEqual(referenceUses(d, "geo", "T"), []);
     assert(referenceUses(d, "geo", "T.B").some(v => v.includes("inputs.c.value")));
 });
@@ -83,17 +90,17 @@ test("Rounded per-layer seeds and transitive scalar inputs invalidate only their
     d.inputs.seed.value = 2.6;
     const a = cache.generate(d);
     d.inputs.seed.value = 3;
-    assert.deepEqual(cache.generate(d).heights, a.heights); assert.deepEqual(cache.recomputed, []);
+    assert.deepEqual(cache.generate(d).fields.height.values, a.fields.height.values); assert.deepEqual(cache.recomputed, []);
     d.inputs.seed.value = 4;
-    assert.notDeepEqual(cache.generate(d).heights, a.heights); assert.deepEqual(cache.recomputed, ["N"]);
+    assert.notDeepEqual(cache.generate(d).fields.height.values, a.fields.height.values); assert.deepEqual(cache.recomputed, ["N"]);
     delete d.geoNodes[1].function.seed;
-    const zero = cache.generate(d).heights;
+    const zero = cache.generate(d).fields.height.values;
     d.geoNodes[1].function.seed = 0;
-    assert.deepEqual(generateTerrain(d).heights, zero);
+    assert.deepEqual(generateTerrain(d).fields.height.values, zero);
     d.geoNodes[1].function = { type: "flat", amount: "{geo:ground.value} + 1" };
     cache.generate(d); d.inputs.base.value = 6.25;
     const after = cache.generate(d);
-    assert.deepEqual(after.heights, generateTerrain(d).heights); assert.deepEqual(cache.recomputed, [base.id, "N"]);
+    assert.deepEqual(after.fields.height.values, generateTerrain(d).fields.height.values); assert.deepEqual(cache.recomputed, [base.id, "N"]);
 });
 
 test("Omitted parameters can be referenced and old ridge tuples fail at their original address", () => {
@@ -127,14 +134,15 @@ test("Geometry inputs expose concrete defaults without changing authored height 
     assert(t.type === "slope" && t.kind === "path");
     assert.equal(g.get("geo:T.line.points.1.h"), 3.25);
     assert.equal(resolved.inputs.b.value, 5.25);
-    assert.equal(t.line.points[1].h, 3.25);
-    const unchanged = generateTerrain(d).heights;
+    assert.equal(t.line.points[1].h, undefined);
+    assert(!Object.hasOwn(t.line, "heightStops"));
+    const unchanged = generateTerrain(d).fields.height.values;
     const noMidpoint = structuredClone(d);
     const slope = noMidpoint.geoNodes[1].function;
     assert(slope.type === "slope" && slope.kind === "path");
     noMidpoint.inputs.b.value = resolved.inputs.b.value;
     slope.line.points.splice(1, 1);
-    assert.deepEqual(generateTerrain(noMidpoint).heights, unchanged);
+    assert.deepEqual(generateTerrain(noMidpoint).fields.height.values, unchanged);
     assert.equal(n.function.line.points[1].h, undefined, "The source retains its two authored height stops");
     const ridge = { line: n.function.line, widths: [4, 4] };
     Object.assign(n, { function: { type: "mountain", ridges: [ridge], peaks: [] } });

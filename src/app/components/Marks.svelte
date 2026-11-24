@@ -14,9 +14,9 @@
                         const m = d.marks[index]; if (m.kind === "text") m.showElevation = visible;
                     });
                 }} />显示高度</label>
-                <NumberInput {editor} label="高度" unit="m" address={["marks", index, "elevation"]} self={"mark:" + mark!.id + ".elevation"} />
+                <NumberInput {editor} label={markParameters.text.label} unit={markParameters.text.unit} step={markParameters.text.step} address={["marks", index, ...markParameters.text.key]} self={"mark:" + mark!.id + ".elevation"} />
             {:else if mark!.follow === "map"}
-                <NumberInput {editor} label="长度" unit="m" address={["marks", index, "length"]} self={"mark:" + mark!.id + ".length"} />
+                <NumberInput {editor} label={markParameters.scale.label} unit={markParameters.scale.unit} step={markParameters.scale.step} address={["marks", index, ...markParameters.scale.key]} self={"mark:" + mark!.id + ".length"} />
             {/if}
         </Part>
     </PropertyPane>
@@ -33,6 +33,7 @@
 
 <script lang="ts">
     import * as session from "../state/session.svelte.ts";
+    import { markParameters } from "../../core/design/functionTable.ts";
     import { type MarkFollow } from "../../core/design/v5.ts";
     import PropertySelect from "./PropertySelect.svelte";
     import Search from "./Search.svelte";

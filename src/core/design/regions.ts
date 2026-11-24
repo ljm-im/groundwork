@@ -1,5 +1,6 @@
 import { type ResolvedDesign as Design, type Construction, type GeoNode, type Path, type Point, type Strip } from "./v5.ts";
 import { bounds, clamp, createGrid, distance, eachCell, mixPoint, projection, type Box, type Grid } from "../math/geometry.ts";
+import { functionTable } from "./functionTable.ts";
 import { insidePolygon } from "../math/polygon.ts";
 import { flattenPath, type Segment } from "./path.ts";
 
@@ -139,7 +140,7 @@ export function makeShape(node: GeoNode<number>, below: Map<string, RegionShape>
 }
 
 export function canvasGrid(d: Design, shapes: Map<string, RegionShape>) {
-    const boxes = d.geoNodes.filter(n => !n.disabled && n.function.type === "ground").map(n => {
+    const boxes = d.geoNodes.filter(n => !n.disabled && functionTable[n.function.type].initial).map(n => {
         const shape = shapes.get(n.id)!;
         if (n.construction.type === "free") return shape.box;
         return bounds(shape.boundary().flatMap(path => path.flatMap(s => [s.a, s.b])));
@@ -148,7 +149,7 @@ export function canvasGrid(d: Design, shapes: Map<string, RegionShape>) {
     if (!boxes.length) return createGrid({ xMin: 0, yMin: 0, xMax: step, yMax: step, step });
     const xMin = low(Math.min(...boxes.map(b => b[0]))), yMin = low(Math.min(...boxes.map(b => b[1])));
     const xMax = high(Math.max(...boxes.map(b => b[2]))), yMax = high(Math.max(...boxes.map(b => b[3])));
-    if (![xMin, yMin, xMax, yMax].every(Number.isFinite) || xMax <= xMin || yMax <= yMin) throw new Error("ground 画布范围为空");
+    if (![xMin, yMin, xMax, yMax].every(Number.isFinite) || xMax <= xMin || yMax <= yMin) throw new Error("画布范围为空");
     return createGrid({ xMin, xMax, yMin, yMax, step });
 }
 

@@ -50,7 +50,6 @@ export const baseMap = {
     rock: [163, 157, 143],
     sand: [232, 222, 190],
     fieldContours: "#38597d",
-    heightContours: ["#64909a", "rgba(70,58,40,.13)", "rgba(70,58,40,.25)", "rgba(70,58,40,.53)"],
     boundary: "#806d50",
     sectionLine: "rgba(40,75,74,.6)",
     fineGrid: "rgba(54,99,104,.10)",

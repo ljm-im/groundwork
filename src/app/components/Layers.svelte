@@ -11,9 +11,9 @@
         <label class="toggle"><input type="checkbox" data-layer="fineGrid" checked={editor.layers.fineGrid} />显示细分网格</label>
         <PropertySelect label="间距方式" value={editor.displayGrid.mode} options={gridModes} choose={mode => editor.setGrid("mode", mode)} attributes={{ "data-grid-setting": "mode" }} />
         {#if editor.displayGrid.mode === "meters"}
-            <FieldRow label="间距" unit="m"><input aria-label="网格间距" type="number" data-grid-setting="meters" min="0" step="any" value={editor.displayGrid.meters} /></FieldRow>
+            <FieldRow label="间距" unit="m"><input aria-label="网格间距" type="number" data-grid-setting="meters" min="0" step={displaySteps.gridUnits} value={editor.displayGrid.meters} /></FieldRow>
         {:else}
-            <FieldRow label="目标间距" unit="px"><input aria-label="网格目标间距" type="number" data-grid-setting="pixels" min="0" step="any" value={editor.displayGrid.pixels} /></FieldRow>
+            <FieldRow label="目标间距" unit="px"><input aria-label="网格目标间距" type="number" data-grid-setting="pixels" min="0" step={displaySteps.gridPixels} value={editor.displayGrid.pixels} /></FieldRow>
         {/if}
     </Part>
 </div>
@@ -24,6 +24,8 @@
 </style>
 
 <script lang="ts">
+    import { fieldEntries, isBuiltin } from "../../core/design/defaults.ts";
+    import { displaySteps } from "../../core/design/functionTable.ts";
     import { layerNames } from "../state/layers.ts";
     import * as session from "../state/session.svelte.ts";
     import FieldRow from "./FieldRow.svelte";
@@ -31,8 +33,7 @@
     import PropertySelect from "./PropertySelect.svelte";
 
     let { editor }: { editor: session.Editor } = $props();
-    let fields = $derived([{ id: "height", name: "高度", builtin: true },
-        ...Object.entries(editor.project.design.fields).map(([id, f]) => ({ id, name: f.label ?? id }))]);
+    let fields = $derived(fieldEntries(editor.project.design.fields).map(([id, f]) => ({ id, name: f.label, builtin: isBuiltin("field", id) })));
     const gridModes = [{ id: "meters", name: "固定米数" }, { id: "pixels", name: "固定像素" }];
     const mapLayers = ["geoNodes", "sections", "labels", "marks", "issues"] as const;
 </script>

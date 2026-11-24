@@ -1,8 +1,11 @@
 import { type Section, type Point } from "../core/design/v5.ts";
 import { type ProjectView } from "../core/project.ts";
-import { distance, mixPoint, sampleDefined } from "../core/math/geometry.ts";
+import { heightId } from "../core/design/defaults.ts";
+import { sampleField } from "../core/design/results.ts";
+import { distance, mixPoint } from "../core/math/geometry.ts";
 import { canvasText, palette, sectionColors } from "./palette.ts";
-import { displayNumber } from "../app/state/numbers.ts";
+import { displaySteps, markParameters } from "../core/design/functionTable.ts";
+import { displayReading } from "../app/state/numbers.ts";
 
 const sectionCuts = new WeakMap<Section, { a: Point; b: Point; len: number; n: number; stations: Point[] }>();
 
@@ -44,7 +47,7 @@ export function drawSections(container: HTMLElement, project: ProjectView) {
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, w, h);
         const { len, n, stations } = sectionCut(section);
-        const ground = stations.map(p => sampleDefined(t.grid, t.heights, t.defined, ...p));
+        const ground = stations.map(p => sampleField(t, heightId, p));
         const left = 17,
             right = w - 5,
             base = h - 15,
@@ -88,6 +91,6 @@ export function drawSections(container: HTMLElement, project: ProjectView) {
         ctx.fillStyle = palette.textSecondary;
         ctx.fillText("0", left, h);
         ctx.textAlign = "right";
-        ctx.fillText(displayNumber(len, 1, "m"), right, h);
+        ctx.fillText(displayReading(len, displaySteps.section, markParameters.scale.unit), right, h);
     }
 }

@@ -1,16 +1,18 @@
 import { type Design, type GeoNode, type Path, type PathNode, type Point } from "../../core/design/v5.ts";
-import { functionDefaults, ridgeNoiseDefaults } from "../../core/design/defaults.ts";
+import { heightId } from "../../core/design/defaults.ts";
+import { fillFunctionParameters, slopeEndpointValues } from "../../core/design/functionTable.ts";
+import { writeAt } from "../../core/design/address.ts";
 import { type Segment } from "../../core/design/regions.ts";
 import { closedPen, nearestSegment, penNode, penPath, shapePath, type ShapeTool } from "../../core/edit/paths.ts";
-import { createFree, createStrip, defaultFunction, nodeIds, sampleField, stripConstruction, stripRange, tenth } from "../../core/edit/geoNodes.ts";
+import { createFree, createStrip, defaultFunction, nodeIds, stripConstruction, stripRange, tenth } from "../../core/edit/geoNodes.ts";
 import { distance } from "../../core/math/geometry.ts";
 import { constructionCenter, makeShape, nearbyBoundary } from "../../core/design/regions.ts";
-import { type Terrain } from "../../core/design/results.ts";
+import { sampleField, type Terrain } from "../../core/design/results.ts";
 type Editor = import("./session.svelte.ts").Editor;
 
 export type DrawTool = ShapeTool | "strip" | "addPath" | "shore" | "ridge" | "peak" | "slopeLine" | "center" | "harbor";
 export interface GeoDraft {
-    tool: DrawTool; owner?: string; member?: number; ids: string[]; field: string; nodes: PathNode[]; anchors: string[]; reverse: boolean;
+    tool: DrawTool; owner?: string; member?: number; ids: string[]; nodes: PathNode[]; anchors: string[]; reverse: boolean;
     nextId: () => string; down?: Point; downRaw?: Point; clickNode?: string; start?: Point; sizing?: boolean; radius?: Point; cursor?: Point; path?: Path; spine?: Segment[]; spineRange?: string;
 }
 export const drawingTools: DrawTool[] = ["pen", "rect", "circle", "sector", "strip", "addPath", "shore", "ridge", "peak", "slopeLine", "center", "harbor"];
@@ -24,7 +26,7 @@ export function startDrawing(e: Editor, tool: DrawTool, owner?: string, member?:
         if (c?.type === "strip") ids.splice(0, ids.length, ...c.of);
     }
     if (tool === "strip") stripConstruction(d, ids);
-    const draft = { tool, owner, member, ids, field: e.displayField, nodes: [], anchors: [], reverse: false, nextId: nodeIds(d) };
+    const draft = { tool, owner, member, ids, nodes: [], anchors: [], reverse: false, nextId: nodeIds(d) };
     return draft;
 }
 function stripSource(d: Design, draft: GeoDraft) {
@@ -33,7 +35,7 @@ function stripSource(d: Design, draft: GeoDraft) {
 function stripPreview(e: Editor, draft: GeoDraft) {
     const d = e.project.design, c = stripConstruction(d, draft.ids, draft.anchors.length === 2 ? stripRange(draft.anchors, draft.reverse) : undefined);
     const shapes = new Map([...e.project.terrain.regions].map(([id, r]) => [id, r.shape]));
-    return makeShape({ id: "", label: "", construction: c, function: { type: "blend" } }, shapes, d.grid.step / 8).spine;
+    return makeShape({ id: "", label: "", field: heightId, construction: c, function: { type: "blend" } }, shapes, d.grid.step / 8).spine;
 }
 export function updatePreview(e: Editor, draft: GeoDraft) {
     const { tool, cursor, start, radius, nodes } = draft;
@@ -81,7 +83,7 @@ export function snapPoint(t: Terrain, design: Design, at: Point, scale: number, 
 }
 
 export function finishDraft(d: Design, terrain: Terrain, draft: GeoDraft) {
-    const { tool, field, owner, member } = draft, n = d.geoNodes.find(n => n.id === owner);
+    const { tool, owner, member } = draft, n = d.geoNodes.find(n => n.id === owner);
     if (tool === "strip") {
         const range = stripRange(draft.anchors, draft.reverse);
         if (n?.construction.type === "strip") {
@@ -90,7 +92,7 @@ export function finishDraft(d: Design, terrain: Terrain, draft: GeoDraft) {
             else delete n.construction.range;
             return n;
         }
-        return createStrip(d, draft.ids, field, range);
+        return createStrip(d, draft.ids, range);
     }
     if (tool === "ridge" || tool === "slopeLine") {
         const f = n!.function;
@@ -98,34 +100,40 @@ export function finishDraft(d: Design, terrain: Terrain, draft: GeoDraft) {
             : f.type === "mountain" && member !== undefined ? f.ridges[member].line : undefined;
         const line = { ...previous, points: draft.nodes.map(({ p }, i) => {
             if (previous?.points[i]?.h !== undefined) return { p, h: previous.points[i].h };
-            if (tool === "ridge") return { p, h: tenth(sampleField(terrain, "height", p)) };
-            if (i === 0) return { p, h: 0 };
-            if (i === draft.nodes.length - 1) return { p, h: 2 };
+            if (tool === "ridge") return { p, h: tenth(sampleField(terrain, heightId, p)) };
+            if (i === 0) return { p, h: slopeEndpointValues[0] };
+            if (i === draft.nodes.length - 1) return { p, h: slopeEndpointValues[1] };
             return { p };
         }) };
         if (line.points.length < 2) throw Error("折线至少需要两个顶点");
         if (tool === "slopeLine") {
             if (n!.function.type === "slope" && n!.function.kind === "path") n!.function.line = line;
-            else n!.function = defaultFunction("slope", { line })!;
+            else n!.function = defaultFunction("slope", { line });
         }
         else if (f.type === "mountain") {
             if (member !== undefined) f.ridges[member].line = line;
-            else f.ridges.push({ line, widths: [5, 5], widthNoise: { ...ridgeNoiseDefaults }, heightNoise: { ...ridgeNoiseDefaults } });
+            else {
+                const path = ["ridges", f.ridges.length];
+                writeAt(f, path, { line }); fillFunctionParameters(f, path);
+            }
         }
         return n!;
     }
     if (tool === "peak" || tool === "center" || tool === "harbor") {
         const p = draft.nodes[0]?.p;
         if (!p) throw Error("请先在地图上选择一个点");
-        const h = tenth(sampleField(terrain, "height", p));
+        const h = tenth(sampleField(terrain, heightId, p));
         if (tool === "peak" && n?.function.type === "mountain") {
             if (member !== undefined) n.function.peaks[member].at.p = p;
-            else n.function.peaks.push({ at: { p, h }, radius: 5, noise: 0, scale: 12 });
+            else {
+                const path = ["peaks", n.function.peaks.length];
+                writeAt(n.function, path, { at: { p, h } }); fillFunctionParameters(n.function, path);
+            }
         }
         if (tool === "harbor" && n?.function.type === "coast") n.function.harbor.center = p;
         if (tool === "center" && n) {
             if (n.function.type === "slope" && n.function.kind === "radial") n.function.center = p;
-            else n.function = { type: "slope", kind: "radial", center: p, ...functionDefaults.slope };
+            else n.function = defaultFunction("slope", { slope: "radial", center: p });
         }
         return n!;
     }
@@ -134,13 +142,13 @@ export function finishDraft(d: Design, terrain: Terrain, draft: GeoDraft) {
     if (tool === "shore" && n) {
         if (n.function.type === "coast") n.function.shore = path;
         else n.function = defaultFunction("coast", { shore: path,
-            center: constructionCenter(n.construction, d.grid.step, terrain.grid, terrain.regions.get(n.id)) })!;
+            center: constructionCenter(n.construction, d.grid.step, terrain.grid, terrain.regions.get(n.id)) });
         return n;
     }
     if (tool === "addPath" && n?.construction.type === "free") {
         n.construction.paths.push(path); return n;
     }
-    return createFree(d, path, field, draft.ids[0]);
+    return createFree(d, path, draft.ids[0]);
 }
 export function draftPointer(e: Editor, phase: "down" | "move" | "up", raw: Point, ev: PointerEvent) {
     const draft = e.map.draft;

@@ -1,6 +1,6 @@
 import { literalPattern, tokens } from "../../core/design/expression.ts";
 import { parameters, type Slot } from "../../core/design/parameters.ts";
-import { seedId } from "../../core/design/defaults.ts";
+import { isBuiltin } from "../../core/design/defaults.ts";
 import { type Design, type Expression } from "../../core/design/v5.ts";
 
 export const composingKey = (event: KeyboardEvent) => event.isComposing || event.keyCode === 229;
@@ -12,13 +12,47 @@ export function numericText(text: string, literal: boolean) {
     if (literal) throw Error("这里只能输入一个数");
     return trimmed;
 }
-export function displayNumber(n: number, step: number, unit = "") {
-    if (!Number.isFinite(n)) return "—";
-    const [mantissa, exponent] = String(Math.abs(step)).split("e");
-    const digits = Math.min(100, Math.max(0, (mantissa.split(".")[1]?.length ?? 0) - Number(exponent ?? 0)));
-    const rounded = n.toFixed(digits);
+function fractionDigits(value: number) {
+    const [mantissa, exponent] = String(Math.abs(value)).split("e");
+    return Math.max(0, (mantissa.split(".")[1]?.length ?? 0) - Number(exponent ?? 0));
+}
+
+export function displayValue(value: Expression | undefined, step: number, unit = "", design?: Design): string {
+    if (typeof value === "string") {
+        const slots = design ? parameters(design) : undefined;
+        return value.replace(/\{([^{}]+)\}|(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?|[*/]/g, (part, key?: string) => {
+            if (key) {
+                if (!design || !slots) return part;
+                const item = referenceLabel(key, design, slots);
+                return item.name + (item.property ? "." + item.property : "");
+            }
+            if (part === "*") return "×";
+            if (part === "/") return "÷";
+            return displayValue(Number(part), step);
+        });
+    }
+    if (value === undefined || !Number.isFinite(value)) return "–";
+    const digits = Math.max(fractionDigits(step), fractionDigits(Number(value.toFixed(4))));
+    const rounded = digits > 100 ? String(value) : value.toFixed(digits);
     return (Number(rounded) === 0 ? rounded.replace(/^-/, "") : rounded) + (unit && unit !== "%" ? " " + unit : unit);
 }
+
+export function displayReading(value: number, precision: number, unit: string) {
+    return displayValue(Number(value.toFixed(fractionDigits(precision))), precision, unit);
+}
+
+export function adjustInputStep(value: number, steps: number) {
+    for (let i = 0; i < Math.abs(steps); i++) {
+        const power = Math.floor(Math.log10(value));
+        const candidates = [power - 1, power, power + 1].flatMap(exponent =>
+            [1, 2, 5].map(digit => Number(digit + "e" + exponent))).filter(n => n > 0 && Number.isFinite(n));
+        const next = steps < 0 ? candidates.findLast(n => n < value) : candidates.find(n => n > value);
+        if (next === undefined) break;
+        value = next;
+    }
+    return value;
+}
+
 const sumSteps = (v: number, delta: number) => Number((v + delta).toPrecision(15));
 export function adjustNumber(value: Expression, steps: number, step: number, range?: Range): Expression {
     if (!steps) return value;
@@ -84,20 +118,11 @@ export function repeatButton(change: () => void) {
 
 export function referenceLabel(key: string, d: Design, slots: Map<string, Slot>) {
     const kind = key.slice(0, key.indexOf(":")), id = key.slice(kind.length + 1);
-    if (kind === "field") return { icon: "field" as const, builtin: id === "height", name: id === "height" ? "高度" : d.fields[id]?.label ?? id };
+    if (kind === "field") return { icon: "field" as const, builtin: isBuiltin("field", id), name: d.fields[id]?.label ?? id };
     const s = slots.get(key);
-    if (kind === "input") return { icon: "inputs" as const, builtin: id === seedId, name: d.inputs[id]?.label ?? id };
+    if (kind === "input") return { icon: "inputs" as const, builtin: isBuiltin("input", id), name: d.inputs[id]?.label ?? id };
     return { icon: "property", builtin: false, name: s?.name ?? id, property: s?.label } as const;
 }
-export function displayExpression(v: Expression, d: Design) {
-    if (typeof v === "number") return String(v);
-    const slots = parameters(d);
-    return v.replace(/\{([^{}]+)\}/g, (_, key: string) => {
-        const item = referenceLabel(key, d, slots);
-        return item.name + (item.property ? "." + item.property : "");
-    }).replaceAll("*", "×").replaceAll("/", "÷");
-}
-
 // A reference chip occupies one caret stop and serializes to its full JSON reference.
 export function editorText(node: Node): string {
     if (node instanceof HTMLElement && node.dataset.ref) return "{" + node.dataset.ref + "}";

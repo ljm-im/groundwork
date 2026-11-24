@@ -4,17 +4,23 @@ import { TerrainCache } from "../../core/terrain/cache.ts";
 import { History, promptOwner, type PromptTarget } from "../../core/edit/history.ts";
 import { readDisplaySettings, saveDisplaySettings, type GridDisplay } from "./layers.ts";
 import { constructionCenter } from "../../core/design/regions.ts";
-import { seedId } from "../../core/design/defaults.ts";
+import { heightId, isBuiltin } from "../../core/design/defaults.ts";
 import { type SelectionState } from "../../core/edit/types.ts";
 import { defaultFollow, type GeoNode, type GeoFunction, type PathNode } from "../../core/design/v5.ts";
-import { referenceSlots, slotName, type Slot } from "../../core/design/parameters.ts";
+import { geoParameter, slotName, type Slot } from "../../core/design/parameters.ts";
 import { parseDesign } from "../../core/design/model.ts";
 import { type GeoControl, type GeometryTarget, geometryPath, removeParameterPoint } from "../../core/edit/geoControls.ts";
-import { addInput, addField, copyGeo, defaultFunction, deleteGeo, stripUsers, enableGeo, nextId, rangeUsers, removeDeclaration } from "../../core/edit/geoNodes.ts";
+import { addInput, addField, copyGeo, defaultFunction, deleteGeo, enableGeo, isLastInitializer, nextId, nodeIds, rangeUsers,
+    removalUses, removeDeclaration, requiredInitializer, type RemovalUse } from "../../core/edit/geoNodes.ts";
 import { setNodeMode, setSegment } from "../../core/edit/paths.ts";
 import { drawingTools, finishDraft, geoAt, startDrawing, updatePreview, type DrawTool, type GeoDraft } from "./geoTools.ts";
+import { displaySteps, markParameters } from "../../core/design/functionTable.ts";
+import { functionGeometry } from "../../core/edit/functionGeometry.ts";
+import { sampleField } from "../../core/design/results.ts";
+import { designErrorText } from "./designMessages.ts";
+import { displayReading, displayValue } from "./numbers.ts";
 import { objectIssues } from "../../core/checks/issues.ts";
-import { advancedErosion, propertyTabs, tabForSelection, type PropertyTab, type SubitemGroup } from "./inspector.ts";
+import { propertyTabs, tabForSelection, type PropertyTab, type SubitemGroup } from "./inspector.ts";
 import { drawSections } from "../../render/sections.ts";
 import { ProjectMap } from "../../render/map.ts";
 import { DesignFiles, type FileAction, type SaveState } from "./files.ts";
@@ -65,12 +71,13 @@ export class Editor {
     terrainFilter = $state("");
     geoSelection = $state.raw<string[]>([]);
     hoverRefs = $state.raw<string[]>([]);
-    displayField = $state("height");
+    displayField = $state(heightId);
     viewport = $state<string | null>(null);
     menu = $state.raw<{ x: number; y: number; map?: boolean; control?: GeoControl } | null>(null);
     revision = $state(0);
     hint = $state(hints.select);
     position = $state("");
+    private pointerPosition?: Point;
     busy = $state<string | null>(null);
     toast = $state.raw<{ text: string; point?: Point } | null>(null);
     removal = $state.raw<{ title: string; items?: RemovalItem[]; detail: string; action?: string; perform?: () => void } | null>(null);
@@ -125,8 +132,8 @@ export class Editor {
             case "geoNode": return exists(d.geoNodes);
             case "mark": return exists(d.marks);
             case "section": return exists(d.sections);
-            case "input": return h.id !== seedId && Object.hasOwn(d.inputs, h.id);
-            case "field": return h.id === "height" || Object.hasOwn(d.fields, h.id);
+            case "input": return !isBuiltin("input", h.id) && Object.hasOwn(d.inputs, h.id);
+            case "field": return Object.hasOwn(d.fields, h.id);
         }
     }
     private restoreSelection(state: SelectionState) {
@@ -201,11 +208,12 @@ export class Editor {
         }
         this.map.selection = this.selection;
         if (!this.project.design.geoNodes.some(n => n.id === this.viewport)) this.viewport = null;
-        if (this.displayField !== "height" && !Object.hasOwn(this.project.design.fields, this.displayField)) this.displayField = "height";
+        if (!Object.hasOwn(this.project.design.fields, this.displayField)) this.displayField = heightId;
         this.map.displayField = this.displayField;
         this.map.geoSelection = this.geoSelection;
         this.map.setProject(this.viewport ? this.project.viewBelow(this.viewport) : this.project.view(), reset, this.project.terrain);
         this.map.draw();
+        if (this.pointerPosition) this.readPosition(this.pointerPosition);
         this.sections();
         if (sidebar) this.revision++;
     }
@@ -320,7 +328,8 @@ export class Editor {
         const draft = this.map.draft;
         if (reset) {
             this.terrainCache.clear();
-            this.displayField = "height"; this.viewport = null;
+            this.displayField = heightId; this.viewport = null;
+            this.pointerPosition = undefined; this.position = "";
             if (this.properties) this.properties.scrollTop = 0;
             if (this.panel) this.panel.scrollTop = 0;
         }
@@ -378,7 +387,7 @@ export class Editor {
             });
         }
         catch (error) {
-            this.message(errorText(error)); this.revision++;
+            this.message(designErrorText(error, this.project.design)); this.revision++;
         }
     }
     editNode(id: string, fn: (n: GeoNode) => void) {
@@ -419,16 +428,22 @@ export class Editor {
         const { design, terrain } = this.project;
         return constructionCenter(geoAt(design, id).construction, design.grid.step, terrain.grid, terrain.regions.get(id));
     }
-    switchFunction(n: GeoNode, type: GeoFunction["type"]) {
-        this.map.vertex = undefined;
-        if (type === "coast" || type === "slope") {
-            this.setTool(type === "coast" ? "shore" : "slopeLine", n.id); this.revision++; return;
-        }
-        this.edit(d => {
-            geoAt(d, n.id).function = defaultFunction(type)!;
+    switchFunction(n: GeoNode, type: GeoFunction["type"], slope: "path" | "radial" = "path") {
+        return this.edit(d => {
+            const node = geoAt(d, n.id);
+            if (type !== "coast" && type !== "slope") {
+                node.function = defaultFunction(type);
+                return;
+            }
+            const shape = this.project.terrain.regions.get(n.id)!.shape;
+            const geometry = functionGeometry(node.construction, shape, d.grid.step, nodeIds(d));
+            node.function = defaultFunction(type, { center: geometry.center, slope,
+                shore: type === "coast" ? geometry.shore() : undefined,
+                line: type === "slope" && slope === "path" ? geometry.line() : undefined });
         }, () => {
             this.clearSubitems(n.id);
-            this.map.geometry = undefined;
+            this.map.vertex = undefined;
+            this.map.geometry = type === "coast" ? { kind: "path", index: -1 } : type === "slope" ? { kind: "parameter", index: 0 } : undefined;
         });
     }
     hover(ids: string[]) {
@@ -436,6 +451,7 @@ export class Editor {
     }
     showField(field: string) {
         this.displayField = this.map.displayField = field; this.map.draw();
+        if (this.pointerPosition) this.readPosition(this.pointerPosition);
     }
     showThrough(id: string | null) {
         this.viewport = id; this.map.clearIssue(); this.refresh();
@@ -474,6 +490,14 @@ export class Editor {
         this.revision++;
         this.map.draw();
     }
+    readPosition(p: Point) {
+        const { design } = this.project, field = design.fields[this.displayField];
+        const sample = sampleField(this.map.project.terrain, this.displayField, p);
+        this.pointerPosition = p;
+        const coordinate = (value: number) => displayReading(value, displaySteps.coordinates, displaySteps.coordinateUnit);
+        this.position = "X " + coordinate(p[0]) + "  Y " + coordinate(p[1]) + "  " + field.label + " " +
+            displayValue(sample, displaySteps.field, field.unit);
+    }
     private referenceItem(slot: Slot): RemovalItem {
         return { text: slotName(slot), locate: () => {
             const address = slot.path.join(".");
@@ -493,12 +517,10 @@ export class Editor {
                         this.pickVertex({ role: "parameter", path, index, point: this.geoCenter(slot.id) });
                     }
                 }
-                if (geoAt(this.project.design, slot.id).function.type === "erosion" &&
-                    advancedErosion.some(([key]) => key === group)) this.toggleSubitem(slot.id, "advanced", 0, true);
+                if (geoParameter(geoAt(this.project.design, slot.id), slot.path.slice(2))?.advanced) this.toggleSubitem(slot.id, "advanced", 0, true);
             }
-            else if (slot.owner === "input") this.select(slot.id === seedId ? null : { kind: "input", id: slot.id });
+            else if (slot.owner === "input") this.select(isBuiltin("input", slot.id) ? null : { kind: "input", id: slot.id });
             else if (slot.owner === "mark") this.select({ kind: "mark", id: slot.id });
-            else this.select({ kind: "field", id: String(slot.path[1]) });
             this.revealProperties?.();
             void tick().then(() => {
                 const field = Array.from(this.properties?.querySelectorAll<HTMLElement>("[data-parameter]") ?? [])
@@ -513,6 +535,11 @@ export class Editor {
             this.changePropertyTab(tab);
             this.revealProperties?.();
         } };
+    }
+    private removalItem(use: RemovalUse) {
+        if (use.kind === "parameter") return this.referenceItem(use.slot);
+        const { id, label } = use.node;
+        return use.kind === "strip" ? this.geoReference(id, label, "边", "region") : this.geoReference(id, label, "输出到", "function");
     }
     private blockRemoval(name: string, items: RemovalItem[], detail = "请先修改以下引用位置。") {
         this.removal = { title: "无法删除“" + name + "”", detail, items };
@@ -558,10 +585,8 @@ export class Editor {
             else perform();
             return;
         }
-        const items = referenceSlots(d, "geo", id).map(slot => this.referenceItem(slot));
-        items.push(...stripUsers(d, id).map(ref => this.geoReference(ref.id, ref.label, "边", "region")));
-        if (n.function.type === "ground" && !d.geoNodes.some(other => other.id !== id && other.function.type === "ground"))
-            return this.blockRemoval(n.label, items, "设计必须保留至少一个使用 ground 的地件。");
+        const items = removalUses(d, "geo", id).map(use => this.removalItem(use));
+        if (isLastInitializer(d, id)) return this.blockRemoval(n.label, items, requiredInitializer + "。");
         if (items.length) return this.blockRemoval(n.label, items);
         this.edit(d => {
             deleteGeo(d, id);
@@ -615,7 +640,7 @@ export class Editor {
         return this.edit(d => {
             const id = nextId(d.marks.map(m => m.id), "mark-"), p: Point = [+point[0].toFixed(2), +point[1].toFixed(2)];
             const follow = defaultFollow(kind);
-            d.marks.push(kind === "scale" ? { id, kind, label: "比例尺", point: p, follow, length: 10 }
+            d.marks.push(kind === "scale" ? { id, kind, label: "比例尺", point: p, follow, length: markParameters.scale.default }
                 : { id, kind, label: "文字标记 " + id.slice(5), point: p, follow });
             return { kind: "mark", id };
         }, () => this.finishTool(keepTool));
@@ -638,7 +663,7 @@ export class Editor {
         });
     }
     canRemove(h: Selection) {
-        return !(h.kind === "input" && h.id === seedId || h.kind === "field" && h.id === "height");
+        return h.kind !== "input" && h.kind !== "field" || !isBuiltin(h.kind, h.id);
     }
     removeSelected() {
         const h = this.selection;
@@ -651,9 +676,7 @@ export class Editor {
         if (h.kind === "geoNode") return this.removeGeo(h.id);
         if (h.kind === "input" || h.kind === "field") {
             const kind = h.kind, d = this.project.design;
-            const items = referenceSlots(d, kind, h.id).map(slot => this.referenceItem(slot));
-            if (kind === "field") items.push(...d.geoNodes.filter(n => n.field === h.id)
-                .map(n => this.geoReference(n.id, n.label, "输出到", "function")));
+            const items = removalUses(d, kind, h.id).map(use => this.removalItem(use));
             const item = (kind === "input" ? d.inputs : d.fields)[h.id];
             if (items.length) return this.blockRemoval(item.label ?? h.id, items);
             return this.edit(d => {

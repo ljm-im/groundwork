@@ -167,7 +167,7 @@ input[type="radio"]:checked::after {
 }
 .param-name { font-size: var(--text-sm); line-height: var(--leading-sm); overflow-wrap: anywhere; }
 .unit { white-space: nowrap; }
-.control-unit { grid-column: 3; }
+.control-unit { grid-column: 3; overflow: hidden; text-overflow: ellipsis; }
 .parameter-row > :nth-child(2) { min-width: 0; }
 
 .list-row, .object-row, .issue-row {

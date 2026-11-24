@@ -7,6 +7,7 @@ import { type Design } from "../src/core/design/v5.ts";
 import { newDesign } from "../src/core/design/newDesign.ts";
 import { resolveDesign } from "../src/core/design/parameters.ts";
 import { removeDeclaration } from "../src/core/edit/geoNodes.ts";
+import { DesignError } from "../src/core/design/problems.ts";
 import { generateTerrain } from "../src/core/terrain/terrain.ts";
 import { syntheticDesign, rect, layer, polygon } from "./scenarios.ts";
 
@@ -15,7 +16,7 @@ test("Version five opens atomically and older formats have a common version erro
     assert.deepEqual(parseDesign(bytes), d);
     for (const version of [1, 2, 3, 4]) assert.throws(() => parseDesign({ version }), { message: "不支持的版本" });
     assert.throws(() => parseDesign({ version: 6 }), { message: "不支持的版本" });
-    assert.throws(() => parseDesign({ ...d, grid: null }), /网格/);
+    assert.throws(() => parseDesign({ ...d, grid: null }), /grid.step/);
 });
 
 test("Every installed top-level design matches the version five declaration", fixtureOptions("round14-coast.json", "round14-land.json"), async () => {
@@ -30,10 +31,10 @@ test("Geo references report their location and reject invalid field writers", ()
     d.geoNodes.push(n);
     n.field = "missing";
     assert.throws(() => parseDesign(d), /geoNodes\[2\].*field.*找不到/);
-    n.field = "f"; d.fields.f = { default: 2 };
-    n.function = { type: "ground", value: 0 };
+    n.field = "f"; d.fields.f = { label: "F" };
+    n.function = { type: "mountain", ridges: [], peaks: [] };
     assert.throws(() => parseDesign(d), /geoNodes\[2\].*field/);
-    n.function = { type: "add", feather: 0, amount: "{input:absent}" };
+    n.function = { type: "flat", feather: 0, amount: "{input:absent}" };
     assert.throws(() => parseDesign(d), /amount.*找不到自定义输入/);
     n.function = { type: "flat", amount: 1 }; n.construction = { type: "strip", of: ["N"], widths: [1, 1] };
     assert.throws(() => parseDesign(d), /of.*找不到下方/);
@@ -63,7 +64,7 @@ test("Removing a referenced custom input lists every layer and mark location", (
     const d = syntheticDesign();
     delete d.inputs.A;
     d.marks = [{ id: "B", label: "B", kind: "text", point: [1, 1], follow: "map", elevation: "{input:A}", showElevation: true }];
-    d.geoNodes.push(layer("C", rect(2, 2, 5, 5), { type: "add", amount: "{input:A}", feather: 0 }));
+    d.geoNodes.push(layer("C", rect(2, 2, 5, 5), { type: "flat", amount: "{input:A}", feather: 0 }));
     assert.throws(() => parseDesign(d), error => error instanceof Error &&
         ["geoNodes[1].function.amount", "geoNodes[2].function.amount", "marks[0].elevation"].every(p => error.message.includes(p)));
     assert.throws(() => parseDesign({ ...syntheticDesign(), zones: [] }), /zones.*v5/);
@@ -110,7 +111,7 @@ test("Labels omit their defaults and marks round-trip with expressions and ancho
     const d: Design = syntheticDesign();
     d.sections.push({ id: "S", label: "S", points: [[0, 0], [1, 1]] });
     d.marks.push({ id: "M", kind: "scale", label: "M", point: [1, 1], follow: "screen", length: "{input:A} + 3" },
-        { id: "T", kind: "text", label: "T", point: [3, 2], follow: "map", elevation: "{geo:T.amount} + 1", showElevation: true });
+        { id: "T", kind: "text", label: "T", point: [3, 2], follow: "map", elevation: "{geo:G.value}", showElevation: true });
     const others = [...d.sections, ...d.marks];
     // Unset and explicit defaults produce identical bytes for every kind.
     const defaults = serializeDesign(d);
@@ -156,9 +157,9 @@ test("Built-in seed, ranges and harbors materialize on read and omit their defau
     assert.doesNotMatch(bytes, /"(?:range|harbor)"/);
     assert.equal(serializeDesign(parseDesign(bytes)), bytes);
     assert.deepEqual(parseDesign(bytes), hydrated);
-    const disabled = generateTerrain(hydrated).heights;
+    const disabled = generateTerrain(hydrated).fields.height.values;
     f.harbor.center = [2, 2]; f.harbor.span = 20;
-    assert.deepEqual(generateTerrain(hydrated).heights, disabled);
+    assert.deepEqual(generateTerrain(hydrated).fields.height.values, disabled);
     f.harbor.radius = 5;
     assert.match(serializeDesign(hydrated), /"harbor"/);
     Object.assign(f.harbor, { radius: "{input:A} - 7" });
@@ -176,4 +177,25 @@ test("Section marks accept old empty arrays and reject authored marks", () => {
     assert(!Object.hasOwn(parseDesign(d).sections[0], "marks"));
     s.marks.push([.5, "B"]);
     assert.throws(() => parseDesign(d), /sections\[0\].marks.*移除/);
+});
+
+test("Built-in height is hydrated and reserved declaration metadata is protected", () => {
+    const d = syntheticDesign();
+    const input = structuredClone(d);
+    delete input.fields.height; Reflect.deleteProperty(input.geoNodes[0], "field");
+    const parsed = parseDesign(input);
+    assert.deepEqual(parsed.fields.height, { label: "高度", unit: "m" });
+    assert.equal(parsed.geoNodes[0].field, "height");
+    for (const [key, value] of [["label", "A"], ["unit", "s"], ["unit", undefined], ["default", 0]] as const) {
+        const fields = { height: { label: "高度", unit: "m", [key]: value } };
+        assert.throws(() => parseDesign({ ...d, fields }), new RegExp("fields.height." + key));
+    }
+    assert.throws(() => removeDeclaration(parsed, "field", "height"), /内置场/);
+    assert.throws(() => parseDesign({ ...d, marks: [{ id: "A", label: "A", kind: "text", point: [0, 0], follow: "ground" }] }),
+        /marks\[0\].follow/);
+    assert.throws(() => parseDesign({ ...d, geoNodes: [d.geoNodes[0], { ...d.geoNodes[1], function: { type: "add", amount: 1 } }] }),
+        /geoNodes\[1\].function.type/);
+    d.geoNodes[1].function = { type: "flat", amount: 1, feather: -1 };
+    assert.throws(() => parseDesign(d), error => error instanceof DesignError &&
+        error.problems.some(p => p.location?.kind === "geo" && p.location.id === "T" && p.location.path.join(".") === "function.feather"));
 });

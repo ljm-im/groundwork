@@ -61,8 +61,8 @@ test("Variable preview keeps cached geometry and matches a freshly opened design
     preview.update();
     assert.equal(preview.terrain.regions.get("T"), region);
     const full = new Project(structuredClone(design));
-    assert.deepEqual(preview.terrain.heights, full.terrain.heights);
-    assert.deepEqual(preview.terrain.defined, full.terrain.defined);
+    assert.deepEqual(preview.terrain.fields.height.values, full.terrain.fields.height.values);
+    assert.deepEqual(preview.terrain.fields.height.defined, full.terrain.fields.height.defined);
     assert.deepEqual(preview.issues, full.issues);
 });
 
@@ -75,7 +75,7 @@ test("A committed prompt, undo and redo preserve the live project and all geomet
     t.mock.method(editor.files, "remember", () => {});
     const generation = [t.mock.method(editor, "replace"), t.mock.method(project, "update")];
     const target = { group: "geoNodes" as const, id: design.geoNodes[0].id };
-    const { heights, fields, regions } = project.terrain;
+    const { fields, regions } = project.terrain, heights = fields.height.values;
     editor.describe(target, "第一行\n第二行");
     editor.describe(target, "第一行\n第二行");
     assert.equal(editor.history.states.length, 2);
@@ -91,7 +91,7 @@ test("A committed prompt, undo and redo preserve the live project and all geomet
     assert.equal(editor.canRedo, false);
     assert.deepEqual(generation.map(spy => spy.mock.callCount()), [0, 0]);
     assert.equal(editor.project, project);
-    assert.equal(project.terrain.heights, heights);
+    assert.equal(project.terrain.fields.height.values, heights);
     assert.equal(project.terrain.fields, fields);
     assert.equal(project.terrain.regions, regions);
 });
@@ -177,8 +177,9 @@ test("Opening, creating and recovering a design each starts with empty terrain c
     editor.draft = { filename: file.name, text, date: "" };
     await editor.files.restore();
     surfaces.push(editor.project.terrain);
-    for (const field of ["fields", "defined", "regions"] as const)
+    for (const field of ["fields", "regions"] as const)
         assert.equal(new Set(surfaces.map(s => s[field])).size, 4, field);
+    assert.equal(new Set(surfaces.map(s => s.fields.height.defined)).size, 4);
     assert.equal(editor.draft, null);
     assert.equal(editor.dirty, true);
 });
@@ -271,7 +272,7 @@ test("Zoom stays between 5 and 3000 percent and keeps its anchor fixed", () => {
 
 test("Terrain labels use the even-odd centroid, the nearest cell in a hole and the strip midpoint", () => {
     const grid = createGrid({ xMin: -12, xMax: 12, yMin: -12, yMax: 12, step: 1 });
-    const make = (paths: ReturnType<typeof polygon>[]) => makeShape({ id: "A", label: "A", construction: { type: "free", paths }, function: { type: "ground", value: 0 } }, new Map(), .125);
+    const make = (paths: ReturnType<typeof polygon>[]) => makeShape({ field: "height", id: "A", label: "A", construction: { type: "free", paths }, function: { type: "ground", value: 0 } }, new Map(), .125);
     const outer = rect(-8, -6, 8, 6).paths[0], hole = rect(-2, -2, 2, 2).paths[0];
     const holed = make([outer, hole]), point = geoLabelPoint(rasterRegion(grid, holed), grid)!;
     assert(holed.contains(point));
@@ -279,7 +280,7 @@ test("Terrain labels use the even-odd centroid, the nearest cell in a hole and t
     const crossing = make([rect(-9, -3, 0, 3).paths[0], rect(-3, -1, 4, 1).paths[0]]);
     const centroid = geoLabelPoint(rasterRegion(grid, crossing), grid)!;
     assert(distance(centroid, [-109 / 28, 0]) < 1e-9);
-    const shape = makeShape({ id: "B", label: "B", function: { type: "blend" },
+    const shape = makeShape({ field: "height", id: "B", label: "B", function: { type: "blend" },
         construction: { type: "strip", of: ["A"], widths: [1, 2], range: { from: "0", to: "2" } } }, new Map([["A", make([outer])]]), .125);
     assert.deepEqual(geoLabelPoint(rasterRegion(grid, shape), grid), [6, -6]);
 });

@@ -17,15 +17,15 @@ export class Project {
     private structural: Issue[] = [];
     private evaluated(design: ResolvedDesign) {
         const problems = validateGeo(design, true);
-        const broken = new Set(problems.map(p => p.index));
-        this.structural = problems.map(({ index, message }) => {
-            const n = index === undefined ? undefined : design.geoNodes[index];
+        const broken = new Set(problems.flatMap(p => p.location?.kind === "geo" ? [p.location.id] : []));
+        this.structural = problems.map(({ location, message }) => {
+            const n = location?.kind === "geo" ? design.geoNodes[location.index!] : undefined;
             const c = n?.construction;
             const ref = c?.type === "strip" ? design.geoNodes.findLast(v => c.of.some(id => id === v.id))?.construction : c;
             const point: Point = ref?.type === "free" ? ref.paths[0].nodes[0].p : [0, 0];
-            return { kind: "geo-reference", severity: "error", point, geoNode: n?.id, label: n?.label, message };
+            return { kind: "geo-reference", severity: "error", point, geoNode: n?.id, label: n?.label, message, location };
         });
-        return broken.size ? { ...design, geoNodes: design.geoNodes.map((n, i) => broken.has(i) ? { ...n, disabled: true as const } : n) } : design;
+        return broken.size ? { ...design, geoNodes: design.geoNodes.map(n => broken.has(n.id) ? { ...n, disabled: true as const } : n) } : design;
     }
 
     constructor(design: Design, cache = new TerrainCache()) {

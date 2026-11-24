@@ -106,6 +106,8 @@ export function checkEditorSource() {
         if (/\.(?:ts|svelte)$/u.test(file)) assert.doesNotMatch(source, /岛/u, file);
         assert.doesNotMatch(source, /<input\b[^>]*\btype=["']range["']/u, file);
         assert.doesNotMatch(source, /(?:disabled[^\n]*关闭|关闭[^\n]*disabled)/u, file);
+        if (/^src\/(?:app|render)\//.test(file))
+            assert.doesNotMatch(source, /["'](?:geoNodes\[|inputs\.|fields\.|marks\[)/u, file + " uses a JSON path in editor text");
     }
 }
 
@@ -134,4 +136,16 @@ export function checkDesignTokens() {
         assert.equal(definitions.get(token), palette[key], token);
     }
 
+}
+
+export function checkParameterSource() {
+    const retired = /\b(?:functionDefaults|ridgeNoiseDefaults|randomFunctions|fieldFunctions|advancedErosion|displayExpression)\b/u;
+    const keyBased = /(?:\.at\(-1\)|\.includes\([^\n]*(?:address|key|path)[^\n]*\)|\bheight)\s*(?:===\s*"[^"]+"\s*)?\?\s*(?:["']m(?:\/m)?["']|\.?\d)\s*:/u;
+    for (const entry of readdirSync(resolve(root, "src"), { recursive: true, withFileTypes: true })) {
+        if (!entry.isFile() || !/\.(?:ts|svelte)$/.test(entry.name) || entry.name === "functionTable.ts") continue;
+        const path = resolve(entry.parentPath, entry.name), source = readFileSync(path, "utf8");
+        assert.doesNotMatch(source, retired, relative(root, path));
+        assert.doesNotMatch(source, keyBased, relative(root, path));
+        assert.doesNotMatch(source, /<Parameter\s[^>]*\b(?:unit|step)=/u, relative(root, path));
+    }
 }
