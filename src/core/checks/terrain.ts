@@ -1,7 +1,7 @@
 import { type Design, type Point } from "../design/v5.ts";
 import { type Issue, type Terrain } from "../design/results.ts";
 
-export const untreatedHeightLimit = .5;
+const untreatedHeightLimit = .5;
 
 export function terrainIssues(d: Design, t: Terrain): Issue[] {
     const { heights } = t, { width, height, size } = t.grid, covered = new Uint8Array(size), issues: Issue[] = [];

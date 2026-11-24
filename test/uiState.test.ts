@@ -231,8 +231,8 @@ test("Drawing or canceling a parameter keeps its owner and activates only the co
 
 test("Isolating a section exposes only its own map handles", () => {
     const d = syntheticDesign();
-    d.sections = [{ id: "S", label: "S", points: [[0, 0], [0, 5]], marks: [] },
-        { id: "T", label: "T", points: [[1, 0], [1, 5]], marks: [] }];
+    d.sections = [{ id: "S", label: "S", points: [[0, 0], [0, 5]] },
+        { id: "T", label: "T", points: [[1, 0], [1, 5]] }];
     const design = resolveDesign(d);
     assert.deepEqual(sectionHandles(design, false, { kind: "section", id: "S" }).map(h => [h.kind, h.id, h.role, h.index]),
         [["section", "S", "vertex", 0], ["section", "S", "vertex", 1]]);

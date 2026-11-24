@@ -406,7 +406,7 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
         const sparse = syntheticDesign();
         Reflect.deleteProperty(sparse.geoNodes[1].function, "amount");
         sparse.fields.F = { default: 0 }; Reflect.deleteProperty(sparse.fields.F, "default");
-        sparse.sections = [{ id: "A", label: "A", marks: [], points: [[6, 12], [24, 12]] }];
+        sparse.sections = [{ id: "A", label: "A", points: [[6, 12], [24, 12]] }];
         await navigate();
         await seed("sparse.json", JSON.stringify(sparse));
         await set({ openName: "sparse.json" }); await click("#open"); await filename("sparse.json");

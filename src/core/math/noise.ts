@@ -8,7 +8,7 @@ function sampleRandom(a: number) {
     return ((t ^ t >>> 14) >>> 0) / 4294967296;
 }
 
-export function randomAt(seed: number, index: number) {
+function randomAt(seed: number, index: number) {
     return sampleRandom((seed + Math.imul(index + 1, increment)) | 0);
 }
 

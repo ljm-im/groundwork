@@ -32,7 +32,7 @@ export function writeAt(root: object, path: Address, value: unknown) {
 function location(path: Address) {
     return path.map((k, i) => typeof k === "number" ? "[" + k + "]" : (i ? "." : "") + k).join("");
 }
-export function parameterLabel(path: Address, node?: GeoNode): string {
+function parameterLabel(path: Address, node?: GeoNode): string {
     if (!path.length) return "数值";
     const parts = path.map(String), last = parts.at(-1)!, index = Number(last);
     const prefix: string[] = [];

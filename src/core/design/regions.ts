@@ -175,7 +175,7 @@ export function signedBoundaryDistance(shape: RegionShape) {
     };
 }
 
-export function pathCenter(path: Path, tolerance: number): Point {
+function pathCenter(path: Path, tolerance: number): Point {
     const edges = flattenPath(path, tolerance);
     let area = 0, x = 0, y = 0;
     for (const { a, b } of edges) {

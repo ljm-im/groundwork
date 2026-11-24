@@ -1,9 +1,8 @@
-import { type Design, type GeoFunction, type GeoNode, type Path, type Point, type Strip, type Expression, type Polyline } from "../design/v5.ts";
+import { type Design, type GeoFunction, type GeoNode, type Path, type Point, type Strip, type Polyline } from "../design/v5.ts";
 import { defaultInputRange, functionDefaults, seedId } from "../design/defaults.ts";
 import { type Terrain } from "../design/results.ts";
 import { sampleDefined } from "../math/geometry.ts";
-import { expressionGraph, referenceUses } from "../design/parameters.ts";
-import { evaluate, sampleValue } from "../design/expression.ts";
+import { referenceUses } from "../design/parameters.ts";
 
 export function nextId(used: Iterable<string>, prefix: string) {
     const ids = new Set(used);
@@ -124,11 +123,6 @@ export function addField(d: Design) {
     const id = nextId(Object.keys(d.fields), "field");
     d.fields[id] = { label: "场 " + id.slice(5), default: 0 };
     return id;
-}
-export const bindHeight = (id: string, offset = 0) => "{input:" + id + "}" + (offset ? (offset < 0 ? " - " : " + ") + Math.abs(offset) : "");
-export const bindField = (id: string, scale = 1, offset = 0) => "{field:" + id + "}" + (scale === 1 ? "" : " * " + scale) + (offset ? (offset < 0 ? " - " : " + ") + Math.abs(offset) : "");
-export function resolved(v: Expression, d: Design, readField: (field: string) => number | undefined) {
-    return sampleValue(evaluate(v, expressionGraph(d).get), readField) ?? 0;
 }
 
 const functions: GeoFunction["type"][] = ["ground", "coast", "mountain", "cliff", "erosion", "islets", "flat", "slope", "add", "noise", "blend", "split", "batter"];

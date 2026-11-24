@@ -6,7 +6,6 @@ type NumericProperties<T, N> = { [K in keyof T]: Exclude<T[K], undefined> extend
 export interface Labeled { id: string; label: string; showLabel?: boolean }
 export interface Section extends Labeled {
     points: [Point, Point];
-    marks: [station: number, label: string, point?: Point][];
     prompt?: string;
 }
 export type MarkFollow = "screen" | "ground";

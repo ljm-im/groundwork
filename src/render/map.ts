@@ -118,7 +118,7 @@ export class ProjectMap {
     emptyCanvas = false;
     displayField = "height";
     geoSelection: string[] = [];
-    highlights: string[] = [];
+    referencedGeo = (): readonly string[] => [];
     private hovered?: Selection;
     geometry?: GeometryTarget;
     objectGeometry?: Selection;
@@ -250,7 +250,7 @@ export class ProjectMap {
     private outlineStyle(kind: string, id: string) {
         const selected = kind === "geoNode" ? this.geoSelection.includes(id) : this.selection?.id === id && this.selection.kind === kind;
         if (selected) return { color: palette.accent, width: overlay.selectedWidth / this.scale };
-        if (this.hovered?.kind === kind && this.hovered.id === id || kind === "geoNode" && this.highlights.includes(id))
+        if (this.hovered?.kind === kind && this.hovered.id === id || kind === "geoNode" && this.referencedGeo().includes(id))
             return { color: palette.accentHover, width: overlay.hoverWidth / this.scale };
     }
     geoHits(p: Point) {
@@ -304,7 +304,7 @@ export class ProjectMap {
                 ctx.stroke(paths.outline);
             }
         }
-        const outlined = new Set([...this.geoSelection, ...this.highlights]);
+        const outlined = new Set([...this.geoSelection, ...this.referencedGeo()]);
         if (this.hovered?.kind === "geoNode") outlined.add(this.hovered.id);
         for (const id of outlined) {
             const r = t.regions.get(id), outline = this.outlineStyle("geoNode", id);
@@ -483,7 +483,7 @@ export class ProjectMap {
     }
 }
 
-export function markReading(mark: TextMark<number>) {
+function markReading(mark: TextMark<number>) {
     const text = mark.showElevation ? [mark.label, displayNumber(mark.elevation ?? 0, .1, "m")].filter(Boolean).join(" ") : mark.label;
     return { text };
 }

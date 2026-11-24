@@ -56,7 +56,6 @@ export class Editor {
     selection = $state.raw<Selection | null>(null);
     propertyTab = $state<PropertyTab>("general");
     private openSubitems = $state.raw<Record<string, readonly (string | number)[]>>({});
-    issue = $state.raw<Issue | null>(null);
     selectedIssues = $state.raw<Issue[]>([]);
     private readonly display = readDisplaySettings();
     layers = $state(this.display.layers);
@@ -68,7 +67,6 @@ export class Editor {
     hoverRefs = $state.raw<string[]>([]);
     displayField = $state("height");
     viewport = $state<string | null>(null);
-    pathIndex = $state(0);
     menu = $state.raw<{ x: number; y: number; map?: boolean; control?: GeoControl } | null>(null);
     revision = $state(0);
     hint = $state(hints.select);
@@ -98,6 +96,7 @@ export class Editor {
 
     attach(canvas: HTMLCanvasElement) {
         this.map = new ProjectMap(canvas, this.layers, this.displayGrid);
+        this.map.referencedGeo = () => this.hoverRefs;
     }
     dispose() {
         cancelAnimationFrame(this.frame);
@@ -175,7 +174,6 @@ export class Editor {
         this.menu = null;
         this.map.vertex = undefined;
         if (this.properties && (h?.id !== this.selection?.id || h?.kind !== this.selection?.kind)) this.properties.scrollTop = 0;
-        this.pathIndex = 0;
         if (this.map.draft && h?.id !== this.selection?.id) this.setTool("select");
         const selected = h?.kind === "geoNode" ? h.id : undefined;
         this.geoSelection = selected ? extend ? this.geoSelection.includes(selected) ? this.geoSelection.filter(id => id !== selected) : [selected, ...this.geoSelection] : [selected] : [];
@@ -186,7 +184,6 @@ export class Editor {
         this.map.geoSelection = this.geoSelection;
         this.setSelection(h);
         this.map.selection = h;
-        this.issue = null;
         this.selectedIssues = [];
         this.map.clearIssue();
         if (open && h) {
@@ -198,11 +195,10 @@ export class Editor {
         this.map.draw();
     }
     refresh(reset = false, sidebar = true) {
-        if (this.issue && !this.project.issues.includes(this.issue)) {
-            this.issue = null;
+        if (this.selectedIssues.some(i => !this.project.issues.includes(i))) {
+            this.selectedIssues = [];
             this.map.clearIssue();
         }
-        if (this.selectedIssues.some(i => !this.project.issues.includes(i))) this.selectedIssues = [];
         this.map.selection = this.selection;
         if (!this.project.design.geoNodes.some(n => n.id === this.viewport)) this.viewport = null;
         if (this.displayField !== "height" && !Object.hasOwn(this.project.design.fields, this.displayField)) this.displayField = "height";
@@ -328,10 +324,9 @@ export class Editor {
             if (this.properties) this.properties.scrollTop = 0;
             if (this.panel) this.panel.scrollTop = 0;
         }
-        this.hoverRefs = []; this.map.highlights = []; this.map.geometry = undefined;
+        this.hoverRefs = []; this.map.geometry = undefined;
         this.project = new Project(design, this.terrainCache);
         this.restoreSelection(state);
-        this.issue = null;
         this.selectedIssues = [];
         this.openSubitems = {};
         this.map.clearIssue();
@@ -437,7 +432,7 @@ export class Editor {
         });
     }
     hover(ids: string[]) {
-        this.hoverRefs = ids; this.map.highlights = ids; this.map.draw();
+        this.hoverRefs = ids; this.map.draw();
     }
     showField(field: string) {
         this.displayField = this.map.displayField = field; this.map.draw();
@@ -474,7 +469,6 @@ export class Editor {
     pickVertex(control: GeoControl) {
         this.map.vertex = control;
         if (control.role === "vertex" && control.path >= 0) {
-            this.pathIndex = control.path;
             this.changePropertyTab("region");
         }
         this.revision++;
@@ -528,7 +522,7 @@ export class Editor {
         if (c.type !== "free" || c.paths.length < 2 || !c.paths[index]) return;
         const affected = rangeUsers(d, id, c.paths[index].nodes.map(v => v.id));
         const perform = () => {
-            this.pathIndex = 0; this.map.vertex = undefined;
+            this.map.vertex = undefined;
             this.editNode(id, v => {
                 if (v.construction.type === "free") v.construction.paths.splice(index, 1);
             });
@@ -608,7 +602,6 @@ export class Editor {
         if (!objectIssues(this.project, this.selection).includes(issue))
             this.select(issue.geoNode ? { kind: "geoNode", id: issue.geoNode } : null, false);
         this.selectedIssues = [issue];
-        this.issue = issue;
         this.map.focusIssue(issue);
         this.scrollToIssues([issue]);
     }

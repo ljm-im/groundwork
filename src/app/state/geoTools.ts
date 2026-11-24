@@ -27,7 +27,7 @@ export function startDrawing(e: Editor, tool: DrawTool, owner?: string, member?:
     const draft = { tool, owner, member, ids, field: e.displayField, nodes: [], anchors: [], reverse: false, nextId: nodeIds(d) };
     return draft;
 }
-export function stripSource(d: Design, draft: GeoDraft) {
+function stripSource(d: Design, draft: GeoDraft) {
     return d.geoNodes.findLast(n => draft.ids.includes(n.id));
 }
 function stripPreview(e: Editor, draft: GeoDraft) {

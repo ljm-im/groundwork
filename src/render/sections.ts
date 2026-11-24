@@ -43,9 +43,7 @@ export function drawSections(container: HTMLElement, project: ProjectView) {
         const ctx = canvas.getContext("2d")!;
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, w, h);
-        const [a, b] = section.points, { len, n, stations } = sectionCut(section);
-        const ux = (b[0] - a[0]) / len,
-            uy = (b[1] - a[1]) / len;
+        const { len, n, stations } = sectionCut(section);
         const ground = stations.map(p => sampleDefined(t.grid, t.heights, t.defined, ...p));
         const left = 17,
             right = w - 5,
@@ -91,21 +89,5 @@ export function drawSections(container: HTMLElement, project: ProjectView) {
         ctx.fillText("0", left, h);
         ctx.textAlign = "right";
         ctx.fillText(displayNumber(len, 1, "m"), right, h);
-        if (w >= 200) {
-            ctx.textAlign = "center";
-            let last = -100;
-            for (const mark of section.marks) {
-                const p = mark[2];
-                const at = p ? (p[0] - a[0]) * ux + (p[1] - a[1]) * uy : mark[0];
-                if (at < 0 || at > len || p && Math.abs((p[0] - a[0]) * uy - (p[1] - a[1]) * ux) > 9) continue;
-                const x = sx(at),
-                    height = ground[Math.round(at / len * n)],
-                    text = mark[1];
-                if (height === undefined || x - last < ctx.measureText(text).width + 6) continue;
-                ctx.fillStyle = palette.textSecondary;
-                ctx.fillText(text, x, Math.max(13, sy(height) - 9));
-                last = x;
-            }
-        }
     }
 }

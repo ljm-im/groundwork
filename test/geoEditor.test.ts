@@ -1,4 +1,5 @@
 import { test } from "node:test";
+import { bindField, bindHeight, resolved } from "./expressionHelpers.ts";
 import assert from "node:assert/strict";
 import { fixtureOptions, readFixture } from "../configs/read-fixture.ts";
 import { syntheticDesign, rect, layer } from "./scenarios.ts";
@@ -6,8 +7,8 @@ import { type Design, type GeoFunction, type Path, type Point } from "../src/cor
 import { parseDesign, serializeDesign } from "../src/core/design/model.ts";
 import { defaultInputRange } from "../src/core/design/defaults.ts";
 import { History } from "../src/core/edit/history.ts";
-import { addField, addInput, bindField, bindHeight, copyGeo, createStrip, declarationUses, defaultFunction, deleteGeo, stripUsers, enableGeo,
-    nodeIds, rangeUsers, removeDeclaration, reorderGeo, resolved, stripRange } from "../src/core/edit/geoNodes.ts";
+import { addField, addInput, copyGeo, createStrip, declarationUses, defaultFunction, deleteGeo, stripUsers, enableGeo,
+    nodeIds, rangeUsers, removeDeclaration, reorderGeo, stripRange } from "../src/core/edit/geoNodes.ts";
 import { arcHandle, moveHandle, penNode, setSegment, translateGeo } from "../src/core/edit/paths.ts";
 import { flattenPath } from "../src/core/design/path.ts";
 import { geoControls, geometryPath, insertPathNode, removeGeometryItem } from "../src/core/edit/geoControls.ts";

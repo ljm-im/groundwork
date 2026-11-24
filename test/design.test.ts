@@ -71,7 +71,7 @@ test("Removing a referenced custom input lists every layer and mark location", (
 
 test("Supported owners preserve optional prompts, whitespace and empty prompt omission", () => {
     const d = syntheticDesign();
-    d.sections.push({ id: "S", label: "S", points: [[0, 0], [1, 1]], marks: [] });
+    d.sections.push({ id: "S", label: "S", points: [[0, 0], [1, 1]] });
     const before = serializeDesign(d), owners = [d, d.geoNodes[0], d.sections[0]];
     for (const owner of owners) {
         Object.assign(owner, { prompt: null });
@@ -85,7 +85,7 @@ test("Supported owners preserve optional prompts, whitespace and empty prompt om
 
 test("Retired input, label and increment spellings fail at their source", () => {
     const d = syntheticDesign();
-    d.sections.push({ id: "S", label: "S", points: [[0, 0], [1, 1]], marks: [] });
+    d.sections.push({ id: "S", label: "S", points: [[0, 0], [1, 1]] });
     d.marks.push({ id: "M", kind: "scale", label: "M", point: [1, 1], follow: "screen" });
     assert.throws(() => parseDesign({ ...d, variables: {} }), /variables.*移除/);
     assert.throws(() => parseDesign({ ...d, labels: [] }), /labels.*移除/);
@@ -108,7 +108,7 @@ test("Retired input, label and increment spellings fail at their source", () => 
 
 test("Labels omit their defaults and marks round-trip with expressions and anchors", () => {
     const d: Design = syntheticDesign();
-    d.sections.push({ id: "S", label: "S", points: [[0, 0], [1, 1]], marks: [] });
+    d.sections.push({ id: "S", label: "S", points: [[0, 0], [1, 1]] });
     d.marks.push({ id: "M", kind: "scale", label: "M", point: [1, 1], follow: "screen", length: "{input:A} + 3" },
         { id: "T", kind: "text", label: "T", point: [3, 2], follow: "ground", elevation: "{geo:T.amount} + 1", showElevation: true });
     const others = [...d.sections, ...d.marks];
@@ -167,4 +167,13 @@ test("Built-in seed, ranges and harbors materialize on read and omit their defau
     assert.throws(() => parseDesign({ ...raw, inputs: { ...raw.inputs, seed: { label: "A", value: 1 } } }), /inputs.seed.label/);
     assert.throws(() => parseDesign({ ...raw, inputs: { ...raw.inputs, seed: { value: 1 } } }), /inputs.seed.label/);
     assert.throws(() => parseDesign({ ...raw, inputs: { A: { range: null, value: 1 } } }), /inputs.A/);
+});
+
+test("Section marks accept old empty arrays and reject authored marks", () => {
+    const d = newDesign();
+    const s = { id: "A", label: "A", points: [[0, 0], [1, 1]] as [[number, number], [number, number]], marks: [] as unknown[] };
+    d.sections.push(s);
+    assert(!Object.hasOwn(parseDesign(d).sections[0], "marks"));
+    s.marks.push([.5, "B"]);
+    assert.throws(() => parseDesign(d), /sections\[0\].marks.*移除/);
 });

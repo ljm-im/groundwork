@@ -99,7 +99,12 @@ export function parseDesign(text: unknown, allowBrokenReferences = false): Desig
         if (object.prompt === "") delete object.prompt;
     }
     const validPoints = (list: unknown) => Array.isArray(list) && list.length === 2 && list.every(point);
-    for (const s of d.sections) check(validPoints(s.points) && distance(...s.points) > 0, "剖面线长度无效");
+    for (const [i, s] of d.sections.entries()) {
+        check(validPoints(s.points) && distance(...s.points) > 0, "剖面线长度无效");
+        const marks = Reflect.get(s, "marks");
+        check(marks === undefined || Array.isArray(marks) && !marks.length, "sections[" + i + "].marks 已从 v5 移除");
+        Reflect.deleteProperty(s, "marks");
+    }
     return d;
 }
 export function serializeDesign(d: Design | null) {

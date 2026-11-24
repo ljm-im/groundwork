@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Project } from "../src/core/project.ts";
-import { markReading } from "../src/render/map.ts";
+import { ProjectMap } from "../src/render/map.ts";
 import { syntheticDesign } from "./scenarios.ts";
 
 test("Text marks show the resolved authored elevation when enabled", () => {
@@ -10,11 +10,22 @@ test("Text marks show the resolved authored elevation when enabled", () => {
     d.inputs.A.value = 9;
     const project = new Project(d), mark = project.resolved.marks[0];
     assert(mark.kind === "text");
-    assert.equal(markReading(mark).text, "A 9.0 m");
+    const text: string[] = [];
+    const ctx = { save() {}, restore() {}, strokeText() {}, measureText: () => ({ width: 15 }),
+        fillText: (value: string) => text.push(value) } as unknown as CanvasRenderingContext2D;
+    const map: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), { layers: { marks: true },
+        markScreen: () => [0, 0] });
+    function draw() {
+        map.project = project.view();
+        map["drawMarks"](ctx);
+        return text.at(-1);
+    }
+    assert.equal(draw(), "A 9.0 m");
     d.inputs.A.value += 2;
     project.update();
     const changed = project.resolved.marks[0];
     assert(changed.kind === "text");
-    assert.equal(markReading(changed).text, "A 11.0 m");
-    assert.equal(markReading({ ...changed, showElevation: false }).text, "A");
+    assert.equal(draw(), "A 11.0 m");
+    changed.showElevation = false;
+    assert.equal(draw(), "A");
 });

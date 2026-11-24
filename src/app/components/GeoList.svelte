@@ -148,6 +148,6 @@
         };
     });
     onDestroy(() => {
-        if (editor.map?.highlights?.length) editor.hover([]);
+        if (editor.hoverRefs.length) editor.hover([]);
     });
 </script>
