@@ -7,7 +7,11 @@
 {#snippet editControl()}
     <div class="edit-face"><div class="numeric-edit" use:numericCaret role="textbox" aria-label={label} aria-invalid={!!error}
         aria-multiline={expanded} data-tip={tip} contenteditable="true" spellcheck="false" tabindex="0"
-        bind:this={input} oninput={onInput} onkeydown={key} onpointerdown={selectChip} onblur={() => {
+        bind:this={input} oninput={e => {
+            if (!composing && !(e instanceof InputEvent && e.isComposing)) onInput();
+        }} oncompositionstart={() => composing = true} oncompositionend={() => {
+            composing = false; onInput();
+        }} onkeydown={key} onpointerdown={selectChip} onblur={() => {
             if (editing) finish(true);
         }} onpaste={e => {
             e.preventDefault(); insertText(e.clipboardData?.getData("text/plain") ?? "");
@@ -120,7 +124,7 @@
     import { evaluate, sampleValue } from "../../core/design/expression.ts";
     import { parseDesign } from "../../core/design/model.ts";
     import { seedId } from "../../core/design/defaults.ts";
-    import { adjustNumber, chipSpans, displayNumber, editorSelection, flagOverflow, editorText, NumberDrag, numericCaret, numericText, repeatButton, selectionOffsets, type Range } from "../state/numbers.ts";
+    import { adjustNumber, chipSpans, composingKey, displayNumber, editorSelection, flagOverflow, editorText, NumberDrag, numericCaret, numericText, repeatButton, selectionOffsets, type Range } from "../state/numbers.ts";
     import { anchoredPopup } from "../state/popup.ts";
     import Icon, { type IconName } from "./Icon.svelte";
     import ReferenceChip from "./ReferenceChip.svelte";
@@ -134,7 +138,7 @@
     let value = $derived(authored ?? (readAt(editor.project.resolved, address) as number | undefined) ??
         (self ? expressionGraph(base).get(self) as number : 0));
     let editing = $state(false), expanded = $state(false), draft = $state(""), error = $state(""), opened = $state(false), parent = $state(""), query = $state("");
-    let queryStart = 0, queryEnd = 0;
+    let queryStart = 0, queryEnd = 0, composing = false;
     let active = $state(0);
     let slots = $derived(parameters(base));
     let gesturing = $state(false), live = $state<Expression>(0), shown = $derived(gesturing ? live : value);
@@ -315,6 +319,7 @@
         if (prefix.endsWith("}")) void paint(at);
     }
     function key(e: KeyboardEvent) {
+        if (composing || composingKey(e)) return;
         if (expanded && e.key === "Escape") {
             e.preventDefault(); e.stopPropagation(); finish(false); return;
         }

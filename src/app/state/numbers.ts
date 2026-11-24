@@ -3,6 +3,8 @@ import { parameters, type Slot } from "../../core/design/parameters.ts";
 import { seedId } from "../../core/design/defaults.ts";
 import { type Design, type Expression } from "../../core/design/v5.ts";
 
+export const composingKey = (event: KeyboardEvent) => event.isComposing || event.keyCode === 229;
+
 export type Range = [number, number, number];
 export function numericText(text: string, literal: boolean) {
     const trimmed = text.trim().replaceAll("×", "*").replaceAll("÷", "/").replaceAll("−", "-");

@@ -27,6 +27,7 @@
 </style>
 
 <script lang="ts">
+    import { composingKey } from "../state/numbers.ts";
     import { tick } from "svelte";
     import { anchoredPopup } from "../state/popup.ts";
     import FieldRow from "./FieldRow.svelte";
@@ -45,6 +46,7 @@
         anchor.focus({ preventScroll: true });
     }
     async function keyboard(event: KeyboardEvent) {
+        if (composingKey(event)) return;
         if (event.key === "Escape" && open) {
             close();
             event.preventDefault();

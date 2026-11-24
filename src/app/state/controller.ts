@@ -1,4 +1,4 @@
-import { displayNumber } from "./numbers.ts";
+import { composingKey, displayNumber } from "./numbers.ts";
 import { defaultFollow } from "../../core/design/v5.ts";
 import { distance, onCanvas, sampleDefined } from "../../core/math/geometry.ts";
 import { moveHandle } from "../../core/edit/controls.ts";
@@ -293,6 +293,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
     canvas.addEventListener("pointercancel", finishGesture, { signal });
     canvas.addEventListener("auxclick", ev => ev.preventDefault(), { signal });
     document.addEventListener("keydown", ev => {
+        if (composingKey(ev)) return;
         const save = (ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "s";
         if (save) ev.preventDefault();
         if (!editor.project || editor.busy || editor.draft || editor.fileRequest || editor.removal) return;

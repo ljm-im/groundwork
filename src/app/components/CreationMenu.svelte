@@ -17,6 +17,7 @@
 </style>
 
 <script lang="ts">
+    import { composingKey } from "../state/numbers.ts";
     import { tick } from "svelte";
     import Icon, { type IconName } from "./Icon.svelte";
     import { type Tool } from "../types.ts";
@@ -34,6 +35,7 @@
         }
     }
     async function key(e: KeyboardEvent) {
+        if (composingKey(e)) return;
         if (e.key === "Escape" && open) {
             e.preventDefault(); e.stopPropagation();
             open = false; anchor.focus();
