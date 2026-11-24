@@ -171,11 +171,11 @@ test("Built-in seed, ranges and harbors materialize on read and omit their defau
     assert.throws(() => parseDesign({ ...raw, inputs: { A: { range: null, value: 1 } } }), /inputs.A/);
 });
 
-test("Section marks accept old empty arrays and reject authored marks", () => {
+test("Section marks are rejected even when empty", () => {
     const d = newDesign();
     const s = { id: "A", label: "A", points: [[0, 0], [1, 1]] as [[number, number], [number, number]], marks: [] as unknown[] };
     d.sections.push(s);
-    assert(!Object.hasOwn(parseDesign(d).sections[0], "marks"));
+    assert.throws(() => parseDesign(d), /sections\[0\].marks.*移除/);
     s.marks.push([.5, "B"]);
     assert.throws(() => parseDesign(d), /sections\[0\].marks.*移除/);
 });

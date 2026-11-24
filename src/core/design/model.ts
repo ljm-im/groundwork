@@ -110,9 +110,7 @@ export function parseDesign(text: unknown, allowBrokenReferences = false): Desig
     for (const [i, s] of d.sections.entries()) {
         const at = (path: string[]): Location => ({ kind: "section", id: s.id, index: i, path });
         check(validPoints(s.points) && distance(...s.points) > 0, "长度无效", at(["points"]));
-        const marks = Reflect.get(s, "marks");
-        check(marks === undefined || Array.isArray(marks) && !marks.length, "已从 v5 移除", at(["marks"]));
-        Reflect.deleteProperty(s, "marks");
+        rejectRetired(s, ["marks"], at([]));
     }
     return d;
 }
