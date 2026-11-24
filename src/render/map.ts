@@ -283,12 +283,6 @@ export class ProjectMap {
             ctx.restore();
         }
         if (this.layers.grid) this.drawGrid(ctx, scale);
-        const contours = this.layers.contours && samples ? fieldContours(g, samples, fieldPrecision(d.fields[this.displayField]), scale) : undefined;
-        contours?.paths.forEach((path, rank) => {
-            if (!path) return;
-            const style = contourStyle.lines[rank] ?? contourStyle.zero;
-            ctx.strokeStyle = style.color; ctx.lineWidth = style.width / scale; ctx.stroke(path);
-        });
         const draggedRegionId = this.dragNode?.construction.type === "free" ? this.dragNode.id : undefined;
         for (const n of d.geoNodes) {
             if (n.disabled && !this.emptyCanvas) continue;
@@ -303,6 +297,12 @@ export class ProjectMap {
                 ctx.stroke(paths.outline);
             }
         }
+        const contours = this.layers.contours && samples ? fieldContours(g, samples, fieldPrecision(d.fields[this.displayField]), scale) : undefined;
+        contours?.paths.forEach((path, rank) => {
+            if (!path) return;
+            const style = contourStyle.lines[rank] ?? contourStyle.zero;
+            ctx.strokeStyle = style.color; ctx.lineWidth = style.width / scale; ctx.stroke(path);
+        });
         const outlined = new Set([...this.geoSelection, ...this.referencedGeo()]);
         if (this.hovered?.kind === "geoNode") outlined.add(this.hovered.id);
         for (const id of outlined) {
