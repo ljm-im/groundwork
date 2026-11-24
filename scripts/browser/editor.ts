@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createServer } from "vite";
 import { parseDesign, serializeDesign } from "../../src/core/design/model.ts";
+import { Project } from "../../src/core/project.ts";
+import { ProjectMap } from "../../src/render/map.ts";
+import { type Point } from "../../src/core/design/v5.ts";
 import { layer, rect, syntheticDesign } from "../../test/scenarios.ts";
 import { startChromium } from "./chromium.ts";
 import { installPickers } from "./pickers.ts";
@@ -46,7 +49,8 @@ async function checkEditor(url: string) {
         const index = await evaluate(({ menu, name }) => [...document.querySelectorAll(menu + " [role=option]")]
             .findIndex(el => el.textContent?.trim() === name), { menu, name });
         assert(index >= 0, label + " must offer " + name);
-        await click(menu + " button:nth-of-type(" + (index + 1) + ")");
+        await click(menu + " button[data-option=" + JSON.stringify(await evaluate(({ menu, index }) =>
+            (document.querySelectorAll<HTMLButtonElement>(menu + " [role=option]")[index]).dataset.option, { menu, index })) + "]");
         await wait(({ escaped, name }) => document.querySelector("button.choice-face[aria-label=" + escaped + "] span")?.textContent === name, { escaped, name });
         await idle();
     }
@@ -146,6 +150,8 @@ async function checkEditor(url: string) {
         await click("#terrain-search");
         await compose("甲台", "jiatai", async () => {
             assert.equal(await evaluate(() => document.querySelectorAll("[data-geo-node]").length), d.geoNodes.length);
+            await evaluate(() => document.querySelector<HTMLButtonElement>("[data-geo-node=T]")!.click());
+            assert(await evaluate(() => document.activeElement?.id === "terrain-search"));
         });
         await wait(() => document.querySelectorAll("[data-geo-node]").length === 1);
         assert.equal(await evaluate(() => document.body.dataset.imeStarted + "/" + document.body.dataset.imeEnded), "true/true");
@@ -158,13 +164,31 @@ async function checkEditor(url: string) {
         assert(await evaluate(() => document.activeElement?.matches(".property-title input")));
         await key("Tab"); await idle();
         await wait(() => (document.querySelector(".property-title input") as HTMLInputElement)?.value === "新台");
-        const prompt = "textarea[data-prompt=geoNodes]";
+        const prompt = "#properties textarea[aria-label=描述]";
         await click(prompt);
-        await compose("场地描述", "changdimiaoshu");
+        await compose("场地", "changdi");
+        await wait(async () => {
+            if (document.querySelector("#save-state")?.textContent !== "已保存") return false;
+            try {
+                return JSON.parse(await window.disk("regression.json")).geoNodes.find((node: { id: string }) => node.id === "T").prompt === "场地";
+            }
+            catch (error) {
+                if (error instanceof DOMException && error.name === "NotReadableError") return false;
+                throw error;
+            }
+        });
+        await compose("描述", "miaoshu");
         assert(await evaluate(s => document.activeElement?.matches(s), prompt));
+        await key("s", 2); await saved();
+        assert(await evaluate(s => document.activeElement?.matches(s), prompt));
+        assert.equal(parseDesign(await disk(), true).geoNodes.find(n => n.id === "T")?.prompt, "场地描述");
         await key("Tab"); await saved();
         const renamed = parseDesign(await disk(), true).geoNodes.find(n => n.id === "T");
         assert.equal(renamed?.label, "新台"); assert.equal(renamed?.prompt, "场地描述");
+        await click("#undo"); await saved();
+        assert.equal(parseDesign(await disk(), true).geoNodes.find(n => n.id === "T")?.prompt, undefined);
+        await click("#redo"); await saved();
+        assert.equal(parseDesign(await disk(), true).geoNodes.find(n => n.id === "T")?.prompt, "场地描述");
 
         await terrainTab();
         assert.equal(await hasBuiltinMark("[data-property-tab=function]"), false);
@@ -187,27 +211,27 @@ async function checkEditor(url: string) {
         await wait(() => !!document.querySelector(".numeric-edit [data-ref=\"input:A\"]"));
         await key("Enter"); await idle(); await saved();
         const bound = parseDesign(await disk(), true).geoNodes.find(n => n.id === "T")?.function;
-        assert(bound?.type === "flat" && bound.amount === "{input:A}", JSON.stringify(bound) + " " + await text(".number-error"));
+        assert(bound?.type === "flat" && bound.amount === "{input:A}", JSON.stringify(bound) + " " + await text("#properties [role=alert]"));
 
         console.log("Localized errors and referenced input deletion");
         await click(".number-row[data-parameter$=\".function.feather\"] .numeric-face");
         await evaluate(() => document.getSelection()!.selectAllChildren(document.querySelector(".numeric-edit")!));
         await cdp("Input.insertText", { text: "-1" });
-        assert.equal(await text(".number-error"), "无效");
+        assert.equal(await text("#properties [role=alert]"), "无效");
         await evaluate(() => document.getSelection()!.selectAllChildren(document.querySelector(".numeric-edit")!));
         await cdp("Input.insertText", { text: "1/0" });
-        assert.equal(await text(".number-error"), "除数不能为 0");
-        assert.doesNotMatch(await text(".number-error"), forbidden);
+        assert.equal(await text("#properties [role=alert]"), "除数不能为 0");
+        assert.doesNotMatch(await text("#properties [role=alert]"), forbidden);
         await key("Escape");
         await panel("issues");
         const brokenReference = "边 找不到下方地件“missing”";
-        assert.equal(await text("#panel .issue-row b"), "X");
-        assert.equal(await text("#panel .issue-row small"), brokenReference);
+        assert.equal(await text("#panel [data-issue] .row-text > span"), "X");
+        assert.equal(await text("#panel [data-issue] small"), brokenReference);
         assert.doesNotMatch(await text("#panel"), forbidden);
         await panel("terrain"); await clearTerrainSearch(); await click("[data-geo-node=X]");
         await click("[data-property-tab=issues]");
-        assert.equal(await text("#properties .issue-row b"), "X");
-        assert.equal(await text("#properties .issue-row small"), brokenReference);
+        assert.equal(await text("#properties [data-issue] .row-text > span"), "X");
+        assert.equal(await text("#properties [data-issue] small"), brokenReference);
         assert(await evaluate(() => !!document.querySelector("[data-property-tab=issues] [aria-label=有错误]")));
         await panel("inputs"); await click("[data-select-input=A]");
         await click("#properties [data-action=delete]");
@@ -256,7 +280,7 @@ async function checkEditor(url: string) {
         await panel("layers");
         const planeLayers = await evaluate(() => {
             const plane = [...document.querySelectorAll("#panel h3")].find(h => h.textContent === "平面图")!.closest("section")!;
-            return [...plane.querySelectorAll("label")].map(label => [label.querySelector("input")?.dataset.layer, label.textContent?.trim()]);
+            return [...plane.querySelectorAll("label")].map(label => [(label.control as HTMLInputElement)?.dataset.layer, label.textContent?.trim()]);
         });
         assert.deepEqual(planeLayers, [["geoNodes", "地件轮廓"], ["labels", "地件名称"], ["sections", "剖面线"], ["marks", "标记"], ["issues", "问题位置"]]);
         for (const [layer] of planeLayers) {
@@ -272,12 +296,19 @@ async function checkEditor(url: string) {
             return [input.checked, input.disabled];
         }, labelToggle);
         assert.deepEqual(await annotation(), [true, false]);
-        assert.equal(await text(".toggle:has(" + labelToggle + ")"), "标注数值");
+        assert.equal(await text(".parameter-row:has(" + labelToggle + ") label"), "标注数值");
         await click(contourToggle); assert.deepEqual(await annotation(), [true, true]);
         await click(contourToggle); assert.deepEqual(await annotation(), [true, false]);
         await click(labelToggle); assert.deepEqual(await annotation(), [false, false]);
         assert.equal(await evaluate(() => JSON.parse(localStorage.getItem("groundwork/map-display-v1")!).layers.contourLabels), false);
         await click(labelToggle);
+        const grid = "[data-grid-setting=pixels]";
+        await click(grid + " .numeric-face");
+        await evaluate(() => document.getSelection()!.selectAllChildren(document.querySelector(".numeric-edit")!));
+        await cdp("Input.insertText", { text: "72" });
+        await key("Enter");
+        assert.equal(await text(grid + " .numeric-face"), "72");
+        assert.equal(await evaluate(() => JSON.parse(localStorage.getItem("groundwork/map-display-v1")!).grid.pixels), 72);
         await choose("显示的场", "系数");
         await moveMap(.5, .5);
         assert.match(await text("#position"), /系数 0\.5%$/);
@@ -355,7 +386,6 @@ async function checkEditor(url: string) {
         await saved();
         assert.equal(await disk(), before);
 
-        console.log("Double-click finishes drawing with only the previously placed vertices");
         await panel("terrain");
         const [cx, cy] = await evaluate(() => {
             const box = document.querySelector("#map")!.getBoundingClientRect();
@@ -366,9 +396,22 @@ async function checkEditor(url: string) {
             for (const type of ["mousePressed", "mouseReleased"])
                 await cdp("Input.dispatchMouseEvent", { type, x, y, button, clickCount, modifiers });
         }
+        const status = ".drawing-status";
+        const selected = () => wait(() => !document.querySelector(".drawing-status") && document.querySelector("#mode-hint")?.textContent?.startsWith("单击选择"));
+        async function chooseTool(category: "地件" | "标记", id: string) {
+            await click("button[aria-label=新建" + category + "]");
+            await click(".creation-menu [data-option=" + id + "]");
+        }
+        async function buttonCenter(selector: string): Promise<Point> {
+            return evaluate(selector => {
+                const node = document.querySelector(selector)!;
+                node.scrollIntoView({ block: "nearest" });
+                const box = node.getBoundingClientRect();
+                return [box.left + box.width / 2, box.top + box.height / 2];
+            }, selector);
+        }
         async function pen() {
-            await click("button[aria-label=新建地件]");
-            await click(".creation-menu [role=menuitem]");
+            await chooseTool("地件", "pen");
         }
         async function vertices(closed: boolean) {
             await tap(a);
@@ -392,6 +435,60 @@ async function checkEditor(url: string) {
             assert.match(await text("#mode-hint"), /单击选择/);
             assert(await disk() === byEnter, "Double-click and Enter must save identical geometry");
         }
+        console.log("Drawing status, Escape, undo, selection and placement cancellation");
+        await pen();
+        assert.equal(await text(status + " strong"), "新建地件（钢笔）");
+        assert.equal(await text(status + " span"), "回车、双击或单击首点结束");
+        assert.equal(await evaluate(() => document.querySelector("[aria-label=新建地件]")?.getAttribute("aria-pressed")), "true");
+        await vertices(false);
+        assert.deepEqual(await evaluate(() => [...document.querySelectorAll<HTMLButtonElement>(".drawing-status button")]
+            .map(button => [button.textContent, button.disabled])), [["完成", true], ["取消", false]]);
+        const beforeEscape = await disk();
+        await key("Escape"); await selected();
+        assert.equal(await disk(), beforeEscape);
+        assert.equal(await evaluate(() => document.querySelector("[aria-label=新建地件]")?.getAttribute("aria-pressed")), "false");
+        await pen(); await tap(a); await tap(b); await tap(c);
+        assert.equal(await evaluate(() => document.querySelector<HTMLButtonElement>(".drawing-status button")?.disabled), false);
+        await click(status + " button:last-child"); await selected();
+        await click("[data-geo-node=G]");
+        await pen(); await tap(a);
+        await click("[data-geo-node=G]"); await selected();
+        await click(".property-title input");
+        await evaluate(() => (document.activeElement as HTMLInputElement).select());
+        await cdp("Input.insertText", { text: "基底 A" });
+        await key("Tab"); await idle(); await saved();
+        const beforeCancel = await disk();
+        await pen(); await tap(a);
+        await key("z", 2); await selected(); await idle(); await saved();
+        assert.equal(await disk(), beforeEscape);
+        await pen(); await tap(a);
+        await key("z", 10); await selected(); await idle(); await saved();
+        assert.equal(await disk(), beforeCancel);
+        await pen();
+        await cdp("Emulation.setTouchEmulationEnabled", { enabled: true });
+        await cdp("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: a[0], y: a[1] }] });
+        await cdp("Input.dispatchTouchEvent", { type: "touchCancel", touchPoints: [] });
+        await cdp("Emulation.setTouchEmulationEnabled", { enabled: false });
+        await selected();
+        await panel("marks"); await chooseTool("标记", "textMark");
+        assert.equal(await text(status + " strong"), "新建文字标记");
+        assert.equal(await text(status + " button"), "取消");
+        assert.equal(await evaluate(() => document.querySelectorAll(".drawing-status button").length), 1);
+        await click("[data-mark=M]"); await selected();
+        await tap(a); assert.equal(await disk(), beforeCancel);
+        await panel("marks"); await chooseTool("标记", "textMark");
+        await panel("terrain"); await selected(); await click("[data-geo-node=G]");
+        await tap(a); assert.equal(await disk(), beforeCancel);
+        await panel("marks"); await chooseTool("标记", "textMark");
+        await panel("layers"); await selected(); await tap(a);
+        assert.equal(await disk(), beforeCancel);
+        await panel("terrain");
+        await click("[data-geo-node=G]");
+        await tap(await buttonCenter("[data-geo-node=T]"), 1, "left", 8);
+        assert.deepEqual(await evaluate(() => [...document.querySelectorAll<HTMLElement>("[data-geo-node][aria-pressed=true]")]
+            .map(item => item.dataset.geoNode)), ["T"]);
+
+        console.log("Double-click finishes drawing with only the previously placed vertices");
         await compareFinish(pen, true);
         const triangle = await disk();
         await undo();
@@ -412,10 +509,6 @@ async function checkEditor(url: string) {
             await cdp("Input.dispatchMouseEvent", { ...second, type: "mouseReleased" });
             await idle(); await saved();
             assert(await disk() === triangle, "Double-clicking the first node must close exactly once");
-            if (shift) {
-                assert.match(await text("#mode-hint"), /单击放尖角/);
-                await key("Escape");
-            }
             assert.match(await text("#mode-hint"), /单击选择/);
             assert.equal(await evaluate(() => !!document.querySelector("[aria-label=节点类型]")), false);
         }
@@ -447,6 +540,17 @@ async function checkEditor(url: string) {
         await compareFinish(() => click("button[aria-label=重画坡线]"), false);
         await choose("函数", "mountain");
         await compareFinish(() => click("button[aria-label=添加山脊]"), false);
+        const originalRidge = await disk();
+        const ridgeOf = (bytes: string) => parseDesign(bytes, true).geoNodes.findLast(node => node.function.type === "mountain")!.function;
+        assert.equal(await evaluate(() => document.querySelector("[aria-label=添加山脊]")?.getAttribute("aria-pressed")), "false");
+        await click("button[aria-label='复制山脊 1']"); await idle(); await saved();
+        const mountain = ridgeOf(await disk());
+        assert(mountain.type === "mountain" && mountain.ridges.length === 2);
+        assert.deepEqual(mountain.ridges[0], mountain.ridges[1]);
+        assert.equal(await evaluate(() => [...document.querySelectorAll("#properties .subitem-toggle")]
+            .find(button => button.textContent?.includes("山脊 2"))?.getAttribute("aria-expanded")), "true");
+        await undo();
+        assert.equal(await disk(), originalRidge);
 
         console.log("Only the original outline fades while dragging");
         const left = cx + 82, top = cy + 4, mid = top + 40, dx = 58, dy = -24;
@@ -486,6 +590,69 @@ async function checkEditor(url: string) {
         await cdp("Emulation.setTouchEmulationEnabled", { enabled: false });
         assert.deepEqual(await pixel(left, mid), solid);
         assert.equal(await disk(), restored);
+
+        console.log("Strip construction, segment menu, and the section list");
+        const adjacent = syntheticDesign();
+        const west = layer("A", rect(-30, -12, 0, 12), { type: "flat", amount: 2 });
+        adjacent.geoNodes.push(west, layer("B", rect(0, -12, 24, 12), { type: "flat", amount: 5 }));
+        adjacent.marks.push({ id: "M", kind: "scale", label: "比例尺", point: [94, 120], follow: "screen" });
+        await evaluate(async bytes => {
+            window.probe.openName = "regression.json";
+            const root = await navigator.storage.getDirectory();
+            const file = await root.getFileHandle(window.probe.openName, { create: true });
+            const stream = await file.createWritable();
+            await stream.write(bytes); await stream.close();
+        }, serializeDesign(adjacent));
+        const opens = await evaluate(() => window.probe.opens);
+        await click("#open"); await wait(n => window.probe.opens === n + 1, opens); await idle();
+        await panel("terrain"); await click("#fit");
+        const mapBox = await evaluate(() => document.querySelector("#map")!.getBoundingClientRect().toJSON() as { left: number; top: number; width: number; height: number });
+        const project = new Project(parseDesign(adjacent));
+        const camera: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), { width: mapBox.width, height: mapBox.height, project: project.view() });
+        camera.fit(false);
+        const at = (p: Point): Point => {
+            const [x, y] = camera.screen(p);
+            return [mapBox.left + x, mapBox.top + y];
+        };
+        await chooseTool("地件", "strip");
+        assert.equal(await text(status + " strong"), "新建地件（条带）");
+        await tap(at([-19, 5]));
+        assert.equal(await evaluate(() => document.querySelector<HTMLButtonElement>(".drawing-status button")?.disabled), true);
+        await tap(at([12, 3]));
+        await tap(at([0, -12])); await tap(at([0, 12]));
+        assert.equal(await evaluate(() => document.querySelector<HTMLButtonElement>(".drawing-status button")?.disabled), false);
+        await click(status + " button:first-child"); await idle(); await saved(); await selected();
+        const strip = parseDesign(await disk()).geoNodes.find(n => n.construction.type === "strip")!.construction;
+        assert(strip.type === "strip");
+        assert.deepEqual(strip.of, ["B", "A"]);
+        assert.deepEqual(strip.range, { from: "0", to: "3" });
+        await undo();
+
+        await tap(at([-21, 5])); await tap(at([13, 3]), 1, "left", 8);
+        assert.deepEqual(await evaluate(() => [...document.querySelectorAll<HTMLElement>("[data-geo-node][aria-pressed=true]")]
+            .map(item => item.dataset.geoNode)), ["B"]);
+        await click("[data-geo-node=A]");
+        await tap(at([-17, -12]), 1, "right");
+        await click(".context-menu [data-option=insert-node]"); await idle(); await saved();
+        const changed = parseDesign(await disk()).geoNodes.find(n => n.id === "A")!.construction;
+        assert(changed.type === "free" && changed.paths[0].nodes.length === 5);
+        assert(Math.abs(changed.paths[0].nodes[1].p[0] + 17) < .15);
+        assert.equal(changed.paths[0].nodes[1].p[1], -12);
+        await undo();
+
+        await panel("marks"); await chooseTool("标记", "textMark"); await tap(at([-8, 25])); await idle(); await saved(); await selected();
+        await chooseTool("标记", "section"); await tap(at([-34, -26])); await tap(at([25, -26])); await idle(); await saved(); await selected();
+        const section = parseDesign(await disk()).sections[0];
+        assert.equal(section.label, "剖面线 1");
+        assert.equal(await evaluate(() => document.querySelector("[data-section]")?.getAttribute("aria-pressed")), "true");
+        assert.match(await text("#plots .plot-title"), /剖面线 1/);
+        await click("#mark-search"); await cdp("Input.insertText", { text: "剖面线" });
+        assert.equal(await evaluate(() => document.querySelectorAll("#panel :is([data-mark],[data-section])").length), 1);
+        await tap(await buttonCenter("[data-section]"), 1, "right");
+        await click(".context-menu [data-option=delete]"); await idle(); await saved();
+        assert.equal(parseDesign(await disk()).sections.length, 0);
+        assert.equal(await text("#panel .list-empty"), "没有匹配的结果");
+
     }
     finally {
         await browser.close();

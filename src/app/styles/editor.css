@@ -60,7 +60,7 @@ button.icon-button {
 }
 
 button.icon-button[aria-pressed="true"] { background: var(--bg-selected); color: var(--accent); }
-button.danger:hover:enabled, button.confirm-danger, .error-text { color: var(--danger); }
+.danger { color: var(--danger); }
 
 svg.icon {
     width: var(--icon);
@@ -93,14 +93,6 @@ input:is([type="checkbox"], [type="radio"]):focus-visible {
     border-color: var(--accent);
     outline: none;
     box-shadow: 0 0 0 2px var(--focus-ring);
-}
-
-.toggle {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    min-height: var(--control-h);
-    cursor: pointer;
 }
 
 input:is([type="checkbox"], [type="radio"]) {
@@ -143,17 +135,19 @@ input[type="radio"]:checked::after {
 ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: var(--radius-lg); }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-secondary); }
 
-.panel-heading, .part-title, .row-between, .row-actions {
+.heading, .row-between, .row-actions {
     display: flex;
     align-items: center;
     gap: var(--space-2);
     min-width: 0;
 }
-.panel-heading, .part-title, .row-between { justify-content: space-between; }
-.panel-heading { min-height: var(--row-h); padding-inline: var(--panel-inset); }
+.heading, .row-between { justify-content: space-between; }
+.panel-heading { padding: var(--space-3) var(--panel-inset) var(--space-2); }
+.panel-heading h2 { font-size: var(--text-xl); line-height: var(--leading-xl); }
 .part { display: grid; gap: var(--space-1); min-width: 0; }
-.part + .part { margin-top: var(--space-4); }
-.part-title { min-height: var(--control-h); color: var(--text); }
+.part + .part { margin-top: var(--space-6); }
+.part-title { color: var(--text); margin-bottom: var(--space-1); }
+.part-title h3 { font-size: var(--text-lg); line-height: var(--leading-lg); }
 .list-empty { padding: var(--space-6) var(--panel-inset); font-size: var(--text-sm); line-height: var(--leading-sm); color: var(--text-secondary); }
 .number, .param-name, .unit { color: var(--text-secondary); }
 
@@ -167,26 +161,12 @@ input[type="radio"]:checked::after {
 }
 .param-name { font-size: var(--text-sm); line-height: var(--leading-sm); overflow-wrap: anywhere; }
 .unit { white-space: nowrap; }
-.control-unit { grid-column: 3; overflow: hidden; text-overflow: ellipsis; }
-.parameter-row > :nth-child(2) { min-width: 0; }
+.parameter-control { grid-column: 2; grid-row: 1; min-width: 0; }
+.parameter-control > .input-box { width: 100%; }
+.control-unit { grid-column: 3; grid-row: 1; overflow: hidden; text-overflow: ellipsis; }
+.parameter-error { grid-column: 2 / -1; font-size: var(--text-xs); line-height: var(--leading-xs); }
 
-.list-row, .object-row, .issue-row {
-    display: flex;
-    width: 100%;
-    min-height: var(--row-h);
-    align-items: center;
-    justify-content: flex-start;
-    gap: var(--space-1);
-    padding: 0 var(--space-3);
-    text-align: left;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-}
-
-:is(.list-row, .object-row, .issue-row):hover { background: var(--bg-hover); }
-:is(.list-row, .object-row, .issue-row):is([aria-pressed="true"], .is-selected) { background: var(--bg-selected); }
-:is(.list-row, .object-row, .issue-row) small {
+.list-row small {
     color: var(--text-secondary);
     min-width: 0;
 }
@@ -197,12 +177,8 @@ input[type="radio"]:checked::after {
     width: 6px;
     height: 6px;
     border-radius: var(--radius-round);
-    background: var(--danger);
+    background: currentColor;
 }
-.issue-row { align-items: flex-start; padding-block: var(--space-1); }
-.issue-row :is(b, small) { display: block; }
-.issue-row b { font-weight: var(--weight-regular); }
-.issue-error { color: var(--danger); }
 .issue-warning { color: var(--warning); }
 
 .popup {
@@ -235,7 +211,7 @@ input[type="radio"]:checked::after {
     background: transparent;
 }
 .menu button:focus-visible { box-shadow: inset 0 0 0 2px var(--focus-ring); }
-.menu button:is([aria-selected="true"], [aria-pressed="true"]) { background: var(--bg-selected); }
+.menu button:is([aria-selected="true"], [aria-checked="true"]) { background: var(--bg-selected); }
 .menu .group-name { color: var(--text-secondary); }
 .menu .group-name {
     font-size: var(--text-xs);

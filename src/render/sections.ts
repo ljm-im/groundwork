@@ -19,10 +19,11 @@ function sectionCut(section: Section) {
     return cut;
 }
 
-export function drawSections(container: HTMLElement, project: ProjectView) {
+export function drawSections(container: HTMLElement, project: ProjectView, selected?: string) {
     const { design: d, terrain: t } = project;
-    while (container.children.length > d.sections.length) container.lastChild!.remove();
-    for (const [index, section] of d.sections.entries()) {
+    const sections = selected === undefined ? d.sections : d.sections.filter(section => section.id === selected);
+    while (container.children.length > sections.length) container.lastChild!.remove();
+    for (const [index, section] of sections.entries()) {
         let figure = container.children[index];
         if (!figure) {
             figure = document.createElement("div");

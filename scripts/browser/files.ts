@@ -75,7 +75,7 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
     }
     async function prompt(text: string, blur = true) {
         await click("[data-tab=terrain]");
-        if (!await evaluate(() => !!document.querySelector("textarea[data-prompt=design]"))) {
+        if (!await evaluate(() => !!document.querySelector("#properties textarea[aria-label=描述]"))) {
             const [x, y] = await evaluate(() => {
                 const box = document.querySelector("#map")!.getBoundingClientRect();
                 return [box.left + 8, box.top + 8];
@@ -83,7 +83,7 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
             await mouse("mousePressed", x, y);
             await mouse("mouseReleased", x, y);
         }
-        await click("textarea[data-prompt=design]");
+        await click("#properties textarea[aria-label=描述]");
         await evaluate(() => (document.activeElement as HTMLTextAreaElement).select());
         await cdp("Input.insertText", { text });
         if (blur) await key("Tab");
@@ -421,7 +421,7 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
         await mouse("mousePressed", sx, sy);
         await mouse("mouseReleased", sx, sy);
         await click("[data-property-tab=section]");
-        const control = "#properties .geometry-select[aria-label=剖面线]";
+        const control = "#properties .geometry-box[aria-label=剖面线]";
         await click(control);
         assert.equal(await evaluate(s => document.querySelector(s)!.getAttribute("aria-pressed"), control), "true");
         assert.equal(await evaluate(() => [...document.querySelectorAll("#properties .number-label")].filter(n => /^(中心 )?[XY]$/.test(n.textContent!)).length), 0);

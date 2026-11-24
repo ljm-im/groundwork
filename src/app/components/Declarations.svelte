@@ -1,37 +1,28 @@
 {#if !properties}
-    <Search id="variable-search" label="查找变量" bind:value={editor.variableFilter} />
     <Part title="输入">
         {#snippet actions()}
-            <button class="icon-button" data-add="input" data-tip="新建自定义输入" aria-label="新建自定义输入" onclick={() => editor.addDeclaration("input")}><Icon name="plus" /></button>
+            <AddButton label="新建自定义输入" attributes={{ "data-add": "input" }} action={() => editor.addDeclaration("input")} />
         {/snippet}
         {#each inputs as [id, v] (id)}
             {@const builtin = isBuiltin("input", id)}
-            <div class="declaration" class:is-selected={h?.kind === "input" && h.id === id}>
-                <button class="object-row" data-select-input={id} aria-pressed={h?.kind === "input" && h.id === id} onclick={() => editor.select({ kind: "input", id })}
-                    oncontextmenu={e => {
-                        e.preventDefault();
-                        if (!builtin) editor.openMenu({ kind: "input", id }, e.clientX, e.clientY);
-                    }}>
-                    <Icon name="inputs" {builtin} /><span>{v.label ?? id}</span>
-                </button>
-                <div data-input={id}><NumberInput {editor} label={v.label ?? id} address={["inputs", id, "value"]} self={"input:" + id}
-                    range={v.range} step={v.range[2]} compact /></div>
-            </div>
-        {:else}<div class="list-empty">没有匹配的结果</div>{/each}
+            <ListRow icon="inputs" name={v.label ?? id} {builtin} actionsWidth="55%" attributes={{ "data-select-input": id }} selected={h?.kind === "input" && h.id === id}
+                select={() => editor.focus("input", id)} onmenu={builtin ? undefined : (x, y) => editor.openMenu({ kind: "input", id }, x, y)}>
+                {#snippet actions()}
+                    <div data-input={id}><NumberInput {editor} label={v.label ?? id} address={["inputs", id, "value"]} self={"input:" + id}
+                        range={v.range} step={v.range[2]} compact /></div>
+                {/snippet}
+            </ListRow>
+        {:else}<EmptyState search />{/each}
     </Part>
     <Part title="场">
         {#snippet actions()}
-            <button class="icon-button" data-add="field" data-tip="新建场" aria-label="新建场" onclick={() => editor.addDeclaration("field")}><Icon name="plus" /></button>
+            <AddButton label="新建场" attributes={{ "data-add": "field" }} action={() => editor.addDeclaration("field")} />
         {/snippet}
         {#each fields as [id, field] (id)}
-            <button class="object-row" data-select-field={id} aria-pressed={h?.kind === "field" && h.id === id} onclick={() => editor.select({ kind: "field", id })}
-                oncontextmenu={e => {
-                    e.preventDefault();
-                    if (!isBuiltin("field", id)) editor.openMenu({ kind: "field", id }, e.clientX, e.clientY);
-                }}>
-                <Icon name="field" builtin={isBuiltin("field", id)} />{field.label}
-            </button>
-        {:else}<div class="list-empty">没有匹配的结果</div>{/each}
+            {@const builtin = isBuiltin("field", id)}
+            <ListRow icon="field" name={field.label} {builtin} attributes={{ "data-select-field": id }} selected={h?.kind === "field" && h.id === id}
+                select={() => editor.focus("field", id)} onmenu={builtin ? undefined : (x, y) => editor.openMenu({ kind: "field", id }, x, y)} />
+        {:else}<EmptyState search />{/each}
     </Part>
 {:else if h?.kind === "input" || h?.kind === "field"}
     {@const variable = h.kind === "input"}
@@ -62,14 +53,9 @@
                 {@const precision = fieldPrecision(f)}
                 <Part>
                     <FieldRow label="单位" readOnlyValue={builtin ? f.unit ?? "" : undefined}>
-                        <input class="input-box" aria-label="单位" value={f.unit ?? ""} onchange={e => {
-                            const unit = e.currentTarget.value.trim();
-                            if (unit === (f.unit ?? "")) return;
-                            editor.edit(d => {
-                                if (unit) d.fields[h!.id].unit = unit;
-                                else delete d.fields[h!.id].unit;
-                            });
-                        }} />
+                        <input class="input-box" aria-label="单位" value={f.unit ?? ""}
+                            use:pendingInput={input => commitUnit(h!.id, input.value)}
+                            onchange={e => commitUnit(h!.id, e.currentTarget.value)} />
                     </FieldRow>
                     {#if builtin}
                         <FieldRow label="精度" unit={f.unit} readOnlyValue={displayValue(precision, precision)} />
@@ -83,27 +69,16 @@
     {/if}
 {/if}
 
-<style>
-    .declaration {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) minmax(var(--name-w), 55%);
-        align-items: center;
-        gap: var(--space-1);
-        padding-right: var(--space-3);
-    }
-    .declaration .object-row { background: transparent; }
-    .declaration .object-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .declaration:hover { background: var(--bg-hover); }
-    .declaration.is-selected { background: var(--bg-selected); }
-</style>
-
 <script lang="ts">
     import * as session from "../state/session.svelte.ts";
     import { defaultFieldPrecision, declarationEntries, fieldPrecision, isBuiltin } from "../../core/design/defaults.ts";
     import { displayValue } from "../state/numbers.ts";
-    import Search from "./Search.svelte";
+    import { matchesSearch } from "../state/inspector.ts";
+    import { pendingInput } from "../state/pendingInput.ts";
+    import AddButton from "./AddButton.svelte";
+    import ListRow from "./ListRow.svelte";
+    import EmptyState from "./EmptyState.svelte";
     import Part from "./Part.svelte";
-    import Icon from "./Icon.svelte";
     import FieldRow from "./FieldRow.svelte";
     import PropertyPane from "./PropertyPane.svelte";
     import PropertyTitle from "./PropertyTitle.svelte";
@@ -113,7 +88,15 @@
         editor.revision;
         return editor.project.design;
     }), h = $derived(editor.selection);
-    const matches = (id: string, name: string) => (name + " " + id).toLowerCase().includes(editor.variableFilter.trim().toLowerCase());
+    const matches = (id: string, name: string) => matchesSearch(editor.variableFilter, name + " " + id);
     let inputs = $derived(declarationEntries("input", d.inputs).filter(([id, input]) => matches(id, input.label ?? id)));
     let fields = $derived(declarationEntries("field", d.fields).filter(([id, field]) => matches(id, field.label)));
+    function commitUnit(id: string, text: string) {
+        const unit = text.trim();
+        if (unit === (d.fields[id].unit ?? "")) return;
+        editor.edit(d => {
+            if (unit) d.fields[id].unit = unit;
+            else delete d.fields[id].unit;
+        });
+    }
 </script>

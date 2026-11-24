@@ -1,39 +1,47 @@
-<div class="property-title">
+<Heading kind="property-title">
     <Icon name={icon} {builtin} />
     {#if rename}
-        <input aria-label={label} data-tip={label} value={name} onchange={e => {
-            const text = e.currentTarget.value.trim();
-            if (text && text !== name) rename?.(text);
-            else e.currentTarget.value = name;
-        }} />
+        <input aria-label={label} data-tip={label} value={name} bind:this={input}
+            use:pendingInput={commit} onchange={commit} />
     {:else}<h2>{name}</h2>{/if}
-    {#if toggle}<button class="icon-button" data-tip={toggleTitle} aria-label={toggleTitle} aria-pressed={disabled} onclick={toggle}><Icon name="exclude" /></button>{/if}
-    {#if copy}<button class="icon-button" data-tip={"复制“" + name + "”"} aria-label={"复制“" + name + "”"} onclick={copy}><Icon name="copy" /></button>{/if}
-    {#if remove}<button class="icon-button danger" data-action="delete" data-tip={"删除“" + name + "”"} aria-label={"删除“" + name + "”"} onclick={remove}><Icon name="delete" /></button>{/if}
-</div>
+    {#snippet actions()}
+        {#if toggle}<button class="icon-button" data-tip={toggleTitle} aria-label={toggleTitle} aria-pressed={disabled} onclick={toggle}><Icon name="exclude" /></button>{/if}
+        {#if copy}<button class="icon-button" data-tip={"复制“" + name + "”"} aria-label={"复制“" + name + "”"} onclick={copy}><Icon name="copy" /></button>{/if}
+        {#if remove}<button class="icon-button danger" data-action="delete" data-tip={"删除“" + name + "”"} aria-label={"删除“" + name + "”"} onclick={remove}><Icon name="delete" /></button>{/if}
+    {/snippet}
+</Heading>
 
 <style>
-    .property-title {
-        display: flex;
-        align-items: center;
-        min-height: calc(var(--control-h) + 2 * var(--space-1));
+    :global(.property-title) {
+        min-height: var(--property-title-h);
         gap: var(--space-1);
         padding: var(--space-1) var(--panel-inset);
     }
-    .property-title input, .property-title h2 {
+    :global(.property-title > svg.icon) { margin-inline: var(--title-icon-inset); }
+    :global(.property-title .row-actions) { gap: var(--space-1); }
+    input, h2 {
         min-width: 0;
         flex: 1;
-        font-size: var(--text-lg);
-        line-height: var(--leading-lg);
+        font-size: var(--text-xl);
+        line-height: var(--leading-xl);
         font-weight: var(--weight-semibold);
     }
+    :global(.property-title) input { height: var(--property-name-h); }
 </style>
 
 <script lang="ts">
     import Icon, { type IconName } from "./Icon.svelte";
+    import Heading from "./Heading.svelte";
+    import { pendingInput } from "../state/pendingInput.ts";
     let { icon, name, label = "名称", rename, remove, copy, toggle, builtin = false, disabled = false }: {
         icon: IconName; builtin?: boolean; name: string; label?: string; rename?: (name: string) => void;
         remove?: () => void; copy?: () => void; toggle?: () => void; disabled?: boolean;
     } = $props();
     let toggleTitle = $derived((disabled ? "启用“" : "禁用“") + name + "”");
+    let input = $state<HTMLInputElement>(null!);
+    function commit() {
+        const text = input.value.trim();
+        if (text && text !== name) rename?.(text);
+        else input.value = name;
+    }
 </script>

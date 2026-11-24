@@ -16,8 +16,8 @@ export const palette = {
 } as const;
 
 export const canvasText = {
-    xs: 11,
-    sm: 12,
+    xs: 12,
+    sm: 13,
     font: "\"Inter\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", system-ui, sans-serif",
     regular: 400,
     semibold: 600

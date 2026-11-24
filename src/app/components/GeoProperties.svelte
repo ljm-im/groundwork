@@ -4,13 +4,15 @@
 {#snippet geometry(label: string, kind: GeometryTarget["kind"], index: number, icon: "point" | "polyline" | "closedPath", count: number, heightAt?: Address, redraw?: DrawTool, member?: number)}
     {@const active = editor.map.geometry?.kind === kind && editor.map.geometry.index === index}
     <GeometryInput {label} {icon} {count} {active} onclick={() => editor.focusGeometry({ kind, index })}
-        redraw={redraw ? () => editor.setTool(redraw, n.id, member) : undefined} />
+        redraw={redraw ? () => editor.setTool(redraw, n.id, member) : undefined}
+        redrawing={redraw && editor.toolActive(redraw, n.id, member)} />
     {#if heightAt && active && vertex?.role === "parameter" && vertex.path === index && vertex.index < count}
         {@render param(icon === "point" ? [...heightAt, "h"] : [...heightAt, vertex.index, "h"])}
     {/if}
 {/snippet}
-{#snippet action(label: string, icon: "plus" | "delete", click: () => void)}
-    <button class="icon-button" class:danger={icon === "delete"} aria-label={label} data-tip={label} onclick={click}><Icon name={icon} /></button>
+{#snippet memberActions(group: "ridges" | "peaks", label: string, index: number)}
+    <button class="icon-button" aria-label={"复制" + label} data-tip={"复制" + label} onclick={() => editor.changeMember(n.id, group, index, true)}><Icon name="copy" /></button>
+    <button class="icon-button danger" aria-label={"删除" + label} data-tip={"删除" + label} onclick={() => editor.changeMember(n.id, group, index, false)}><Icon name="delete" /></button>
 {/snippet}
 <PropertyPane {editor}>
     {#snippet title()}
@@ -29,7 +31,7 @@
                         {@render geometry(c.paths.length === 1 ? "边界" : "边界 " + (i + 1), "path", i, "closedPath", path.nodes.length)}
                     {/each}
                 {:else if c.type === "strip"}
-                    <GeometryInput label="边" icon="polyline" summary={stripSummary(c)} active={editor.tool === "strip" && editor.map.draft?.owner === n.id}
+                    <GeometryInput label="边" icon="polyline" summary={stripSummary(c)} active={editor.toolActive("strip", n.id)}
                         onclick={() => editor.setTool("strip", n.id)} />
                     {#each [0, 1] as i (i)}
                         <Parameter {editor} node={n} address={["widths", i]} construction />
@@ -59,10 +61,8 @@
                     {:else if f.type === "slope" && f.kind === "path"}
                         {@render geometry(p.label, "parameter", 0, "polyline", f.line.points.length, ["line", "points"], "slopeLine")}
                         {#each functionTable.slope.toggles ?? [] as toggle (toggle.label)}
-                            <label class="toggle"><input type="checkbox" checked={Boolean(readAt(f, toggle.key) ?? toggle.default)} onchange={e => {
-                                const value = e.currentTarget.checked;
-                                editor.editNode(n.id, item => writeAt(item.function, toggle.key, value));
-                            }} />{toggle.label}</label>
+                            <CheckboxRow label={toggle.label} checked={Boolean(readAt(f, toggle.key) ?? toggle.default)}
+                                change={value => editor.editNode(n.id, item => writeAt(item.function, toggle.key, value))} />
                         {/each}
                     {:else if f.type === "slope"}
                         {@render geometry(p.label, "parameter", 0, "point", 1, undefined, "center")}
@@ -71,23 +71,22 @@
             </Part>
             {#if advancedParameters.length}
                 <Part>
-                    <Subitem label="高级" open={editor.subitemOpen(n.id, "advanced", 0)} onclick={() => editor.toggleSubitem(n.id, "advanced", 0)}>
+                    <Subitem label="高级" open={editor.subitemOpen(n.id, "advanced")} onclick={() => editor.toggleSubitem(n.id, "advanced")}>
                         {#each advancedParameters as p (p.key.join("."))}{@render param(p.key)}{/each}
                     </Subitem>
                 </Part>
             {:else if f.type === "mountain"}
                 <Part title="山脊">
-                    {#snippet actions()}{@render action("添加山脊", "plus", () => editor.setTool("ridge", n.id))}{/snippet}
-                    {#each f.ridges as ridge, j (j)}
+                    {#snippet actions()}<AddButton label="添加山脊" active={editor.toolActive("ridge", n.id)} action={() => editor.setTool("ridge", n.id)} />{/snippet}
+                    {#each f.ridges as ridge, j (editor.subitemKey(n.id, "ridges", j))}
                         <Subitem label={"山脊 " + (j + 1)} open={editor.subitemOpen(n.id, "ridges", j)} onclick={() => editor.toggleSubitem(n.id, "ridges", j)}>
-                            {#snippet actions()}{@render action("删除山脊 " + (j + 1), "delete", () => removeMember("ridges", j))}{/snippet}
+                            {#snippet actions()}{@render memberActions("ridges", "山脊 " + (j + 1), j)}{/snippet}
                             {@render geometry(geoParameter(n, ["function", "ridges", j, "line"])!.label, "parameter", j, "polyline", ridge.line.points.length, ["ridges", j, "line", "points"], "ridge", j)}
-                            <label class="toggle"><input type="checkbox" checked={!!ridge.line.smooth} onchange={e => {
-                                const smooth = e.currentTarget.checked;
+                            <CheckboxRow label={functionTable.mountain.toggles![0].label} checked={!!ridge.line.smooth} change={smooth => {
                                 editor.editNode(n.id, item => {
                                     if (item.function.type === "mountain") item.function.ridges[j].line.smooth = smooth;
                                 });
-                            }} />{functionTable.mountain.toggles?.[0].label}</label>
+                            }} />
                             {#each memberParameters("ridges", j) as key (key.join("."))}
                                 {@render param(key)}
                             {/each}
@@ -95,10 +94,10 @@
                     {/each}
                 </Part>
                 <Part title="山峰">
-                    {#snippet actions()}{@render action("添加山峰", "plus", () => editor.setTool("peak", n.id))}{/snippet}
-                    {#each f.peaks.keys() as j (j)}
+                    {#snippet actions()}<AddButton label="添加山峰" active={editor.toolActive("peak", n.id)} action={() => editor.setTool("peak", n.id)} />{/snippet}
+                    {#each f.peaks.keys() as j (editor.subitemKey(n.id, "peaks", j))}
                         <Subitem label={"山峰 " + (j + 1)} open={editor.subitemOpen(n.id, "peaks", j)} onclick={() => editor.toggleSubitem(n.id, "peaks", j)}>
-                            {#snippet actions()}{@render action("删除山峰 " + (j + 1), "delete", () => removeMember("peaks", j))}{/snippet}
+                            {#snippet actions()}{@render memberActions("peaks", "山峰 " + (j + 1), j)}{/snippet}
                             {@render geometry(geoParameter(n, ["function", "peaks", j, "at", "p"])!.label, "parameter", f.ridges.length + j, "point", 1, ["peaks", j, "at"], "peak", j)}
                             {#each memberParameters("peaks", j) as key (key.join("."))}
                                 {@render param(key)}
@@ -119,8 +118,10 @@
     import { canWrite, functionParameters, functionTable, isBuiltinFunction } from "../../core/design/functionTable.ts";
     import { geoAt, type DrawTool } from "../state/geoTools.ts";
     import { geoParameter, readAt, writeAt, type Address } from "../../core/design/parameters.ts";
-    import { geometryPath, removeGeometryItem, type GeometryTarget } from "../../core/edit/geoControls.ts";
+    import { geometryPath, type GeometryTarget } from "../../core/edit/geoControls.ts";
     import Icon from "./Icon.svelte";
+    import AddButton from "./AddButton.svelte";
+    import CheckboxRow from "./CheckboxRow.svelte";
     import FieldRow from "./FieldRow.svelte";
     import GeometryInput from "./GeometryInput.svelte";
     import Part from "./Part.svelte";
@@ -150,14 +151,6 @@
         return editor.map.vertex;
     });
     let pathNode = $derived(vertex?.role === "vertex" ? geometryPath(n, vertex.path)?.nodes[vertex.index] : undefined);
-    function removeMember(group: "ridges" | "peaks", index: number) {
-        editor.edit(d => {
-            removeGeometryItem(d, geoAt(d, n.id), [group], index);
-        }, () => {
-            editor.removeSubitem(n.id, group, index);
-            editor.map.geometry = undefined; editor.map.vertex = undefined;
-        });
-    }
     function nameOf(id: string) {
         return geoAt(d, id)?.label ?? id;
     }

@@ -1,15 +1,10 @@
 import { type Design } from "../design/v5.ts";
 import { parseDesign, serializeDesign } from "../design/model.ts";
+import { type Address } from "../design/address.ts";
 
-import { type SelectionState } from "./types.ts";
+import { type Selection } from "./types.ts";
 
-export type PromptTarget = { group: "design" } | { group: "geoNodes" | "sections"; id: string };
-
-export function promptOwner(design: Design, target: PromptTarget): { prompt?: string } {
-    return target.group === "design" ? design : design[target.group].find(object => object.id === target.id)!;
-}
-
-interface EditStep { prompt?: PromptTarget; before?: SelectionState; after?: SelectionState }
+interface EditStep { metadata?: Address; group?: symbol; before?: Selection | null; after?: Selection | null }
 
 export class History {
     private edits: EditStep[] = [];
@@ -43,6 +38,17 @@ export class History {
     record(design: Design, edit: EditStep = {}) {
         const state = serializeDesign(design);
         if (state === this.states[this.index]) return false;
+        const previous = this.edits[this.index - 1];
+        if (edit.group !== undefined && previous?.group === edit.group && !this.canRedo) {
+            if (state === this.states[this.index - 1]) {
+                this.states.pop(); this.edits.pop(); this.index--;
+            }
+            else {
+                this.states[this.index] = state;
+                previous.after = edit.after;
+            }
+            return true;
+        }
         this.states.splice(this.index + 1);
         this.edits.splice(this.index, this.edits.length, edit);
         this.states.push(state);

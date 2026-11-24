@@ -54,6 +54,9 @@ function editablePaths(n: GeoNode, target?: GeometryTarget) {
 export function hitControl(n: GeoNode, p: Point, scale: number, tolerance: number, target?: GeometryTarget): GeoControl | undefined {
     const handle = geoControls(n, target).reverse().map(c => ({ c, gap: distance(p, c.point) * scale })).filter(v => v.gap <= 7).sort((a, b) => a.gap - b.gap)[0];
     if (handle) return handle.c;
+    return hitPathSegment(n, p, scale, tolerance, target);
+}
+export function hitPathSegment(n: GeoNode, p: Point, scale: number, tolerance: number, target?: GeometryTarget): GeoControl | undefined {
     for (const [index, path] of editablePaths(n, target).reverse()) {
         const hit = nearestSegment(flattenPath(path, Math.min(tolerance, .5 / scale)), p);
         if (hit && hit.distance * scale <= 5)
@@ -75,23 +78,32 @@ export function editControl(n: GeoNode, h: GeoControl, at: Point, independent: b
 export function removeGeometryItem(d: Design, n: GeoNode, path: Address, index: number) {
     const items = readAt(n.function, path);
     if (!Array.isArray(items) || !items[index]) return;
+    shiftGeometryReferences(d, n, path, index, -1);
+    items.splice(index, 1);
+}
+export function copyGeometryItem(d: Design, n: GeoNode, path: Address, index: number) {
+    const items = readAt(n.function, path);
+    if (!Array.isArray(items) || !items[index]) return;
+    shiftGeometryReferences(d, n, path, index, 1);
+    items.splice(index + 1, 0, structuredClone(items[index]));
+}
+function shiftGeometryReferences(d: Design, n: GeoNode, path: Address, index: number, offset: -1 | 1) {
     const slots = parameters(d), prefix = "geo:" + n.id + "." + path.join(".") + ".";
     const uses: string[] = [], edits: [Address, string][] = [];
     for (const s of slots.values()) {
         const formula = readAt(d, s.path);
-        if (typeof formula !== "string" || s.owner === "geo" && s.id === n.id && s.key.startsWith(prefix + index + ".")) continue;
+        if (typeof formula !== "string" || offset === -1 && s.owner === "geo" && s.id === n.id && s.key.startsWith(prefix + index + ".")) continue;
         const next = formula.replace(/\{([^{}]+)\}/g, (text, ref: string) => {
             const target = slots.get(ref);
             if (!ref.startsWith(prefix) || target?.id !== n.id || target.owner !== "geo") return text;
             const [at, ...rest] = ref.slice(prefix.length).split(".");
-            if (Number(at) === index) uses.push(slotName(s));
-            return Number(at) > index ? "{" + prefix + (Number(at) - 1) + "." + rest.join(".") + "}" : text;
+            if (offset === -1 && Number(at) === index) uses.push(slotName(s));
+            return Number(at) > index ? "{" + prefix + (Number(at) + offset) + "." + rest.join(".") + "}" : text;
         });
         if (next !== formula) edits.push([s.path, next]);
     }
     if (uses.length) throw Error("仍被引用：\n" + [...new Set(uses)].join("\n"));
     for (const [address, formula] of edits) writeAt(d, address, formula);
-    items.splice(index, 1);
 }
 export function removeParameterPoint(d: Design, n: GeoNode, h: GeoControl) {
     const f = n.function;

@@ -11,7 +11,7 @@
     {@render segments("节点类型", nodeModes, node.mode, mode => editor.pathNodeMode(control, mode as PathNode["mode"]))}
     {@render segments("后一段", segmentTypes, node.next ?? "curve", type => editor.segment(control, type as NonNullable<PathNode["next"]>))}
     {#if node.next === "arc"}
-        <FieldRow label=""><button onclick={() => editor.segment(control, "tangent")}><Icon name="tangent" />相切</button></FieldRow>
+        <FieldRow><button onclick={() => editor.segment(control, "tangent")}><Icon name="tangent" />相切</button></FieldRow>
     {/if}
 </Part>
 

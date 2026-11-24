@@ -1,24 +1,21 @@
 <div class="subitem">
-    <div class="subitem-heading">
+    <Heading kind="subitem-heading" {actions}>
         <button class="subitem-toggle" aria-expanded={open} {onclick}>
             <Icon name={open ? "collapse" : "expand"} /><span>{label}</span>
         </button>
-        {#if actions}<div class="row-actions">{@render actions()}</div>{/if}
-    </div>
+    </Heading>
     {#if open}<div class="subitem-fields">{@render children()}</div>{/if}
 </div>
 
 <style>
-    .subitem-heading {
-        display: flex;
-        align-items: center;
+    .subitem :global(.subitem-heading) {
         min-height: var(--row-h);
         margin-inline: calc(-1 * var(--panel-inset));
         padding-inline: 0 var(--panel-inset);
         background: var(--bg-sunken);
     }
-    .subitem-heading:hover { background: var(--bg-hover); }
-    .subitem-heading .row-actions { gap: var(--space-1); }
+    .subitem :global(.subitem-heading:hover) { background: var(--bg-hover); }
+    .subitem :global(.row-actions) { gap: var(--space-1); }
     .subitem-toggle {
         min-width: 0;
         min-height: var(--row-h);
@@ -41,6 +38,7 @@
 <script lang="ts">
     import { type Snippet } from "svelte";
     import Icon from "./Icon.svelte";
+    import Heading from "./Heading.svelte";
     let { label, open, onclick, children, actions }: {
         label: string; open: boolean; onclick: () => void; children: Snippet; actions?: Snippet;
     } = $props();

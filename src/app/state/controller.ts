@@ -1,11 +1,11 @@
 import { composingKey } from "./numbers.ts";
+import { commitFocusedInput } from "./pendingInput.ts";
 import { defaultFollow } from "../../core/design/v5.ts";
 import { heightId } from "../../core/design/defaults.ts";
 import { distance, onCanvas } from "../../core/math/geometry.ts";
 import { moveHandle } from "../../core/edit/controls.ts";
-import { editControl, geometryPath, hitControl, insertPathNode, type GeoControl } from "../../core/edit/geoControls.ts";
+import { editControl, geometryPath, hitControl, hitPathSegment, type GeoControl } from "../../core/edit/geoControls.ts";
 import { setNodeMode } from "../../core/edit/paths.ts";
-import { nodeIds } from "../../core/edit/geoNodes.ts";
 import { doubleClickTools, draftPointer, geoAt, snapPoint, updatePreview, type GeoDraft } from "./geoTools.ts";
 import { errorText, type Point } from "../types.ts";
 import * as session from "./session.svelte.ts";
@@ -85,6 +85,16 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         if (h && !alt) return { kind: "handle" as const, h };
         const section = !alt && map.hitSection(p);
         if (section) return { kind: "section" as const, section };
+        if (context) {
+            const { terrain, design } = map.project, margin = 5 / map.scale;
+            for (const node of design.geoNodes.toReversed()) {
+                if (!map.emptyCanvas && (node.disabled || !map.layers.geoNodes && !node.outline && !node.fill)) continue;
+                const box = terrain.regions.get(node.id)?.shape.box;
+                if (!box || p[0] < box[0] - margin || p[0] > box[2] + margin || p[1] < box[1] - margin || p[1] > box[3] + margin) continue;
+                const control = hitPathSegment(node, p, map.scale, design.grid.step / 8);
+                if (control) return { kind: "geo" as const, id: node.id, control };
+            }
+        }
         const nodes = map.geoHits(p), index = alt && selected && nodes.length ? (nodes.findIndex(n => n.id === selected.id) + 1) % nodes.length : 0;
         if (nodes[index]) return { kind: "geo" as const, id: nodes[index].id,
             control: { role: "body", path: 0, index: 0, point: p } as GeoControl };
@@ -97,11 +107,6 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         else if (hit?.kind === "handle") map.hoverSelection(hit.h);
         else if (hit?.kind === "section") map.hoverSelection(hit.section);
         else map.hoverSelection();
-    }
-    function insertGeo(id: string, control: GeoControl) {
-        editor.edit(d => {
-            insertPathNode(geometryPath(geoAt(d, id), control.path)!, control.index, control.point, nodeIds(d)());
-        });
     }
     canvas.addEventListener("contextmenu", ev => {
         ev.preventDefault();
@@ -132,18 +137,19 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             return;
         }
         if (editor.tool === "textMark" || editor.tool === "scaleMark") {
-            const kind = editor.tool === "scaleMark" ? "scale" : "text";
+            const tool = editor.tool, kind = tool === "scaleMark" ? "scale" : "text";
             const point = map.markCoordinate(screen, defaultFollow(kind));
-            beginPan(ev, screen, () => editor.addMark(kind, point, ev.shiftKey));
+            beginPan(ev, screen, () => {
+                if (editor.tool === tool) void editor.addMark(kind, point);
+            });
             return;
         }
         const hit = pick(screen, ev.altKey);
         if (hit?.kind === "geo") {
             if (ev.altKey && hit.control.role === "segment") {
-                insertGeo(hit.id, hit.control); return;
+                editor.insertNode(hit.id, hit.control); return;
             }
-            editor.select({ kind: "geoNode", id: hit.id }, true, ev.shiftKey);
-            if (ev.shiftKey) return;
+            editor.select({ kind: "geoNode", id: hit.id });
             const n = geoAt(d, hit.id), c = hit.control;
             if (c.role === "vertex" || c.role === "parameter") editor.pickVertex(c);
             if (c.role === "segment" || c.role === "body" && n.construction.type !== "free") return;
@@ -209,7 +215,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
                 draft.down = draft.downRaw = undefined;
                 if (first) draft.nodes.splice(first.nodeCount);
                 updatePreview(editor, draft);
-                editor.completeDrawing(ev.shiftKey);
+                void editor.completeDrawing();
             }
             return;
         }
@@ -218,7 +224,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         const screen = localPoint(ev), hit = pick(screen);
         if (hit?.kind === "geo") {
             const c = hit.control;
-            if (c.role === "segment") insertGeo(hit.id, c);
+            if (c.role === "segment") editor.insertNode(hit.id, c);
             if (c.role === "vertex") editor.editNode(hit.id, n => {
                 const path = geometryPath(n, c.path)!;
                 setNodeMode(path, c.index, path.nodes[c.index].mode === "auto" ? "corner" : "auto");
@@ -290,8 +296,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
 
     function finishGesture(ev: PointerEvent) {
         if (map.draft?.down && !editor.gesture) {
-            if (ev.type === "pointercancel") editor.cancelDrawing();
-            else {
+            if (ev.type !== "pointercancel") {
                 try {
                     draftPointer(editor, "up", map.world(...localPoint(ev)), ev);
                 }
@@ -342,36 +347,45 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         finishGesture(ev);
     }, { signal });
     canvas.addEventListener("pointercancel", ev => {
-        const pending = press?.down.pointerId === ev.pointerId && press.state !== "active";
         press = undefined; firstClick = undefined;
-        if (pending && map.draft) editor.cancelDrawing();
-        else finishGesture(ev);
+        if (editor.tool !== "select") editor.cancelDrawing();
+        finishGesture(ev);
     }, { signal });
     canvas.addEventListener("auxclick", ev => ev.preventDefault(), { signal });
     document.addEventListener("keydown", ev => {
-        if (composingKey(ev)) return;
+        if (composingKey(ev) || ev.defaultPrevented && !(ev.key === "Escape" && editor.tool !== "select")) return;
         const save = (ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "s";
         if (save) ev.preventDefault();
         if (!editor.project || editor.busy || editor.draft || editor.fileRequest || editor.removal) return;
         const input = ev.target instanceof Element && ev.target.closest("input, select, textarea, [contenteditable=true]");
         if (save) {
-            if (ev.target instanceof HTMLTextAreaElement && ev.target.hasAttribute("data-prompt")) ev.target.blur();
             void editor.files.save();
             return;
         }
-        if (editor.menu && ev.key === "Escape") {
-            editor.menu = null; return;
+        const undo = (ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "z";
+        if (undo && (!input || editor.tool !== "select")) {
+            ev.preventDefault();
+            firstClick = undefined;
+            editor.navigate(ev.shiftKey);
+            return;
         }
         const draft = map.draft;
         if (draft && (!input || ev.key === "Escape")) {
             if (ev.key === "Escape") {
                 ev.preventDefault(); editor.cancelDrawing(); return;
             }
-            if (ev.key === "Enter") {
-                ev.preventDefault(); if (!["rect", "circle", "sector"].includes(draft.tool)) editor.completeDrawing(ev.shiftKey); return;
+            if (ev.key === "Enter" && !(ev.target instanceof HTMLButtonElement)) {
+                ev.preventDefault();
+                if (editor.drawing?.finish) void editor.completeDrawing();
+                return;
             }
             if (ev.key === "Backspace") {
-                ev.preventDefault(); draft.nodes.pop(); draft.anchors.pop(); updatePreview(editor, draft); return;
+                ev.preventDefault();
+                if (draft.tool === "strip" && !draft.anchors.length && !draft.owner) draft.ids.pop();
+                else {
+                    draft.nodes.pop(); draft.anchors.pop();
+                }
+                updatePreview(editor, draft); return;
             }
             if (ev.key === "Tab" && draft.tool === "strip") {
                 ev.preventDefault(); draft.reverse = !draft.reverse; updatePreview(editor, draft); return;
@@ -384,11 +398,6 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             return;
         }
         if (input) return;
-        if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "z") {
-            ev.preventDefault();
-            editor.navigate(ev.shiftKey);
-            return;
-        }
         if (ev.key === "Delete") {
             ev.preventDefault();
             if (!editor.gesture) editor.removeSelected();
@@ -396,9 +405,8 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
     }, { signal });
 
     window.addEventListener("beforeunload", ev => {
-        const field = document.activeElement;
-        if (field instanceof HTMLTextAreaElement && field.hasAttribute("data-prompt")) field.blur();
-        if (editor.dirty) {
+        commitFocusedInput();
+        if (editor.dirty || editor.busy) {
             ev.preventDefault();
             ev.returnValue = true;
         }

@@ -7,7 +7,9 @@
 {#snippet editControl()}
     <div class="edit-face"><div class="numeric-edit" use:numericCaret role="textbox" aria-label={label} aria-invalid={!!error}
         aria-multiline={expanded} data-tip={tip} contenteditable="true" spellcheck="false" tabindex="0"
-        bind:this={input} oninput={e => {
+        bind:this={input} use:pendingInput={() => {
+            if (!composing) finish(true);
+        }} oninput={e => {
             if (!composing && !(e instanceof InputEvent && e.isComposing)) onInput();
         }} oncompositionstart={() => composing = true} oncompositionend={() => {
             composing = false; onInput();
@@ -23,59 +25,55 @@
             if (opened) closeMenu(); else showMenu();
         }}><Icon name="collapse" /></button>{/if}
 {/snippet}
-<div class="number-row" class:compact data-parameter={address.join(".")} bind:this={root}>
-    <div class="number-line parameter-row">{#if !compact}<span class="number-label param-name">{label}</span>{/if}
-        <div class="number-box input-box" class:invalid={!!error} class:warning={outside} bind:this={box}>
-            <button class="step" aria-label={"减小" + label} data-tip="减小" onpointerdown={e => beginGesture(e, -1)} onclick={e => keyboardStep(e, -1)}><Icon name="chevronLeft" /></button>
-            {#if editing && !expanded}
-                {@render editControl()}
-            {:else}
-                <button class="numeric-face" use:flagOverflow bind:this={face} aria-label={label} data-tip={tip} onpointerdown={e => beginGesture(e, 0)}
-                    onclick={e => {
-                        if (!e.detail) void startEdit();
-                    }}>
-                    {#if typeof shown === "number"}{displayValue(shown, step)}
-                    {:else}{@render formatted(shown, true)}{/if}
-                </button>
-            {/if}
-            <button class="step" aria-label={"增大" + label} data-tip="增大" onpointerdown={e => beginGesture(e, 1)} onclick={e => keyboardStep(e, 1)}><Icon name="chevronRight" /></button>
-            {#if !expanded}{@render variableMenuButton()}
-            {:else if kind !== "literal"}<span class="menu-spacer"></span>{/if}
-        </div>
-        {#if !compact}<small class="unit control-unit" data-tip={unit || undefined}>{unit}</small>{/if}
+{#snippet control()}
+    <div class="number-box input-box" class:danger={!!error} class:invalid={!!error} class:warning={outside} bind:this={box}>
+        <button class="step" aria-label={"减小" + label} data-tip="减小" onpointerdown={e => beginGesture(e, -1)} onclick={e => keyboardStep(e, -1)}><Icon name="chevronLeft" /></button>
+        {#if editing && !expanded}
+            {@render editControl()}
+        {:else}
+            <button class="numeric-face" use:flagOverflow bind:this={face} aria-label={label} data-tip={tip} onpointerdown={e => beginGesture(e, 0)}
+                onclick={e => {
+                    if (!e.detail) void startEdit();
+                }}>
+                {#if typeof shown === "number"}{displayValue(shown, step)}
+                {:else}{@render formatted(shown, true)}{/if}
+            </button>
+        {/if}
+        <button class="step" aria-label={"增大" + label} data-tip="增大" onpointerdown={e => beginGesture(e, 1)} onclick={e => keyboardStep(e, 1)}><Icon name="chevronRight" /></button>
+        {#if !expanded}{@render variableMenuButton()}
+{:else if kind !== "literal"}<span class="menu-spacer"></span>{/if}
     </div>
+{/snippet}
+<div class="number-row" data-parameter={address?.join(".")} {...attributes}>
+    {#if compact}
+        {@render control()}
+        {#if !expanded && error}<div class="number-error danger" role="alert">{error}</div>{/if}
+    {:else}
+        <FieldRow {label} {unit} problem={expanded ? undefined : error}>{@render control()}</FieldRow>
+    {/if}
     {#if editing}<div hidden bind:this={mirror}>{@render formatted(draft, false)}</div>{/if}
     {#if editing && expanded}
-        <div class="expanded-edit popup" role="group" aria-label={"编辑" + label} popover="manual" bind:this={expandedBox} use:placeEditor>
-            <div class="expanded-line number-box input-box" class:invalid={!!error}>{@render editControl()}{@render variableMenuButton()}</div>
-            {#if error}<div class="number-error" role="alert">{error}</div>{/if}
+        <div class="expanded-edit popup" role="group" aria-label={"编辑" + label} popover="manual" bind:this={expandedBox}
+            use:placePopup={{ anchor: box, close: () => finish(true), expanded: true }}>
+            <div class="expanded-line number-box input-box" class:danger={!!error} class:invalid={!!error}>{@render editControl()}{@render variableMenuButton()}</div>
+            {#if error}<div class="number-error danger" role="alert">{error}</div>{/if}
         </div>
-    {:else if error}<div class="number-error" role="alert">{error}</div>{/if}
+    {/if}
     {#if opened}
-        <div class="reference-menu popup menu" role="listbox" tabindex="-1" aria-label="可用变量" popover="manual" use:anchoredPopup={{ anchor: expandedBox ?? box, close: closeMenu, viewport: expanded }} onpointerdown={e => e.preventDefault()}>
-            {#if parent}<button class="ref-back" onclick={() => {
-                parent = ""; active = 0;
-            }}><Icon name="chevronLeft" />返回</button>{/if}
-            {#each groups as group (group.title)}
-                <div class="menu-group"><div class="group-name">{group.title}</div>
-                    {#each group.items as item (item.key)}
-                        <button role="option" aria-selected={options[active]?.key === item.key} data-option={item.key}
-                            onmouseenter={() => active = options.indexOf(item)} onclick={() => choose(item)}>
-                            <Icon name={item.icon} builtin={item.builtin} />{item.name}{#if item.branch}<span class="sub-arrow"><Icon name="chevronRight" /></span>{/if}
-                        </button>
-                    {/each}
-                </div>
-            {/each}
-            {#if !options.length}<div class="list-empty">没有匹配的结果</div>{/if}
-        </div>
+        {#key parent}
+            <Menu label="可用变量" variant="reference-menu" kind="listbox"
+                groups={groups.map(group => ({ title: group.title, items: group.items.map(item => ({
+                    ...item, id: item.key, selected: draft.trim() === "{" + item.key + "}"
+                })) }))} anchor={expandedBox ?? box} viewport={expanded} keyboardTarget={input} searching={!!query}
+                back={parent ? () => parent = "" : undefined} close={closeMenu}
+                choose={id => choose(options.find(item => item.key === id)!)} />
+        {/key}
     {/if}
 </div>
 <style>
-    .number-label { display: flex; align-items: center; }
-    .compact .number-line { grid-template-columns: minmax(0, 1fr); }
     .number-box { display: flex; align-items: stretch; min-width: 0; padding: 0; }
     .number-box.warning { border-color: var(--warning); }
-    .number-box.invalid { border-color: var(--danger); }
+    .number-box.invalid { border-color: currentColor; }
     .number-box button { min-height: 0; padding: 0; background: transparent; border: 0; }
     .number-box .step, .number-box .reference-toggle, .menu-spacer { flex: 0 0 var(--step-w); touch-action: none; }
     .number-box .step { color: var(--text-secondary); }
@@ -111,9 +109,7 @@
     }
     @keyframes blink { 50% { opacity: 0; } }
     .numeric-edit { caret-color: transparent; min-height: var(--leading-md); outline: none; overflow-x: auto; scrollbar-width: none; white-space: pre; }
-    .number-error { color: var(--danger); font-size: var(--text-xs); line-height: var(--leading-xs); margin: var(--space-1) 0 0 calc(var(--name-w) + var(--space-1)); }
-    .compact .number-error, .expanded-edit .number-error { margin-left: 0; }
-    .sub-arrow { margin-left: auto; display: inline-flex; }
+    .number-error { font-size: var(--text-xs); line-height: var(--leading-xs); margin-top: var(--space-1); }
 </style>
 
 <script lang="ts">
@@ -126,21 +122,26 @@
     import { declarationEntries, isBuiltin } from "../../core/design/defaults.ts";
     import { adjustInputStep, adjustNumber, chipSpans, composingKey, displayReading, displayValue, editorSelection, flagOverflow, editorText, NumberDrag, numericCaret, numericText, repeatButton, selectionOffsets, type Range } from "../state/numbers.ts";
     import { designErrorText } from "../state/designMessages.ts";
-    import { anchoredPopup } from "../state/popup.ts";
+    import { placePopup } from "../state/popup.ts";
+    import { pendingInput } from "../state/pendingInput.ts";
+    import { matchesSearch } from "../state/inspector.ts";
     import Icon, { type IconName } from "./Icon.svelte";
     import ReferenceChip from "./ReferenceChip.svelte";
-    let { editor, address, label, kind = "number", step = .1, range, unit = "", self, owner, compact = false, inputStep = false, fallback = 0 }: {
-        editor: session.Editor; address: Address; label: string; kind?: "number" | "field" | "literal"; step?: number;
+    import FieldRow from "./FieldRow.svelte";
+    import Menu from "./Menu.svelte";
+    let { editor, address, setting, label, kind = "number", step = .1, range, unit = "", self, owner, compact = false,
+        inputStep = false, fallback = 0, attributes }: {
+        editor: session.Editor; label: string; kind?: "number" | "field" | "literal"; step?: number;
         range?: Range; unit?: string; self?: string; owner?: string; compact?: boolean; inputStep?: boolean; fallback?: number;
-    } = $props();
+        attributes?: Record<string, string>;
+    } & ({ address: Address; setting?: never } | { address?: never; setting: { value: number; change: (n: number) => void; validate: (n: number) => void } }) = $props();
     let face = $state<HTMLButtonElement>(), expandedBox = $state<HTMLElement>();
-    let root: HTMLElement, box = $state<HTMLElement>(null!), input = $state<HTMLElement>(null!), mirror = $state<HTMLElement>(null!);
-    let base = $derived(editor.project.design), authored = $derived(readAt(base, address) as Expression | undefined);
-    let value = $derived(authored ?? (readAt(editor.project.resolved, address) as number | undefined) ??
+    let box = $state<HTMLElement>(null!), input = $state<HTMLElement>(null!), mirror = $state<HTMLElement>(null!);
+    let base = $derived(editor.project.design), authored = $derived(address ? readAt(base, address) as Expression | undefined : undefined);
+    let value = $derived(setting?.value ?? authored ?? (address ? readAt(editor.project.resolved, address) as number | undefined : undefined) ??
         (self ? expressionGraph(base).get(self) as number : fallback));
     let editing = $state(false), expanded = $state(false), draft = $state(""), error = $state(""), opened = $state(false), parent = $state(""), query = $state("");
     let queryStart = 0, queryEnd = 0, composing = false;
-    let active = $state(0);
     let slots = $derived(parameters(base));
     let gesturing = $state(false), live = $state<Expression>(0), shown = $derived(gesturing ? live : value);
     let result = $derived(currentResult(shown));
@@ -153,7 +154,7 @@
     type Group = { title: string; items: Option[] };
     let groups = $derived.by((): Group[] => {
         if (!opened) return [];
-        const filter = (v: Option) => (v.name + " " + v.key).toLowerCase().includes(query.toLowerCase());
+        const filter = (v: Option) => matchesSearch(query, v.name + " " + v.key);
         const allowed = (key: string) => canReference(slots, self, key);
         const leaves = [...slots.values()].filter(s => !s.field && allowed(s.key));
         if (parent) return [{ title: leaves.find(s => s.owner + ":" + s.id === parent)?.name ?? "属性",
@@ -172,7 +173,7 @@
         const nodes = leaves.filter(s => s.owner === "geo");
         const itemsById = new Map(nodes.map(s => [s.id, { key: "geo:" + s.id, name: s.name, icon: "terrain" as const, branch: true }]));
         result.push({ title: "地件", items: [...itemsById].filter(([id, item]) =>
-            filter(item) || nodes.some(s => s.id === id && s.label.includes(query))).map(([, item]) => item) });
+            filter(item) || nodes.some(s => s.id === id && matchesSearch(query, s.label))).map(([, item]) => item) });
         return result.filter(group => group.items.length);
     });
     let options = $derived(groups.flatMap(g => g.items));
@@ -188,6 +189,10 @@
         }
     }
     function candidate(v: Expression, from = base) {
+        if (!address) {
+            setting?.validate(Number(v));
+            return;
+        }
         const d = structuredClone(from);
         writeAt(d, address, v);
         return parseDesign(d, true);
@@ -205,7 +210,7 @@
         }
     }
     function closeMenu() {
-        opened = false; parent = query = ""; queryStart = queryEnd = 0; active = 0;
+        opened = false; parent = query = ""; queryStart = queryEnd = 0;
     }
     async function paint(at: number, end = at) {
         const paintId = ++version;
@@ -222,50 +227,6 @@
         expanded = face?.hasAttribute("data-overflow") ?? false;
         editing = true; draft = String(value); error = "";
         await paint(chip?.start ?? draft.length, chip?.end);
-    }
-    function placeEditor(popup: HTMLElement) {
-        const panel = box.closest<HTMLElement>(".panel-content");
-        const inset = panel ? parseFloat(getComputedStyle(panel).getPropertyValue("--panel-inset")) : 12;
-        function reveal() {
-            if (!panel) return;
-            const space = innerHeight - box.getBoundingClientRect().bottom;
-            if (space < 116) {
-                panel.style.setProperty("--editor-clearance", "116px");
-                panel.scrollTop += 116 - space;
-            }
-        }
-        reveal();
-        popup.showPopover();
-        function position() {
-            const container = panel?.getBoundingClientRect(), bounds = box.getBoundingClientRect();
-            if (bounds.bottom < (container?.top ?? 0) || bounds.top >= (container?.bottom ?? innerHeight)) {
-                finish(true); return;
-            }
-            const width = Math.max(360, (panel?.clientWidth ?? bounds.width) - 2 * inset);
-            const left = (container?.left ?? bounds.right - width) + inset;
-            popup.style.width = width + "px";
-            popup.style.left = Math.max(4, Math.min(left, innerWidth - width - 4)) + "px";
-            popup.style.top = bounds.bottom + "px";
-            popup.style.maxHeight = Math.max(0, innerHeight - bounds.bottom - 4) + "px";
-        }
-        function outside(e: PointerEvent) {
-            const path = e.composedPath();
-            if (!path.includes(box) && !path.includes(popup) && !path.some(n => n instanceof Element && n.matches(".reference-menu"))) finish(true);
-        }
-        function resizeEditor() {
-            reveal(); position();
-        }
-        position();
-        const lifecycle = new AbortController(), options = { signal: lifecycle.signal };
-        document.addEventListener("pointerdown", outside, { ...options, capture: true });
-        document.addEventListener("scroll", position, { ...options, capture: true });
-        window.addEventListener("resize", resizeEditor, options);
-        const resize = new ResizeObserver(position);
-        if (panel) resize.observe(panel);
-        return { destroy() {
-            resize.disconnect(); lifecycle.abort();
-            panel?.style.removeProperty("--editor-clearance");
-        } };
     }
     function chipAt(input: HTMLElement, target: EventTarget | null) {
         return target instanceof Node ? chipSpans(input).find(chip => chip.node.contains(target)) : undefined;
@@ -284,10 +245,12 @@
     }
     function finish(save: boolean) {
         if (!editing) return;
-        let next: Design | undefined;
+        let next: Design | undefined, committed: Expression | undefined;
         if (save && draft !== String(value)) {
             try {
-                next = candidate(parseDraft());
+                const parsed = parseDraft();
+                next = candidate(parsed);
+                committed = parsed;
             }
             catch (e) {
                 error = designErrorText(e, base, "message");
@@ -295,6 +258,7 @@
         }
         editing = expanded = false; closeMenu(); error = "";
         if (next && JSON.stringify(next) !== JSON.stringify(base)) editor.commitNumber(next);
+        if (setting && typeof committed === "number" && committed !== value) setting.change(committed);
     }
     function insertText(text: string, replaceLiteral = false) {
         const [start, end] = selectionOffsets(input);
@@ -308,7 +272,7 @@
     }
     function choose(item: Option) {
         if (item.branch) {
-            parent = item.key; active = 0; query = ""; return;
+            parent = item.key; query = ""; return;
         }
         insertText("{" + item.key + "}", true);
     }
@@ -318,32 +282,18 @@
         const word = prefix.match(/([a-zA-Z\u3400-\u9fff][\w\u3400-\u9fff-]*)$/)?.[1];
         const exponent = word && /^[eE]\d*$/.test(word) && /\d/.test(prefix.at(-word.length - 1) ?? "");
         if (kind !== "literal" && word && !exponent && prefix.lastIndexOf("{") <= prefix.lastIndexOf("}")) {
-            queryStart = at - word.length; queryEnd = at; query = word; opened = true; active = 0;
+            queryStart = at - word.length; queryEnd = at; query = word; opened = true;
         }
         else if (query) closeMenu();
         validate();
         if (prefix.endsWith("}")) void paint(at);
     }
     function key(e: KeyboardEvent) {
-        if (composing || composingKey(e)) return;
-        if (expanded && e.key === "Escape") {
-            e.preventDefault(); e.stopPropagation(); finish(false); return;
-        }
-        if (opened && ["ArrowUp", "ArrowDown", "Enter", "Escape"].includes(e.key)) {
-            e.preventDefault(); e.stopPropagation();
-            if (e.key === "Escape") closeMenu();
-            else if (e.key === "Enter") {
-                if (options[active]) choose(options[active]);
-            }
-            else {
-                active = (active + (e.key === "ArrowUp" ? -1 : 1) + options.length) % (options.length || 1);
-                void tick().then(() => root.querySelector("[aria-selected=\"true\"]")?.scrollIntoView({ block: "nearest" }));
-            }
-            return;
-        }
+        if (e.defaultPrevented || composing || composingKey(e)) return;
         if (e.key === "Enter" || e.key === "Escape") {
             e.preventDefault(); e.stopPropagation();
             if (e.key === "Escape" || !error) finish(e.key === "Enter");
+            return;
         }
         const [a, b] = selectionOffsets(input);
         const chips = chipSpans(input);
@@ -382,7 +332,9 @@
         const next = adjusted(live, n);
         if (next === live) return;
         try {
-            const d = candidate(next, origin); live = next; error = ""; editor.previewNumber(d);
+            const d = candidate(next, origin);
+            live = next; error = "";
+            if (d) editor.previewNumber(d);
         }
         catch (e) {
             error = designErrorText(e, base, "message");
@@ -391,7 +343,9 @@
     function keyboardStep(e: MouseEvent, direction: number) {
         if (e.detail) return;
         try {
-            editor.commitNumber(candidate(adjusted(value, direction)));
+            const next = adjusted(value, direction), d = candidate(next);
+            if (d) editor.commitNumber(d);
+            else if (typeof next === "number") setting?.change(next);
         }
         catch (e) {
             error = designErrorText(e, base, "message");
@@ -438,7 +392,12 @@
             if (button.hasPointerCapture(id)) button.releasePointerCapture(id);
             const changed = live !== initial;
             gesturing = false; error = "";
-            if (changed || direction || drag.moved) editor.commitNumber(cancel ? origin! : candidate(live, origin));
+            if (changed || direction || drag.moved) {
+                if (setting) {
+                    if (!cancel && typeof live === "number" && changed) setting.change(live);
+                }
+                else editor.commitNumber(cancel ? origin! : candidate(live, origin)!);
+            }
             else if (!cancel && !direction && !drag.moved) void startEdit(chip);
             origin = undefined;
         }

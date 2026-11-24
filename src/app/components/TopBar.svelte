@@ -2,7 +2,7 @@
     <img class="brand" src="./groundwork.svg" alt="">
     <h1>Groundwork</h1>
     <div class="file-info">
-        {#if editor.project}<i id="dirty-dot" class="dot" class:dirty={editor.saveState === "未保存"} class:saving={editor.saveState === "正在保存"} class:failed={editor.saveState === "保存失败"}></i>{/if}
+        {#if editor.project}<i id="dirty-dot" class="dot" class:dirty={editor.saveState === "未保存"} class:saving={editor.saveState === "正在保存"} class:danger={editor.saveState === "保存失败"}></i>{/if}
         <span id="filename" data-tip={editor.filename}>{editor.filename}</span>
         {#if editor.project}<span class="saved-text" id="save-state" aria-live="polite">{editor.saveState}</span>{/if}
     </div>
@@ -22,7 +22,7 @@
     .dot { width: 6px; height: 6px; background: var(--accent); border-radius: var(--radius-round); display: inline-block; flex: none; }
     .dot.dirty { background: var(--warning); }
     .dot.saving { background: var(--text-secondary); }
-    .dot.failed { background: var(--danger); }
+    .dot.danger { background: currentColor; }
     #filename { max-width: 28vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .saved-text { white-space: nowrap; }
     .header-actions { margin-left: auto; display: flex; align-items: center; gap: var(--space-1); }

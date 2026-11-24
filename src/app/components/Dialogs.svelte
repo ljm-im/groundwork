@@ -14,7 +14,7 @@
             {/each}
         </ul>
     {/if}
-    <form method="dialog"><button value="cancel">{editor.removal?.perform ? "取消" : "关闭"}</button>{#if editor.removal?.perform}<button class="confirm-danger" value="remove">{editor.removal.action ?? "确认删除"}</button>{/if}</form>
+    <form method="dialog"><button value="cancel">{editor.removal?.perform ? "取消" : "关闭"}</button>{#if editor.removal?.perform}<button class="danger" value="remove">{editor.removal.action ?? "确认删除"}</button>{/if}</form>
 </dialog>
 <dialog bind:this={discard} id="discard-changes" class="dialog" aria-labelledby="discard-title" onclose={() => editor.fileRequest = null}>
     <h2 id="discard-title">放弃未保存的修改？</h2>
@@ -25,27 +25,17 @@
         }}>放弃修改</button>
     </form>
 </dialog>
-<div class="draft" id="draft-dialog" role="dialog" aria-modal="true" aria-labelledby="draft-title" hidden={!editor.draft}>
-    <section class="dialog">
-        <h2 id="draft-title">恢复未保存的草稿？</h2>
-        <div class="sub" id="draft-date">{editor.draft ? "上次编辑于 " + new Date(editor.draft.date).toLocaleString() + "。" : ""}</div>
-        <div class="draft-actions"><button id="discard" onclick={() => editor.files.discard()}>放弃草稿</button><button id="restore" onclick={() => editor.files.restore()}>恢复草稿</button></div>
-    </section>
-</div>
+<dialog class="dialog" id="draft-dialog" bind:this={recovery} aria-labelledby="draft-title" hidden={!editor.draft} oncancel={e => e.preventDefault()}>
+    <h2 id="draft-title">恢复未保存的草稿？</h2>
+    <div class="sub" id="draft-date">{editor.draft ? "上次编辑于 " + new Date(editor.draft.date).toLocaleString() + "。" : ""}</div>
+    <form method="dialog">
+        <button type="button" class="danger" id="discard" onclick={() => editor.files.discard()}>放弃草稿</button>
+        <button type="button" id="restore" onclick={() => editor.files.restore()}>恢复草稿</button>
+    </form>
+</dialog>
 
 <style>
     :global {
-        .draft {
-            position: fixed;
-            inset: 0;
-            background: var(--backdrop);
-            display: grid;
-            place-items: center;
-            z-index: var(--z-dialog);
-        }
-        .draft[hidden] {
-            display: none;
-        }
         .dialog {
             width: min(350px, 90vw);
             background: var(--bg-panel);
@@ -77,19 +67,17 @@
             list-style: none;
         }
         #affected-items button { border: 0; width: 100%; justify-content: start; text-align: start; }
-        .draft-actions {
-            display: flex;
-            justify-content: flex-end;
-            gap: var(--space-2);
-            margin-top: var(--space-4);
-        }
     }
 </style>
 
 <script lang="ts">
     import * as session from "../state/session.svelte.ts";
     let { editor }: { editor: session.Editor } = $props();
-    let remove: HTMLDialogElement, discard: HTMLDialogElement;
+    let remove: HTMLDialogElement, discard: HTMLDialogElement, recovery: HTMLDialogElement;
+    $effect(() => {
+        if (editor.draft && !recovery.open) recovery.showModal();
+        else if (!editor.draft && recovery.open) recovery.close();
+    });
     $effect(() => {
         if (editor.fileRequest && !discard.open) discard.showModal();
     });

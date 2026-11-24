@@ -3,6 +3,7 @@ import { History } from "../../core/edit/history.ts";
 import { parseDesign, serializeDesign } from "../../core/design/model.ts";
 import { type Design, errorText } from "../types.ts";
 import { FileWrites, type WriteHandle } from "./fileWrites.ts";
+import { commitFocusedInput } from "./pendingInput.ts";
 import * as session from "./session.svelte.ts";
 
 const draftKey = "terrain-editor/unsaved-v1";
@@ -126,6 +127,7 @@ export class DesignFiles {
     async choose(action: FileAction, confirmed = false) {
         const e = this.editor;
         if (!this.supported || e.busy || e.gesture || e.draft) return;
+        commitFocusedInput();
         if (e.dirty && !confirmed) {
             e.fileRequest = action;
             return;
@@ -199,6 +201,7 @@ export class DesignFiles {
     async save() {
         const e = this.editor;
         if (!e.project || e.busy || e.gesture || e.draft || e.fileRequest) return;
+        commitFocusedInput();
         const history = e.history, handle = this.handle;
         if (!handle && this.choosingSaveFor === history) return;
         if (!handle) this.choosingSaveFor = history;

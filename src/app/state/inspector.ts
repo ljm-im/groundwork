@@ -26,3 +26,8 @@ export function tabForSelection(selection: Selection | null, current: PropertyTa
 
 export const nodeModes = [["corner", "尖角", "nodeCorner"], ["auto", "自动平滑", "nodeAuto"], ["manual", "手动平滑", "nodeManual"]] as const;
 export const segmentTypes = [["line", "直线", "segmentLine"], ["curve", "曲线", "segmentCurve"], ["arc", "圆弧", "segmentArc"]] as const;
+
+export function matchesSearch(query: string, ...terms: (string | undefined)[]) {
+    const text = query.trim().toLowerCase();
+    return !text || terms.some(term => term?.toLowerCase().includes(text));
+}

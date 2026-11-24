@@ -1,4 +1,13 @@
+import { composingKey } from "./numbers.ts";
+
 interface AnchorBounds { top: number; bottom: number; left: number; width: number }
+type PopupPosition = { close: () => void } & (
+    { anchor: HTMLElement; viewport?: boolean; expanded?: boolean } | { point: { x: number; y: number } }
+);
+
+export function menuDirection(event: KeyboardEvent) {
+    return !composingKey(event) && ["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key);
+}
 
 export function popupBounds(box: AnchorBounds, top: number, bottom: number, desiredHeight: number) {
     const above = Math.max(0, box.top - top - 2), below = Math.max(0, bottom - box.bottom - 2);
@@ -7,16 +16,43 @@ export function popupBounds(box: AnchorBounds, top: number, bottom: number, desi
     return { left: box.left, top: upwards ? box.top - 2 - height : box.bottom + 2, width: box.width, height, upwards };
 }
 
-export function anchoredPopup(menu: HTMLElement, config: { anchor: HTMLElement; close: () => void; viewport?: boolean }) {
-    const { anchor, close } = config, panel = config.viewport ? null : anchor.closest(".panel-content");
+export function placePopup(menu: HTMLElement, config: PopupPosition) {
+    const anchor = "anchor" in config ? config.anchor : null;
+    const expanded = "expanded" in config && config.expanded;
+    const panel = "viewport" in config && config.viewport ? null : anchor?.closest<HTMLElement>(".panel-content");
+    const inset = panel ? parseFloat(getComputedStyle(panel).getPropertyValue("--panel-inset")) : 12;
+    function reveal() {
+        if (!expanded || !panel || !anchor) return;
+        const space = innerHeight - anchor.getBoundingClientRect().bottom;
+        if (space < 116) {
+            panel.style.setProperty("--editor-clearance", "116px");
+            panel.scrollTop += 116 - space;
+        }
+    }
+    reveal();
     menu.showPopover();
     function position() {
-        const box = anchor.getBoundingClientRect(), bounds = panel?.getBoundingClientRect();
-        menu.style.width = box.width + "px";
+        if ("point" in config) {
+            const { x, y } = config.point, { width, height } = menu.getBoundingClientRect();
+            menu.style.left = Math.max(4, Math.min(x, innerWidth - width - 4)) + "px";
+            menu.style.top = Math.max(4, Math.min(y, innerHeight - height - 4)) + "px";
+            return;
+        }
+        const box = config.anchor.getBoundingClientRect(), bounds = panel?.getBoundingClientRect();
         const top = Math.max(0, bounds?.top ?? 0), bottom = Math.min(innerHeight, bounds?.bottom ?? innerHeight);
         if (box.top >= bottom || box.bottom <= top) {
-            close(); return;
+            config.close(); return;
         }
+        if (expanded) {
+            const width = Math.min(innerWidth - 8, Math.max(360, (panel?.clientWidth ?? box.width) - 2 * inset));
+            const left = (bounds?.left ?? box.right - width) + inset;
+            menu.style.width = width + "px";
+            menu.style.left = Math.max(4, Math.min(left, innerWidth - width - 4)) + "px";
+            menu.style.top = box.bottom + "px";
+            menu.style.maxHeight = Math.max(0, innerHeight - box.bottom - 4) + "px";
+            return;
+        }
+        menu.style.width = box.width + "px";
         const desired = Math.min(320, menu.scrollHeight + menu.offsetHeight - menu.clientHeight);
         const r = popupBounds(box, top, bottom, desired);
         const width = menu.getBoundingClientRect().width;
@@ -25,21 +61,29 @@ export function anchoredPopup(menu: HTMLElement, config: { anchor: HTMLElement; 
     }
     function outside(event: PointerEvent) {
         const path = event.composedPath();
-        if (!path.includes(anchor) && !path.includes(menu)) close();
+        if (anchor && path.includes(anchor) || path.includes(menu) ||
+            expanded && path.some(n => n instanceof Element && n.matches(".reference-menu"))) return;
+        config.close();
+    }
+    function resizeWindow() {
+        reveal();
+        position();
     }
     position();
     const resize = new ResizeObserver(position);
-    resize.observe(anchor); resize.observe(menu);
+    if (anchor) resize.observe(anchor);
+    resize.observe(menu);
     if (panel) resize.observe(panel);
     const content = new MutationObserver(position);
     content.observe(menu, { childList: true, subtree: true, characterData: true });
     document.addEventListener("pointerdown", outside, true);
     document.addEventListener("scroll", position, true);
-    window.addEventListener("resize", position);
+    window.addEventListener("resize", resizeWindow);
     return { destroy() {
         resize.disconnect(); content.disconnect();
+        if (expanded) panel?.style.removeProperty("--editor-clearance");
         document.removeEventListener("pointerdown", outside, true);
         document.removeEventListener("scroll", position, true);
-        window.removeEventListener("resize", position);
+        window.removeEventListener("resize", resizeWindow);
     } };
 }

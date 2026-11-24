@@ -10,23 +10,33 @@ import { constructionCenter, makeShape, nearbyBoundary } from "../../core/design
 import { sampleField, type Terrain } from "../../core/design/results.ts";
 type Editor = import("./session.svelte.ts").Editor;
 
-export type DrawTool = ShapeTool | "strip" | "addPath" | "shore" | "ridge" | "peak" | "slopeLine" | "center" | "harbor";
+export type DrawTool = ShapeTool | "strip" | "addPath" | "shore" | "ridge" | "peak" | "slopeLine" | "center" | "harbor" | "section";
 export interface GeoDraft {
     tool: DrawTool; owner?: string; member?: number; ids: string[]; nodes: PathNode[]; anchors: string[]; reverse: boolean;
     down?: Point; downRaw?: Point; start?: Point; sizing?: boolean; radius?: Point; cursor?: Point; path?: Path; spine?: Segment[]; spineRange?: string;
 }
-export const drawingTools: DrawTool[] = ["pen", "rect", "circle", "sector", "strip", "addPath", "shore", "ridge", "peak", "slopeLine", "center", "harbor"];
+export const drawingTools: DrawTool[] = ["pen", "rect", "circle", "sector", "strip", "addPath", "shore", "ridge", "peak", "slopeLine", "center", "harbor", "section"];
 const penTools: DrawTool[] = ["pen", "addPath", "shore"];
 export const doubleClickTools: DrawTool[] = [...penTools, "ridge", "slopeLine"];
+const pointTools: DrawTool[] = ["peak", "center", "harbor"];
 
-export function startDrawing(e: Editor, tool: DrawTool, owner?: string, member?: number, sources = e.geoSelection): GeoDraft {
-    const d = e.project.design, ids = [...sources];
+export function startDrawing(e: Editor, tool: DrawTool, owner?: string, member?: number): GeoDraft {
+    const d = e.project.design;
+    const ids = tool !== "strip" && e.selection?.kind === "geoNode" ? [e.selection.id] : [];
     if (tool === "strip" && owner) {
         const c = d.geoNodes.find(n => n.id === owner)?.construction;
-        if (c?.type === "strip") ids.splice(0, ids.length, ...c.of);
+        if (c?.type === "strip") ids.push(...c.of);
     }
-    if (tool === "strip") stripConstruction(d, ids);
     return { tool, owner, member, ids, nodes: [], anchors: [], reverse: false };
+}
+
+export function drawingReady(draft: GeoDraft) {
+    const { tool, nodes, ids, anchors } = draft;
+    if (tool === "strip") return ids.length > 0 && anchors.length === 2;
+    if (penTools.includes(tool)) return nodes.length >= 3;
+    if (tool === "ridge" || tool === "slopeLine" || tool === "section") return nodes.length >= 2;
+    if (pointTools.includes(tool)) return !!nodes.length;
+    return true;
 }
 function stripSource(d: Design, draft: GeoDraft) {
     return d.geoNodes.findLast(n => draft.ids.includes(n.id));
@@ -40,9 +50,15 @@ export function updatePreview(e: Editor, draft: GeoDraft) {
     const { tool, cursor, start, radius, nodes } = draft;
     draft.path = undefined;
     if (tool === "strip") {
-        const range = JSON.stringify([draft.anchors, draft.reverse]);
+        const range = JSON.stringify([draft.ids, draft.anchors, draft.reverse]);
         if (range !== draft.spineRange) {
-            draft.spine = stripPreview(e, draft); draft.spineRange = range;
+            try {
+                draft.spine = draft.ids.length ? stripPreview(e, draft) : undefined;
+            }
+            catch {
+                draft.spine = undefined;
+            }
+            draft.spineRange = range;
         }
     }
     else if (start && cursor && (tool === "rect" || tool === "circle" || tool === "sector")) {
@@ -57,7 +73,23 @@ export function updatePreview(e: Editor, draft: GeoDraft) {
         else if (cursor) preview.push(penNode("", cursor));
         draft.path = penPath(preview);
     }
+    e.drawingReady = drawingReady(draft);
     e.map.draw();
+}
+
+function pickStripPoint(e: Editor, draft: GeoDraft, at: Point) {
+    const source = stripSource(e.project.design, draft);
+    const nodes = source?.construction.type === "free" ? source.construction.paths.flatMap(p => p.nodes) : [];
+    const v = nodes.filter(v => distance(v.p, at) * e.map.scale <= 9).sort((a, b) => distance(a.p, at) - distance(b.p, at))[0];
+    if (v) {
+        const next = draft.anchors.length === 1 ? [...draft.anchors, v.id] : [v.id];
+        if (next.length === 2) stripConstruction(e.project.design, draft.ids, stripRange(next));
+        draft.anchors = next;
+    }
+    else if (!draft.owner && !draft.anchors.length && draft.ids.length < 2) {
+        const node = e.map.geoHits(at)[0];
+        if (node && !draft.ids.includes(node.id)) draft.ids.push(node.id);
+    }
 }
 
 export function snapPoint(t: Terrain, design: Design, at: Point, scale: number, except?: string): Point {
@@ -118,7 +150,7 @@ export function finishDraft(d: Design, terrain: Terrain, draft: GeoDraft) {
         }
         return n!;
     }
-    if (tool === "peak" || tool === "center" || tool === "harbor") {
+    if (pointTools.includes(tool)) {
         const p = draft.nodes[0]?.p;
         if (!p) throw Error("请先在地图上选择一个点");
         const h = tenth(sampleField(terrain, heightId, p));
@@ -170,38 +202,40 @@ export function draftPointer(e: Editor, phase: "down" | "move" | "up", raw: Poin
     draft.down = draft.downRaw = undefined;
     if (!down || !downRaw) return true;
     const dragged = distance(downRaw, raw) * e.map.scale > 3;
-    if (tool === "strip") {
-        const source = stripSource(e.project.design, draft);
-        const nodes = source?.construction.type === "free" ? source.construction.paths.flatMap(p => p.nodes) : [];
-        const v = nodes.filter(v => distance(v.p, at) * e.map.scale <= 9).sort((a, b) => distance(a.p, at) - distance(b.p, at))[0];
-        if (v) {
-            const next = draft.anchors.length === 1 ? [...draft.anchors, v.id] : [v.id];
-            if (next.length === 2) stripConstruction(e.project.design, draft.ids, stripRange(next));
-            draft.anchors = next;
-        }
-    }
+    let complete = false;
+    if (tool === "strip") pickStripPoint(e, draft, at);
     else if (tool === "rect" || tool === "circle" || tool === "sector") {
-        if (draft.radius) e.completeDrawing(ev.shiftKey);
+        if (draft.radius) complete = true;
         else if (!dragged && !draft.sizing) {
             draft.sizing = true;
-            e.hint = tool === "rect" ? "单击确定对角，Esc 放弃" : "单击确定半径，Esc 放弃";
+            e.hint = tool === "rect" ? "单击确定对角，Esc 取消" : "单击确定半径，Esc 取消";
         }
         else if (tool === "sector") {
             if (distance(draft.start!, at) < 1e-6) throw Error("请选取不同的圆心和起始点");
             draft.radius = at;
-            e.hint = "单击确定终止角，Esc 放弃";
+            e.hint = "单击确定终止角，Esc 取消";
         }
-        else e.completeDrawing(ev.shiftKey);
+        else complete = true;
     }
     else if (penTools.includes(tool) && !dragged && draft.nodes.length >= 3 && distance(down, draft.nodes[0].p) * e.map.scale < 7)
-        e.completeDrawing(ev.shiftKey);
+        complete = true;
     else {
         const drag = penTools.includes(tool) && dragged ? raw : undefined;
         const node = penNode("", down, drag);
-        if (tool === "peak" || tool === "center" || tool === "harbor") draft.nodes = [node];
+        if (pointTools.includes(tool)) {
+            draft.nodes = [node];
+            complete = true;
+        }
+        else if (tool === "section") {
+            const first = draft.nodes[0];
+            if (first && distance(first.p, node.p) === 0) throw Error("请选择不同的起点和终点");
+            draft.nodes = first ? [first, node] : [node];
+            complete = !!first;
+        }
         else draft.nodes.push(node);
     }
-    if (e.map.draft === draft) updatePreview(e, draft);
+    updatePreview(e, draft);
+    if (complete) void e.completeDrawing();
     return true;
 }
 export function geoAt(d: Design, id: string): GeoNode {

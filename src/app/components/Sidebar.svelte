@@ -1,19 +1,26 @@
-<aside class="inspector" class:closed={layout.propertiesClosed} style:--upper={layout.upper * 100 + "%"} inert={!!editor.busy} onchange={changed}>
+<aside class="inspector" class:closed={layout.propertiesClosed} style:--upper={layout.upper * 100 + "%"} inert={!!editor.busy}>
     <div class="list-pane">
         <nav class="side-tabs" aria-label="列表选项卡">
             {#each tabs as [tab, label, icon] (tab)}
                 <button class="icon-button" data-tab={tab} data-tip={label} aria-label={label} aria-pressed={editor.tab === tab} onclick={() => editor.changeTab(tab)}>
-                    <Icon name={icon} />{#if tab === "issues" && errors}<i class="count-dot" id="issue-dot"></i>{/if}
+                    <Icon name={icon} />{#if tab === "issues" && errors}<i class="count-dot danger" id="issue-dot"></i>{/if}
                 </button>
             {/each}
         </nav>
         <div bind:this={editor.panel} id="panel" class="panel-content">
             {#if editor.project}
-                <div class="panel-heading">
-                    <h2>{tabs.find(([id]) => id === editor.tab)?.[1]}</h2>
-                    {#if editor.tab === "terrain"}<CreationMenu label="新建地件" options={geoTools} choose={start} />
-                    {:else if editor.tab === "marks"}<CreationMenu label="新建标记" options={markTools} choose={start} />{/if}
-                </div>
+                <Heading kind="panel-heading" title={tabs.find(([id]) => id === editor.tab)?.[1]}>
+                    {#snippet actions()}
+                        {#if editor.tab === "terrain"}
+                            <AddButton label="新建地件" options={geoTools} choose={start} active={geoTools.some(({ id }) => editor.toolActive(id))} />
+                        {:else if editor.tab === "marks"}
+                            <AddButton label="新建标记" options={markTools} choose={start} active={markTools.some(({ id }) => editor.toolActive(id))} />
+                        {/if}
+                    {/snippet}
+                </Heading>
+                {#if search}
+                    <Search id={search.id} label={search.label} value={editor[search.key]} change={value => editor[search!.key] = value} />
+                {/if}
                 {#key editor.revision}
                     {#if editor.tab === "terrain"}<GeoList {editor} />
                     {:else if editor.tab === "inputs"}<Declarations {editor} />
@@ -66,13 +73,13 @@
         .side-tabs .icon { width: var(--icon-tab); height: var(--icon-tab); }
         .side-tabs .count-dot { position: absolute; top: var(--space-1); right: var(--space-1); }
         .panel-content { min-width: 0; min-height: 0; overflow: auto; overflow-wrap: anywhere; }
-        #panel { padding-block: var(--space-1) var(--panel-inset); }
+        #panel { padding-block: 0 var(--panel-inset); }
         #panel .part-title, #panel .panel-inset { padding-inline: var(--panel-inset); }
         #panel .panel-inset .part-title { padding-inline: 0; }
         #panel .panel-inset { margin-block: var(--space-1); }
-        #panel .panel-heading + .part { margin-top: var(--space-2); }
+        #panel .panel-inset + .part { margin-top: var(--space-2); }
         #properties { min-width: 0; min-height: 0; }
-        #properties .part > .issue-row {
+        #properties .part > .list-row {
             width: calc(100% + 2 * var(--panel-inset));
             margin-inline: calc(-1 * var(--panel-inset));
         }
@@ -82,12 +89,13 @@
 <script lang="ts">
     import * as session from "../state/session.svelte.ts";
     import { type Layout } from "../state/layout.ts";
-    import { changeField } from "../state/fields.ts";
     import Terrain from "./Terrain.svelte";
     import Issues from "./Issues.svelte";
     import Layers from "./Layers.svelte";
     import Icon from "./Icon.svelte";
-    import CreationMenu from "./CreationMenu.svelte";
+    import AddButton from "./AddButton.svelte";
+    import Heading from "./Heading.svelte";
+    import Search from "./Search.svelte";
     import { type Tool } from "../types.ts";
     import GeoList from "./GeoList.svelte";
     import GeoProperties from "./GeoProperties.svelte";
@@ -100,17 +108,23 @@
     } = $props();
     const tabs = [["terrain", "地件", "terrain"], ["inputs", "变量", "inputs"], ["marks", "标记", "marks"],
         ["issues", "问题", "issues"], ["layers", "显示", "display"]] as const;
-    const geoTools = [["pen", "钢笔", "pen"], ["rect", "矩形", "rect"], ["circle", "圆", "circle"], ["sector", "扇形", "sector"], ["strip", "条带", "strip"]] as const;
-    const markTools = [["textMark", "文字标记", "textMark"], ["scaleMark", "比例尺", "scaleMark"]] as const;
-    function start(tool: Tool) {
-        editor.setTool(tool);
+    const geoTools = [{ id: "pen", name: "钢笔", icon: "pen" }, { id: "rect", name: "矩形", icon: "rect" },
+        { id: "circle", name: "圆", icon: "circle" }, { id: "sector", name: "扇形", icon: "sector" }, { id: "strip", name: "条带", icon: "strip" }] as const;
+    const markTools = [{ id: "textMark", name: "文字标记", icon: "textMark" }, { id: "scaleMark", name: "比例尺", icon: "scaleMark" },
+        { id: "section", name: "剖面线", icon: "section" }] as const;
+    const searches = {
+        terrain: { id: "terrain-search", label: "查找地件", key: "terrainFilter" },
+        inputs: { id: "variable-search", label: "查找变量", key: "variableFilter" },
+        marks: { id: "mark-search", label: "查找标记", key: "markFilter" },
+        issues: undefined, layers: undefined
+    } as const;
+    let search = $derived(searches[editor.tab]);
+    function start(tool: string) {
+        editor.setTool(tool as Tool);
         editor.map.canvas.focus({ preventScroll: true });
     }
     let errors = $derived.by(() => {
         editor.revision;
         return editor.project?.issues.some(issue => issue.severity === "error");
     });
-    function changed(e: Event) {
-        if (e.target instanceof HTMLInputElement) changeField(editor, e.target);
-    }
 </script>

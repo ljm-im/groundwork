@@ -123,7 +123,6 @@ export class ProjectMap {
     declare frameTerrain: Terrain;
     emptyCanvas = false;
     displayField = heightId;
-    geoSelection: string[] = [];
     referencedGeo = (): readonly string[] => [];
     private hovered?: Selection;
     geometry?: GeometryTarget;
@@ -201,10 +200,13 @@ export class ProjectMap {
         this.center[1] += before[1] - after[1];
         this.draw();
     }
-    focus(point: Point, zoom = 3) {
-        this.center = point.slice() as Point;
-        this.scale = Math.max(this.scale, zoom * this.referenceScale);
-        this.draw();
+    revealBounds([left, bottom, right, top]: Box) {
+        if (![left, bottom, right, top].every(Number.isFinite)) return;
+        const [x0, y0] = this.screen([left, top]), [x1, y1] = this.screen([right, bottom]);
+        if (x0 > this.width || x1 < 0 || y0 > this.height || y1 < 0) {
+            this.center = [(left + right) / 2, (bottom + top) / 2];
+            this.draw();
+        }
     }
     focusBounds([left, bottom, right, top]: Box) {
         const base = this.referenceScale;
@@ -213,12 +215,15 @@ export class ProjectMap {
             this.height * .72 / (base * Math.max(1, top - bottom))), .5, 5);
         this.draw();
     }
-    focusIssue(issue: Issue) {
+    focusIssue(issue: Issue, fit = true) {
         this.clearIssue();
         this.activeIssue = issue;
-        const view = issueView(issue, this.width, this.height, this.referenceScale);
-        this.center = view.center;
-        this.scale = view.zoom * this.referenceScale;
+        if (fit) {
+            const view = issueView(issue, this.width, this.height, this.referenceScale);
+            this.center = view.center;
+            this.scale = view.zoom * this.referenceScale;
+        }
+        else this.revealBounds([...issue.point, ...issue.point]);
         this.pulseStart = performance.now();
         const animate = () => {
             this.draw();
@@ -251,9 +256,10 @@ export class ProjectMap {
         this.draw();
     }
     private outlineStyle(kind: string, id: string) {
-        const selected = kind === "geoNode" ? this.geoSelection.includes(id) : this.selection?.id === id && this.selection.kind === kind;
+        const selected = this.selection?.id === id && this.selection.kind === kind;
         if (selected) return { color: palette.accent, width: overlay.selectedWidth / this.scale };
-        if (this.hovered?.kind === kind && this.hovered.id === id || kind === "geoNode" && this.referencedGeo().includes(id))
+        if (this.hovered?.kind === kind && this.hovered.id === id || kind === "geoNode" && (this.referencedGeo().includes(id) ||
+            this.draft?.tool === "strip" && this.draft.ids.includes(id)))
             return { color: palette.accentHover, width: overlay.hoverWidth / this.scale };
     }
     geoHits(p: Point) {
@@ -304,7 +310,9 @@ export class ProjectMap {
             const style = contourStyle.lines[rank] ?? contourStyle.zero;
             ctx.strokeStyle = style.color; ctx.lineWidth = style.width / scale; ctx.stroke(path);
         });
-        const outlined = new Set([...this.geoSelection, ...this.referencedGeo()]);
+        const outlined = new Set(this.referencedGeo());
+        if (this.selection?.kind === "geoNode") outlined.add(this.selection.id);
+        if (this.draft?.tool === "strip") for (const id of this.draft.ids) outlined.add(id);
         if (this.hovered?.kind === "geoNode") outlined.add(this.hovered.id);
         for (const id of outlined) {
             const r = t.regions.get(id), outline = this.outlineStyle("geoNode", id);

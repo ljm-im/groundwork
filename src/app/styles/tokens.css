@@ -1,12 +1,14 @@
 :root {
-    --text-xs: 11px;
-    --text-sm: 12px;
-    --text-md: 13px;
+    --text-xs: 12px;
+    --text-sm: 13px;
+    --text-md: 14px;
     --text-lg: 15px;
+    --text-xl: 18px;
     --leading-xs: 16px;
     --leading-sm: 18px;
     --leading-md: 20px;
     --leading-lg: 22px;
+    --leading-xl: 26px;
     --weight-regular: 400;
     --weight-semibold: 600;
     --font-body: "Inter", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
@@ -21,8 +23,11 @@
     --control-h: 28px;
     --icon-button: 28px;
     --row-h: 32px;
+    --property-title-h: 48px;
+    --property-name-h: 34px;
+    --title-icon-inset: 6px;
     --name-w: 104px;
-    --unit-w: 26px;
+    --unit-w: 28px;
     --step-w: 20px;
     --tabs-w: 36px;
     --topbar-h: 44px;

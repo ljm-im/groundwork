@@ -5,8 +5,10 @@
             onpointerdown={e => begin(e, "bottom")} ondblclick={() => toggle("bottomClosed")} onkeydown={e => keyboard(e, "bottom")} ></button>
         <div class="bottom-pane" hidden={layout.bottomClosed}>
             <nav class="bottom-tabs" aria-label="剖面类型">
-                <span class="bottom-tab" data-bottom-tab="sections" aria-current="true">剖面</span>
-                <small>海拔 / m</small>
+                <Heading kind="bottom-heading">
+                    <span class="bottom-tab" data-bottom-tab="sections" aria-current="true">剖面</span>
+                    {#snippet actions()}<small>海拔 / m</small>{/snippet}
+                </Heading>
             </nav>
             <div class="plot-pane"><Sections {editor} /></div>
         </div>
@@ -49,6 +51,7 @@
         .bottom-pane[hidden] { display: none; }
         .plot-pane { min-width: 0; min-height: 0; }
         .bottom-tabs { display: flex; align-items: stretch; padding: 0 var(--space-3); gap: var(--space-2); background: var(--bg-sunken); }
+        .bottom-heading { flex: 1; align-items: stretch; }
         .bottom-tab {
             display: flex;
             align-items: center;
@@ -76,6 +79,7 @@
     import Sections from "./Sections.svelte";
     import Sidebar from "./Sidebar.svelte";
     import ContextMenu from "./ContextMenu.svelte";
+    import Heading from "./Heading.svelte";
 
     let { editor }: { editor: session.Editor } = $props();
     let main: HTMLElement;
@@ -120,6 +124,9 @@
     onMount(() => {
         editor.revealProperties = () => {
             if (layout.propertiesClosed) toggle("propertiesClosed");
+        };
+        editor.revealSections = () => {
+            if (layout.bottomClosed) toggle("bottomClosed");
         };
     });
     $effect(() => {

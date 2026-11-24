@@ -9,6 +9,18 @@
             </div>
         </div>
     {/if}
+    {#if editor.drawing}
+        <div class="drawing-status" aria-label="绘制状态" role="group">
+            <strong>{editor.drawing.title}</strong>
+            <span>{editor.drawing.end}</span>
+            <div class="drawing-actions">
+                {#if editor.drawing.finish}
+                    <button disabled={!editor.drawingReady || !!editor.busy} onclick={() => editor.completeDrawing()}>完成</button>
+                {/if}
+                <button disabled={!!editor.busy} onclick={() => editor.cancelDrawing()}>取消</button>
+            </div>
+        </div>
+    {/if}
     <div class="zoom-tools">
         <button class="icon-button" id="minus" aria-label="缩小" data-tip="缩小" onclick={() => editor.project && editor.map.zoomAt(1 / 1.4)}><Icon name="minus" /></button>
         <output id="zoom-value">100%</output>
@@ -54,6 +66,26 @@
             box-shadow: var(--shadow-pop);
         }
         .zoom-tools output { min-width: var(--row-h); font-size: var(--text-xs); text-align: center; }
+        .drawing-status {
+            position: absolute;
+            top: var(--space-3);
+            left: 50%;
+            transform: translateX(-50%);
+            width: max-content;
+            max-width: calc(100% - 2 * var(--space-3));
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: var(--space-1) var(--space-3);
+            padding: var(--space-1) var(--space-2) var(--space-1) var(--space-3);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            background: var(--bg-panel);
+            box-shadow: var(--shadow-pop);
+        }
+        .drawing-status strong { font-weight: 600; }
+        .drawing-status span { font-size: var(--text-sm); line-height: var(--leading-sm); color: var(--text-secondary); }
+        .drawing-actions { display: flex; gap: var(--space-1); margin-inline-start: auto; }
         .coords {
             grid-row: 2;
             border-top: 1px solid var(--border-region);

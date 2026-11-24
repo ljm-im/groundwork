@@ -1,13 +1,15 @@
 <svg class="icon" viewBox="0 0 18 18" aria-hidden="true">
-    {#if builtin}
+    {#if builtin || subtype}
         <defs>
             <mask id={id} maskUnits="userSpaceOnUse" x="0" y="0" width="18" height="18">
                 <rect width="18" height="18" fill="white" stroke="none" />
-                <circle cx="15" cy="3" r="5" fill="black" stroke="none" />
+                {#if builtin}<circle cx="15" cy="3" r="5" fill="black" stroke="none" />{/if}
+                {#if subtype}<rect x="8.6" y="10" width="10" height="9" rx="2" fill="black" stroke="none" />{/if}
             </mask>
         </defs>
-        <path d={icons[name]} mask={"url(#" + id + ")"} />
-        <circle cx="15" cy="3" r="2.5" fill="currentColor" stroke="none" />
+        <path d={icons[subtype ? "marks" : name]} mask={"url(#" + id + ")"} />
+        {#if subtype}<path d={icons[name]} />{/if}
+        {#if builtin}<circle cx="15" cy="3" r="2.5" fill="currentColor" stroke="none" />{/if}
     {:else}<path d={icons[name]} />{/if}
 </svg>
 
@@ -30,8 +32,8 @@
         collapse: "m5 7 4 4 4-4",
         chevronLeft: "m11 4-5 5 5 5",
         chevronRight: "m7 4 5 5-5 5",
-        textMark: "M3 6V3h12v3M9 3v12m-3 0h6",
-        scaleMark: "M2 6v7h14V6z M5.5 6v3M9 6v4m3.5-4v3",
+        textMark: "M11 12h6.5M14.25 12v5.5",
+        scaleMark: "M10.5 12.5h7v4.5h-7z M13 12.5v2M15.5 12.5v2",
         display: "M2 3h14v10H2z M6 16h6m-3-3v3",
         copy: "M6 6h9v10H6z M3 12H2V2h9v1",
         delete: "M2 5h14M6 5V3h6v2M4 5l1 11h8l1-11M7 8v5m4-5v5",
@@ -64,4 +66,5 @@
 <script lang="ts">
     const id = $props.id();
     let { name, builtin = false }: { name: IconName; builtin?: boolean } = $props();
+    let subtype = $derived(name === "textMark" || name === "scaleMark");
 </script>

@@ -1,36 +1,36 @@
 <div class="panel-inset">
     <Part title="场">
         <PropertySelect label="显示的场" group="场" icon="field" value={editor.displayField} options={fields} choose={field => editor.showField(field)} />
-        <label class="toggle"><input type="checkbox" data-layer="contours" checked={editor.layers.contours} />显示等值线</label>
-        <label class="toggle"><input type="checkbox" data-layer="contourLabels" checked={editor.layers.contourLabels} disabled={!editor.layers.contours} />标注数值</label>
+        {@render toggle("contours", "显示等值线")}
+        {@render toggle("contourLabels", "标注数值", !editor.layers.contours)}
     </Part>
     <Part title="平面图">
-        {#each mapLayers as key (key)}<label class="toggle"><input type="checkbox" data-layer={key} checked={editor.layers[key]} />{layerNames[key]}</label>{/each}
+        {#each mapLayers as key (key)}{@render toggle(key, layerNames[key])}{/each}
     </Part>
     <Part title="网格">
-        <label class="toggle"><input type="checkbox" data-layer="grid" checked={editor.layers.grid} />显示网格</label>
-        <label class="toggle"><input type="checkbox" data-layer="fineGrid" checked={editor.layers.fineGrid} />显示细分网格</label>
+        {@render toggle("grid", "显示网格")}
+        {@render toggle("fineGrid", "显示细分网格")}
         <PropertySelect label="间距方式" value={editor.displayGrid.mode} options={gridModes} choose={mode => editor.setGrid("mode", mode)} attributes={{ "data-grid-setting": "mode" }} />
-        {#if editor.displayGrid.mode === "meters"}
-            <FieldRow label="间距" unit="m"><input aria-label="网格间距" type="number" data-grid-setting="meters" min="0" step={displaySteps.gridUnits} value={editor.displayGrid.meters} /></FieldRow>
-        {:else}
-            <FieldRow label="目标间距" unit="px"><input aria-label="网格目标间距" type="number" data-grid-setting="pixels" min="0" step={displaySteps.gridPixels} value={editor.displayGrid.pixels} /></FieldRow>
-        {/if}
+        {#each [editor.displayGrid.mode] as mode (mode)}
+            <NumberInput {editor} kind="literal" label={mode === "meters" ? "间距" : "目标间距"} unit={mode === "meters" ? "m" : "px"}
+                step={mode === "meters" ? displaySteps.gridUnits : displaySteps.gridPixels} attributes={{ "data-grid-setting": mode }}
+                setting={{ value: editor.displayGrid[mode], change: value => editor.setGrid(mode, value), validate: spacing }} />
+        {/each}
     </Part>
 </div>
 
-<style>
-    .toggle:has(input:disabled) { color: var(--text-disabled); }
-    input[type="number"] { appearance: textfield; }
-    input::-webkit-inner-spin-button, input::-webkit-outer-spin-button { appearance: none; }
-</style>
+{#snippet toggle(key: Layer, label: string, disabled = false)}
+    <CheckboxRow {label} checked={editor.layers[key]} {disabled} attributes={{ "data-layer": key }} change={value => editor.layer(key, value)} />
+{/snippet}
 
 <script lang="ts">
     import { declarationEntries, isBuiltin } from "../../core/design/defaults.ts";
     import { displaySteps } from "../../core/design/functionTable.ts";
     import { layerNames } from "../state/layers.ts";
+    import { type Layer } from "../types.ts";
     import * as session from "../state/session.svelte.ts";
-    import FieldRow from "./FieldRow.svelte";
+    import CheckboxRow from "./CheckboxRow.svelte";
+    import NumberInput from "./NumberInput.svelte";
     import Part from "./Part.svelte";
     import PropertySelect from "./PropertySelect.svelte";
 
@@ -38,4 +38,7 @@
     let fields = $derived(declarationEntries("field", editor.project.design.fields).map(([id, f]) => ({ id, name: f.label, builtin: isBuiltin("field", id) })));
     const gridModes = [{ id: "meters", name: "固定米数" }, { id: "pixels", name: "固定像素" }];
     const mapLayers = ["geoNodes", "labels", "sections", "marks", "issues"] as const;
+    function spacing(value: number) {
+        if (!Number.isFinite(value) || value <= 0) throw Error("间距必须大于 0");
+    }
 </script>

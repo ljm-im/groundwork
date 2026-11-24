@@ -11,7 +11,7 @@ import { addField, addInput, copyGeo, createStrip, removalUses, removalUseName, 
     nodeIds, rangeUsers, removeDeclaration, reorderGeo, stripRange } from "../src/core/edit/geoNodes.ts";
 import { arcHandle, moveHandle, penNode, setSegment, translateGeo } from "../src/core/edit/paths.ts";
 import { flattenPath } from "../src/core/design/path.ts";
-import { geoControls, geometryPath, insertPathNode, removeGeometryItem } from "../src/core/edit/geoControls.ts";
+import { copyGeometryItem, geoControls, geometryPath, insertPathNode, removeGeometryItem } from "../src/core/edit/geoControls.ts";
 import { finishDraft, snapPoint, type GeoDraft, type DrawTool } from "../src/app/state/geoTools.ts";
 import { TerrainCache } from "../src/core/terrain/cache.ts";
 import { generateTerrain } from "../src/core/terrain/terrain.ts";
@@ -293,6 +293,22 @@ test("Removing a mountain member keeps references to siblings and reports refere
     removeGeometryItem(d, m, ["peaks"], 1);
     assert.equal(v.inputs.B.value, "{geo:T.peaks.1.at.h} - {geo:T.peaks.0.radius}");
     assert.equal(new Project(d).resolved.inputs.B.value, 4);
+});
+
+test("Copying a mountain member preserves its geometry and the targets of existing expressions", () => {
+    const d = syntheticDesign(), n = d.geoNodes[1];
+    n.function = { type: "mountain", ridges: [], peaks: [
+        { at: { p: [-18, -10], h: 6 }, radius: "{geo:T.peaks.1.radius}", scale: 2, noise: 0 },
+        { at: { p: [-12, -6], h: 7 }, radius: 3, scale: 2, noise: 0 }
+    ] };
+    d.inputs.B = { range: defaultInputRange("B"), value: 1 };
+    const design: Design = d;
+    design.inputs.B.value = "{geo:T.peaks.1.at.h}";
+    copyGeometryItem(design, n, ["peaks"], 0);
+    assert.deepEqual(n.function.peaks[0], n.function.peaks[1]);
+    assert.equal(n.function.peaks[0].radius, "{geo:T.peaks.2.radius}");
+    assert.equal(design.inputs.B.value, "{geo:T.peaks.2.at.h}");
+    assert.equal(new Project(design).resolved.inputs.B.value, 7);
 });
 
 test("An arc with omitted bulge uses the editor's quarter-turn in sampling and handles", () => {

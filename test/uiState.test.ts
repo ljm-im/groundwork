@@ -48,7 +48,7 @@ test("Map focus, hit radius and the selected inspector issue", async () => {
     const { body: markup } = render(GeoProperties, { props: { editor: ui } });
     assert.match(markup, /data-property-tab="issues"[^>]*aria-pressed="true"/);
     assert.doesNotMatch(markup, /构造方式/);
-    assert(markup.match(/<button[^>]*>/g)!.some(tag => tag.includes("issue-row is-selected") && tag.includes("data-issue=\"" + baseline.issues.indexOf(selected) + "\"")));
+    assert(markup.match(/<button[^>]*>/g)!.some(tag => tag.includes("aria-pressed=\"true\"") && tag.includes("data-issue=\"" + baseline.issues.indexOf(selected) + "\"")));
     ui.changePropertyTab("region");
     const { body: route } = render(GeoProperties, { props: { editor: ui } });
     assert.match(route, /构造方式/);
@@ -76,8 +76,10 @@ test("A committed prompt, undo and redo preserve the live project and all geomet
     const generation = [t.mock.method(editor, "replace"), t.mock.method(project, "update")];
     const target = { group: "geoNodes" as const, id: design.geoNodes[0].id };
     const { fields, regions } = project.terrain, heights = fields.height.values;
-    editor.describe(target, "第一行\n第二行");
-    editor.describe(target, "第一行\n第二行");
+    const focus = Symbol();
+    editor.describe(target, "第一行", focus);
+    editor.describe(target, "第一行\n第二行", focus);
+    editor.describe(target, "第一行\n第二行", focus);
     assert.equal(editor.history.states.length, 2);
     assert.equal(design.geoNodes[0].prompt, "第一行\n第二行");
     editor.navigate(false);
@@ -222,11 +224,12 @@ test("Drawing or canceling a parameter keeps its owner and activates only the co
     const handles = geoControls(owner, target);
     assert.equal(handles.length, 3); assert(handles.every(c => c.role === "parameter" && c.path === 0));
     editor.setTool("peak", n.id);
-    for (const p of [[4, 4], [5, 5]] as [number, number][]) {
-        for (const phase of ["down", "up"] as const) draftPointer(editor, phase, p, { ctrlKey: true } as PointerEvent);
-        assert.deepEqual(editor.selection, selected); assert.equal(editor.history.index, 1);
-    }
-    assert.equal(editor.map.draft!.nodes.length, 1); await editor.completeDrawing();
+    draftPointer(editor, "down", [4, 4], { ctrlKey: true } as PointerEvent);
+    assert.deepEqual(editor.selection, selected); assert.equal(editor.history.index, 1);
+    draftPointer(editor, "up", [4, 4], { ctrlKey: true } as PointerEvent);
+    assert.equal(editor.map.draft, undefined);
+    assert.equal(editor.history.index, 2);
+    assert.deepEqual(editor.selection, selected);
     assert.equal(geoControls(editor.project.design.geoNodes[1], editor.map.geometry).length, 1);
 });
 
@@ -334,20 +337,17 @@ test("Selection history restores edited elements and list tabs preserve the sele
     editor.replace(d, true);
     editor.history = new History(d);
     editor.select({ kind: "geoNode", id: "T" });
-    editor.select({ kind: "geoNode", id: "G" }, true, true);
+    editor.select({ kind: "geoNode", id: "G" });
     const original = editor.selection;
     editor.changeTab("marks");
     assert.equal(editor.selection, original);
-    assert.deepEqual(editor.geoSelection, ["G", "T"]);
     await editor.addMark("text", [4, 5]);
     const created = editor.selection;
     assert.equal(created?.kind, "mark");
     await editor.navigate(false);
     assert.deepEqual(editor.selection, original);
-    assert.deepEqual(editor.geoSelection, ["G", "T"]);
     await editor.navigate(true);
     assert.deepEqual(editor.selection, created);
-    assert.deepEqual(editor.geoSelection, []);
     await editor.removeElement(created!);
     assert.equal(editor.selection, null);
     await editor.navigate(false);
