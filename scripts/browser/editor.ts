@@ -9,12 +9,15 @@ import { type Point } from "../../src/core/design/v5.ts";
 import { layer, rect, syntheticDesign } from "../../test/scenarios.ts";
 import { startChromium } from "./chromium.ts";
 import { installPickers } from "./pickers.ts";
+import { checkAppearance } from "./appearance.ts";
 
-test("Editor interactions in Chromium", async () => {
+test("Editor interactions in Chromium", async t => {
     const server = await createServer({ configFile: "configs/vite.config.ts", server: { host: "127.0.0.1", port: 0 } });
     try {
         await server.listen();
-        await checkEditor(server.resolvedUrls!.local[0]);
+        const url = server.resolvedUrls!.local[0];
+        await checkEditor(url);
+        await t.test("Appearance changes in Chromium", () => checkAppearance(url));
     }
     finally {
         await server.close();
