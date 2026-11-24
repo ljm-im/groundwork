@@ -106,8 +106,11 @@ export function checkEditorSource() {
         if (/\.(?:ts|svelte)$/u.test(file)) assert.doesNotMatch(source, /岛/u, file);
         assert.doesNotMatch(source, /<input\b[^>]*\btype=["']range["']/u, file);
         assert.doesNotMatch(source, /(?:disabled[^\n]*关闭|关闭[^\n]*disabled)/u, file);
-        if (/^src\/(?:app|render)\//.test(file))
+        if (/^src\/(?:app|render)\//.test(file)) {
             assert.doesNotMatch(source, /["'](?:geoNodes\[|inputs\.|fields\.|marks\[)/u, file + " uses a JSON path in editor text");
+            assert.doesNotMatch(source, /校验/u, file + " uses the retired issue wording");
+            assert.doesNotMatch(source, /(?<!变量)标签/u, file + " uses the retired name wording");
+        }
     }
 }
 

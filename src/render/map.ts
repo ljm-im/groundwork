@@ -330,7 +330,7 @@ export class ProjectMap {
         ctx.textBaseline = "middle";
         this.drawOverlays();
         drawGeoOverlay(this);
-        if (this.layers.labels) this.drawLabels(ctx, d, t);
+        if (this.layers.labels || this.layers.sections) this.drawLabels(ctx, d, t);
         this.drawMarks(ctx);
         if (contours && this.layers.contourLabels) this.drawContourLabels(ctx, contours);
         document.getElementById("zoom-value")!.textContent = displayReading(this.zoomFactor() * 100, 1, "%");
@@ -374,18 +374,17 @@ export class ProjectMap {
         lines(step, baseMap.mainGrid);
     }
     private drawLabels(ctx: Context, d: ProjectView["design"], terrain: Terrain) {
-        const near = (label: string, point: Point) => {
-            const [x, y] = this.screen(point);
-            ctx.save();
-            ctx.textAlign = "left";
-            mapText(ctx, label, x + 7, y - 8);
-            ctx.restore();
-        };
-        for (const n of d.geoNodes) if (n.showLabel && !n.disabled) {
+        if (this.layers.labels) for (const n of d.geoNodes) if (n.showLabel && !n.disabled) {
             const region = terrain.regions.get(n.id), point = region && geoLabelPoint(region, terrain.grid);
             if (point) mapText(ctx, n.label, ...this.screen(point));
         }
-        for (const section of d.sections) if (section.showLabel !== false) near(section.label, section.points[0]);
+        if (this.layers.sections) for (const section of d.sections) if (section.showLabel !== false) {
+            const [x, y] = this.screen(section.points[0]);
+            ctx.save();
+            ctx.textAlign = "left";
+            mapText(ctx, section.label, x + 7, y - 8);
+            ctx.restore();
+        }
     }
 
     markScreen(mark: Pick<Mark, "point" | "follow">): Point {

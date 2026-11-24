@@ -1,5 +1,5 @@
 <section class="part">
-    <label class="toggle"><input type="checkbox" checked={showLabel} onchange={e => setLabelVisibility(e.currentTarget.checked)} />显示标签</label>
+    <label class="toggle"><input type="checkbox" checked={showLabel} onchange={e => setLabelVisibility(e.currentTarget.checked)} />显示名称</label>
     <Prompt {editor} {target} placeholder="描述" />
 </section>
 

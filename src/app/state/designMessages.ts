@@ -41,8 +41,8 @@ export function designProblemText({ location, message }: DesignProblem, d: Desig
         if (key === "precision") property = "精度";
         if (key === "range") property = "取值范围";
     }
-    if (!property && key === "label") property = "标签";
-    if (!property && key === "showLabel") property = "显示标签";
+    if (!property && key === "label") property = "名称";
+    if (!property && key === "showLabel") property = "显示名称";
     return "“" + (label ?? id) + "”" + (property ? "." + property : "") + " " + message;
 }
 

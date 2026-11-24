@@ -37,5 +37,5 @@
     let { editor }: { editor: session.Editor } = $props();
     let fields = $derived(fieldEntries(editor.project.design.fields).map(([id, f]) => ({ id, name: f.label, builtin: isBuiltin("field", id) })));
     const gridModes = [{ id: "meters", name: "固定米数" }, { id: "pixels", name: "固定像素" }];
-    const mapLayers = ["geoNodes", "sections", "labels", "marks", "issues"] as const;
+    const mapLayers = ["geoNodes", "labels", "sections", "marks", "issues"] as const;
 </script>

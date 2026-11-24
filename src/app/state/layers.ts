@@ -12,7 +12,7 @@ export const layerDefaults = {
 export const layerNames = {
     geoNodes: "地件轮廓",
     sections: "剖面线",
-    labels: "标签",
+    labels: "地件名称",
     marks: "标记",
     issues: "问题位置"
 };

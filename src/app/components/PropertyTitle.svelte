@@ -31,7 +31,7 @@
 
 <script lang="ts">
     import Icon, { type IconName } from "./Icon.svelte";
-    let { icon, name, label = "标签", rename, remove, copy, toggle, builtin = false, disabled = false }: {
+    let { icon, name, label = "名称", rename, remove, copy, toggle, builtin = false, disabled = false }: {
         icon: IconName; builtin?: boolean; name: string; label?: string; rename?: (name: string) => void;
         remove?: () => void; copy?: () => void; toggle?: () => void; disabled?: boolean;
     } = $props();

@@ -29,3 +29,20 @@ test("Text marks show the resolved authored elevation when enabled", () => {
     changed.showElevation = false;
     assert.equal(draw(), "A");
 });
+
+test("Groundwork names and section names follow separate map switches", () => {
+    const d = syntheticDesign();
+    d.geoNodes[0].showLabel = true;
+    d.sections = [{ id: "A", label: "A", points: [[0, 0], [0, 5]] },
+        { id: "B", label: "B", points: [[1, 0], [1, 5]], showLabel: false }];
+    const project = new Project(d);
+    const names: string[] = [];
+    const ctx = { save() {}, restore() {}, strokeText() {}, fillText: (value: string) => names.push(value) } as unknown as CanvasRenderingContext2D;
+    const map = Object.assign(Object.create(ProjectMap.prototype) as ProjectMap, { layers: { labels: true, sections: true }, screen: () => [0, 0] });
+    for (const [labels, sections, expected] of [[true, true, ["G", "A"]], [false, true, ["A"]], [true, false, ["G"]], [false, false, []]] as const) {
+        map.layers.labels = labels; map.layers.sections = sections;
+        names.length = 0;
+        map["drawLabels"](ctx, project.resolved, project.terrain);
+        assert.deepEqual(names, expected);
+    }
+});

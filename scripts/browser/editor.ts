@@ -205,6 +205,18 @@ async function checkEditor(url: string) {
         await moveMap(.5, .5);
         assert.match(await text("#position"), /^X -?\d+\.\d m\s+Y -?\d+\.\d m\s+高度 4\.5 m$/);
         await panel("layers");
+        const planeLayers = await evaluate(() => {
+            const plane = [...document.querySelectorAll("#panel h3")].find(h => h.textContent === "平面图")!.closest("section")!;
+            return [...plane.querySelectorAll("label")].map(label => [label.querySelector("input")?.dataset.layer, label.textContent?.trim()]);
+        });
+        assert.deepEqual(planeLayers, [["geoNodes", "地件轮廓"], ["labels", "地件名称"], ["sections", "剖面线"], ["marks", "标记"], ["issues", "问题位置"]]);
+        for (const [layer] of planeLayers) {
+            const selector = "input[data-layer=" + layer + "]";
+            const checked = () => evaluate(s => document.querySelector<HTMLInputElement>(s)!.checked, selector);
+            const initial = await checked();
+            await click(selector); assert.equal(await checked(), !initial);
+            await click(selector); assert.equal(await checked(), initial);
+        }
         const contourToggle = "input[data-layer=contours]", labelToggle = "input[data-layer=contourLabels]";
         const annotation = () => evaluate(s => {
             const input = document.querySelector<HTMLInputElement>(s)!;
