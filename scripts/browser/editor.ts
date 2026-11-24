@@ -27,6 +27,8 @@ async function checkEditor(url: string) {
     const browser = await startChromium();
     const { cdp, click, evaluate, key, wait } = browser;
     const text = (sel: string) => evaluate(sel => document.querySelector<HTMLElement>(sel)?.innerText.trim() ?? "", sel);
+    const hasBuiltinMark = (selector: string) => evaluate(s =>
+        !!document.querySelector(s + " svg")!.querySelector("circle[fill=currentColor]"), selector);
     const panel = (name: string) => click("[data-tab=" + name + "]");
     const terrainTab = () => click("[data-property-tab=function]");
     const forbidden = /geoNodes\[|inputs\.|fields\.|marks\[/;
@@ -84,6 +86,7 @@ async function checkEditor(url: string) {
         await wait(() => document.querySelectorAll("[data-geo-node]").length === 1);
         assert.equal(await evaluate(() => document.body.dataset.imeStarted + "/" + document.body.dataset.imeEnded), "true/true");
         assert.match(await text("[data-geo-node=T]"), /甲台/);
+        assert(await hasBuiltinMark("[data-geo-node=T] .list-detail"));
         await click("[data-geo-node=T]");
         await click(".property-title input");
         await evaluate(() => (document.activeElement as HTMLInputElement).select());
@@ -100,8 +103,16 @@ async function checkEditor(url: string) {
         assert.equal(renamed?.label, "新台"); assert.equal(renamed?.prompt, "场地描述");
 
         await terrainTab();
+        assert.equal(await hasBuiltinMark("[data-property-tab=function]"), false);
+        await click("button.choice-face[aria-label=函数]");
+        assert.equal(await text(".choices[aria-label=函数] .group-name"), "函数");
+        assert(await hasBuiltinMark("button.choice-face[aria-label=函数]"));
+        assert(await hasBuiltinMark(".choices[aria-label=函数] [aria-selected=true]"));
+        await key("Escape");
         await click("button[aria-label=为增量插入变量]");
-        await wait(() => !!document.querySelector(".numeric-edit"));
+        await wait(() => !!document.querySelector(".numeric-edit") && !!document.querySelector(".reference-menu [data-option]"));
+        for (const [id, builtin] of [["input:seed", true], ["input:A", false], ["field:height", true], ["field:F", false]] as const)
+            assert.equal(await hasBuiltinMark(`.reference-menu [data-option="${id}"]`), builtin, id);
         await evaluate(() => document.getSelection()!.selectAllChildren(document.querySelector(".numeric-edit")!));
         await key("Backspace");
         await wait(() => document.querySelector(".numeric-edit")?.textContent === "");

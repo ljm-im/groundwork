@@ -41,7 +41,8 @@
             {/if}
         {:else if tab === "function"}
             <Part>
-                <PropertySelect label="函数" group="内置函数" icon="function" value={f.type} options={allowedFunctions(n).map(id => ({ id, name: id, builtin: true }))}
+                <PropertySelect label="函数" group="函数" icon="function" value={f.type}
+                    options={allowedFunctions(n).map(id => ({ id, name: id, builtin: isBuiltinFunction(id) }))}
                     choose={id => editor.switchFunction(n, id as GeoFunction["type"])} />
                 <PropertySelect label="输出到" group="场" icon="field" value={n.field} options={fields}
                     choose={id => editor.editNode(n.id, v => v.field = id)} />
@@ -115,7 +116,7 @@
     import { allowedFunctions } from "../../core/edit/geoNodes.ts";
     import { type GeoFunction, type Strip } from "../../core/design/v5.ts";
     import { fieldEntries, isBuiltin } from "../../core/design/defaults.ts";
-    import { canWrite, functionParameters, functionTable } from "../../core/design/functionTable.ts";
+    import { canWrite, functionParameters, functionTable, isBuiltinFunction } from "../../core/design/functionTable.ts";
     import { geoAt, type DrawTool } from "../state/geoTools.ts";
     import { geoParameter, readAt, writeAt, type Address } from "../../core/design/parameters.ts";
     import { geometryPath, removeGeometryItem, type GeometryTarget } from "../../core/edit/geoControls.ts";

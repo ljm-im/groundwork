@@ -5,6 +5,7 @@ import { designFixtures, fixtureOptions } from "../configs/read-fixture.ts";
 import { parseDesign, serializeDesign } from "../src/core/design/model.ts";
 import { type Design } from "../src/core/design/v5.ts";
 import { newDesign } from "../src/core/design/newDesign.ts";
+import { isBuiltinFunction } from "../src/core/design/functionTable.ts";
 import { resolveDesign } from "../src/core/design/parameters.ts";
 import { removeDeclaration } from "../src/core/edit/geoNodes.ts";
 import { DesignError } from "../src/core/design/problems.ts";
@@ -177,6 +178,12 @@ test("Section marks accept old empty arrays and reject authored marks", () => {
     assert(!Object.hasOwn(parseDesign(d).sections[0], "marks"));
     s.marks.push([.5, "B"]);
     assert.throws(() => parseDesign(d), /sections\[0\].marks.*移除/);
+});
+
+test("Only registered function IDs count as built-in", () => {
+    assert(isBuiltinFunction("ground"));
+    assert(!isBuiltinFunction("A"));
+    assert(!isBuiltinFunction("constructor"));
 });
 
 test("Built-in height is hydrated and reserved declaration metadata is protected", () => {

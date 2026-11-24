@@ -22,7 +22,7 @@
                     }}>
                     <Icon name="terrain" /><span class="geo-name">{n.label}</span>
                     {#if problems.includes(n.id)}<span class="issue-error" data-tip="结构错误"><Icon name="issues" /></span>{/if}
-                    <small class="list-detail"><Icon name="function" builtin />{n.function.type}{#if n.function.type === "flat"}<span class="flat-amount" use:flagOverflow>{flatAmount(n, n.function.amount)}</span>{/if}</small>
+                    <small class="list-detail"><Icon name="function" builtin={isBuiltinFunction(n.function.type)} />{n.function.type}{#if n.function.type === "flat"}<span class="flat-amount" use:flagOverflow>{flatAmount(n, n.function.amount)}</span>{/if}</small>
                     {#if c.type === "strip"}<small class="along">沿 {c.of.map(id => "“" + (d.geoNodes.find(n => n.id === id)?.label ?? id) + "”").join("、")}</small>{/if}
                     {#if n.field !== heightId}<small class="field-detail"><Icon name="field" />{d.fields[n.field]?.label ?? n.field}</small>{/if}
                 </button>
@@ -56,6 +56,7 @@
     import { onDestroy, onMount } from "svelte";
     import * as session from "../state/session.svelte.ts";
     import { heightId } from "../../core/design/defaults.ts";
+    import { isBuiltinFunction } from "../../core/design/functionTable.ts";
     import { geoParameter } from "../../core/design/parameters.ts";
     import { displayValue, flagOverflow } from "../state/numbers.ts";
     import { reorderGeo } from "../../core/edit/geoNodes.ts";

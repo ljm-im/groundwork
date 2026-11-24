@@ -120,6 +120,10 @@ export const functionTable: Record<GeoFunction["type"], FunctionSpec> = {
     ] }
 };
 
+export function isBuiltinFunction(id: string) {
+    return Object.hasOwn(functionTable, id);
+}
+
 export const markParameters = {
     text: number("elevation", "高度", "m", .1, 0),
     scale: number("length", "长度", "m", 1, 10, { constraint: "positive" })
