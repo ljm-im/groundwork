@@ -26,7 +26,7 @@
 </style>
 
 <script lang="ts">
-    import { fieldEntries, isBuiltin } from "../../core/design/defaults.ts";
+    import { declarationEntries, isBuiltin } from "../../core/design/defaults.ts";
     import { displaySteps } from "../../core/design/functionTable.ts";
     import { layerNames } from "../state/layers.ts";
     import * as session from "../state/session.svelte.ts";
@@ -35,7 +35,7 @@
     import PropertySelect from "./PropertySelect.svelte";
 
     let { editor }: { editor: session.Editor } = $props();
-    let fields = $derived(fieldEntries(editor.project.design.fields).map(([id, f]) => ({ id, name: f.label, builtin: isBuiltin("field", id) })));
+    let fields = $derived(declarationEntries("field", editor.project.design.fields).map(([id, f]) => ({ id, name: f.label, builtin: isBuiltin("field", id) })));
     const gridModes = [{ id: "meters", name: "固定米数" }, { id: "pixels", name: "固定像素" }];
     const mapLayers = ["geoNodes", "labels", "sections", "marks", "issues"] as const;
 </script>

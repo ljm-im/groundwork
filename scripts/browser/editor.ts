@@ -84,6 +84,41 @@ async function checkEditor(url: string) {
         await wait(() => document.querySelector("#filename")?.textContent === "regression.json");
         await idle();
 
+        console.log("Seed is a selectable built-in input");
+        assert.equal(await text("#properties .property-title h2"), "项目");
+        assert.deepEqual(await evaluate(() => [...document.querySelectorAll("#properties h3")].map(h => h.textContent)), ["描述", "地形计算"]);
+        await panel("inputs");
+        assert.deepEqual(await evaluate(() => [...document.querySelectorAll("#panel h3")].map(h => h.textContent)), ["输入", "场"]);
+        assert.deepEqual(await evaluate(() => [document.querySelector<HTMLElement>("[data-select-input]")?.dataset.selectInput,
+            document.querySelector<HTMLElement>("[data-select-field]")?.dataset.selectField]), ["seed", "height"]);
+        assert(await hasBuiltinMark("[data-select-input=seed]"));
+        assert.equal(await text("[data-input=seed] .numeric-face"), "31");
+        await click("[data-select-input=seed]");
+        assert.equal(await text("#properties .property-title h2"), "种子");
+        assert(await hasBuiltinMark("#properties .property-title"));
+        assert(await evaluate(() => !document.querySelector("#properties .property-title :is(input, [data-action=delete])")));
+        assert.equal(await text("#properties h3"), "取值范围");
+        assert.equal(await text("#properties [data-parameter=\"inputs.seed.value\"] .numeric-face"), "31");
+        await click("#properties button[aria-label=增大当前值]"); await saved();
+        assert.equal(parseDesign(await disk(), true).inputs.seed.value, 32);
+        await click("#undo"); await idle(); await saved();
+        assert.equal(await text("#properties .property-title h2"), "种子");
+        assert.equal(parseDesign(await disk(), true).inputs.seed.value, 31);
+
+        await click("#properties button[aria-label=当前值]");
+        await evaluate(() => document.getSelection()!.selectAllChildren(document.querySelector(".numeric-edit")!));
+        await cdp("Input.insertText", { text: "{input:A}" });
+        await key("Enter"); await saved();
+        assert.equal(parseDesign(await disk(), true).inputs.seed.value, "{input:A}");
+        await click("[data-select-input=A]"); await click("#properties [data-action=delete]");
+        const references = await evaluate(() => [...document.querySelectorAll("#affected-items button")].map(button => button.textContent?.trim()));
+        const seed = references.indexOf("“种子”");
+        assert(seed >= 0);
+        await click("#affected-items button:nth-of-type(" + (seed + 1) + ")");
+        assert.equal(await text("#properties .property-title h2"), "种子");
+        await click("#undo"); await idle(); await saved();
+        assert.equal(parseDesign(await disk(), true).inputs.seed.value, 31);
+
         console.log("Issue groups show only present severities");
         const groupNames = () => evaluate(() => [...document.querySelectorAll("#panel h3")].map(h => h.textContent));
         async function issueGroups(expected: string[]) {

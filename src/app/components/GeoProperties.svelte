@@ -115,7 +115,7 @@
     import * as session from "../state/session.svelte.ts";
     import { allowedFunctions } from "../../core/edit/geoNodes.ts";
     import { type GeoFunction, type Strip } from "../../core/design/v5.ts";
-    import { fieldEntries, isBuiltin } from "../../core/design/defaults.ts";
+    import { declarationEntries, isBuiltin } from "../../core/design/defaults.ts";
     import { canWrite, functionParameters, functionTable, isBuiltinFunction } from "../../core/design/functionTable.ts";
     import { geoAt, type DrawTool } from "../state/geoTools.ts";
     import { geoParameter, readAt, writeAt, type Address } from "../../core/design/parameters.ts";
@@ -136,7 +136,7 @@
     let { editor }: { editor: session.Editor } = $props();
     let d = $derived(editor.project.design), n = $derived(geoAt(d, editor.selection!.id));
     let c = $derived(n.construction), f = $derived(n.function);
-    let fields = $derived(fieldEntries(d.fields).filter(([id]) => canWrite(f.type, id))
+    let fields = $derived(declarationEntries("field", d.fields).filter(([id]) => canWrite(f.type, id))
         .map(([id, field]) => ({ id, name: field.label, builtin: isBuiltin("field", id) })));
     let specs = $derived(functionParameters(f));
     let mainParameters = $derived(specs.filter(p => !p.advanced && !p.key.includes("*") && (p.type !== "geometry" || p.default !== "empty")));

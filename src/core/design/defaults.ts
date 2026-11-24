@@ -16,8 +16,8 @@ export function isBuiltin(kind: keyof typeof reserved, id: string) {
     return Object.hasOwn(reserved[kind], id);
 }
 
-export function fieldEntries<T>(fields: Record<string, T>) {
-    return Object.entries(fields).sort(([a], [b]) => Number(isBuiltin("field", b)) - Number(isBuiltin("field", a)));
+export function declarationEntries<T>(kind: keyof typeof reserved, entries: Record<string, T>) {
+    return Object.entries(entries).sort(([a], [b]) => Number(isBuiltin(kind, b)) - Number(isBuiltin(kind, a)));
 }
 
 export function defaultInputRange(id: string): CustomInput["range"] {

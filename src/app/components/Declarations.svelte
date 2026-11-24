@@ -1,21 +1,23 @@
 {#if !properties}
     <Search id="variable-search" label="查找变量" bind:value={editor.variableFilter} />
-    <Part title="自定义输入">
+    <Part title="输入">
         {#snippet actions()}
             <button class="icon-button" data-add="input" data-tip="新建自定义输入" aria-label="新建自定义输入" onclick={() => editor.addDeclaration("input")}><Icon name="plus" /></button>
         {/snippet}
         {#each inputs as [id, v] (id)}
+            {@const builtin = isBuiltin("input", id)}
             <div class="declaration" class:is-selected={h?.kind === "input" && h.id === id}>
                 <button class="object-row" data-select-input={id} aria-pressed={h?.kind === "input" && h.id === id} onclick={() => editor.select({ kind: "input", id })}
                     oncontextmenu={e => {
-                        e.preventDefault(); editor.openMenu({ kind: "input", id }, e.clientX, e.clientY);
+                        e.preventDefault();
+                        if (!builtin) editor.openMenu({ kind: "input", id }, e.clientX, e.clientY);
                     }}>
-                    <Icon name="inputs" /><span>{v.label ?? id}</span>
+                    <Icon name="inputs" {builtin} /><span>{v.label ?? id}</span>
                 </button>
                 <div data-input={id}><NumberInput {editor} label={v.label ?? id} address={["inputs", id, "value"]} self={"input:" + id}
                     range={v.range} step={v.range[2]} compact /></div>
             </div>
-        {:else}{#if fields.length}<div class="list-empty">没有匹配的结果</div>{/if}{/each}
+        {:else}<div class="list-empty">没有匹配的结果</div>{/each}
     </Part>
     <Part title="场">
         {#snippet actions()}
@@ -97,7 +99,7 @@
 
 <script lang="ts">
     import * as session from "../state/session.svelte.ts";
-    import { defaultFieldPrecision, fieldEntries, fieldPrecision, isBuiltin } from "../../core/design/defaults.ts";
+    import { defaultFieldPrecision, declarationEntries, fieldPrecision, isBuiltin } from "../../core/design/defaults.ts";
     import { displayValue } from "../state/numbers.ts";
     import Search from "./Search.svelte";
     import Part from "./Part.svelte";
@@ -112,6 +114,6 @@
         return editor.project.design;
     }), h = $derived(editor.selection);
     const matches = (id: string, name: string) => (name + " " + id).toLowerCase().includes(editor.variableFilter.trim().toLowerCase());
-    let inputs = $derived(Object.entries(d.inputs).filter(([id, input]) => !isBuiltin("input", id) && matches(id, input.label ?? id)));
-    let fields = $derived(fieldEntries(d.fields).filter(([id, field]) => matches(id, field.label)));
+    let inputs = $derived(declarationEntries("input", d.inputs).filter(([id, input]) => matches(id, input.label ?? id)));
+    let fields = $derived(declarationEntries("field", d.fields).filter(([id, field]) => matches(id, field.label)));
 </script>

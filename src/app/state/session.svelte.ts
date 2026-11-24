@@ -133,7 +133,7 @@ export class Editor {
             case "geoNode": return exists(d.geoNodes);
             case "mark": return exists(d.marks);
             case "section": return exists(d.sections);
-            case "input": return !isBuiltin("input", h.id) && Object.hasOwn(d.inputs, h.id);
+            case "input": return Object.hasOwn(d.inputs, h.id);
             case "field": return Object.hasOwn(d.fields, h.id);
         }
     }
@@ -520,7 +520,7 @@ export class Editor {
                 }
                 if (geoParameter(geoAt(this.project.design, slot.id), slot.path.slice(2))?.advanced) this.toggleSubitem(slot.id, "advanced", 0, true);
             }
-            else if (slot.owner === "input") this.select(isBuiltin("input", slot.id) ? null : { kind: "input", id: slot.id });
+            else if (slot.owner === "input") this.select({ kind: "input", id: slot.id });
             else if (slot.owner === "mark") this.select({ kind: "mark", id: slot.id });
             this.revealProperties?.();
             void tick().then(() => {

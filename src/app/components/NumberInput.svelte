@@ -24,7 +24,7 @@
         }}><Icon name="collapse" /></button>{/if}
 {/snippet}
 <div class="number-row" class:compact data-parameter={address.join(".")} bind:this={root}>
-    <div class="number-line parameter-row">{#if !compact}<span class="number-label param-name">{#if labelIcon}<Icon name={labelIcon} {builtin} />{/if}{label}</span>{/if}
+    <div class="number-line parameter-row">{#if !compact}<span class="number-label param-name">{label}</span>{/if}
         <div class="number-box input-box" class:invalid={!!error} class:warning={outside} bind:this={box}>
             <button class="step" aria-label={"减小" + label} data-tip="减小" onpointerdown={e => beginGesture(e, -1)} onclick={e => keyboardStep(e, -1)}><Icon name="chevronLeft" /></button>
             {#if editing && !expanded}
@@ -71,7 +71,7 @@
     {/if}
 </div>
 <style>
-    .number-label { display: flex; align-items: center; gap: var(--space-1); }
+    .number-label { display: flex; align-items: center; }
     .compact .number-line { grid-template-columns: minmax(0, 1fr); }
     .number-box { display: flex; align-items: stretch; min-width: 0; padding: 0; }
     .number-box.warning { border-color: var(--warning); }
@@ -123,14 +123,14 @@
     import { canReference, expressionGraph, parameters, readAt, writeAt, type Address } from "../../core/design/parameters.ts";
     import { evaluate, sampleValue } from "../../core/design/expression.ts";
     import { parseDesign } from "../../core/design/model.ts";
-    import { fieldEntries, isBuiltin } from "../../core/design/defaults.ts";
+    import { declarationEntries, isBuiltin } from "../../core/design/defaults.ts";
     import { adjustInputStep, adjustNumber, chipSpans, composingKey, displayReading, displayValue, editorSelection, flagOverflow, editorText, NumberDrag, numericCaret, numericText, repeatButton, selectionOffsets, type Range } from "../state/numbers.ts";
     import { designErrorText } from "../state/designMessages.ts";
     import { anchoredPopup } from "../state/popup.ts";
     import Icon, { type IconName } from "./Icon.svelte";
     import ReferenceChip from "./ReferenceChip.svelte";
-    let { editor, address, label, labelIcon, builtin = false, kind = "number", step = .1, range, unit = "", self, owner, compact = false, inputStep = false, fallback = 0 }: {
-        editor: session.Editor; address: Address; label: string; labelIcon?: IconName; builtin?: boolean; kind?: "number" | "field" | "literal"; step?: number;
+    let { editor, address, label, kind = "number", step = .1, range, unit = "", self, owner, compact = false, inputStep = false, fallback = 0 }: {
+        editor: session.Editor; address: Address; label: string; kind?: "number" | "field" | "literal"; step?: number;
         range?: Range; unit?: string; self?: string; owner?: string; compact?: boolean; inputStep?: boolean; fallback?: number;
     } = $props();
     let face = $state<HTMLButtonElement>(), expandedBox = $state<HTMLElement>();
@@ -158,12 +158,13 @@
         const leaves = [...slots.values()].filter(s => !s.field && allowed(s.key));
         if (parent) return [{ title: leaves.find(s => s.owner + ":" + s.id === parent)?.name ?? "属性",
             items: leaves.filter(s => s.owner + ":" + s.id === parent).map(s => ({ key: s.key, name: s.label, icon: "property" as const })).filter(filter) }];
-        const items: Option[] = leaves.filter(s => s.owner === "input").map(s => ({
-            key: s.key, name: s.name, icon: "inputs", builtin: isBuiltin("input", s.id)
-        }));
+        const items: Option[] = declarationEntries("input", base.inputs).flatMap(([id, input]) => {
+            const key = "input:" + id;
+            return allowed(key) ? [{ key, name: input.label ?? id, icon: "inputs", builtin: isBuiltin("input", id) }] : [];
+        });
         const result: Group[] = [{ title: "输入", items: items.filter(filter) }];
         if (kind === "field") {
-            const fields = fieldEntries(base.fields).map(([id, field]) => ({
+            const fields = declarationEntries("field", base.fields).map(([id, field]) => ({
                 key: "field:" + id, name: field.label, icon: "field" as const, builtin: isBuiltin("field", id)
             }));
             result.push({ title: "场", items: fields.filter(filter) });
