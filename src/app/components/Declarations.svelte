@@ -1,5 +1,5 @@
 {#if !properties}
-    <Search id="variable-search" label="查找自定义输入或场" bind:value={editor.variableFilter} />
+    <Search id="variable-search" label="查找变量" bind:value={editor.variableFilter} />
     <Part title="自定义输入">
         {#snippet actions()}
             <button class="icon-button" data-add="input" data-tip="新建自定义输入" aria-label="新建自定义输入" onclick={() => editor.addDeclaration("input")}><Icon name="plus" /></button>
