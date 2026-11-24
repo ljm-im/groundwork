@@ -17,6 +17,7 @@ import { baseMap, canvasText, overlay, palette } from "./palette.ts";
 import { displayReading, displayValue } from "../app/state/numbers.ts";
 import { sectionHandles } from "../core/edit/controls.ts";
 import { relief } from "./relief.ts";
+import { fieldFill } from "./fieldFill.ts";
 
 import { type Region } from "../core/design/regions.ts";
 import { type Grid } from "../core/math/geometry.ts";
@@ -132,7 +133,6 @@ export class ProjectMap {
     draft?: GeoDraft;
     private contours?: ReturnType<typeof fieldContours>;
     private contourSamples?: FieldSamples;
-    declare cache: ReturnType<typeof relief>;
     declare center: Point;
     declare width: number;
     declare height: number;
@@ -154,7 +154,6 @@ export class ProjectMap {
     setProject(project: ProjectView, reset = false, frameTerrain = project.terrain) {
         this.project = project;
         this.hovered = undefined;
-        this.cache = relief(project.terrain);
         this.emptyCanvas = !hasSamples(project.terrain);
         this.frame(frameTerrain, reset);
     }
@@ -275,15 +274,16 @@ export class ProjectMap {
         ctx.scale(scale, -scale);
         ctx.lineCap = "round";
         ctx.lineJoin = "round";
-        if (this.displayField === heightId) {
+        const samples = Object.hasOwn(t.fields, this.displayField) && t.fields[this.displayField];
+        const raster = this.displayField === heightId ? relief(t) : samples && fieldFill(g, samples);
+        if (raster) {
             ctx.save();
             ctx.translate(g.xMin, g.yMax);
             ctx.scale(1, -1);
-            ctx.drawImage(this.cache, 0, 0, g.xMax - g.xMin, g.yMax - g.yMin);
+            ctx.drawImage(raster, 0, 0, g.xMax - g.xMin, g.yMax - g.yMin);
             ctx.restore();
         }
         if (this.layers.grid) this.drawGrid(ctx, scale);
-        const samples = Object.hasOwn(t.fields, this.displayField) && t.fields[this.displayField];
         if (this.layers.contours && samples) {
             if (this.contourSamples !== samples) {
                 this.contourSamples = samples;

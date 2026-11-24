@@ -50,6 +50,7 @@ export const baseMap = {
     waterDepthDelta: [36, 26, 18],
     rock: [163, 157, 143],
     sand: [232, 222, 190],
+    fieldRamp: { light: [238, 242, 230], dark: [104, 140, 128] },
     fieldContours: "#38597d",
     boundary: "#806d50",
     sectionLine: "rgba(40,75,74,.6)",
