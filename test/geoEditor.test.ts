@@ -9,7 +9,7 @@ import { defaultInputRange } from "../src/core/design/defaults.ts";
 import { History } from "../src/core/edit/history.ts";
 import { addField, addInput, copyGeo, createStrip, removalUses, removalUseName, defaultFunction, deleteGeo, stripUsers, enableGeo,
     nodeIds, rangeUsers, removeDeclaration, reorderGeo, stripRange } from "../src/core/edit/geoNodes.ts";
-import { arcHandle, insertPathNode, moveHandle, penNode, setSegment, translateGeo } from "../src/core/edit/paths.ts";
+import { arcHandle, insertPathNode, moveHandle, penNode, setSegment, shapePath, translateGeo } from "../src/core/edit/paths.ts";
 import { defaultArcBulge, flattenPath, segmentType } from "../src/core/design/path.ts";
 import { copyGeometryItem, geoControls, geometryPath, removeGeometryItem } from "../src/core/edit/geoControls.ts";
 import { finishDraft, snapPoint } from "../src/app/state/geoTools.ts";
@@ -18,6 +18,7 @@ import { TerrainCache } from "../src/core/terrain/cache.ts";
 import { generateTerrain } from "../src/core/terrain/terrain.ts";
 import { Project } from "../src/core/project.ts";
 import { exportProject } from "../src/core/export.ts";
+import { distance, mixPoint } from "../src/core/math/geometry.ts";
 
 function historyEdit(d: Design, edit: () => void) {
     const before = serializeDesign(d), history = new History(d);
@@ -41,8 +42,8 @@ test("Closed tools add one unit to height and insert above the selection with on
             assert.deepEqual(d.geoNodes, [ground, n, terrace]);
             assert.equal(n.field, "height"); assert.deepEqual(n.function, { type: "flat", amount: 1, feather: 0 });
             assert(path.closed);
-            assert.deepEqual(path.nodes.map((_, i) => segmentType(path, i)), { rect: ["line", "line", "line", "line"], circle: ["arc", "arc", "arc"], sector: ["line", "arc", "line"], pen: ["curve", "curve", "line"] }[tool]);
-            if (tool === "circle") assert.deepEqual(path.nodes.map(v => v.bulge), [Math.tan(Math.PI / 8), Math.tan(Math.PI / 8), 1]);
+            assert.deepEqual(path.nodes.map((_, i) => segmentType(path, i)), { rect: ["line", "line", "line", "line"], circle: ["arc", "arc", "arc", "arc"], sector: ["line", "arc", "line"], pen: ["curve", "curve", "line"] }[tool]);
+            if (tool === "circle") assert.deepEqual(path.nodes.map(v => v.bulge), Array(4).fill(Math.tan(Math.PI / 8)));
             if (tool === "pen") {
                 assert.equal(path.nodes[1].mode, "manual"); assert.deepEqual(path.nodes[1].in, [-1, -1]);
             }
@@ -51,6 +52,29 @@ test("Closed tools add one unit to height and insert above the selection with on
         const off = finishDraft(d, t, draft("rect", { start: [100, 100], cursor: [110, 111] }));
         assert.equal(d.geoNodes.at(-1), off); assert.deepEqual(off.function, { type: "flat", amount: 1, feather: 0 });
     }
+});
+
+test("New circles place four nodes one quarter turn apart on the dragged radius", () => {
+    const center: Point = [3.25, -4.5], start: Point = [9.25, -.5];
+    const radius = distance(center, start), quarter = Math.tan(Math.PI / 8), tolerance = .125;
+    let id = 0;
+    const path = shapePath("circle", center, start, () => "node-" + id++);
+    assert(path.closed);
+    assert.equal(path.nodes.length, 4);
+    assert.deepEqual(path.nodes[0].p, start);
+    for (const [i, node] of path.nodes.entries()) {
+        const next = path.nodes[(i + 1) % path.nodes.length].p;
+        const dx = node.p[0] - center[0], dy = node.p[1] - center[1];
+        const nx = next[0] - center[0], ny = next[1] - center[1];
+        const angle = Math.atan2(dx * ny - dy * nx, dx * nx + dy * ny);
+        assert(Math.abs(angle - Math.PI / 2) < 1e-9);
+        assert(Math.abs(Math.hypot(dx, dy) - radius) < 1e-9);
+        assert.equal(node.mode, "corner");
+        assert(!Object.hasOwn(node, "in") && !Object.hasOwn(node, "out"));
+        assert.equal(node.bulge, quarter);
+    }
+    for (const { a, b } of flattenPath(path, tolerance)) for (const p of [a, mixPoint(a, b, .5), b])
+        assert(Math.abs(distance(center, p) - radius) <= tolerance);
 });
 
 test("Strip direction, whole outlines, shared edges, ordering and referenced deletion survive history", () => {

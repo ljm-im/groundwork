@@ -32,7 +32,7 @@ export function shapePath(tool: Exclude<ShapeTool, "pen">, a: Point, b: Point, i
     }
     if (tool === "circle") {
         const opposite: Point = [2 * a[0] - b[0], 2 * a[1] - b[1]], quarter = Math.tan(Math.PI / 8);
-        return { closed: true, nodes: [arc(b, quarter), arc(arcHandle(b, opposite, 1), quarter), arc(opposite, 1)] };
+        return { closed: true, nodes: [b, arcHandle(b, opposite, 1), opposite, arcHandle(opposite, b, 1)].map(p => arc(p, quarter)) };
     }
     const angle = ((bearing(a, end ?? b) - bearing(a, b)) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
     if (angle < 1e-6 || Math.PI * 2 - angle < 1e-6) throw Error("请单击不同于起始角的方向");
