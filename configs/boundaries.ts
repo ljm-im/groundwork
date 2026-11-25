@@ -144,7 +144,7 @@ export function checkEditorSource() {
 export function checkDesignTokens() {
     const colors = /#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?|oklch|oklab|lch|lab|hwb)\s*\(/iu;
     const pixelFont = /\bfont-size\s*:\s*[^;{}\n]*\b\d+(?:\.\d+)?px\b/i;
-    const legacy = /--(?:ink|muted|line|paper|panel|teal|light|red)\s*[:)]/u;
+    const legacy = /--(?:ink|muted|line|paper|panel|teal|light|red|status-h)\s*[:)]/u;
     const tokens = resolve(root, "src/app/styles/tokens.css");
     const paletteFile = resolve(root, "src/render/palette.ts");
     for (const [directory, tokenFile] of [["app", tokens], ["render", paletteFile]]) {
@@ -173,6 +173,7 @@ export function checkDesignTokens() {
     const light = definitions(":root"), dark = definitions(":root[data-theme=\"dark\"]");
     const colorNames = new Set(["--shadow-pop", ...[...light].filter(([, value]) => colors.test(value)).map(([name]) => name)]);
     assert(light.has("--shadow-pop"));
+    assert(!light.has("--status-h"));
     assert.deepEqual(new Set(dark.keys()), colorNames, "Dark mode overrides every color token and the popup shadow only");
     for (const [name, value] of dark) assert.match(value, colors, name);
 

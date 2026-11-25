@@ -1,4 +1,4 @@
-<section class="map-wrap" aria-label="全图平面图" class:create={editor.tool !== "select"} class:empty={!editor.project}>
+<section class="map-wrap" aria-label="全图平面图" data-busy={!!editor.busy} class:create={editor.tool !== "select"} class:empty={!editor.project}>
     <canvas bind:this={canvas} id="map" tabindex={editor.project ? 0 : -1} aria-label="可编辑的地形平面图"></canvas>
     {#if !editor.project}
         <div class="empty-state">
@@ -29,23 +29,38 @@
             </div>
         </div>
     {/if}
-    <div class="zoom-tools">
-        <button class="icon-button" id="minus" aria-label="缩小" data-tip="缩小" onclick={() => editor.project && editor.map.zoomAt(1 / 1.4)}><Icon name="minus" /></button>
-        <output id="zoom-value">{displayReading(zoom * 100, 1, "%")}</output>
-        <button class="icon-button" id="plus" aria-label="放大" data-tip="放大" onclick={() => editor.project && editor.map.zoomAt(1.4)}><Icon name="plus" /></button>
-        <button class="icon-button" id="fit" aria-label="适应" data-tip="适应" onclick={() => editor.project && editor.map.fit(editor.project.terrain)}><Icon name="fit" /></button>
-    </div>
-    <div class="coords"><span id="busy" role="status" hidden={!editor.busy}>{busyText}</span><span id="mode-hint">{hint}</span><span id="position">{position}</span></div>
+    {#if editor.project}
+        <div class="map-reading">
+            <div class="zoom-tools map-chip">
+                <button class="icon-button" id="minus" aria-label="缩小" data-tip="缩小" onclick={() => editor.map.zoomAt(1 / 1.4)}><Icon name="minus" /></button>
+                <output id="zoom-value">{displayReading(zoom * 100, 1, "%")}</output>
+                <button class="icon-button" id="plus" aria-label="放大" data-tip="放大" onclick={() => editor.map.zoomAt(1.4)}><Icon name="plus" /></button>
+                <button class="icon-button" id="fit" aria-label="适应" data-tip="适应" onclick={() => editor.map.fit(editor.project.terrain)}><Icon name="fit" /></button>
+            </div>
+            <output id="position" class="map-chip" hidden={!position}>{position}</output>
+        </div>
+        <div id="mode-hint" class="map-chip" data-tip={hint}>{hint}</div>
+    {/if}
     <Messages {editor} />
 </section>
 
 <style>
     :global {
-        .map-wrap { display: grid; grid-template-rows: minmax(0, 1fr) var(--status-h); position: relative; background: var(--bg-app); overflow: hidden; isolation: isolate; }
-        .map-wrap.empty .zoom-tools, .map-wrap.empty .coords:has(#busy[hidden]) { display: none; }
+        .map-wrap {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(0, max-content) minmax(0, 1fr);
+            grid-template-rows: minmax(0, 1fr) auto minmax(24px, auto);
+            gap: var(--space-2);
+            align-items: end;
+            padding: 0 var(--space-3) var(--space-3);
+            position: relative;
+            background: var(--bg-app);
+            overflow: hidden;
+            isolation: isolate;
+        }
         .empty-state {
             position: absolute;
-            inset: 0 0 var(--status-h);
+            inset: 0;
             display: grid;
             align-content: center;
             justify-items: center;
@@ -56,22 +71,23 @@
         }
         .empty-state .browser-required { font-size: var(--text-lg); line-height: var(--leading-lg); color: var(--text); }
         .empty-actions { display: flex; gap: var(--space-2); color: var(--text); }
-        #map { min-height: 0; width: 100%; height: 100%; display: block; touch-action: none; outline: none; cursor: default; }
+        #map { position: absolute; inset: 0; min-height: 0; width: 100%; height: 100%; display: block; touch-action: none; outline: none; cursor: default; }
         .map-wrap.pan #map { cursor: grab; }
         .map-wrap.drag #map { cursor: grabbing; }
         .map-wrap.create #map { cursor: crosshair; }
-        .zoom-tools {
-            position: absolute;
-            display: flex;
-            right: var(--space-3);
-            bottom: calc(var(--status-h) + var(--space-3));
-            align-items: center;
-            gap: var(--space-1);
-            padding: var(--space-1);
+        .map-chip {
+            z-index: 1;
             border: 1px solid var(--border-region);
             border-radius: var(--radius-lg);
             background: var(--bg-panel);
             box-shadow: var(--shadow-pop);
+        }
+        .map-reading { grid-area: 2 / 3 / 4 / 4; min-width: 0; display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-2); }
+        .zoom-tools {
+            display: flex;
+            align-items: center;
+            gap: var(--space-1);
+            padding: var(--space-1);
         }
         .zoom-tools output { min-width: var(--row-h); font-size: var(--text-xs); text-align: center; }
         .drawing-status {
@@ -93,30 +109,32 @@
         }
         .drawing-status strong { font-weight: 600; }
         .drawing-status span { font-size: var(--text-sm); line-height: var(--leading-sm); color: var(--text-secondary); }
-        .drawing-actions { display: flex; gap: var(--space-1); margin-inline-start: auto; }
-        .coords {
-            grid-row: 2;
-            border-top: 1px solid var(--border-region);
-            height: var(--status-h);
-            padding: 0 var(--space-3);
-            display: grid;
-            grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-            align-items: center;
-            gap: var(--space-2);
-            font-size: var(--text-xs);
-            line-height: var(--leading-xs);
-            background: var(--bg-panel);
-            color: var(--text-secondary);
-        }
-        .coords > span { overflow: hidden; text-overflow: ellipsis; white-space: pre; }
         .pen-modes { display: flex; align-items: center; }
         .pen-modes button { flex: none; border-color: transparent; background: transparent; }
         .pen-modes button[aria-pressed="true"] { background: var(--bg-selected); color: var(--accent); }
-        #busy { grid-column: 2; grid-row: 1; }
-        #mode-hint { grid-column: 1; grid-row: 1; }
-        #position { grid-column: 3; grid-row: 1; font-family: var(--font-coords); text-align: right; white-space: pre; }
-        @media (max-width: 680px) {
-            .coords { gap: var(--space-1); padding-inline: var(--space-1); }
+        .drawing-actions { display: flex; gap: var(--space-1); margin-inline-start: auto; }
+        #mode-hint, #position {
+            max-width: 100%;
+            height: 24px;
+            padding-inline: var(--space-2);
+            font-size: var(--text-xs);
+            line-height: 22px;
+            color: var(--text-secondary);
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        #mode-hint { grid-area: 3 / 1; justify-self: start; white-space: nowrap; }
+        #position { font-family: var(--font-coords); white-space: pre; pointer-events: none; }
+        #position[hidden] { display: block; visibility: hidden; }
+        @container map-column (max-width: 680px) {
+            .map-wrap {
+                grid-template-columns: minmax(0, 1fr) max-content;
+                grid-template-rows: minmax(0, 1fr) auto auto minmax(24px, auto);
+            }
+            .map-reading { display: contents; }
+            .zoom-tools { grid-area: 3 / 2; justify-self: end; }
+            #mode-hint { grid-area: 3 / 1; }
+            #position { grid-area: 4 / 1 / 5 / 3; justify-self: end; }
         }
     }
 </style>
@@ -127,13 +145,14 @@
     import { type Theme } from "../../render/palette.ts";
     import { drawingHint, positionText } from "../state/mapText.ts";
     import { attachController } from "../state/controller.ts";
+    import { nodeModes } from "../state/inspector.ts";
     import * as session from "../state/session.svelte.ts";
     import Icon from "./Icon.svelte";
     import Messages from "./Messages.svelte";
 
     let { editor, theme }: { editor: session.Editor; theme: Theme } = $props();
+    const penModes = [nodeModes[0], nodeModes[1]];
     let drawView = $derived(editor.mapView && { view: editor.mapView, theme });
-    let busyText = $derived(editor.busy === "正在生成地形…" || editor.busy === "正在更新地件…" ? "计算中" : editor.busy ?? "");
     let hint = $derived(drawingHint(editor.tool, editor.geoDraft, editor.drawing?.end));
     let position = $derived(positionText(editor.cursor, editor.project?.design.fields[editor.displayField]));
     let canvas: HTMLCanvasElement;
@@ -145,13 +164,11 @@
         const { view, theme } = drawView;
         editor.map.draw(view, theme);
         if (view.issueStart !== undefined && performance.now() - view.issueStart < 1500) requestDraw();
-    import { nodeModes } from "../state/inspector.ts";
     }
     function requestDraw() {
         frame ||= requestAnimationFrame(draw);
     }
     $effect(() => {
-    const penModes = [nodeModes[0], nodeModes[1]];
         if (drawView) requestDraw();
     });
     onMount(() => {

@@ -27,7 +27,13 @@
             grid-template-columns: minmax(360px, 1fr) var(--split-target) clamp(270px, var(--right), calc(100% - 410px));
             min-height: 540px;
         }
-        .map-column { display: grid; grid-template-rows: minmax(220px, 1fr) var(--split-target) clamp(110px, var(--bottom), calc(100% - 225px)); min-width: 0; min-height: 0; }
+        .map-column {
+            container: map-column / inline-size;
+            display: grid;
+            grid-template-rows: minmax(220px, 1fr) var(--split-target) clamp(110px, var(--bottom), calc(100% - 225px));
+            min-width: 0;
+            min-height: 0;
+        }
         .map-column.closed { grid-template-rows: minmax(0, 1fr) var(--split-target) 0; }
         .split {
             position: relative;
