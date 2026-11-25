@@ -2,6 +2,7 @@ import { type ResolvedDesign as Design, type Construction, type GeoNode, type Cl
 import { bounds, clamp, createGrid, distance, eachCell, mixPoint, projection, type Box, type Grid } from "../math/geometry.ts";
 import { functionTable } from "./functionTable.ts";
 import { insidePolygon } from "../math/polygon.ts";
+import { indexSegments, segmentProjection, type IndexedSegment } from "../math/segmentIndex.ts";
 import { flattenPath, type Segment } from "./path.ts";
 
 export { type Segment } from "./path.ts";
@@ -122,30 +123,35 @@ export function makeShape(node: GeoNode<number>, below: Map<string, RegionShape>
         const sign = upper.contains([mid[0] + nx * tolerance * .001, mid[1] + ny * tolerance * .001]) === firstInside ? -1 : 1;
         return { a, b, normal: [sign * nx, sign * ny] as Point };
     });
-    function cross(p: Point): CrossSection | undefined {
-        const inside = upper.contains(p), first = inside === firstInside;
+    const reach = Math.max(w1, w2), index = indexSegments(oriented, reach);
+    function firstSide(p: Point) {
+        if (!oriented.length) return;
+        const inside = upper.contains(p);
         if (lower && !inside && !lower.contains(p)) return;
+        return inside === firstInside;
+    }
+    function cross(p: Point): CrossSection | undefined {
+        const first = firstSide(p);
+        if (first === undefined) return;
+        const width = first ? w1 : w2, [x, y] = p;
+        const hit = index.nearest(x, y, width * width);
+        if (!hit) return;
+        const { segment: { a, normal }, dx, dy } = hit;
+        const t = segmentProjection(x, y, hit);
+        const ax = a[0] + dx * t, ay = a[1] + dy * t;
+        const dist = Math.sqrt((x - ax) ** 2 + (y - ay) ** 2), sign = first ? -1 : 1;
+        return { s: clamp((w1 + sign * dist) / (w1 + w2)), first, at: [ax, ay],
+            normal: dist > 1e-9 ? [sign * (x - ax) / dist, sign * (y - ay) / dist] : normal };
+    }
+    function contains(p: Point) {
+        const first = firstSide(p);
+        if (first === undefined) return false;
         const width = first ? w1 : w2;
-        const [x, y] = p;
-        let best = Infinity, ax = 0, ay = 0, normal: Point | undefined;
-        for (const { a, b, normal: edgeNormal } of oriented) {
-            const t = projection(x, y, a, b);
-            const qx = a[0] + (b[0] - a[0]) * t, qy = a[1] + (b[1] - a[1]) * t;
-            const d = (x - qx) ** 2 + (y - qy) ** 2;
-            if (d < best) {
-                best = d;
-                ax = qx; ay = qy;
-                normal = edgeNormal;
-            }
-        }
-        if (!normal || best > width * width) return;
-        const at: Point = [ax, ay], dist = Math.sqrt(best), sign = first ? -1 : 1;
-        if (dist > 1e-9) normal = [sign * (x - ax) / dist, sign * (y - ay) / dist];
-        return { s: clamp((w1 + sign * dist) / (w1 + w2)), first, at, normal };
+        return index.within(p[0], p[1], width * width);
     }
     let contour: Segment[][] | undefined;
-    const shape: RegionShape = { box: expand(bounds(edges.flatMap(e => [e.a, e.b])), Math.max(w1, w2)),
-        spine: edges, cross, contains: p => oriented.length > 0 && !!cross(p), boundary: () => contour ??= trace(shape, tolerance) };
+    const shape: RegionShape = { box: expand(bounds(edges.flatMap(e => [e.a, e.b])), reach),
+        spine: edges, cross, contains, boundary: () => contour ??= trace(shape, tolerance) };
     return shape;
 }
 
@@ -175,11 +181,21 @@ export function rasterRegion(grid: Grid, shape: RegionShape): Region {
     return { cells, mask, shape };
 }
 
-export function signedBoundaryDistance(shape: RegionShape) {
+function boundarySquaredDistance(x: number, y: number, entry: IndexedSegment<Segment>) {
+    const { segment: { a }, dx, dy } = entry, t = segmentProjection(x, y, entry);
+    return (x - a[0] - t * dx) ** 2 + (y - a[1] - t * dy) ** 2;
+}
+
+export function signedBoundaryDistance(shape: RegionShape, reach?: number) {
     const edges = shape.boundary().flat(), point: Point = [0, 0];
+    const index = reach === undefined ? undefined : indexSegments(edges, reach);
     return (x: number, y: number) => {
         let best = Infinity;
-        for (const { a, b } of edges) {
+        if (index) {
+            const hit = index.nearest(x, y, Infinity, boundarySquaredDistance);
+            if (hit) best = boundarySquaredDistance(x, y, hit);
+        }
+        else for (const { a, b } of edges) {
             const t = projection(x, y, a, b);
             best = Math.min(best, (x - a[0] - t * (b[0] - a[0])) ** 2 + (y - a[1] - t * (b[1] - a[1])) ** 2);
         }

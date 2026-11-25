@@ -43,7 +43,7 @@ export function evaluateLayer(n: ResolvedGeoNode, region: Region, state: FieldSt
     const input = (v: Expression, k: number) => typeof v === "number" ? v : bindings.get(v)![k];
     function featherWeight(width: number) {
         if (!width) return () => 1;
-        const distanceToEdge = signedBoundaryDistance(region.shape);
+        const distanceToEdge = signedBoundaryDistance(region.shape, width);
         return (x: number, y: number) => smooth(distanceToEdge(x, y) / width);
     }
     const atSea = (level: number) => shoreDistance(grid, Uint8Array.from(source, h => +(h > level)), mask);
