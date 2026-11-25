@@ -11,6 +11,7 @@ import { startChromium } from "./chromium.ts";
 import { installPickers } from "./pickers.ts";
 import { checkAppearance } from "./appearance.ts";
 import { checkRound26 } from "./round26.ts";
+import { checkRound27 } from "./round27.ts";
 
 test("Editor interactions in Chromium", async t => {
     const server = await createServer({ configFile: "configs/vite.config.ts", server: { host: "127.0.0.1", port: 0 } });
@@ -20,6 +21,7 @@ test("Editor interactions in Chromium", async t => {
         await checkEditor(url);
         await t.test("Appearance changes in Chromium", () => checkAppearance(url));
         await t.test("Trial feedback fixes in Chromium", () => checkRound26(url));
+        await t.test("Unified curves in Chromium", () => checkRound27(url));
     }
     finally {
         await server.close();
