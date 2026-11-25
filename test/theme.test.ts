@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readAppearance, resolveTheme, saveAppearance } from "../src/app/state/theme.ts";
 import { baseMap, interfaceColors, mapColors } from "../src/render/palette.ts";
+import { maxReliefLight, reliefLight } from "../src/render/relief.ts";
 
 test("Appearance resolves against the system only in system mode", () => {
     assert.equal(resolveTheme("system", false), "light");
@@ -65,13 +66,27 @@ function contrast(color: string, background: readonly number[]) {
     return (Math.max(fg, bg) + .05) / (Math.min(fg, bg) + .05);
 }
 
-test("Map palettes meet contrast thresholds on the background and low terrain", () => {
+test("Relief amplifies only the light deficit of backlit slopes", () => {
+    const lightGain = baseMap.light.shadowGain, darkGain = baseMap.dark.shadowGain;
+    const flat = .45 + .6 * .7 / Math.sqrt(.99);
+    const sunlit = .45 + .6 * 1.2 / Math.sqrt(1.5 * .99);
+    const backlit = .45 + .6 * (.7 - .25) / Math.sqrt(1.125 * .99);
+    assert.equal(reliefLight(0, 0, lightGain), flat);
+    assert.equal(reliefLight(-.5, .5, lightGain), sunlit);
+    assert.equal(reliefLight(.25, -.25, lightGain), backlit);
+    assert.equal(reliefLight(0, 0, darkGain), flat);
+    assert.equal(reliefLight(-.5, .5, darkGain), sunlit);
+    assert.equal(reliefLight(.25, -.25, darkGain), flat - (flat - backlit) * darkGain);
+    assert.equal(reliefLight(1, -1, 4), 0);
+});
+
+test("Map palettes meet contrast thresholds on the background and sunlit low terrain", () => {
     for (const theme of ["light", "dark"] as const) {
         const { accent, danger, warning, parameterGeometry, text, bgPanel } = mapColors[theme];
         const { boundary, sectionLine, rasterDim } = baseMap[theme];
         const backgrounds = {
             bgApp: hexRgb(interfaceColors[theme].bgApp),
-            lowland: baseMap.elevation[0].slice(1).map(channel => channel * rasterDim)
+            lowland: baseMap.elevation[0].slice(1).map(channel => Math.min(255, channel * maxReliefLight) * rasterDim)
         };
         for (const [surface, background] of Object.entries(backgrounds)) {
             for (const [part, color] of Object.entries({ boundary, accent, sectionLine, danger, warning, parameterGeometry })) {

@@ -203,8 +203,8 @@ export async function checkAppearance(url: string) {
         await expectTheme("dark");
         const darkField = await evaluate(mapPixels), darkFieldDraws = await expectRedraw(fieldDraws, "#323d39");
         assert.equal(darkField.outside, "#171d1b");
-        assert.equal(darkField.center, "#212d29", "Dark field low value");
-        assert.equal(darkField.left, "#4c4d4a", "Dark field high value");
+        assert.equal(darkField.center, "#202b28", "Dark field low value");
+        assert.equal(darkField.left, "#4a4b47", "Dark field high value");
         assert.notEqual(darkField.center, darkField.outside);
         assert.notEqual(darkField.center, field.center);
         assert.notEqual(darkFieldDraws.raster, fieldDraws.raster);

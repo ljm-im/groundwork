@@ -74,6 +74,7 @@ export const baseMap = {
     sand: [232, 222, 190],
     light: {
         rasterDim: 1,
+        shadowGain: 1,
         fieldRamp: { low: fieldRamp.light, high: fieldRamp.dark },
         boundary: "#806d50",
         sectionLine: "rgb(38 71 70 / 60%)",
@@ -81,7 +82,8 @@ export const baseMap = {
         mainGrid: "rgba(54,99,104,.23)"
     },
     dark: {
-        rasterDim: .32,
+        rasterDim: .31,
+        shadowGain: 2,
         fieldRamp: { low: fieldRamp.dark, high: fieldRamp.light },
         boundary: "#d4c29f",
         sectionLine: "rgb(214 230 224 / 60%)",
