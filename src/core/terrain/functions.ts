@@ -4,7 +4,7 @@ import { fieldExpressions, functionTable } from "../design/functionTable.ts";
 import { type FieldSamples } from "../design/results.ts";
 import { evaluate, fieldValue, sampleValue } from "../design/expression.ts";
 import { type CrossSection, type Region, signedBoundaryDistance } from "../design/regions.ts";
-import { distance, nearest, polygonField, sampleDefined, smooth, type Grid } from "../math/geometry.ts";
+import { nearest, polygonField, sampleDefined, smooth, type Grid } from "../math/geometry.ts";
 import { fbm, noise, noise1D } from "../math/noise.ts";
 import { erode } from "./erosion.ts";
 import { flattenPath } from "../design/path.ts";
@@ -49,10 +49,12 @@ export function evaluateLayer(n: ResolvedGeoNode, region: Region, state: FieldSt
     const atSea = (level: number) => shoreDistance(grid, Uint8Array.from(source, h => +(h > level)), mask);
     let residual: LayerOutput["residual"];
     type Cell = (k: number, x: number, y: number) => number;
-    function stripInput(x: number, y: number): { cross: CrossSection; edges: [number, number] } | undefined {
+    const stripPoint: Point = [0, 0];
+    function stripInput(x: number, y: number): { cross: CrossSection; a: number; b: number } | undefined {
         const c = n.construction;
         if (c.type !== "strip") return;
-        const cross = region.shape.cross?.([x, y]);
+        stripPoint[0] = x; stripPoint[1] = y;
+        const cross = region.shape.cross?.(stripPoint);
         if (!cross) return;
         const { first, normal: [nx, ny], at: [ax, ay] } = cross;
         const [w1, w2] = c.widths;
@@ -61,11 +63,11 @@ export function evaluateLayer(n: ResolvedGeoNode, region: Region, state: FieldSt
             // Take the one-sided limit even when the authored edge passes through a cell centre.
             const epsilon = grid.step * 1e-6;
             return sampleDefined(grid, source, mask, ax + sign * nx * epsilon, ay + sign * ny * epsilon,
-                ([px, py]) => sign * ((px - ax) * nx + (py - ay) * ny) > epsilon / 2);
+                (px, py) => sign * ((px - ax) * nx + (py - ay) * ny) > epsilon / 2);
         };
         const a = f.type !== "split" || first ? edge(w1, -1) : 0;
         const b = f.type !== "split" || !first ? edge(w2, 1) : 0;
-        if (a !== undefined && b !== undefined) return { cross, edges: [a, b] };
+        if (a !== undefined && b !== undefined) return { cross, a, b };
     }
     function prepare(): Cell | undefined {
         switch (f.type) {
@@ -100,10 +102,10 @@ export function evaluateLayer(n: ResolvedGeoNode, region: Region, state: FieldSt
                 const edge = polygonField(grid, shoreline, reach), land = new Uint8Array(grid.size);
                 for (let k = 0; k < grid.size; k++) {
                     if (!readable[k]) continue;
-                    const [x, y] = grid.point(k), dc = -edge[k], harbor = f.harbor;
+                    const x = grid.x(k % grid.width), y = grid.y(Math.floor(k / grid.width)), dc = -edge[k], harbor = f.harbor;
                     let perturbation = 0;
                     if (Math.abs(dc) < reach) {
-                        const attenuation = harbor.radius > 0 ? smooth((distance([x, y], harbor.center) - harbor.radius) / harbor.span) : 1;
+                        const attenuation = harbor.radius > 0 ? smooth((Math.hypot(harbor.center[0] - x, harbor.center[1] - y) - harbor.radius) / harbor.span) : 1;
                         const wx = x + 14 * fbm(n2, x / 70, y / 70, 3), wy = y + 14 * fbm(n2, x / 70 + 5.2, y / 70 + 1.3, 3);
                         perturbation = input(f.roughness, k) * attenuation * fbm(n1, wx / 38, wy / 38, 5) * 1.7;
                     }
@@ -130,7 +132,7 @@ export function evaluateLayer(n: ResolvedGeoNode, region: Region, state: FieldSt
                     }
                     for (const p of peaks) {
                         const radius = p.radius + p.noise * n3(x / p.scale, y / p.scale);
-                        h = Math.max(h, p.h * Math.exp(-((distance([x, y], p.at.p) / (radius || 1e-9)) ** 2)));
+                        h = Math.max(h, p.h * Math.exp(-((Math.hypot(p.at.p[0] - x, p.at.p[1] - y) / (radius || 1e-9)) ** 2)));
                     }
                     return h;
                 };
@@ -159,7 +161,7 @@ export function evaluateLayer(n: ResolvedGeoNode, region: Region, state: FieldSt
             case "blend": case "split": case "batter": return;
         }
     }
-    function calculateStrip(k: number, { cross, edges: [a, b] }: NonNullable<ReturnType<typeof stripInput>>) {
+    function calculateStrip(k: number, { cross, a, b }: NonNullable<ReturnType<typeof stripInput>>) {
         const { s, first, normal: [nx, ny], at: [ax, ay] } = cross;
         if (f.type === "split") return first ? a : b;
         if (f.type === "blend") return a + (b - a) * smooth(s);

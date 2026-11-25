@@ -12,23 +12,27 @@ export function lineProfile<N>(line: Curve<N>, tolerance: number) {
     const nodeStation = (i: number) => starts.get(line.nodes[i].id) ?? total;
     const anchors = line.nodes.flatMap((v, index) => v.h === undefined ? [] : [{ index, s: nodeStation(index), h: v.h }]);
     const station = (segment: number, t: number) => lengths[segment] + t * (lengths[segment + 1] - lengths[segment]);
-    function span(s: number, ease = false) {
+    type Anchor = typeof anchors[number];
+    const first = anchors[0], last = anchors.at(-1)!;
+    const wraps = line.closed && anchors.length > 1;
+    const before = wraps ? { ...last, s: last.s - total } : first;
+    const after = wraps ? { ...first, s: first.s + total } : last;
+    function interpolate<T>(s: number, ease: boolean, read: (a: Anchor, b: Anchor, t: number) => T) {
         if (!anchors.length) return;
-        const end = anchors.findIndex(a => a.s >= s);
-        const first = anchors[0], last = anchors.at(-1)!;
-        const wraps = line.closed && anchors.length > 1;
-        const b = end >= 0 ? anchors[end] : wraps ? { ...first, s: first.s + total } : last;
-        const a = end > 0 ? anchors[end - 1] : end < 0 ? last : wraps ? { ...last, s: last.s - total } : b;
+        let end = 0;
+        while (end < anchors.length && !(anchors[end].s >= s)) end++;
+        const b = end < anchors.length ? anchors[end] : after;
+        const a = end > 0 ? anchors[end - 1] : before;
         const t = a === b ? 0 : (s - a.s) / (b.s - a.s || 1);
-        return { a, b, t: ease ? smooth(t) : t };
+        return read(a, b, ease ? smooth(t) : t);
     }
-    return { points, station, span, nodeStation };
+    const spanValue = (a: Anchor, b: Anchor, t: number) => ({ a, b, t });
+    const span = (s: number, ease = false) => interpolate(s, ease, spanValue);
+    return { points, station, span, nodeStation, interpolate };
 }
 
 export function numericProfile(line: Curve<number>, tolerance: number) {
-    const profile = lineProfile(line, tolerance);
-    return { ...profile, value(s: number, ease = false) {
-        const span = profile.span(s, ease);
-        return span ? span.a.h + (span.b.h - span.a.h) * span.t : 0;
-    } };
+    const { interpolate, ...profile } = lineProfile(line, tolerance);
+    const height = (a: { h: number }, b: { h: number }, t: number) => a.h + (b.h - a.h) * t;
+    return { ...profile, value: (s: number, ease = false) => interpolate(s, ease, height) ?? 0 };
 }

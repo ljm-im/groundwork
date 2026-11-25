@@ -43,7 +43,7 @@ function commonEdge(segment: Segment, lower: RegionShape, lowerEdges: Segment[],
         // A shared run projects onto the segment, unlike two ends merely touching.
         if (Math.abs(dx * py - dy * px) / length <= tolerance &&
             Math.abs(dx * (q[1] - a[1]) - dy * (q[0] - a[0])) / length <= tolerance) {
-            const u = projection(...p, a, b), v = projection(...q, a, b);
+            const u = projection(p[0], p[1], a, b), v = projection(q[0], q[1], a, b);
             if (u !== v) {
                 cuts.push(u, v);
                 coincident.push([Math.min(u, v), Math.max(u, v)]);
@@ -71,14 +71,16 @@ function trace(shape: RegionShape, tolerance: number, clip?: Box) {
         box[2] = Math.min(box[2], clip[2]); box[3] = Math.min(box[3], clip[3]);
     }
     const nx = Math.ceil((box[2] - box[0]) / step), ny = Math.ceil((box[3] - box[1]) / step);
+    const point: Point = [0, 0], hits: Point[] = [];
     let previous = new Uint8Array(nx + 1);
     for (let j = 0; j <= ny; j++) {
         const row = new Uint8Array(nx + 1), y = box[1] + j * step;
         for (let i = 0; i <= nx; i++) {
             const x = box[0] + i * step;
-            row[i] = +shape.contains([x, y]);
+            point[0] = x; point[1] = y;
+            row[i] = +shape.contains(point);
             if (!i || !j) continue;
-            const hits: Point[] = [];
+            hits.length = 0;
             if (previous[i - 1] !== previous[i]) hits.push([x - step / 2, y - step]);
             if (previous[i] !== row[i]) hits.push([x, y - step / 2]);
             if (row[i] !== row[i - 1]) hits.push([x - step / 2, y]);
@@ -100,8 +102,14 @@ export function makeShape(node: GeoNode<number>, below: Map<string, RegionShape>
     if (c.type === "free") {
         const paths = c.paths.map(p => flattenPath(p, tolerance));
         const polygons = paths.map(path => ({ points: path.map(s => s.a) }));
-        return { boundary: () => paths, box: bounds(polygons.flatMap(p => p.points)),
-            contains: p => polygons.reduce((inside, poly) => inside !== insidePolygon(poly, p), false) };
+        return {
+            boundary: () => paths, box: bounds(polygons.flatMap(p => p.points)),
+            contains(p) {
+                let inside = false;
+                for (const polygon of polygons) if (insidePolygon(polygon, p)) inside = !inside;
+                return inside;
+            }
+        };
     }
     const references = [...below.keys()].filter(id => c.of.some(ref => ref === id));
     const upperId = references.at(-1)!, upper = below.get(upperId)!;
@@ -118,19 +126,21 @@ export function makeShape(node: GeoNode<number>, below: Map<string, RegionShape>
         const inside = upper.contains(p), first = inside === firstInside;
         if (lower && !inside && !lower.contains(p)) return;
         const width = first ? w1 : w2;
-        let best = Infinity, at: Point | undefined, normal: Point = [0, 0];
-        for (const edge of oriented) {
-            const q = mixPoint(edge.a, edge.b, projection(...p, edge.a, edge.b));
-            const d = (p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2;
+        const [x, y] = p;
+        let best = Infinity, ax = 0, ay = 0, normal: Point | undefined;
+        for (const { a, b, normal: edgeNormal } of oriented) {
+            const t = projection(x, y, a, b);
+            const qx = a[0] + (b[0] - a[0]) * t, qy = a[1] + (b[1] - a[1]) * t;
+            const d = (x - qx) ** 2 + (y - qy) ** 2;
             if (d < best) {
                 best = d;
-                at = q;
-                normal = edge.normal;
+                ax = qx; ay = qy;
+                normal = edgeNormal;
             }
         }
-        if (!at || best > width * width) return;
-        const dist = Math.sqrt(best), sign = first ? -1 : 1;
-        if (dist > 1e-9) normal = [sign * (p[0] - at[0]) / dist, sign * (p[1] - at[1]) / dist];
+        if (!normal || best > width * width) return;
+        const at: Point = [ax, ay], dist = Math.sqrt(best), sign = first ? -1 : 1;
+        if (dist > 1e-9) normal = [sign * (x - ax) / dist, sign * (y - ay) / dist];
         return { s: clamp((w1 + sign * dist) / (w1 + w2)), first, at, normal };
     }
     let contour: Segment[][] | undefined;
@@ -154,9 +164,10 @@ export function canvasGrid(d: Design, shapes: Map<string, RegionShape>) {
 }
 
 export function rasterRegion(grid: Grid, shape: RegionShape): Region {
-    const mask = new Uint8Array(grid.size), cells: number[] = [];
+    const mask = new Uint8Array(grid.size), cells: number[] = [], point: Point = [0, 0];
     eachCell(grid, shape.box, 0, (k, x, y) => {
-        if (shape.contains([x, y])) {
+        point[0] = x; point[1] = y;
+        if (shape.contains(point)) {
             cells.push(k);
             mask[k] = 1;
         }
@@ -165,14 +176,15 @@ export function rasterRegion(grid: Grid, shape: RegionShape): Region {
 }
 
 export function signedBoundaryDistance(shape: RegionShape) {
-    const edges = shape.boundary().flat();
+    const edges = shape.boundary().flat(), point: Point = [0, 0];
     return (x: number, y: number) => {
         let best = Infinity;
         for (const { a, b } of edges) {
             const t = projection(x, y, a, b);
             best = Math.min(best, (x - a[0] - t * (b[0] - a[0])) ** 2 + (y - a[1] - t * (b[1] - a[1])) ** 2);
         }
-        return (shape.contains([x, y]) ? 1 : -1) * Math.sqrt(best);
+        point[0] = x; point[1] = y;
+        return (shape.contains(point) ? 1 : -1) * Math.sqrt(best);
     };
 }
 
