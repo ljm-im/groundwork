@@ -6,17 +6,20 @@
 {/snippet}
 {#snippet editControl()}
     <div class="edit-face"><div class="numeric-edit" use:numericCaret role="textbox" aria-label={label} aria-invalid={!!error}
-        aria-multiline={expanded} data-tip={tip} contenteditable="true" spellcheck="false" tabindex="0"
+        aria-multiline="false" data-tip={tip} contenteditable="true" spellcheck="false" tabindex="0"
         bind:this={input} use:pendingInput={() => {
             if (!composing) finish(true);
         }} oninput={e => {
             if (!composing && !(e instanceof InputEvent && e.isComposing)) onInput();
         }} oncompositionstart={() => composing = true} oncompositionend={() => {
             composing = false; onInput(); syncEdit(value);
-        }} onkeydown={key} onpointerdown={selectChip} onblur={() => {
+        }} onkeydown={key} onbeforeinput={beforeInput} onpointerdown={e => {
+            if (e.button === 0) editorPress = [e.clientX, e.clientY];
+        }} onclick={placeCaret} onblur={() => {
             if (editing) finish(true);
         }} onpaste={e => {
-            e.preventDefault(); insertText(e.clipboardData?.getData("text/plain") ?? "");
+            e.preventDefault();
+            insertText((e.clipboardData?.getData("text/plain") ?? "").replace(/\r\n|[\r\n\u2028\u2029]/g, " "));
         }}></div></div>
 {/snippet}
 {#snippet variableMenuButton()}
@@ -67,7 +70,10 @@
                 groups={groups.map(group => ({ title: group.title, items: group.items.map(item => ({
                     ...item, id: item.key, selected: draft.trim() === "{" + item.key + "}"
                 })) }))} anchor={expandedBox ?? box} viewport={expanded} keyboardTarget={input} searching={!!query}
-                back={parent ? () => parent = "" : undefined} close={closeMenu}
+                back={parent ? () => parent = "" : undefined} close={(_focus, event) => {
+                    if (event?.key === "Escape") finish(false);
+                    else closeMenu();
+                }}
                 choose={id => choose(options.find(item => item.key === id)!)} />
         {/key}
     {/if}
@@ -123,7 +129,8 @@
     import { readAt, type Address } from "../../core/design/parameters.ts";
     import { evaluate, sampleValue } from "../../core/design/expression.ts";
     import { declarationEntries, isBuiltin } from "../../core/design/defaults.ts";
-    import { adjustInputStep, adjustNumber, chipSpans, composingKey, editorSelection, flagOverflow, editorText, NumberDrag, numericCaret, numericText, repeatButton, selectionOffsets, type Range } from "../state/numbers.ts";
+    import { adjustInputStep, adjustNumber, authoredCaret, caretOffsetAt, chipSpans, composingKey, editorSelection, flagOverflow,
+        editorText, NumberDrag, numericCaret, numericText, repeatButton, selectionOffsets, type Range } from "../state/numbers.ts";
     import { displayReading, displayValue } from "../../core/design/display.ts";
     import { designErrorText } from "../state/designMessages.ts";
     import { placePopup } from "../state/popup.ts";
@@ -146,6 +153,7 @@
         (self ? editor.numberEdits.get(self) as number : fallback));
     let editing = $state(false), expanded = $state(false), draft = $state(""), error = $state(""), opened = $state(false), parent = $state(""), query = $state("");
     let queryStart = 0, queryEnd = 0, composing = false, editedValue: Expression;
+    let editorPress: [number, number] | undefined;
     let slots = $derived(editor.numberEdits.slots);
     let gesturing = $state(false), live = $state<Expression>(0), shown = $derived(gesturing ? live : value);
     let result = $derived(currentResult(shown));
@@ -235,11 +243,11 @@
         input.focus({ preventScroll: true });
         editorSelection(input, at, end);
     }
-    async function startEdit(chip?: { start: number; end: number }) {
+    async function startEdit(at?: number) {
         if (editing) return;
         expanded = face?.hasAttribute("data-overflow") ?? false;
         editing = true; editedValue = value; draft = String(value); error = "";
-        await paint(chip?.start ?? draft.length, chip?.end);
+        await paint(at ?? draft.length);
     }
     function syncEdit(next: Expression) {
         if (!editing || composing || next === editedValue) return;
@@ -254,17 +262,14 @@
         const next = value;
         untrack(() => syncEdit(next));
     });
-    function chipAt(input: HTMLElement, target: EventTarget | null) {
-        return target instanceof Node ? chipSpans(input).find(chip => chip.node.contains(target)) : undefined;
-    }
-    function selectChip(e: PointerEvent) {
-        if (e.button !== 0) return;
-        const chip = chipAt(input, e.target);
-        if (!chip) return;
-        e.preventDefault();
+    function placeCaret(e: MouseEvent) {
+        const press = editorPress;
+        editorPress = undefined;
+        if (!press || !editing || e.detail !== 1 || e.shiftKey || Math.hypot(press[0] - e.clientX, press[1] - e.clientY) > 3) return;
+        const at = caretOffsetAt(input, e.clientX, e.clientY);
         input.focus({ preventScroll: true });
         closeMenu();
-        editorSelection(input, chip.start, chip.end);
+        editorSelection(input, at);
     }
     async function showMenu() {
         await startEdit(); closeMenu(); opened = true;
@@ -278,7 +283,7 @@
                 committed = candidate(parsed)?.value ?? parsed;
             }
             catch (e) {
-                error = designErrorText(e, base, "message");
+                editor.message("未保存：" + designErrorText(e, base, "message"));
             }
         }
         editing = expanded = false; closeMenu(); error = "";
@@ -312,6 +317,11 @@
         else if (query) closeMenu();
         validate();
         if (prefix.endsWith("}")) void paint(at);
+    }
+    function beforeInput(e: InputEvent) {
+        if (e.inputType !== "insertParagraph" && e.inputType !== "insertLineBreak") return;
+        e.preventDefault();
+        if (!composing && !e.isComposing && !error) finish(true);
     }
     function key(e: KeyboardEvent) {
         if (e.defaultPrevented || composing || composingKey(e)) return;
@@ -386,7 +396,8 @@
         const initial = value;
         live = initial; gesturing = true;
         const button = e.currentTarget as HTMLButtonElement, drag = new NumberDrag(), id = e.pointerId;
-        const chip = direction ? undefined : chipAt(button.firstElementChild as HTMLElement, e.target);
+        const label = direction ? undefined : button.querySelector<HTMLElement>(".numeric-label");
+        const at = label && authoredCaret(String(initial), editorText(label), caretOffsetAt(label, e.clientX, e.clientY));
         button.setPointerCapture(id);
         const stop = direction ? repeatButton(() => advance(direction)) : undefined;
         let x = e.clientX, y = e.clientY, requested = false, locked = document.pointerLockElement === button;
@@ -422,7 +433,7 @@
                 if (address) editor.commitNumber(address, live);
                 else if (typeof live === "number") setting?.change(live);
             }
-            else if (!cancel && !direction && !drag.moved) void startEdit(chip);
+            else if (!cancel && !direction && !drag.moved) void startEdit(at ?? undefined);
         }
         const up = (ev: PointerEvent) => {
             if (ev.pointerId === id) end(false);

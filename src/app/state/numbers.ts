@@ -141,6 +141,50 @@ export function chipSpans(input: HTMLElement) {
     });
 }
 
+export function caretOffsetAt(input: HTMLElement, x: number, y: number) {
+    const range = input.ownerDocument.createRange();
+    let start = 0, nearest = 0, best = Infinity;
+    function consider(at: number, left: number, top: number, bottom: number) {
+        const dy = Math.max(top - y, y - bottom, 0), distance = Math.hypot(left - x, dy);
+        if (distance < best) {
+            nearest = at; best = distance;
+        }
+    }
+    for (const node of input.childNodes) {
+        const length = editorText(node).length;
+        if (node instanceof HTMLElement && node.dataset.ref) {
+            const { left, top, right, bottom } = node.getBoundingClientRect();
+            if (x >= left && x <= right && y >= top && y <= bottom) return x < (left + right) / 2 ? start : start + length;
+            consider(start, left, top, bottom);
+            consider(start + length, right, top, bottom);
+        }
+        else if (node.nodeType === Node.TEXT_NODE && length) {
+            for (let i = 0; i <= length; i++) {
+                range.setStart(node, i); range.collapse(true);
+                const { left, top, bottom, height } = range.getBoundingClientRect();
+                if (height) consider(start + i, left, top, bottom);
+            }
+        }
+        start += length;
+    }
+    return nearest;
+}
+
+export function authoredCaret(source: string, displayed: string, offset: number) {
+    if (offset === displayed.length) return source.length;
+    if (!offset || source === displayed) return offset;
+    try {
+        const raw = tokens(source), visual = tokens(displayed.replaceAll("×", "*").replaceAll("÷", "/"));
+        const index = visual.findIndex(t => offset <= t.end);
+        if (index >= 0 && raw.length === visual.length) {
+            const from = visual[index], to = raw[index];
+            return offset === from.end ? to.end : Math.min(to.end, to.start + offset - from.start);
+        }
+    }
+    catch { /* An invalid expression can still open for editing. */ }
+    return Math.min(offset, source.length);
+}
+
 export function editorSelection(el: HTMLElement, anchor: number, focus = anchor) {
     function point(at: number): [Node, number] {
         for (const [i, child] of Array.from(el.childNodes).entries()) {

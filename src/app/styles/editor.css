@@ -146,7 +146,7 @@ input[type="radio"]:checked::after {
 .heading, .row-between { justify-content: space-between; }
 .panel-heading { padding: var(--space-3) var(--panel-inset) var(--space-2); }
 .panel-heading h2 { font-size: var(--text-xl); line-height: var(--leading-xl); }
-.part { display: grid; gap: var(--space-1); min-width: 0; }
+.part { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-1); min-width: 0; }
 .part + .part { margin-top: var(--space-6); }
 .part-title { color: var(--text); margin-bottom: var(--space-1); }
 .part-title h3 { font-size: var(--text-lg); line-height: var(--leading-lg); }

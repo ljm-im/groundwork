@@ -12,6 +12,7 @@
         background: var(--bg-chip);
         color: var(--text);
         white-space: nowrap;
+        user-select: none;
         font-size: var(--text-md);
         line-height: var(--leading-md);
     }

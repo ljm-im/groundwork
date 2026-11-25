@@ -269,7 +269,7 @@ async function checkEditor(url: string) {
         await click("#properties .numeric-face [data-ref=\"input:A\"]");
         await wait(() => {
             const chip = document.querySelector(".numeric-edit [data-ref=\"input:A\"]"), selection = document.getSelection();
-            return chip && selection?.rangeCount && !selection.isCollapsed && selection.getRangeAt(0).intersectsNode(chip);
+            return chip && selection?.isCollapsed && !chip.contains(selection.anchorNode);
         });
         await key("Escape");
 
