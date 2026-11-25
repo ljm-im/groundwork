@@ -1,6 +1,7 @@
+import { testTerrainClient } from "./computeFixture.ts";
+import { syntheticDesign } from "./scenarios.ts";
 import { test } from "node:test";
 import "../configs/register-svelte.ts";
-import { History } from "../src/core/edit/history.ts";
 import assert from "node:assert/strict";
 import { fixtureOptions, readFixture } from "../configs/read-fixture.ts";
 import { Project } from "../src/core/project.ts";
@@ -47,20 +48,15 @@ test("Object and text imports produce identical designs, heights and masks", fix
     assert.equal(JSON.stringify(source), JSON.stringify(JSON.parse(text)));
 });
 
-test("Saving and reopening the unchanged v5 source preserves every byte", fixtureOptions("round14-coast.json"), async t => {
+test("Saving and reopening the unchanged v5 source preserves every byte", async t => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
-    const raw = serializeDesign(parseDesign(await readFixture("round14-coast.json"))), editor = new Editor();
-    editor.busy = null;
-    editor.history = new History(parseDesign(raw));
-    t.mock.method(editor, "working", async (_label: string, work: () => void) => work());
-    t.mock.method(editor, "replace", (design: ReturnType<typeof parseDesign>) => {
-        editor.project = new Project(design);
-    });
+    const raw = serializeDesign(parseDesign(syntheticDesign())), editor = new Editor(testTerrainClient());
+    t.mock.method(editor, "reconcileProject", () => {});
     t.mock.method(editor, "message", () => {});
     t.mock.method(editor.files, "remember", () => {});
     let bytes = raw, writes = 0;
     const handle = {
-        name: "round14-coast.json",
+        name: "A.json",
         async requestPermission() {
             return "granted" as const;
         },

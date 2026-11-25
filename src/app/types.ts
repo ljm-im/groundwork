@@ -8,7 +8,6 @@ import { type LabelTarget } from "../render/map.ts";
 export { type Design, type Expression, type Mark, type Point } from "../core/design/v5.ts";
 export { type Issue } from "../core/design/results.ts";
 export { type Handle, type Selection } from "../core/edit/types.ts";
-export { type Project as ProjectModel } from "../core/project.ts";
 
 export type Tab = "terrain" | "inputs" | "marks" | "issues" | "layers";
 

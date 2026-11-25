@@ -61,13 +61,20 @@ export class History {
         this.index = this.states.length - 1;
         return true;
     }
-    peek(forward: boolean) {
+    target(forward: boolean) {
         if (forward ? !this.canRedo : !this.canUndo) return null;
-        return parseDesign(this.states[this.index + (forward ? 1 : -1)], true);
+        return this.states[this.index + (forward ? 1 : -1)];
+    }
+    peek(forward: boolean) {
+        const target = this.target(forward);
+        return target ? parseDesign(target, true) : null;
+    }
+    advance(forward: boolean) {
+        if (forward ? this.canRedo : this.canUndo) this.index += forward ? 1 : -1;
     }
     step(forward: boolean) {
         const restored = this.peek(forward);
-        if (restored) this.index += forward ? 1 : -1;
+        if (restored) this.advance(forward);
         return restored;
     }
 }

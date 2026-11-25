@@ -1,17 +1,15 @@
 import { tick } from "svelte";
-import { Project, type ProjectView } from "../../core/project.ts";
-import { TerrainCache } from "../../core/terrain/cache.ts";
+import { type ProjectView } from "../../core/project.ts";
+import { TerrainClient, type ProjectModel } from "./terrainClient.ts";
 import { History, type EditSelection } from "../../core/edit/history.ts";
 import { copyAt, readAt, writeAt, type Address } from "../../core/design/address.ts";
 import { readDisplaySettings, saveDisplaySettings } from "./layers.ts";
 import { type GridDisplay } from "../../core/edit/display.ts";
-import { constructionCenter } from "../../core/design/regions.ts";
 import { bounds, type Box } from "../../core/math/geometry.ts";
 import { heightId, isBuiltin } from "../../core/design/defaults.ts";
 import { defaultFollow, type GeoNode, type GeoFunction, type CurveNode, type Section } from "../../core/design/v5.ts";
 import { geoParameter, slotName, type Slot } from "../../core/design/parameters.ts";
 import { numberEdits, type NumberChange } from "../../core/design/numberEdit.ts";
-import { parseDesign } from "../../core/design/model.ts";
 import { type GeoControl, type GeometryHover, type GeometryPart, type GeometrySelection, type GeometryTarget, controlOwner, copyGeometryItem,
     geometryHover, geometryPath, geometrySelection, insertCurveNode, parameterTarget, removeCurveNode, removeCurveSegment, removeGeometryItem,
     removeParameterPoint, resolveGeometrySelection } from "../../core/edit/geoControls.ts";
@@ -25,7 +23,7 @@ import { functionGeometry } from "../../core/edit/functionGeometry.ts";
 import { neighbor, segmentNeighbor, type SegmentType } from "../../core/design/path.ts";
 import { sampleField } from "../../core/design/results.ts";
 import { designErrorText } from "./designMessages.ts";
-import { quotedLocation } from "../../core/design/problems.ts";
+import { DesignError, quotedLocation } from "../../core/design/problems.ts";
 import { drawingStatus } from "./mapText.ts";
 import { numberPreviewFactor } from "./numbers.ts";
 import { penNodeGroup, readPenNodes, savePenNodes, type PenNodeMode } from "./penNodes.ts";
@@ -33,16 +31,20 @@ import { objectIssues } from "../../core/checks/issues.ts";
 import { propertyTabs, tabForSelection, type PropertyTab, type SubitemGroup } from "./inspector.ts";
 import { ProjectMap, type LabelPreview, type LabelTarget, type MapView } from "../../render/map.ts";
 import { DesignFiles, type FileAction, type SaveState } from "./files.ts";
-import { errorText, type Design, type Expression, type Gesture, type ProjectModel, type Issue, type Layer, type Mark, type Point, type Selection, type Tab, type Tool } from "../types.ts";
+import { errorText, type Design, type Expression, type Gesture, type Issue, type Layer, type Mark, type Point, type Selection, type Tab, type Tool } from "../types.ts";
 
 type RemovalItem = { text: string; locate: () => void };
 export type DescriptionTarget = { group: "design" } | { group: "geoNodes" | "sections"; id: string };
 
-export function timed<T>(name: string, work: () => T): T {
-    const start = performance.now(), result = work();
-    performance.clearMeasures(name);
-    performance.measure(name, { start, end: performance.now() });
-    return result;
+export async function timed<T>(name: string, work: () => Promise<T>): Promise<T> {
+    const start = performance.now();
+    try {
+        return await work();
+    }
+    finally {
+        performance.clearMeasures(name);
+        performance.measure(name, { start, end: performance.now() });
+    }
 }
 
 export class Editor {
@@ -96,7 +98,8 @@ export class Editor {
         const point = this.pointerPosition, project = this.mapProject;
         if (point && project) return { point, sample: sampleField(project.terrain, this.displayField, point) };
     });
-    busy = $state<string | null>(null);
+    busy = $state(false);
+    busyText = $state<string | null>(null);
     toast = $state.raw<{ text: string; point?: Point } | null>(null);
     removal = $state.raw<{ title: string; items?: RemovalItem[]; detail: string; action?: string; perform?: () => void } | null>(null);
     fileRequest = $state<FileAction | null>(null);
@@ -114,15 +117,24 @@ export class Editor {
     revealSections?: () => void;
     gesture: Gesture | null = null;
     numberEdits = $derived(numberEdits(this.project.design, this.project.resolved));
-    private pendingNumber?: { source: ProjectModel; change: NumberChange };
+    private pendingNumber?: { source: ProjectModel; change: NumberChange; version: number };
+    private numberVersion = 0;
+    private previewRunning = false;
     private numberPreview = $state.raw<{ source: ProjectModel; project: ProjectModel; step?: number }>();
-    numberPreviewStep = $derived(this.numberPreview?.source === this.project ? this.numberPreview?.step : undefined);
-    private previewCache?: TerrainCache;
-    private coarsePreviewCache?: TerrainCache;
+    numberPreviewStep = $derived(this.numberPreview?.source.id === this.project?.id ? this.numberPreview?.step : undefined);
+    private displayProject = $derived(this.numberPreview?.source.id === this.project?.id ? this.numberPreview?.project ?? this.project : this.project);
+    private belowView = $state.raw<{ source: number; through: string | null; view: ProjectView }>();
+    private pendingView?: { source: number; through: string };
+    mapCurrent = $derived(!this.viewport || !this.belowView || this.belowView.source === this.displayProject?.id);
+    private readonly readings = new WeakMap<ProjectModel["terrain"], Map<string, { value?: number }>>();
+    private readingVersion = $state(0);
+
     mapProject = $derived.by((): ProjectView => {
-        const preview = this.numberPreview;
-        const project = preview?.source === this.project ? preview.project : this.project;
-        return project && (this.viewport ? project.viewBelow(this.viewport) : project.view());
+        const project = this.displayProject, view = this.belowView;
+        if (!project || !this.viewport || !view) return project?.view();
+        if (view.source !== project.id || view.through !== this.viewport) return view.view;
+        const design = project.resolved;
+        return { ...view.view, design: { ...design, geoNodes: design.geoNodes.slice(0, design.geoNodes.findIndex(n => n.id === this.viewport)) } };
     });
     mapDesign = $derived.by(() => {
         const design = this.mapProject?.design, drag = this.dragSection;
@@ -144,15 +156,23 @@ export class Editor {
             selectedIssues: this.selectedIssues, issueStart: this.issueStart
         };
     });
-    private readonly terrainCache = new TerrainCache();
+    private readonly compute: TerrainClient;
+    private activeWork?: Promise<void>;
+    private pendingDesign?: Design | string;
+    private wrotePendingDraft = false;
     private frame = 0;
     private toastTimer?: ReturnType<typeof setTimeout>;
+
+    constructor(compute = new TerrainClient()) {
+        this.compute = compute;
+    }
 
     attach(canvas: HTMLCanvasElement, cameraChanged: () => void) {
         this.map = new ProjectMap(canvas, cameraChanged);
     }
     dispose() {
-        cancelAnimationFrame(this.frame);
+        if (this.frame) cancelAnimationFrame(this.frame);
+        this.compute.close();
         this.issueStart = undefined;
         clearTimeout(this.toastTimer);
     }
@@ -211,7 +231,7 @@ export class Editor {
         this.editMetadata(address, value || undefined, group);
     }
     private editMetadata(address: Address, value: string | undefined, group?: symbol) {
-        if (readAt(this.project.design, address) === value) return;
+        if (this.busy || readAt(this.project.design, address) === value) return;
         this.project = this.project.withPrompt(address, value);
         const selection = this.editSelection();
         this.syncHistory(this.history.record(this.project.design, { before: selection, after: selection, metadata: address, group }));
@@ -305,6 +325,7 @@ export class Editor {
         if (!Object.hasOwn(this.project.design.fields, this.displayField)) this.displayField = heightId;
         this.hoverSelection();
         this.map.frame(this.project.terrain, reset);
+        this.refreshViewport();
     }
     focusObjectGeometry(target: Selection) {
         this.setTool("select");
@@ -419,128 +440,220 @@ export class Editor {
         saveDisplaySettings(this.layers, this.displayGrid);
         return true;
     }
+    private refreshViewport() {
+        const through = this.viewport, project = this.displayProject;
+        if (!through || !project) {
+            this.pendingView = this.belowView = undefined;
+            return;
+        }
+        const source = project.id;
+        if (this.pendingView?.source === source && this.pendingView.through === through) return;
+        if (!this.belowView) this.belowView = { source, through: null, view: project.view() };
+        const request = this.pendingView = { source, through };
+        void project.viewBelow(through).then(view => {
+            if (view && this.pendingView === request) this.belowView = { source, through, view };
+        }).catch(error => {
+            if (this.pendingView === request) this.message(errorText(error));
+        });
+    }
+    fieldReading(owner: string, field: string) {
+        const project = this.project;
+        // This read subscribes every numeric expression to completed samples.
+        void this.readingVersion;
+        let readings = this.readings.get(project.terrain);
+        if (!readings) this.readings.set(project.terrain, readings = new Map());
+        const key = JSON.stringify([owner, field]), cached = readings.get(key);
+        if (cached) return cached.value;
+        const reading: { value?: number } = {};
+        readings.set(key, reading);
+        void project.inputAt(owner, field).then(value => {
+            if (this.project.id !== project.id) return;
+            reading.value = value;
+            this.readingVersion++;
+        }).catch(error => {
+            if (this.project.id === project.id) this.message(errorText(error));
+        });
+    }
     private scheduleNumber() {
-        this.frame ||= requestAnimationFrame(() => {
+        if (this.frame || this.previewRunning || !this.pendingNumber) return;
+        this.frame = requestAnimationFrame(() => {
             this.frame = 0;
             const pending = this.pendingNumber;
             this.pendingNumber = undefined;
-            if (pending?.source !== this.project) return;
-            const { source, change } = pending;
-            timed("terrain-editor:level-preview", () => {
-                if (this.numberPreview?.source !== source) this.previewCache = this.coarsePreviewCache = undefined;
-                let design = copyAt(source.design, change.address, change.value);
-                let resolved = change.resolved.reduce((d, { address, value }) => copyAt(d, address, value), source.resolved);
-                const grid = source.terrain.grid, step = design.grid.step;
-                // A grid-spacing gesture also changes the dimensions before coarsening.
-                const width = step === grid.step ? grid.width : Math.ceil(grid.xMax / step) - Math.floor(grid.xMin / step);
-                const height = step === grid.step ? grid.height : Math.ceil(grid.yMax / step) - Math.floor(grid.yMin / step);
-                if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height)) return;
-                const factor = numberPreviewFactor(width, height);
-                if (factor === 1) {
-                    const cache = this.previewCache ??= this.terrainCache.fork();
-                    this.numberPreview = { source, project: new Project(design, cache, resolved) };
-                    return;
-                }
-                const previewGrid = { step: step * factor };
-                design = { ...design, grid: previewGrid };
-                resolved = { ...resolved, grid: previewGrid };
-                const cache = this.coarsePreviewCache ??= new TerrainCache();
-                this.numberPreview = { source, project: new Project(design, cache, resolved), step: previewGrid.step };
+            if (pending?.source.id !== this.project.id) return;
+            this.previewRunning = true;
+            void this.previewChange(pending).finally(() => {
+                this.previewRunning = false;
+                this.scheduleNumber();
             });
         });
     }
-    clearNumberPreview() {
+    private async previewChange({ source, change, version }: NonNullable<Editor["pendingNumber"]>) {
+        try {
+            let design = copyAt(source.design, change.address, change.value);
+            let resolved = change.resolved.reduce((d, { address, value }) => copyAt(d, address, value), source.resolved);
+            const grid = source.terrain.grid, step = design.grid.step;
+            // A grid-spacing gesture also changes the dimensions before coarsening.
+            const width = step === grid.step ? grid.width : Math.ceil(grid.xMax / step) - Math.floor(grid.xMin / step);
+            const height = step === grid.step ? grid.height : Math.ceil(grid.yMax / step) - Math.floor(grid.yMin / step);
+            if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height)) return;
+            const factor = numberPreviewFactor(width, height), coarse = factor !== 1;
+            if (coarse) {
+                const previewGrid = { step: step * factor };
+                design = { ...design, grid: previewGrid };
+                resolved = { ...resolved, grid: previewGrid };
+            }
+            const project = await timed("terrain-editor:level-preview", () => this.compute.preview(source.id, design, resolved, coarse));
+            if (!project) return;
+            if (version !== this.numberVersion || source.id !== this.project.id) return this.compute.release(project.id);
+            const previous = this.numberPreview;
+            this.numberPreview = { source, project, step: coarse ? design.grid.step : undefined };
+            this.refreshViewport();
+            if (previous) this.compute.release(previous.project.id);
+        }
+        catch (error) {
+            if (version === this.numberVersion && source.id === this.project.id) this.message(errorText(error));
+        }
+    }
+    clearNumberPreview(keepView = false) {
         if (this.frame) cancelAnimationFrame(this.frame);
         this.frame = 0;
-        this.pendingNumber = this.numberPreview = undefined;
-        this.previewCache = this.coarsePreviewCache = undefined;
-    }
-    async working(label: string | null, fn: () => void) {
-        if (this.busy) return;
-        try {
-            if (label) {
-                this.busy = label;
-                await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-            }
-            fn();
+        this.numberVersion++;
+        this.pendingNumber = undefined;
+        if (!keepView && this.numberPreview) {
+            this.compute.release(this.numberPreview.project.id);
+            this.numberPreview = undefined;
+            this.refreshViewport();
         }
-        catch (e) {
-            this.message(errorText(e));
-            console.error(e);
+        this.compute.clearPreviews();
+    }
+    working(label: string | null, fn: () => void | Promise<void>, report = (error: unknown) => {
+        this.message(errorText(error));
+        console.error(error);
+    }) {
+        if (this.busy) return;
+        this.busy = true;
+        this.busyText = label;
+        const work = (async () => {
+            try {
+                await fn();
+            }
+            catch (error) {
+                report(error);
+            }
+            finally {
+                this.busy = false;
+                this.busyText = null;
+                this.activeWork = this.pendingDesign = undefined;
+                if (this.wrotePendingDraft) {
+                    this.wrotePendingDraft = false;
+                    this.files.remember();
+                }
+            }
+        })();
+        if (this.busy) this.activeWork = work;
+        return work;
+    }
+    finishWork() {
+        return this.activeWork;
+    }
+    rememberPendingEdit() {
+        if (this.pendingDesign === undefined) return;
+        this.files.remember(this.pendingDesign);
+        this.wrotePendingDraft = true;
+    }
+    private generate(design: Design | string, reset = false, immediate = false) {
+        return this.compute.generate(design, reset, missing => {
+            if (immediate) return;
+            this.busyText = missing === "base" ? "正在生成地形…" : missing === "natural" ? "正在更新地件…" : null;
+        });
+    }
+    async replace(design: Design | string, reset = false, state = reset ? null : this.editSelection()) {
+        const ownsBusy = !this.busy;
+        if (ownsBusy) this.busy = true;
+        try {
+            const project = await this.generate(design, reset);
+            if (reset) {
+                this.displayField = heightId; this.viewport = null;
+                this.pointerPosition = undefined;
+                if (this.properties) this.properties.scrollTop = 0;
+                if (this.panel) this.panel.scrollTop = 0;
+            }
+            this.hoverRefs = []; this.geometry = undefined;
+            this.project = project;
+            this.clearNumberPreview();
+            this.selectedIssues = [];
+            this.subitemStates = new Map();
+            this.memberKeys.clear();
+            this.restoreSelection(state);
+            this.issueStart = undefined;
+            this.reconcileProject(reset);
+            if (reset) this.setTool("select");
+            return project;
         }
         finally {
-            this.busy = null;
+            if (ownsBusy) {
+                this.busy = false;
+                this.busyText = null;
+            }
         }
-    }
-    terrainWork(design: Design, fn: () => void) {
-        const missing = this.terrainCache.missing(design);
-        return this.working(missing === "base" ? "正在生成地形…" : missing === "natural" ? "正在更新地件…" : null, fn);
-    }
-    replace(design: Design, reset = false, state = reset ? null : this.editSelection()) {
-        this.clearNumberPreview();
-        if (reset) {
-            this.terrainCache.clear();
-            this.displayField = heightId; this.viewport = null;
-            this.pointerPosition = undefined;
-            if (this.properties) this.properties.scrollTop = 0;
-            if (this.panel) this.panel.scrollTop = 0;
-        }
-        this.hoverRefs = []; this.geometry = undefined;
-        this.project = new Project(design, this.terrainCache);
-        this.selectedIssues = [];
-        this.subitemStates = new Map();
-        this.memberKeys.clear();
-        this.restoreSelection(state);
-        this.issueStart = undefined;
-        this.reconcileProject(reset);
-        if (reset) this.setTool("select");
     }
     previewNumber(change: NumberChange) {
-        this.pendingNumber = { source: this.project, change };
+        if (this.busy) return;
+        this.pendingNumber = { source: this.project, change, version: ++this.numberVersion };
         this.scheduleNumber();
     }
     commitNumber(address: Address, value: Expression) {
-        this.clearNumberPreview();
-        if (readAt(this.project.design, address) !== value) return this.edit(d => {
+        if (this.busy) return;
+        const changed = readAt(this.project.design, address) !== value;
+        this.clearNumberPreview(changed);
+        if (!changed) return;
+        const focus = typeof document === "undefined" ? undefined : document.activeElement;
+        return this.edit(d => {
             writeAt(d, address, value);
-        }, undefined, true);
+        }, undefined, true)?.then(async () => {
+            await tick();
+            if (focus && focus instanceof HTMLElement && focus.isConnected && document.activeElement === document.body)
+                focus.focus({ preventScroll: true });
+        });
     }
     navigate(forward: boolean) {
         if (this.busy || this.gesture) return;
         if (this.tool !== "select") this.cancelDrawing();
-        if (!(forward ? this.canRedo : this.canUndo)) return;
+        const target = this.history.target(forward);
+        if (!target) return;
         const step = this.history.editStep(forward), selected = forward ? step?.after : step?.before;
         const state = selected === undefined ? this.editSelection() : selected;
         if (step?.metadata) {
-            const restored = this.history.step(forward)!;
-            this.project = this.project.withPrompt(step.metadata, readAt(restored, step.metadata) as string | undefined);
+            this.project = this.project.withPrompt(step.metadata, readAt(JSON.parse(target), step.metadata) as string | undefined);
+            this.history.advance(forward);
             this.restoreSelection(state);
             this.syncHistory(true);
             return;
         }
-        return this.terrainWork(this.history.peek(forward)!, () => {
-            this.replace(this.history.step(forward)!, false, state);
+        return this.working(null, async () => {
+            this.pendingDesign = target;
+            await this.replace(target, false, state);
+            this.history.advance(forward);
             this.syncHistory(true);
         });
     }
     edit(fn: (d: Design) => Selection | null | void, after?: () => void, immediate = false) {
         if (this.busy) return;
-        try {
+        return this.working(null, async () => {
             const before = this.editSelection(), draft = structuredClone(this.project.design), selected = fn(draft);
-            const d = parseDesign(draft, true);
-            const commit = () => {
-                this.project = new Project(d, this.terrainCache);
-                if (selected !== undefined) this.select(selected);
-                after?.();
-                this.reconcileProject();
-                this.syncHistory(this.history.record(this.project.design, { before, after: this.editSelection() }));
-            };
-            if (immediate) commit();
-            else return this.terrainWork(d, commit);
-        }
-        catch (error) {
+            this.pendingDesign = draft;
+            this.project = await this.generate(draft, false, immediate);
+            if (immediate) this.clearNumberPreview();
+            if (selected !== undefined) this.select(selected);
+            after?.();
+            this.reconcileProject();
+            this.syncHistory(this.history.record(this.project.design, { before, after: this.editSelection() }));
+        }, error => {
+            if (immediate) this.clearNumberPreview();
             this.message(designErrorText(error, this.project.design));
-        }
+            if (!(error instanceof DesignError)) console.error(error);
+        });
     }
     editNode(id: string, fn: (n: GeoNode) => void) {
         return this.edit(d => {
@@ -584,10 +697,6 @@ export class Editor {
                 if (draft.tool === "addPath") this.toggleSubitem(n.id, "paths", index, true);
             }
         });
-    }
-    geoCenter(id: string): Point {
-        const { design, terrain } = this.project;
-        return constructionCenter(geoAt(design, id).construction, design.grid.step, terrain.grid, terrain.regions.get(id));
     }
     switchFunction(n: GeoNode, type: GeoFunction["type"], slope: "path" | "radial" = "path") {
         return this.edit(d => {
@@ -741,7 +850,7 @@ export class Editor {
     removeGeo(id: string, vertex?: GeoControl) {
         const d = this.project.design, n = geoAt(d, id);
         if (vertex?.role === "parameter") {
-            this.edit(d => {
+            return this.edit(d => {
                 removeParameterPoint(d, geoAt(d, id), vertex);
             }, () => {
                 this.clearControl();
@@ -750,7 +859,6 @@ export class Editor {
                     this.geometry = undefined;
                 }
             });
-            return;
         }
         if (vertex?.role === "vertex" || vertex?.role === "segment") {
             const path = geometryPath(n, vertex.path), segment = vertex.role === "segment";
@@ -771,13 +879,13 @@ export class Editor {
             const action = segment ? "删除线段" : "删除节点";
             if (refs.length) this.removal = { title: action + "？", detail: "以下条带的范围将报告找不到节点。",
                 action, items: refs.map(r => this.geoReference(r.id, r.label, "边", "region")), perform };
-            else perform();
+            else return perform();
             return;
         }
         const items = removalUses(d, "geo", id).map(use => this.removalItem(use));
         if (isLastInitializer(d, id)) return this.blockRemoval(n.label, items, requiredInitializer + "。");
         if (items.length) return this.blockRemoval(n.label, items);
-        this.edit(d => {
+        return this.edit(d => {
             deleteGeo(d, id);
             if (this.selection?.kind === "geoNode" && this.selection.id === id) return null;
         }, () => this.clearSubitems(id, true));

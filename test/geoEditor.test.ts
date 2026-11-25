@@ -1,3 +1,4 @@
+import { testTerrainClient } from "./computeFixture.ts";
 import { test } from "node:test";
 import { bindField, bindHeight, resolved } from "./expressionHelpers.ts";
 import assert from "node:assert/strict";
@@ -209,13 +210,13 @@ test("Function defaults preserve construction and drawn geometry retains its aut
     });
 });
 
-for (const construction of ["free", "strip"] as const) test("Default shore and slope switch immediately on " + construction + " regions", async t => {
+for (const construction of ["free", "strip"] as const) test("Default shore and slope switch immediately on " + construction + " regions", async () => {
     await import("../configs/register-svelte.ts");
     const { Editor } = await import("../src/app/state/session.svelte.ts");
-    const editor = new Editor(), d = syntheticDesign(), source = d.geoNodes[1];
-    t.mock.method(editor, "working", async (_label: string, work: () => void) => work());
+    const editor = new Editor(testTerrainClient()), d = syntheticDesign(), source = d.geoNodes[1];
     const n = construction === "strip" ? createStrip(d, [source.id], { from: "0", to: "1" }) : source;
-    Object.assign(editor, { project: new Project(d), map: { frame() {} } });
+    Object.assign(editor, { map: { frame() {} } });
+    await editor.replace(d, true);
     editor.history = new History(d);
     editor.select({ kind: "geoNode", id: n.id });
     const saved = serializeDesign(d);

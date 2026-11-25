@@ -218,7 +218,7 @@ input[type="radio"]:checked::after {
 .menu .group-name {
     font-size: var(--text-xs);
     line-height: var(--leading-xs);
-    padding: var(--space-1) var(--space-3) 0;
+    padding: var(--space-1) var(--space-3);
 }
 .menu-group + .menu-group::before {
     content: "";

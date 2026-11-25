@@ -98,27 +98,10 @@ export async function checkMapOverlays(url: string) {
         }), false);
         assert.equal(await visible(), "");
         await evaluate(() => {
-            const probe = window.curveMapProbe, raf = window.requestAnimationFrame;
-            window.requestAnimationFrame = first => {
-                window.requestAnimationFrame = raf;
-                return raf(time => {
-                    window.requestAnimationFrame = second => {
-                        probe.release = () => {
-                            raf(second);
-                        };
-                        return 0;
-                    };
-                    try {
-                        first(time);
-                    }
-                    finally {
-                        window.requestAnimationFrame = raf;
-                    }
-                });
-            };
-            void probe.editor!.edit(d => {
-                d.geoNodes[0].function = { type: "ground", value: .3 };
-            });
+            const probe = window.curveMapProbe;
+            void probe.editor!.working("正在更新地件…", () => new Promise<void>(resolve => {
+                probe.release = resolve;
+            }));
         });
         await wait(() => !!window.curveMapProbe.release);
         assert.equal(await visible(), "");

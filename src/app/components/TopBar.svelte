@@ -14,8 +14,8 @@
             }} onkeydown={openWithKey}>
             <Icon name={current.icon} />
         </button>
-        <button class="icon-button" id="undo" data-tip="撤销" aria-label="撤销" disabled={!editor.canUndo} onclick={() => editor.navigate(false)}><Icon name="undo" /></button>
-        <button class="icon-button" id="redo" data-tip="重做" aria-label="重做" disabled={!editor.canRedo} onclick={() => editor.navigate(true)}><Icon name="redo" /></button>
+        <button class="icon-button" id="undo" data-tip="撤销" aria-label="撤销" disabled={editor.busy || !editor.canUndo} onclick={() => editor.navigate(false)}><Icon name="undo" /></button>
+        <button class="icon-button" id="redo" data-tip="重做" aria-label="重做" disabled={editor.busy || !editor.canRedo} onclick={() => editor.navigate(true)}><Icon name="redo" /></button>
         <button id="new" disabled={unavailable} onclick={() => editor.files.choose("new")}><Icon name="new" />新建</button>
         <button id="open" disabled={unavailable} onclick={() => editor.files.choose("open")}><Icon name="open" />打开</button>
         <button id="save" class="primary" disabled={unavailable || !editor.project} onclick={() => editor.files.save()}><Icon name="save" />保存</button>
@@ -56,7 +56,7 @@
     let { editor, appearance, chooseAppearance }: {
         editor: session.Editor; appearance: Appearance; chooseAppearance: (value: Appearance) => void;
     } = $props();
-    let unavailable = $derived(!editor.files.supported);
+    let unavailable = $derived(editor.busy || !editor.files.supported);
     const appearances: readonly { id: Appearance; name: string; icon: IconName }[] = [
         { id: "system", name: "跟随系统", icon: "themeSystem" },
         { id: "light", name: "浅色", icon: "themeLight" },

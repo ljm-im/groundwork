@@ -105,7 +105,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
     function updateHover() {
         hoverFrame = 0;
         const view = editor.mapView;
-        if (!view || !hoverPoint || editor.tool !== "select" || editor.gesture || editor.busy || spaceHeld) return;
+        if (!view || !editor.mapCurrent || !hoverPoint || editor.tool !== "select" || editor.gesture || editor.busy || spaceHeld) return;
         const clicked = hoverAlternate ? alternateHit(hoverPoint) : pick(hoverPoint);
         if (clicked && "issues" in clicked) return editor.hoverSelection();
         const part = clicked && clickControl(view, clicked, hoverAlternate);
@@ -121,7 +121,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
     }
     canvas.addEventListener("contextmenu", ev => {
         ev.preventDefault();
-        if (!editor.project || editor.busy || editor.geoDraft) return;
+        if (!editor.project || !editor.mapCurrent || editor.busy || editor.geoDraft) return;
         editor.menu = null;
         const hit = pick(localPoint(ev), "menu");
         if (hit && !("issues" in hit)) editor.openMenu(hit.selection, ev.clientX, ev.clientY, true, hit.control);
@@ -132,6 +132,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             beginPan(ev, screen, "middle");
             return;
         }
+        if (editor.busy) return;
         if (editor.geoDraft) {
             ev.preventDefault();
             try {
@@ -159,6 +160,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         if (control) editor.selectControl(control);
     }
     function selectClick(screen: Point, alternate: boolean) {
+        if (!editor.mapCurrent) return;
         const hit = alternate ? alternateHit(screen) : pick(screen);
         if (!hit) editor.select(null);
         else if ("issues" in hit) editor.pickMarkers(hit.issues);
@@ -166,6 +168,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         if (hoverPoint) hoverFrame ||= requestAnimationFrame(updateHover);
     }
     function beginSelectionDrag(down: PointerEvent, screen: Point) {
+        if (!editor.mapCurrent) return;
         const view = editor.mapView!, p = map.world(...screen), pointer = down.pointerId;
         const control = map.selectedControl(view, screen);
         const label = !control && !map.markHits(...screen).next().value && map.hitLabel(...screen);
@@ -204,7 +207,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
     let firstClick: DrawingClick | undefined, spaceClick = false;
     let press: Press | undefined;
     canvas.addEventListener("pointerdown", ev => {
-        if (!editor.project || editor.busy || editor.gesture || (ev.button !== 0 && ev.button !== 1)) return;
+        if (!editor.project || editor.gesture || (ev.button !== 0 && ev.button !== 1)) return;
         canvas.focus({ preventScroll: true });
         canvas.setPointerCapture(ev.pointerId);
         if (spaceHeld && ev.button === 0) {
@@ -214,7 +217,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             return;
         }
         const draft = editor.geoDraft;
-        const drawing = ev.button === 0 && draft && doubleClickTools.includes(draft.tool) ? { draft, nodeCount: draft.nodes.length } : undefined;
+        const drawing = !editor.busy && ev.button === 0 && draft && doubleClickTools.includes(draft.tool) ? { draft, nodeCount: draft.nodes.length } : undefined;
         // The first click may already have closed the path and switched tools.
         press = { down: ev, drawing, state: ev.button === 0 && firstClick ? "pending" : "active",
             selectFrom: ev.button === 0 && editor.tool === "select" ? localPoint(ev) : undefined };
@@ -241,7 +244,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         if (ev.detail === 1) spaceClick = false;
         if (ev.detail === 2 && firstClick) return;
         firstClick = ev.detail === 1 ? current?.drawing : undefined;
-        if (current?.up && editor.project && !editor.busy) {
+        if (current?.up && editor.project) {
             if (current.state !== "active") beginPointer(current.down);
             releasePointer(current.up, current);
         }
@@ -250,7 +253,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         const first = firstClick;
         firstClick = undefined;
         // Chrome can count a Space-pan click as one of the clicks in a double-click.
-        if (spaceHeld || spaceClick || !editor.project || editor.busy || ev.button !== 0) return;
+        if (spaceHeld || spaceClick || !editor.project || !editor.mapCurrent || editor.busy || ev.button !== 0) return;
         const draft = first?.draft ?? editor.geoDraft;
         if (draft && doubleClickTools.includes(draft.tool)) {
             ev.preventDefault();
@@ -374,7 +377,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
     }, { signal });
 
     async function finishGesture(ev: PointerEvent) {
-        if (editor.geoDraft?.down && !editor.gesture) {
+        if (!editor.busy && editor.geoDraft?.down && !editor.gesture) {
             if (ev.type !== "pointercancel") {
                 try {
                     draftPointer(editor, "up", map.world(...localPoint(ev)), ev);
@@ -426,11 +429,11 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         }
     }
     function releasePointer(ev: PointerEvent, current = press) {
-        if (current?.selectFrom && current.down.pointerId === ev.pointerId && editor.tool === "select" && !editor.busy) {
+        if (current?.selectFrom && current.down.pointerId === ev.pointerId && editor.tool === "select") {
             const screen = localPoint(ev);
             if (!current.dragged && distance(screen, current.selectFrom) <= dragThreshold)
                 selectClick(current.selectFrom, ev.altKey);
-            else {
+            else if (!editor.busy) {
                 if (!current.dragged) beginSelectionDrag(current.down, current.selectFrom);
                 moveGesture(ev, screen, map.world(...screen));
             }
@@ -465,7 +468,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         if (composingKey(ev) || ev.defaultPrevented && !(ev.key === "Escape" && editor.tool !== "select")) return;
         const save = (ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "s";
         if (save) ev.preventDefault();
-        if (!editor.project || editor.busy || editor.fileRequest || editor.removal) return;
+        if (!editor.project || editor.fileRequest || editor.removal) return;
         if (ev.key === " " && !isEditableText(ev.target)) {
             if (!spaceHeld) {
                 if (!pointerInside || editor.gesture || press && canvas.hasPointerCapture(press.down.pointerId) ||
@@ -477,6 +480,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             ev.preventDefault();
             return;
         }
+        if (editor.busy) return;
         const input = ev.target instanceof Element && ev.target.closest("input, select, textarea, [contenteditable=true]");
         if (save) {
             void editor.files.save();
@@ -529,7 +533,10 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         }
     }, { signal });
 
-    window.addEventListener("beforeunload", commitFocusedInput, { signal });
+    window.addEventListener("beforeunload", () => {
+        commitFocusedInput();
+        editor.rememberPendingEdit();
+    }, { signal });
     return () => {
         cancelAnimationFrame(hoverFrame);
         listeners.abort();

@@ -1,6 +1,6 @@
 import { flushSync } from "svelte";
 import { History } from "../../core/edit/history.ts";
-import { parseDesign, serializeDesign } from "../../core/design/model.ts";
+import { serializeDesign } from "../../core/design/model.ts";
 import { newDesign } from "../../core/design/newDesign.ts";
 import { type Design, errorText } from "../types.ts";
 import { FileWrites, type WriteHandle } from "./fileWrites.ts";
@@ -61,17 +61,19 @@ export class DesignFiles {
             const filename = "filename" in draft && typeof draft.filename === "string" && draft.filename || "project.json";
             const unbound = "unbound" in draft && draft.unbound === true;
             const dirty = !unbound || !("dirty" in draft) || draft.dirty !== false;
-            await this.restore(draft.text, filename, unbound, dirty);
+            const pending = "pending" in draft && typeof draft.pending === "string" ? draft.pending : undefined;
+            await this.restore(draft.text, filename, unbound, dirty, pending);
         }
         catch (error) {
             this.editor.message("草稿无法恢复：" + errorText(error));
         }
     }
-    remember() {
-        const e = this.editor, keep = this.unbound || e.dirty;
+    remember(pending?: Design | string) {
+        const e = this.editor, keep = this.unbound || e.dirty || pending !== undefined;
         try {
             if (keep) localStorage.setItem(draftKey, JSON.stringify({
                 text: e.history.states[e.history.index], date: new Date().toISOString(), filename: e.filename,
+                pending: typeof pending === "string" ? pending : pending && serializeDesign(pending),
                 ...(this.unbound && { unbound: true, dirty: e.history.dirty })
             }));
             else localStorage.removeItem(draftKey);
@@ -98,30 +100,37 @@ export class DesignFiles {
         if (e.saveState === "正在保存" || !changed && e.saveState === "保存失败") this.status(e.saveState);
         else this.status(e.history.dirty || this.handle && !this.writable ? "未保存" : "已保存");
     }
-    private restore(text: string, filename: string, unbound: boolean, dirty: boolean) {
-        const e = this.editor, design = parseDesign(text, true);
-        return e.working("正在恢复草稿…", () => {
-            try {
-                this.install(design, filename, { unbound, recovered: dirty ? "dirty" : "clean" });
+    private restore(text: string, filename: string, unbound: boolean, dirty: boolean, pending?: string) {
+        const e = this.editor;
+        return e.working("正在恢复草稿…", async () => {
+            let recovered = false;
+            if (pending !== undefined) {
+                try {
+                    await this.install(pending, filename, { unbound, recovered: "dirty" });
+                    recovered = true;
+                }
+                catch {
+                    // A staged edit can fail worker validation. The previous draft is still available.
+                }
             }
-            catch (error) {
-                e.message("草稿无法恢复：" + errorText(error));
-                return;
-            }
+            if (!recovered) await this.install(text, filename, { unbound, recovered: dirty ? "dirty" : "clean" });
             e.message("已恢复未保存的草稿");
-        });
+        }, error => e.message("草稿无法恢复：" + errorText(error)));
     }
-    private install(design: Design, filename: string, source: {
-        handle?: DesignHandle; writable?: boolean; original?: string | null; unbound?: boolean; recovered?: "clean" | "dirty";
+    private install(design: Design | string, filename: string, source: {
+        handle?: DesignHandle; writable?: boolean; original?: string; unbound?: boolean; recovered?: "clean" | "dirty";
     } = {}) {
-        const e = this.editor, history = new History(design);
-        if (source.recovered === "dirty") history.saved = "";
-        session.timed("terrain-editor:first", () => {
-            e.replace(design, true);
+        const e = this.editor;
+        return session.timed("terrain-editor:first", async () => {
+            const project = await e.replace(design, true);
+            const history = new History(project.design);
+            if (source.recovered === "dirty") history.saved = "";
+            const original = source.original !== undefined && typeof design === "string" &&
+                serializeDesign(project.design) === JSON.stringify(JSON.parse(design), null, 2) ? source.original : null;
             this.writes.reset();
             this.handle = source.handle ?? null;
             this.writable = source.writable ?? false;
-            this.original = source.original ?? null;
+            this.original = original;
             this.unbound = source.unbound ?? false;
             this.suggestedName = source.recovered && !this.unbound ? filename : "project.json";
             this.choosingSaveFor = null;
@@ -136,28 +145,26 @@ export class DesignFiles {
         const e = this.editor;
         if (!this.supported || e.busy || e.gesture) return;
         commitFocusedInput();
+        if (e.busy) await e.finishWork();
+        if (e.busy || e.gesture) return;
         if (e.history?.dirty && !confirmed) {
             e.fileRequest = action;
             return;
         }
-        e.busy = action === "new" ? "正在新建设计…" : "正在打开项目设计…";
-        try {
+        const label = action === "new" ? "正在新建设计…" : "正在打开项目设计…";
+        return e.working(label, async () => {
             if (action === "new") {
                 const box = e.map?.canvas?.getBoundingClientRect();
-                this.install(newDesign(box && [box.width * .1, box.height * .9]), "未命名", { unbound: true });
+                await this.install(newDesign(box && [box.width * .1, box.height * .9]), "未命名", { unbound: true });
                 e.message("已新建设计");
             }
             else {
                 const [handle] = await window.showOpenFilePicker!({ types, multiple: false });
                 await this.open(handle);
             }
-        }
-        catch (error) {
+        }, error => {
             if (!cancelled(error)) e.message((action === "new" ? "新建失败：" : "打开失败：") + errorText(error));
-        }
-        finally {
-            e.busy = null;
-        }
+        });
     }
     private async permission(handle: DesignHandle) {
         try {
@@ -172,9 +179,7 @@ export class DesignFiles {
         const file = await handle.getFile();
         // Keep a UTF-8 BOM, original whitespace and line endings for an untouched design.
         const text = new TextDecoder("utf-8", { ignoreBOM: true }).decode(await file.arrayBuffer());
-        const json = text.replace(/^\uFEFF/, ""), design = parseDesign(json, true);
-        const original = serializeDesign(design) === JSON.stringify(JSON.parse(json), null, 2) ? text : null;
-        this.install(design, file.name, { handle, writable, original });
+        await this.install(text.replace(/^\uFEFF/, ""), file.name, { handle, writable, original: text });
         this.editor.message(writable ? "已打开“" + file.name + "”" : permissionWarning);
     }
     private writeTo(target: DesignHandle, manual = false) {
@@ -211,6 +216,8 @@ export class DesignFiles {
         const e = this.editor;
         if (!e.project || e.busy || e.gesture || e.fileRequest) return;
         commitFocusedInput();
+        if (e.busy) await e.finishWork();
+        if (e.busy) return;
         const history = e.history, handle = this.handle;
         if (!handle && this.choosingSaveFor === history) return;
         if (!handle) this.choosingSaveFor = history;

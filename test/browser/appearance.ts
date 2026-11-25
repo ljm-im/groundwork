@@ -32,10 +32,10 @@ function recordInitialAppearance() {
 async function observeDraws() {
     const draws: Draws = { map: 0, section: 0, terrain: 0, grid: "", raster: 0 };
     window.appearanceDraws = draws;
-    const cacheModule = "/src/core/terrain/cache.ts";
-    const { TerrainCache } = await import(cacheModule) as typeof import("../../src/core/terrain/cache.ts");
-    const generate = TerrainCache.prototype.generateResolved;
-    TerrainCache.prototype.generateResolved = function (...args) {
+    const computeModule = "/src/app/state/terrainClient.ts";
+    const { TerrainClient } = await import(computeModule) as typeof import("../../src/app/state/terrainClient.ts");
+    const generate = TerrainClient.prototype.generate;
+    TerrainClient.prototype.generate = function (...args) {
         draws.terrain++;
         return generate.apply(this, args);
     };
@@ -162,7 +162,9 @@ export async function checkAppearance(url: string) {
             await stream.write(text); await stream.close();
         }, bytes);
         await click("#open");
-        await wait(() => document.querySelector("#save-state")?.textContent === "已保存" && !!document.querySelector("#plots canvas"));
+        await wait(() => document.querySelector(".map-wrap[data-busy=false]") &&
+            document.querySelector("#save-state")?.textContent === "已保存" && !!document.querySelector("#plots canvas"));
+        await wait(() => window.appearanceDraws.terrain > 0 && window.appearanceDraws.map > 0 && window.appearanceDraws.section > 0);
         await paint();
         const light = await evaluate(mapPixels), lightDraws = await drawn();
         assert.equal(light.outside, "#f9faf6");

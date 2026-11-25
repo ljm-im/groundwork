@@ -23,6 +23,7 @@ import { checkNumericEditing } from "./numericEditing.ts";
 import { checkPenDrawing } from "./penDrawing.ts";
 import { checkMapOverlays } from "./mapOverlays.ts";
 import { checkCoarsePreview } from "./coarsePreview.ts";
+import { checkWorkerTerrain } from "./workerTerrain.ts";
 
 test("Editor interactions in Chromium", async t => {
     const server = await createServer({ configFile: "configs/vite.config.ts", server: { host: "127.0.0.1", port: 0 } });
@@ -44,6 +45,7 @@ test("Editor interactions in Chromium", async t => {
         await t.test("Pen drawing in Chromium", () => checkPenDrawing(url));
         await t.test("Map overlays in Chromium", () => checkMapOverlays(url));
         await t.test("Coarse numeric drag previews in Chromium", () => checkCoarsePreview(url));
+        await t.test("Terrain worker, viewport and sampled expressions in Chromium", () => checkWorkerTerrain(url));
     }
     finally {
         await server.close();
@@ -85,7 +87,7 @@ async function checkEditor(url: string) {
         await idle();
     }
     const idle = () => wait(() => !document.querySelector(".map-wrap[data-busy=true]"));
-    const saved = () => wait(() => document.querySelector("#save-state")?.textContent === "已保存");
+    const saved = () => wait(() => document.querySelector(".map-wrap[data-busy=false]") && document.querySelector("#save-state")?.textContent === "已保存");
     const disk = () => evaluate(() => window.disk("editor-interactions.json"));
     async function keyboardStep(selector: string) {
         await evaluate(s => document.querySelector<HTMLButtonElement>(s)!.focus(), selector);
@@ -443,22 +445,22 @@ async function checkEditor(url: string) {
         await key("Tab"); await idle();
         assert.equal(await text("#properties [data-parameter$=\".precision\"] .unit"), "‰");
         for (const step of [.05, .02, .01]) {
-            await click("#properties button[aria-label=减小精度]");
+            await click("#properties button[aria-label=减小精度]"); await idle();
             assert.equal(Number(await text("#properties button[aria-label=精度]")), step);
         }
         await moveMap(.5, .5);
         assert.match(await text("#position"), /岩性 0\.50 ‰$/);
         await panel("terrain"); await click("[data-geo-node=R]"); await terrainTab();
-        await click("#properties button[aria-label=增大增量]");
+        await click("#properties button[aria-label=增大增量]"); await idle();
         assert.equal(await text("#properties button[aria-label=增量]"), "0.05");
         await moveMap(.5, .5);
         assert.match(await text("#position"), /岩性 0\.51 ‰$/);
         await panel("inputs"); await click("[data-select-input=A]");
         for (const step of [.5, .2, .1, .05]) {
-            await click("#properties button[aria-label=减小步长]");
+            await click("#properties button[aria-label=减小步长]"); await idle();
             assert.equal(Number(await text("#properties button[aria-label=步长]")), step);
         }
-        await click("#properties button[aria-label=增大步长]");
+        await click("#properties button[aria-label=增大步长]"); await idle();
         assert.equal(Number(await text("#properties button[aria-label=步长]")), .1);
         await saved();
         const before = await disk();

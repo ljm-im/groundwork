@@ -194,16 +194,9 @@
         return result.filter(group => group.items.length);
     });
     let options = $derived(groups.flatMap(g => g.items));
-    let fieldReading = $derived.by(() => {
-        const project = editor.project, id = owner;
-        const center = id ? editor.geoCenter(id) : undefined;
-        const readings: Record<string, number | undefined> = Object.create(null);
-        return (field: string) => {
-            if (!id || !center) return;
-            if (!Object.hasOwn(readings, field)) readings[field] = project.inputAt(id, field, center);
-            return readings[field];
-        };
-    });
+    function fieldReading(field: string) {
+        return owner ? editor.fieldReading(owner, field) : undefined;
+    }
     function currentResult(v: Expression) {
         if (typeof v === "number") return { value: v, sampled: false };
         try {
@@ -439,7 +432,7 @@
             if (button.hasPointerCapture(id)) button.releasePointerCapture(id);
             const changed = live !== initial;
             gesturing = false; error = "";
-            if (address) editor.clearNumberPreview();
+            if (address && (cancel || !changed)) editor.clearNumberPreview();
             if (!cancel && changed) {
                 if (address) editor.commitNumber(address, live);
                 else if (typeof live === "number") setting?.change(live);

@@ -1,3 +1,4 @@
+import { testTerrainClient } from "./computeFixture.ts";
 import { test } from "node:test";
 import { functionTable, parameterStep, parameterUnit } from "../src/core/design/functionTable.ts";
 import assert from "node:assert/strict";
@@ -116,8 +117,10 @@ test("Dragging and repeating preview several values but release records one hist
     assert.equal(drag.move(-40, 0, true, false), -1);
     assert.equal(drag.move(4, 0, false, true), 10);
     const design = syntheticDesign(), editorModule = await import("../configs/register-svelte.ts").then(() => import("../src/app/state/session.svelte.ts"));
-    const editor = new editorModule.Editor();
-    editor.project = new Project(design); editor.history = new History(design);
+    const editor = new editorModule.Editor(testTerrainClient());
+    t.mock.method(editor, "reconcileProject", () => {}); t.mock.method(editor.files, "remember", () => {});
+    await editor.replace(design, true);
+    editor.history = new History(design);
     const oldFrame = globalThis.requestAnimationFrame, oldCancel = globalThis.cancelAnimationFrame;
     let previewFrame: FrameRequestCallback | undefined;
     globalThis.requestAnimationFrame = frame => {
@@ -131,7 +134,6 @@ test("Dragging and repeating preview several values but release records one hist
         if (oldCancel) globalThis.cancelAnimationFrame = oldCancel;
         else Reflect.deleteProperty(globalThis, "cancelAnimationFrame");
     });
-    t.mock.method(editor, "reconcileProject", () => {}); t.mock.method(editor.files, "remember", () => {});
     t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
     const address: Address = ["inputs", "A", "value"];
     let calls = 0, value = design.inputs.A.value;
@@ -143,13 +145,17 @@ test("Dragging and repeating preview several values but release records one hist
     t.mock.timers.tick(1); assert.equal(calls, 2); t.mock.timers.tick(80); assert.equal(calls, 3);
     stop(); t.mock.timers.tick(300); assert.equal(calls, 3); assert.equal(editor.history.index, 0);
     previewFrame!(0);
+    await new Promise(resolve => setImmediate(resolve));
     assert.equal(editor.project.design.inputs.A.value, design.inputs.A.value);
     const expected = new Project(copyAt(design, address, value));
     assert.deepEqual(editor.mapProject.terrain.fields.height, expected.terrain.fields.height);
-    editor.clearNumberPreview();
-    assert.equal(editor.mapProject.terrain, editor.project.terrain);
+    const preview = editor.mapProject.terrain, commit = editor.commitNumber(address, value);
+    assert.equal(editor.mapProject.terrain, preview);
+    assert(editor.busy);
+    assert.equal(editor.busyText, null);
     assert.equal(editor.history.index, 0);
-    editor.commitNumber(address, value);
+    await commit;
+    assert.deepEqual(editor.project.terrain.fields.height, expected.terrain.fields.height);
     assert.equal(editor.history.index, 1); assert.equal(editor.history.step(false)!.inputs.A.value, design.inputs.A.value);
 });
 test("Camera framing survives empty and changing canvases and the viewport hides each row above it", () => {

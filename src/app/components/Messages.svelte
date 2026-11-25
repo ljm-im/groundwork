@@ -46,12 +46,12 @@
     let { editor }: { editor: session.Editor } = $props();
     let toast: HTMLDivElement;
     let busyReady = $state(false);
-    let waiting = $derived(!editor.toast && !!editor.busy && !busyReady);
-    let busyText = $derived(editor.busy === "正在生成地形…" || editor.busy === "正在更新地件…" ? "计算中" : editor.busy ?? "");
+    let waiting = $derived(!editor.toast && !!editor.busyText && !busyReady);
+    let busyText = $derived(editor.busyText === "正在生成地形…" || editor.busyText === "正在更新地件…" ? "计算中" : editor.busyText ?? "");
     let text = $derived(editor.toast?.text ?? busyText);
     $effect(() => {
         busyReady = false;
-        if (!editor.busy) return;
+        if (!editor.busyText) return;
         const timer = setTimeout(() => busyReady = true, 200);
         return () => clearTimeout(timer);
     });

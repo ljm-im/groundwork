@@ -9,7 +9,6 @@ import { editControl, geometryPath, insertCurveNode, outlineParameterGeometry } 
 import { translateGeo } from "../src/core/edit/paths.ts";
 import { parseDesign } from "../src/core/design/model.ts";
 import { positionReadings, readingRange } from "../src/app/state/mapText.ts";
-import { type Design } from "../src/core/design/v5.ts";
 import { propertyTabs } from "../src/app/state/inspector.ts";
 import { designProblemText } from "../src/app/state/designMessages.ts";
 import { Project } from "../src/core/project.ts";
@@ -17,6 +16,7 @@ import { pixelGridSpacing } from "../src/core/edit/display.ts";
 import { constrainGeoLabel, constrainSectionLabel, geoLabelPoint } from "../src/render/labelLayout.ts";
 import { makeShape, rasterRegion } from "../src/core/design/regions.ts";
 import { clampMarkPoint, nextMapHit, ProjectMap } from "../src/render/map.ts";
+import { testProjectModel, testTerrainClient } from "./computeFixture.ts";
 import { render } from "svelte/server";
 import { coveredLandformPoints, layer, openCurve, overlappingLandforms, polygon, rect, syntheticDesign } from "./scenarios.ts";
 
@@ -34,8 +34,8 @@ test("Overlapping map objects cycle in paint order, including separate geometrie
     const screen = map.screen(point), [x, y] = screen;
     const marks = ["A", "B"].map(id => ({ mark: { kind: "mark", id, role: "body", point }, box: [x - 5, y - 5, x + 5, y + 5] }));
     Object.assign(map, { markBoxes: marks });
-    const editor = new Editor();
-    Object.assign(editor, { project, map });
+    const editor = new Editor(testTerrainClient());
+    Object.assign(editor, { project: testProjectModel(project), map });
     editor.layers.geoNodes = editor.layers.sections = true;
     const hits = [...map.objectHits(editor.mapView!, screen)];
     assert.deepEqual(hits.map(h => [h.selection.id, h.control?.role, h.control?.path]), [
@@ -56,10 +56,10 @@ test("Overlapping map objects cycle in paint order, including separate geometrie
 
 test("An upper landform face covers lower outlines, vertices and parameter geometry", async () => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
-    const project = new Project(overlappingLandforms()), editor = new Editor();
+    const project = new Project(overlappingLandforms()), editor = new Editor(testTerrainClient());
     const map: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), { width: 1000, height: 700, markBoxes: [] });
     map.fit(project.terrain, false);
-    Object.assign(editor, { project, map });
+    Object.assign(editor, { project: testProjectModel(project), map });
     editor.layers.geoNodes = true;
     for (const point of coveredLandformPoints) {
         const screen = map.screen(point), view = editor.mapView!;
@@ -96,7 +96,7 @@ test("Map issue hits keep the view and inspector issues only pan from outside it
     });
     map.fit(baseline.terrain, false);
     const ui = new session.Editor();
-    Object.assign(ui, { project: baseline, map, tab: "terrain" });
+    Object.assign(ui, { project: testProjectModel(baseline), map, tab: "terrain" });
     ui.setSelection({ kind: "geoNode", id: selected.geoNode! });
     map.scale *= 1.4;
     map.center = [selected.point[0] + (map.width / 2 + 6) / map.scale, selected.point[1] + 4];
@@ -156,9 +156,8 @@ test("A shared strip quotes a side label and a full property path independently"
 
 test("A committed prompt, undo and redo preserve all terrain references", async t => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
-    const editor = new Editor(), design = syntheticDesign(), project = new Project(design);
-    Object.assign(editor, { project, map: { draw() {} } });
-    editor.busy = null;
+    const editor = new Editor(testTerrainClient()), design = syntheticDesign(), project = new Project(design);
+    Object.assign(editor, { project: testProjectModel(project), map: { draw() {} } });
     editor.history = new History(design);
     t.mock.method(editor.files, "remember", () => {});
     const generation = [t.mock.method(editor, "replace"), t.mock.method(project, "update")];
@@ -187,51 +186,57 @@ test("A committed prompt, undo and redo preserve all terrain references", async 
     assert.equal(project.terrain.regions, regions);
 });
 
-test("Terrain work runs synchronously on a hit and defers cold history steps for two frames", async t => {
+test("Terrain edits and history commit when the worker replies", async t => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
-    const editor = new Editor(), design = syntheticDesign(), frames: FrameRequestCallback[] = [];
+    const design = syntheticDesign(), queued: (() => void)[] = [], labels: (string | null)[] = [];
+    const client = testTerrainClient(cb => {
+        queued.push(cb);
+    }, reply => {
+        if (reply.kind === "started") labels.push(editor.busyText);
+    });
+    const editor = new Editor(client);
     Object.assign(editor, { map: { scale: 4 } });
     t.mock.method(editor, "reconcileProject", () => {});
     t.mock.method(editor.files, "remember", () => {});
-    const previous = globalThis.requestAnimationFrame;
-    globalThis.requestAnimationFrame = cb => frames.push(cb);
-    t.after(() => {
-        if (previous) globalThis.requestAnimationFrame = previous;
-        else Reflect.deleteProperty(globalThis, "requestAnimationFrame");
-    });
-    async function finishCold(work: Promise<void> | void, label: string, index: number) {
-        assert.equal(editor.busy, label);
-        for (let i = 0; i < 2; i++) {
-            assert.equal(editor.history.index, index);
-            assert.equal(frames.length, 1);
-            frames.shift()!(i * 16);
-        }
-        await work;
-        assert.equal(editor.busy, null);
-        assert.equal(frames.length, 0);
-    }
-    editor.replace(design, true);
+    const opening = editor.replace(design, true);
+    assert(editor.busy);
+    queued.shift()!();
+    await opening;
     editor.history = new History(design);
-    const regions = editor.project.terrain.regions.get("G");
-    const hot = editor.edit(d => {
+    assert.deepEqual(labels, ["正在生成地形…"]);
+
+    async function finish(work: Promise<void> | void, label: string | null, index: number) {
+        assert(editor.busy);
+        assert.equal(editor.history.index, index);
+        assert.equal(editor.edit(() => {
+            throw Error("busy edit accepted");
+        }), undefined);
+        assert.equal(queued.length, 1);
+        queued.shift()!();
+        await work;
+        assert.equal(labels.at(-1), label);
+        assert.equal(editor.busy, false);
+        assert.equal(editor.busyText, null);
+    }
+    const region = editor.project.terrain.regions.get("G");
+    const rename = editor.edit(d => {
         d.geoNodes[0].label = "A";
     });
+    editor.select({ kind: "geoNode", id: "T" });
+    await finish(rename, null, 0);
     assert.equal(editor.history.index, 1);
-    assert.equal(editor.project.terrain.regions.get("G"), regions);
-    editor.navigate(false);
+    assert.equal(editor.project.terrain.regions.get("G"), region);
+    assert.equal(editor.selection?.id, "T");
+    await finish(editor.navigate(false), null, 1);
     assert.equal(editor.history.index, 0);
-    editor.navigate(true);
+    await finish(editor.navigate(true), null, 0);
     assert.equal(editor.history.index, 1);
-    assert.equal(editor.busy, null);
-    assert.equal(frames.length, 0);
-    await hot;
-
-    await finishCold(editor.edit(d => {
+    await finish(editor.edit(d => {
         d.inputs.A.value = Number(d.inputs.A.value) + 1;
     }), "正在更新地件…", 1);
-    await finishCold(editor.navigate(false), "正在更新地件…", 2);
+    await finish(editor.navigate(false), "正在更新地件…", 2);
     assert.equal(editor.history.index, 1);
-    await finishCold(editor.edit(d => {
+    await finish(editor.edit(d => {
         d.inputs.seed.value = Number(d.inputs.seed.value) + 1;
     }), "正在更新地件…", 1);
     assert.equal(editor.history.index, 2);
@@ -240,13 +245,12 @@ test("Terrain work runs synchronously on a hit and defers cold history steps for
 
 test("Opening, creating and recovering a design each starts with empty terrain caches", async t => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
-    const editor = new Editor(), design = syntheticDesign(), text = JSON.stringify(design);
+    const editor = new Editor(testTerrainClient()), design = syntheticDesign(), text = JSON.stringify(design);
     Object.assign(editor, { map: { scale: 4 } });
     Object.assign(editor.files, { supported: true });
     t.mock.method(editor, "reconcileProject", () => {});
     t.mock.method(editor, "message", () => {});
     t.mock.method(editor.files, "remember", () => {});
-    t.mock.method(editor, "working", async (_label: string, fn: () => void) => fn());
     const file = {
         name: "A.json",
         async requestPermission() {
@@ -259,7 +263,7 @@ test("Opening, creating and recovering a design each starts with empty terrain c
             throw Error("Unexpected file write");
         }
     };
-    editor.replace(design, true);
+    await editor.replace(design, true);
     const surfaces = [editor.project.terrain];
     await editor.files.open(file);
     surfaces.push(editor.project.terrain);
@@ -299,15 +303,12 @@ test("Drawing or canceling a parameter keeps its owner and activates only the co
     const { Editor } = await import("../src/app/state/session.svelte.ts");
     const { draftPointer } = await import("../src/app/state/geoTools.ts");
     const { geoControls } = await import("../src/core/edit/geoControls.ts");
-    const editor = new Editor(), design = syntheticDesign(), n = design.geoNodes[1];
+    const editor = new Editor(testTerrainClient()), design = syntheticDesign(), n = design.geoNodes[1];
     n.function = { type: "mountain", ridges: [], peaks: [] };
     Object.assign(editor, { map: { scale: 4 } });
     t.mock.method(editor, "reconcileProject", () => {});
     t.mock.method(editor.files, "remember", () => {});
-    t.mock.method(editor, "terrainWork", async (_d: unknown, fn: () => void) => {
-        fn();
-    });
-    editor.replace(design); editor.history = new History(design);
+    await editor.replace(design); editor.history = new History(design);
     const selected = { kind: "geoNode", id: n.id } as const;
     editor.select(selected);
     for (const cancel of [true, false]) {
@@ -330,6 +331,7 @@ test("Drawing or canceling a parameter keeps its owner and activates only the co
     draftPointer(editor, "down", [4, 4], { ctrlKey: true } as PointerEvent);
     assert.deepEqual(editor.selection, selected); assert.equal(editor.history.index, 1);
     draftPointer(editor, "up", [4, 4], { ctrlKey: true } as PointerEvent);
+    await editor.finishWork();
     assert.equal(editor.geoDraft, undefined);
     assert.equal(editor.history.index, 2);
     assert.deepEqual(editor.selection, selected);
@@ -413,7 +415,7 @@ test("Dragged map names follow the continuous boundary with eight pixels of clea
 
 test("The inspector keeps compatible tabs and chooses the first available tab", async () => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
-    const editor = new Editor();
+    const editor = new Editor(testTerrainClient());
     editor.setSelection({ kind: "geoNode", id: "A" });
     assert.equal(editor.propertyTab, "label");
     editor.changePropertyTab("function");
@@ -434,8 +436,8 @@ test("The inspector keeps compatible tabs and chooses the first available tab", 
 
 test("Expanding and collapsing inspector subitems leaves the authored design and undo history intact", async () => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
-    const editor = new Editor(), design = syntheticDesign();
-    editor.project = new Project(design);
+    const editor = new Editor(testTerrainClient()), design = syntheticDesign();
+    editor.project = testProjectModel(new Project(design));
     editor.history = new History(design);
     const before = structuredClone(design), history = [...editor.history.states];
     assert.equal(editor.subitemOpen("A", "ridges", 0), false);
@@ -452,12 +454,11 @@ test("Expanding and collapsing inspector subitems leaves the authored design and
 
 test("Selection history restores edited elements and list tabs preserve the selection", async t => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
-    const d = syntheticDesign(), editor = new Editor();
+    const d = syntheticDesign(), editor = new Editor(testTerrainClient());
     Object.assign(editor, { map: { draw() {}, clearIssue() {} } });
     t.mock.method(editor, "reconcileProject", () => {});
-    t.mock.method(editor, "terrainWork", async (_d: unknown, fn: () => void) => fn());
     t.mock.method(editor.files, "remember", () => {});
-    editor.replace(d, true);
+    await editor.replace(d, true);
     editor.history = new History(d);
     editor.select({ kind: "geoNode", id: "T" });
     editor.select({ kind: "geoNode", id: "G" });
@@ -481,11 +482,10 @@ test("Selection history restores edited elements and list tabs preserve the sele
 
 test("Selected segments follow their starting node through edits, undo and redo", async t => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
-    const editor = new Editor(), d = syntheticDesign();
+    const editor = new Editor(testTerrainClient()), d = syntheticDesign();
     t.mock.method(editor, "reconcileProject", () => {});
-    t.mock.method(editor, "terrainWork", async (_d: Design, fn: () => void) => fn());
     t.mock.method(editor.files, "remember", () => {});
-    editor.replace(d, true);
+    await editor.replace(d, true);
     editor.history = new History(d);
     editor.select({ kind: "geoNode", id: "T" });
     editor.selectControl({ role: "segment", path: 0, index: 2, point: [-14, -2] });
@@ -531,10 +531,10 @@ function islandDesign() {
 
 test("Nested outlines use their own area and expand a selected landform's place in the Alt cycle", async () => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
-    const d = islandDesign(), editor = new Editor(), map: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), {
+    const d = islandDesign(), editor = new Editor(testTerrainClient()), map: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), {
         width: 1000, height: 700, markBoxes: []
     });
-    editor.project = new Project(d);
+    editor.project = testProjectModel(new Project(d));
     map.fit(editor.project.terrain, false);
     const p: [number, number] = [-10, -10], screen = map.screen(p), shape = editor.project.terrain.regions.get("T")!.shape;
     assert(shape.contains(p));
@@ -583,7 +583,7 @@ test("Dragging an only outline carries its peaks and ridges with their attribute
 
 test("Dragging nested outlines moves only their own geometry and preserves selection through history", async t => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
-    const design = islandDesign(), editor = new Editor();
+    const design = islandDesign(), editor = new Editor(testTerrainClient());
     const ridges = [
         [[-14, -12], [-5, -8]], [[-26, -12], [-5, -12]], [[-28, -27], [8, -27]], [[-28, -25], [14, -25]]
     ] as [number, number][][];
@@ -595,9 +595,8 @@ test("Dragging nested outlines moves only their own geometry and preserves selec
     };
     const d = parseDesign(design, true);
     t.mock.method(editor, "reconcileProject", () => {});
-    t.mock.method(editor, "terrainWork", async (_d: Design, fn: () => void) => fn());
     t.mock.method(editor.files, "remember", () => {});
-    editor.replace(d, true);
+    await editor.replace(d, true);
     editor.history = new History(d);
     const original = structuredClone(d.geoNodes[1]);
     const shape = editor.project.terrain.regions.get("T")!.shape;
@@ -630,6 +629,7 @@ test("Dragging nested outlines moves only their own geometry and preserves selec
     assert.deepEqual(moved.function.peaks[0].at.p, [-6, -10]);
     editor.removePath("T", 1);
     editor.removal?.perform?.();
+    await editor.finishWork();
     editor.removal = null;
     assert.equal(editor.outline, 1);
     assert.equal(geometryPath(editor.project.design.geoNodes[1], 1)?.nodes[0].id, "island0");
@@ -646,6 +646,7 @@ test("Dragging nested outlines moves only their own geometry and preserves selec
     editor.removeSelected();
     assert.equal(removal()?.action, "删除轮廓");
     removal()?.perform?.();
+    await editor.finishWork();
     editor.removal = null;
     assert.equal(editor.outline, undefined);
     await editor.navigate(false);
@@ -681,12 +682,11 @@ test("Coordinate slots use design grid and sample bounds while longer readings s
 
 test("Removing a segment asks before leaving a strip reference to its removed endpoint", async t => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
-    const editor = new Editor(), d = syntheticDesign();
+    const editor = new Editor(testTerrainClient()), d = syntheticDesign();
     d.geoNodes.push(layer("S", { type: "strip", of: ["T"], widths: [1, 1], range: { from: "0", to: "1" } }, { type: "flat", amount: 1 }));
     t.mock.method(editor, "reconcileProject", () => {});
-    t.mock.method(editor, "terrainWork", async (_d: Design, fn: () => void) => fn());
     t.mock.method(editor.files, "remember", () => {});
-    editor.replace(d, true);
+    await editor.replace(d, true);
     editor.history = new History(d);
     editor.select({ kind: "geoNode", id: "T" });
     editor.selectControl({ role: "segment", path: 0, index: 0, point: [-14, -14] });
@@ -695,6 +695,7 @@ test("Removing a segment asks before leaving a strip reference to its removed en
     assert.equal(editor.removal?.items?.length, 1);
     assert.equal(editor.canUndo, false);
     editor.removal?.perform?.();
+    await editor.finishWork();
     const path = geometryPath(editor.project.design.geoNodes[1], 0)!;
     assert.deepEqual(path.nodes.map(n => n.id), ["0", "2", "3"]);
     assert.equal(editor.vertex?.role, "vertex");
@@ -711,14 +712,13 @@ test("Screen marks retain their anchors and clamp their full drawing to each vie
 
 test("Mark follow changes preserve the displayed anchor and screen coordinates ignore camera changes", async t => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
-    const d = syntheticDesign(), editor = new Editor();
+    const d = syntheticDesign(), editor = new Editor(testTerrainClient());
     const map: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), { center: [0, 0], width: 800, height: 450, scale: 3, referenceScale: 3,
         cameraChanged() {}, clearIssue() {}, ctx: { save() {}, restore() {}, measureText: () => ({ width: 38 }) } });
     Object.assign(editor, { map });
     t.mock.method(editor, "reconcileProject", () => {});
-    t.mock.method(editor, "terrainWork", async (_d: unknown, fn: () => void) => fn());
     t.mock.method(editor.files, "remember", () => {});
-    editor.replace(d, true);
+    await editor.replace(d, true);
     editor.history = new History(d);
     await editor.addMark("scale", [64, 80]);
     const id = editor.selection!.id, anchor = editor.project.design.marks[0].point;
