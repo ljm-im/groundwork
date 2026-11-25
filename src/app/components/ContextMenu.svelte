@@ -46,6 +46,10 @@
                             disabled: neighbor(curve, control.index, -1) === undefined, run: () => editor.segment(control, "tangent") });
                         result.push({ title: "后一段", items });
                     }
+                    result.push({ title: "整条曲线", items: [
+                        { id: "curve-auto", name: "全部节点改为自动平滑", icon: "nodeAuto", run: () => editor.wholeCurve(control, "auto") },
+                        { id: "curve-line", name: "全部线段改为直线", icon: "segmentLine", run: () => editor.wholeCurve(control, "line") }
+                    ] });
                     if (control.role === "segment")
                         result.push({ items: [{ id: "insert-node", name: "插入节点", icon: "nodeCorner", run: () => editor.insertNode(h.id, control) }] });
                     else if (canRemoveNode(curve))

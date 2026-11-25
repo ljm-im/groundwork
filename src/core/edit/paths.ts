@@ -73,6 +73,25 @@ export function setNodeMode(path: Curve, i: number, mode: CurveNode["mode"]) {
     }
 }
 
+export function editWholeCurve(path: Curve, action: "auto" | "line") {
+    let changed = false;
+    for (const [index, node] of path.nodes.entries()) {
+        if (action === "auto") {
+            if (node.mode === "auto") continue;
+            setNodeMode(path, index, "auto");
+        }
+        else {
+            if (node.mode === "corner" && node.in === undefined && node.out === undefined && node.bulge === undefined) continue;
+            node.mode = "corner";
+            delete node.in;
+            delete node.out;
+            delete node.bulge;
+        }
+        changed = true;
+    }
+    return changed;
+}
+
 export function moveHandle(path: Curve, i: number, side: Side, target: Point, independent: boolean) {
     if (!hasHandleSide(path, i, side)) return;
     const v = path.nodes[i], other = side === "in" ? "out" : "in";

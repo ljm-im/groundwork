@@ -7,7 +7,7 @@ import { numericProfile } from "../src/core/design/polyline.ts";
 import { type Curve, type Point } from "../src/core/design/v5.ts";
 import { defaultFunction, pathsOf } from "../src/core/edit/geoNodes.ts";
 import { copyGeometryItem, insertCurveNode, removeCurveNode } from "../src/core/edit/geoControls.ts";
-import { insertPathNode, moveHandle, penNode, penPath, setNodeMode, setSegment } from "../src/core/edit/paths.ts";
+import { editWholeCurve, insertPathNode, moveHandle, penNode, penPath, setNodeMode, setSegment } from "../src/core/edit/paths.ts";
 import { distance, spline } from "../src/core/math/geometry.ts";
 import { openCurve, syntheticDesign } from "./scenarios.ts";
 
@@ -142,6 +142,30 @@ test("The open pen and handle drags only store usable handles", () => {
     moveHandle(path, 0, "out", [3, 1], false);
     assert.equal(path.nodes[0].mode, "corner");
     assert(!Object.hasOwn(path.nodes[0], "in"));
+});
+
+test("Whole-curve operations preserve nodes and report when no edit is needed", () => {
+    const curve: Curve = {
+        closed: true, nodes: [
+            { id: "A", p: [0, 0], h: 4, mode: "manual", in: [-1, 0], out: [2, 0] },
+            { id: "B", p: [6, 0], h: 5, mode: "corner", bulge: .4 },
+            { id: "C", p: [6, 6], mode: "corner", out: [-1, 0] }
+        ]
+    };
+    const nodes = curve.nodes.map(({ id, p, h }) => [id, p, h]);
+    const expected = structuredClone(curve);
+    for (const i of expected.nodes.keys()) setNodeMode(expected, i, "auto");
+    assert(editWholeCurve(curve, "auto"));
+    assert.deepEqual(curve, expected);
+    assert.equal(curve.nodes[1].bulge, .4);
+    assert(!editWholeCurve(curve, "auto"));
+    assert.deepEqual(curve, expected);
+    assert(editWholeCurve(curve, "line"));
+    assert.deepEqual(curve.nodes.map(({ id, p, h }) => [id, p, h]), nodes);
+    assert(curve.nodes.every(node => node.mode === "corner" && !("in" in node || "out" in node || "bulge" in node)));
+    const straight = structuredClone(curve);
+    assert(!editWholeCurve(curve, "line"));
+    assert.deepEqual(curve, straight);
 });
 
 type Invalid = [string, string, (curve: Curve) => void];

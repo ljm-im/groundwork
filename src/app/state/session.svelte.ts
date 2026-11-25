@@ -15,7 +15,7 @@ import { parseDesign } from "../../core/design/model.ts";
 import { type GeoControl, type GeometryTarget, copyGeometryItem, geometryPath, insertCurveNode, removeCurveNode, removeGeometryItem, removeParameterPoint } from "../../core/edit/geoControls.ts";
 import { addInput, addField, copyGeo, defaultFunction, deleteGeo, enableGeo, isLastInitializer, nextId, nodeIds, rangeUsers,
     removalUses, removeDeclaration, requiredInitializer, type RemovalUse } from "../../core/edit/geoNodes.ts";
-import { canRemoveNode, cleanHandles, setNodeMode, setSegment } from "../../core/edit/paths.ts";
+import { canRemoveNode, cleanHandles, editWholeCurve, setNodeMode, setSegment } from "../../core/edit/paths.ts";
 import { drawingReady, drawingTools, finishDraft, geoAt, startDrawing, updatePreview } from "./geoTools.ts";
 import { type DrawTool, type GeoDraft } from "../../core/edit/types.ts";
 import { markParameters } from "../../core/design/functionTable.ts";
@@ -714,6 +714,13 @@ export class Editor {
             if (offset[0] || offset[1]) item.labelOffset = offset;
             else delete item.labelOffset;
             return target;
+    wholeCurve(control: GeoControl, action: "auto" | "line") {
+        if (this.selection?.kind !== "geoNode") return;
+        const id = this.selection.id, curve = geometryPath(geoAt(this.project.design, id), control.path);
+        if (!curve) return;
+        const next = structuredClone(curve);
+        if (editWholeCurve(next, action)) return this.editNode(id, n => geometryPath(n, control.path)!.nodes = next.nodes);
+    }
         });
     }
     focus(kind: Selection["kind"], id: string) {
