@@ -3,7 +3,7 @@ import { numericProfile } from "../design/polyline.ts";
 import { fieldExpressions, functionTable } from "../design/functionTable.ts";
 import { type FieldSamples } from "../design/results.ts";
 import { evaluate, fieldValue, sampleValue } from "../design/expression.ts";
-import { type CrossSection, type Region, signedBoundaryDistance } from "../design/regions.ts";
+import { type CrossSection, type Region, regionMaskAt, regionMaskIndex, signedBoundaryDistance } from "../design/regions.ts";
 import { nearest, polygonField, sampleDefined, smooth, type Grid } from "../math/geometry.ts";
 import { fbm, noise, noise1D } from "../math/noise.ts";
 import { erode } from "./erosion.ts";
@@ -15,7 +15,7 @@ export interface FieldState {
     fields: Record<string, FieldSamples>;
 }
 export interface LayerOutput {
-    cells: number[];
+    cells: Int32Array;
     values: Float32Array;
     residual?: { height: number; point: Point };
 }
@@ -23,24 +23,34 @@ export interface LayerOutput {
 export function evaluateLayer(n: ResolvedGeoNode, region: Region, state: FieldState): LayerOutput {
     const { grid, fields } = state, f = n.function, spec = functionTable[f.type];
     const { values: source, defined: mask } = fields[n.field], seed = f.seed as number;
-    const bindings = new Map<string, Float64Array>();
+    const bindings = new Map<string, Float64Array>(), readCanvas = spec.readArea === "canvas";
+    const size = readCanvas ? grid.size : region.mask.length;
     for (const expression of fieldExpressions(f))
-        if (typeof expression === "string" && !bindings.has(expression)) bindings.set(expression, new Float64Array(grid.size));
-    const readable = bindings.size ? mask.slice() : mask;
+        if (typeof expression === "string" && !bindings.has(expression)) bindings.set(expression, new Float64Array(size));
+    const local = bindings.size > 0 && !readCanvas;
+    const readable = local ? new Uint8Array(size) : bindings.size ? mask.slice() : mask;
+    if (local) {
+        for (let j = 0; j < region.height; j++) {
+            const start = (region.top + j) * grid.width + region.left;
+            readable.set(mask.subarray(start, start + region.width), j * region.width);
+        }
+    }
+    const bindingIndex = (k: number) => local ? regionMaskIndex(region, k) : k;
     for (const [expression, samples] of bindings) {
         const rule = evaluate(expression, key => fieldValue(key.slice("field:".length)));
         function sampleAt(k: number) {
-            if (!readable[k]) return;
+            const at = bindingIndex(k);
+            if (!readable[at]) return;
             const value = sampleValue(rule, id => fields[id].defined[k] ? fields[id].values[k] : undefined);
-            if (value === undefined) readable[k] = 0;
-            else samples[k] = value;
+            if (value === undefined) readable[at] = 0;
+            else samples[at] = value;
         }
-        if (spec.readArea === "canvas") {
+        if (readCanvas) {
             for (let k = 0; k < grid.size; k++) sampleAt(k);
         }
-        else region.cells.forEach(sampleAt);
+        else for (const k of region.cells) sampleAt(k);
     }
-    const input = (v: Expression, k: number) => typeof v === "number" ? v : bindings.get(v)![k];
+    const input = (v: Expression, k: number) => typeof v === "number" ? v : bindings.get(v)![bindingIndex(k)];
     function featherWeight(width: number) {
         if (!width) return () => 1;
         const distanceToEdge = signedBoundaryDistance(region.shape, width);
@@ -145,7 +155,9 @@ export function evaluateLayer(n: ResolvedGeoNode, region: Region, state: FieldSt
             }
             case "erosion": {
                 const floor = f.floor;
-                const eligible = Uint8Array.from(region.mask, (v, k) => +(!!v && !!readable[k] && source[k] > floor));
+                const eligible = new Uint8Array(grid.size);
+                for (const k of region.cells)
+                    if (regionMaskAt(region, k) && readable[bindingIndex(k)] && source[k] > floor) eligible[k] = 1;
                 const delta = erode(grid, eligible, source, f, seed);
                 return k => source[k] + delta[k] * input(f.strength, k);
             }
@@ -174,25 +186,27 @@ export function evaluateLayer(n: ResolvedGeoNode, region: Region, state: FieldSt
         const plane = Math.max(a, b) - (highFirst ? s : 1 - s) * width * f.grade;
         return first === highFirst ? plane : Math.max(source[k], plane);
     }
-    const calculate = prepare(), values: number[] = [], cells: number[] = [];
+    const calculate = prepare(), cells = new Int32Array(region.cells.length), values = new Float32Array(cells.length);
+    let count = 0;
     for (const k of region.cells) {
-        if (!spec.initial && !readable[k]) continue;
+        if (!spec.initial && !readable[bindingIndex(k)]) continue;
         const x = grid.x(k % grid.width), y = grid.y(Math.floor(k / grid.width));
-        if (calculate) values.push(calculate(k, x, y));
+        if (calculate) values[count] = calculate(k, x, y);
         else {
             const neighbors = stripInput(x, y);
             if (!neighbors) continue;
-            values.push(calculateStrip(k, neighbors));
+            values[count] = calculateStrip(k, neighbors);
         }
-        cells.push(k);
+        cells[count++] = k;
     }
-    return { cells, values: Float32Array.from(values), residual };
+    return { cells: cells.subarray(0, count), values: values.subarray(0, count), residual };
 }
 
 export function applyLayer(output: LayerOutput, n: Pick<GeoNode, "field" | "function">, state: FieldState) {
     const { values, defined } = state.fields[n.field], initial = functionTable[n.function.type].initial;
-    output.cells.forEach((k, i) => {
+    for (let i = 0; i < output.cells.length; i++) {
+        const k = output.cells[i];
         values[k] = output.values[i];
         if (initial) defined[k] = 1;
-    });
+    }
 }

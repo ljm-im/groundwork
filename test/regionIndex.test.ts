@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { makeShape, trace, type RegionShape, type Segment } from "../src/core/design/regions.ts";
+import { makeShape, rasterRegion, regionMaskAt, trace, type RegionShape, type Segment } from "../src/core/design/regions.ts";
 import { type Construction, type Point, type Strip } from "../src/core/design/v5.ts";
-import { clamp, distance, mixPoint, projection } from "../src/core/math/geometry.ts";
+import { clamp, createGrid, distance, eachCell, mixPoint, projection } from "../src/core/math/geometry.ts";
 import { indexSegments } from "../src/core/math/segmentIndex.ts";
 import { random } from "../src/core/math/noise.ts";
 import { polygon, rect } from "./scenarios.ts";
@@ -80,4 +80,22 @@ test("Nested strips trace the same ordered segments as a full scan", () => {
         assert.deepEqual(d.boundary(), dense(e).boundary());
         assert.deepEqual(trace(d, tolerance, [-4, -2, 3, 4]), trace(dense(e), tolerance, [-4, -2, 3, 4]));
     }
+});
+
+test("A compact mask matches the canvas-sized mask and keeps row-major indices", () => {
+    const grid = createGrid({ xMin: -4, xMax: 7, yMin: -6, yMax: 8, step: .5 });
+    const region = shape("A", { type: "free", paths: [...rect(-5, -1, 2, 4).paths, ...rect(-2, 0, 1, 2).paths] });
+    const expected = new Uint8Array(grid.size), cells: number[] = [];
+    eachCell(grid, region.box, 0, (k, x, y) => {
+        if (region.contains([x, y])) {
+            cells.push(k);
+            expected[k] = 1;
+        }
+    });
+    const compact = rasterRegion(grid, region);
+    assert(compact.mask.length < grid.size);
+    assert.deepEqual(compact.cells, Int32Array.from(cells));
+    assert.deepEqual(expected.map((_, k) => regionMaskAt(compact, k)), expected);
+    assert.equal(regionMaskAt(compact, -1), 0);
+    assert.equal(regionMaskAt(compact, grid.size), 0);
 });

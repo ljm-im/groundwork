@@ -4,7 +4,7 @@ import { type ClosedCurve, type Point, type GeoNode } from "../src/core/design/v
 import { parseDesign } from "../src/core/design/model.ts";
 import { distance, nearest, sampleDefined, spline } from "../src/core/math/geometry.ts";
 import { fbm, noise } from "../src/core/math/noise.ts";
-import { signedBoundaryDistance } from "../src/core/design/regions.ts";
+import { regionMaskAt, signedBoundaryDistance } from "../src/core/design/regions.ts";
 import { shapePath } from "../src/core/edit/paths.ts";
 import { flattenPath } from "../src/core/design/path.ts";
 import { evaluateStack, generateTerrain } from "../src/core/terrain/terrain.ts";
@@ -45,16 +45,16 @@ test("A local mountain preserves the underlying height differences along its bou
         ridges: [{ line: openCurve([{ p: [-5, 0], h: 12 }, { p: [5, 0], h: 10 }]),
             widths: [2, 3], widthNoise: { amount: 10, wavelength: 2 }, heightNoise: { amount: 10, wavelength: 4 } }],
         peaks: [{ at: { p: [0, 3], h: 16 }, radius: 2, noise: .1, scale: 7 }] }));
-    const t = evaluateStack(parseDesign(d)), after = t.fields.height.values, mask = t.regions.get("M")!.mask;
+    const t = evaluateStack(parseDesign(d)), after = t.fields.height.values, region = t.regions.get("M")!;
     assert(after[t.grid.index(0, 3)] > 12 && after[t.grid.index(-5, 0)] > 8);
     let pairs = 0;
-    for (let k = 0; k < mask.length; k++) {
-        if (!mask[k]) {
+    for (let k = 0; k < t.grid.size; k++) {
+        if (!regionMaskAt(region, k)) {
             assert.equal(after[k], before[k]);
             continue;
         }
         for (const other of [k - 1, k + 1, k - t.grid.width, k + t.grid.width]) {
-            if (mask[other]) continue;
+            if (regionMaskAt(region, other)) continue;
             assert(Math.abs(after[k] - after[other]) <= Math.abs(before[k] - before[other]) + 1e-6);
             pairs++;
         }
@@ -89,11 +89,11 @@ test("A field-bound noise amplitude leaves a zero disk intact and skips undefine
     const n = layer("N", g.construction, { type: "noise", amplitude: "{field:A} * 0.5", scale: 7, octaves: 2 });
     const a = layer("A", g.construction, { type: "ground", value: 4 }, "A");
     const d = design([g, a, disk, n]); d.fields.A = { label: "A" };
-    const t = evaluateStack(parseDesign(d)), pattern = noise(0), mask = t.regions.get(disk.id)!.mask;
-    assert(mask.includes(1) && t.fields.height.values.some((v, k) => !mask[k] && v !== 2));
-    for (let k = 0; k < mask.length; k++) {
+    const t = evaluateStack(parseDesign(d)), pattern = noise(0), region = t.regions.get(disk.id)!;
+    assert(region.cells.length && t.fields.height.values.some((v, k) => !regionMaskAt(region, k) && v !== 2));
+    for (let k = 0; k < t.grid.size; k++) {
         const [x, y] = t.grid.point(k);
-        assert.equal(t.fields.height.values[k], mask[k] ? 2 : Math.fround(2 + 2 * fbm(pattern, x / 7, y / 7, 2)));
+        assert.equal(t.fields.height.values[k], regionMaskAt(region, k) ? 2 : Math.fround(2 + 2 * fbm(pattern, x / 7, y / 7, 2)));
     }
     n.field = "A"; n.function = { type: "noise", amplitude: "{field:height}", scale: 7 };
     d.geoNodes = [a, n, g];
@@ -127,7 +127,10 @@ test("Shared strips match touching and overlapping rectangles and ranges survive
     const b = layer("B", right, { type: "flat", amount: 7 });
     const band = layer("C", { type: "strip", of: ["A", "B"], widths: [2, 3] }, { type: "blend" });
     const d = design([base(), left, b, band]);
-    const mask = () => evaluateStack(parseDesign(d)).regions.get("C")!.mask;
+    const mask = () => {
+        const terrain = evaluateStack(parseDesign(d)), region = terrain.regions.get("C")!;
+        return new Uint8Array(terrain.grid.size).map((_, k) => regionMaskAt(region, k));
+    };
     const signed = signedBoundaryDistance(evaluateStack(d).regions.get("A")!.shape);
     assert.equal(signed(-2, 0), 2);
     assert.equal(signed(2, 0), -2);

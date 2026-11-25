@@ -1,5 +1,5 @@
 import { type ResolvedDesign as Design, type Construction, type GeoNode, type ClosedCurve, type Point, type Strip } from "./v5.ts";
-import { bounds, clamp, createGrid, distance, eachCell, mixPoint, projection, type Box, type Grid } from "../math/geometry.ts";
+import { bounds, clamp, createGrid, distance, mixPoint, projection, type Box, type Grid } from "../math/geometry.ts";
 import { functionTable } from "./functionTable.ts";
 import { insidePolygon } from "../math/polygon.ts";
 import { indexSegments, segmentProjection, type IndexedSegment } from "../math/segmentIndex.ts";
@@ -17,7 +17,16 @@ export interface RegionShape {
     spineIndex?: Pick<ReturnType<typeof indexSegments>, "forRow">;
     cross?: (p: Point) => CrossSection | undefined;
 }
-export interface Region { shape: RegionShape; cells: number[]; mask: Uint8Array }
+export interface Region {
+    shape: RegionShape;
+    cells: Int32Array;
+    mask: Uint8Array;
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+    canvasWidth: number;
+}
 
 export const intersects = (a: Box, b: Box) => a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1];
 const expand = (b: Box, w: number): Box => [b[0] - w, b[1] - w, b[2] + w, b[3] + w];
@@ -249,15 +258,38 @@ export function canvasGrid(d: Design, shapes: Map<string, RegionShape>) {
 }
 
 export function rasterRegion(grid: Grid, shape: RegionShape): Region {
-    const mask = new Uint8Array(grid.size), cells: number[] = [], point: Point = [0, 0];
-    eachCell(grid, shape.box, 0, (k, x, y) => {
-        point[0] = x; point[1] = y;
-        if (shape.contains(point)) {
-            cells.push(k);
-            mask[k] = 1;
+    const left = grid.col(shape.box[0]), right = grid.col(shape.box[2]);
+    const top = grid.row(shape.box[3]), bottom = grid.row(shape.box[1]);
+    const width = Math.max(0, right - left + 1), height = Math.max(0, bottom - top + 1);
+    const mask = new Uint8Array(width * height), point: Point = [0, 0];
+    let count = 0;
+    for (let j = 0; j < height; j++) {
+        point[1] = grid.y(top + j);
+        const start = j * width;
+        for (let i = 0; i < width; i++) {
+            point[0] = grid.x(left + i);
+            if (shape.contains(point)) {
+                mask[start + i] = 1;
+                count++;
+            }
         }
-    });
-    return { cells, mask, shape };
+    }
+    const cells = new Int32Array(count);
+    let index = 0;
+    for (let j = 0; j < height; j++) {
+        const start = j * width, canvasStart = (top + j) * grid.width + left;
+        for (let i = 0; i < width; i++) if (mask[start + i]) cells[index++] = canvasStart + i;
+    }
+    return { cells, mask, shape, left, top, width, height, canvasWidth: grid.width };
+}
+
+export function regionMaskIndex(region: Region, k: number) {
+    const i = k % region.canvasWidth - region.left, j = Math.floor(k / region.canvasWidth) - region.top;
+    return i >= 0 && i < region.width && j >= 0 && j < region.height ? j * region.width + i : -1;
+}
+
+export function regionMaskAt(region: Region, k: number) {
+    return region.mask[regionMaskIndex(region, k)] ?? 0;
 }
 
 function boundarySquaredDistance(x: number, y: number, entry: IndexedSegment<Segment>) {

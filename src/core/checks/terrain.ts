@@ -1,6 +1,7 @@
 import { type Design, type Point } from "../design/v5.ts";
 import { heightId } from "../design/defaults.ts";
 import { functionTable } from "../design/functionTable.ts";
+import { regionMaskAt } from "../design/regions.ts";
 import { type Issue, type Terrain } from "../design/results.ts";
 
 const untreatedHeightLimit = .5;
@@ -15,7 +16,7 @@ export function terrainIssues(d: Design, t: Terrain): Issue[] {
         const region = t.regions.get(n.id)!;
         let count = 0, max = 0, point: Point = [0, 0];
         const measure = (k: number, other: number) => {
-            if (region.mask[other] || !defined[other] || covered[other]) return;
+            if (regionMaskAt(region, other) || !defined[other] || covered[other]) return;
             const delta = Math.abs(heights[k] - heights[other]);
             if (delta <= untreatedHeightLimit) return;
             count++;
