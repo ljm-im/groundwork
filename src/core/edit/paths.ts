@@ -10,7 +10,7 @@ export function penNode(id: string, p: Point, drag?: Point): PathNode {
     return { id, p, mode: "manual", next: "curve", out, in: [-out[0], -out[1]] };
 }
 export function closedPen(nodes: PathNode[]): Path {
-    if (nodes.length < 3) throw Error("闭合路径至少需要三个节点");
+    if (nodes.length < 3) throw Error("闭合曲线至少需要三个节点");
     return penPath(nodes);
 }
 export function penPath(nodes: PathNode[]): Path {

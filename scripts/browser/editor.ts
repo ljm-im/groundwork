@@ -555,7 +555,7 @@ async function checkEditor(url: string) {
         await pen(); await vertices(false);
         await tap(a); await tap(a, 2);
         assert.match(await text("#toast"), /至少需要三个节点/);
-        assert.match(await text("#mode-hint"), /单击放尖角/);
+        assert.match(await text("#mode-hint"), /单击放置尖角节点/);
         await tap(c); await key("Enter"); await idle(); await saved();
         assert(await disk() === triangle, "An incomplete double-click must leave the original vertices and IDs intact");
 

@@ -39,7 +39,8 @@ test("Map focus, hit radius and the selected inspector issue", async () => {
     assert(markup.match(/<button[^>]*>/g)!.some(tag => tag.includes("aria-pressed=\"true\"") && tag.includes("data-issue=\"" + baseline.issues.indexOf(selected) + "\"")));
     ui.changePropertyTab("region");
     const { body: route } = render(GeoProperties, { props: { editor: ui } });
-    assert.match(route, /构造方式/);
+    assert.doesNotMatch(route, /构造方式/);
+    assert.match(route, /边界 1/);
     assert.doesNotMatch(route, /data-issue=/);
 });
 

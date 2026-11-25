@@ -23,9 +23,9 @@
         if (h.kind === "geoNode") {
             const node = geoAt(editor.project.design, h.id);
             if (menu.map && node.construction.type === "free") {
-                const items: Action[] = [{ id: "add-path", name: "添加路径", icon: "plus", run: () => editor.setTool("addPath", h.id) }];
+                const items: Action[] = [{ id: "add-path", name: "添加边界", icon: "plus", run: () => editor.setTool("addPath", h.id) }];
                 if (control && control.role !== "body" && control.role !== "parameter" && control.path >= 0 && node.construction.paths.length >= 2)
-                    items.push({ id: "delete-path", name: "删除路径", icon: "delete", danger: true, run: () => editor.removePath(h.id, control.path) });
+                    items.push({ id: "delete-path", name: "删除边界", icon: "delete", danger: true, run: () => editor.removePath(h.id, control.path) });
                 result.push({ items });
             }
             if (control?.role === "vertex" || control?.role === "segment") {

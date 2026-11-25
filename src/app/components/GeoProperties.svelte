@@ -24,20 +24,24 @@
             <LabelProperties {editor} target={{ group: "geoNodes", id: n.id }} showLabel={n.showLabel ?? false}
                 setLabelVisibility={visible => editor.editNode(n.id, item => item.showLabel = visible)} />
         {:else if tab === "region"}
-            <Part>
-                <FieldRow label="构造方式"><span>{c.type === "free" ? "自由构造" : "条带"}</span></FieldRow>
-                {#if c.type === "free"}
+            {#if c.type === "free"}
+                <Part title="边界">
+                    {#snippet actions()}<AddButton label="添加边界" active={editor.toolActive("addPath", n.id)} action={() => editor.setTool("addPath", n.id)} />{/snippet}
                     {#each c.paths as path, i (i)}
-                        {@render geometry(c.paths.length === 1 ? "边界" : "边界 " + (i + 1), "path", i, "closedPath", path.nodes.length)}
+                        <GeometryInput label={"边界 " + (i + 1)} icon="closedPath" count={path.nodes.length}
+                            active={editor.geometry?.kind === "path" && editor.geometry.index === i} onclick={() => editor.focusGeometry({ kind: "path", index: i })}
+                            remove={c.paths.length > 1 ? () => editor.removePath(n.id, i) : undefined} />
                     {/each}
-                {:else if c.type === "strip"}
+                </Part>
+            {:else if c.type === "strip"}
+                <Part>
                     <GeometryInput label="边" icon="polyline" summary={stripSummary(c)} active={editor.toolActive("strip", n.id)}
                         onclick={() => editor.setTool("strip", n.id)} />
                     {#each [0, 1] as i (i)}
                         <Parameter {editor} node={n} address={["widths", i]} construction />
                     {/each}
-                {/if}
-            </Part>
+                </Part>
+            {/if}
             {#if vertex?.role === "vertex" && vertex.path >= 0 && pathNode}
                 <NodeProperties {editor} node={pathNode} control={vertex} />
             {/if}
@@ -123,7 +127,6 @@
     import Icon from "./Icon.svelte";
     import AddButton from "./AddButton.svelte";
     import CheckboxRow from "./CheckboxRow.svelte";
-    import FieldRow from "./FieldRow.svelte";
     import GeometryInput from "./GeometryInput.svelte";
     import Part from "./Part.svelte";
     import LabelProperties from "./LabelProperties.svelte";

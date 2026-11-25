@@ -596,12 +596,16 @@ export class Editor {
         const affected = rangeUsers(d, id, c.paths[index].nodes.map(v => v.id));
         const perform = () => {
             this.vertex = undefined;
-            this.editNode(id, v => {
-                if (v.construction.type === "free") v.construction.paths.splice(index, 1);
+            this.edit(draft => {
+                const construction = geoAt(draft, id).construction;
+                if (construction.type === "free") construction.paths.splice(index, 1);
+            }, () => {
+                if (this.selection?.id !== id || this.geometry?.kind !== "path" || this.geometry.index < index) return;
+                this.geometry = this.geometry.index === index ? undefined : { kind: "path", index: this.geometry.index - 1 };
             });
         };
-        if (affected.length) this.removal = { title: "删除这条路径？", detail: "以下条带将找不到范围节点。", items: affected.map(v => this.geoReference(v.id, v.label, "边", "region")), action: "删除路径", perform };
-        else perform();
+        this.removal = { title: "删除这条边界？", detail: affected.length ? "以下条带将找不到范围节点。" : "",
+            items: affected.map(v => this.geoReference(v.id, v.label, "边", "region")), action: "删除边界", perform };
     }
     removeGeo(id: string, vertex?: GeoControl) {
         const d = this.project.design, n = geoAt(d, id);
@@ -627,7 +631,7 @@ export class Editor {
             const perform = () => {
                 this.vertex = undefined; this.editNode(id, v => geometryPath(v, vertex.path)!.nodes.splice(vertex.index, 1));
             };
-            if (refs.length) this.removal = { title: "删除路径节点？", detail: "以下条带的范围将报告找不到节点。", action: "删除节点", items: refs.map(r => this.geoReference(r.id, r.label, "边", "region")), perform };
+            if (refs.length) this.removal = { title: "删除节点？", detail: "以下条带的范围将报告找不到节点。", action: "删除节点", items: refs.map(r => this.geoReference(r.id, r.label, "边", "region")), perform };
             else perform();
             return;
         }

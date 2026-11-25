@@ -7,12 +7,12 @@ import { type Tool } from "../types.ts";
 
 const hints: Record<Tool, string> = {
     select: "单击选择，中键平移，滚轮缩放",
-    pen: "单击放尖角，拖出控制柄，回车、双击或单击首点闭合",
+    pen: "单击放置尖角节点，按下并拖动放置平滑节点，回车、双击或单击首点闭合",
     rect: "拖动或单击矩形的两个对角",
     circle: "拖出半径或单击圆心和圆周",
     sector: "拖出半径或单击圆心和圆周，再单击确定终止角",
     strip: "单击要沿的地件，按住 Alt 单击可选被遮住的地件",
-    addPath: "单击放尖角，拖出控制柄，回车、双击或单击首点闭合",
+    addPath: "单击放置尖角节点，按下并拖动放置平滑节点，回车、双击或单击首点闭合",
     shore: "单击放点，回车、双击或单击首点闭合海岸线",
     ridge: "单击放置山脊顶点，回车或双击完成",
     slopeLine: "单击放置坡线顶点，回车或双击完成",
@@ -33,7 +33,7 @@ export function drawingStatus(mode: Exclude<Tool, "select">, name: string, owner
         sector: ["新建地件（扇形）", "单击圆心和圆周，再单击终止角", false],
         strip: owner ? ["重选" + label + "的边", "单击起止节点，Tab 交换，回车确认", true] :
             ["新建地件（条带）", names.length ? "沿" + names.map(name => "“" + name + "”").join("、") + "，回车确认" : "单击要沿的地件", true],
-        addPath: ["给" + label + "添加路径", pen, true],
+        addPath: ["给" + label + "添加边界", pen, true],
         shore: ["重画" + label + "的海岸线", pen, true],
         ridge: [member === undefined ? "给" + label + "添加山脊" : "重画" + label + "的山脊线", line, true],
         peak: [member === undefined ? "给" + label + "添加山峰" : "移动" + label + "的山峰", point, false],
