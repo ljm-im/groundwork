@@ -621,7 +621,7 @@ export class ProjectMap {
                 stroke(ctx, [[x, y - 4], [x, y], [right, y], [right, y - 4]], colors.bgPanel, 4);
                 stroke(ctx, [[x, y - 4], [x, y], [right, y], [right, y - 4]], color, selected ? overlay.selectedWidth : 1.7);
                 mapText(ctx, colors, text, right + 6, y - 2, false, width);
-                if (selected) drawHandle(ctx, colors, x, y, true);
+                if (selected) drawHandle(ctx, colors, x, y, "selected");
             }
             else {
                 const left = x - width / 2;
@@ -659,9 +659,9 @@ export class ProjectMap {
         for (const h of this.sectionControls(view)) {
             const [x, y] = this.screen(h.point);
             if (x < -12 || y < -12 || x > this.width + 12 || y > this.height + 12) continue;
-            const selected = active?.kind === h.kind && active.id === h.id && active.index === h.index &&
-                active.role === h.role;
-            drawHandle(ctx, colors, x, y, selected);
+            const matches = (selection: Selection | null | undefined) =>
+                selection?.kind === h.kind && selection.id === h.id && selection.index === h.index && selection.role === h.role;
+            drawHandle(ctx, colors, x, y, matches(active) ? "selected" : matches(view.hovered) ? "hovered" : "normal");
         }
         for (const issue of view.selectedIssues ?? []) {
             if (!view.project.issues.includes(issue)) continue;

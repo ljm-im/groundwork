@@ -12,8 +12,8 @@ import { defaultFollow, type GeoNode, type GeoFunction, type CurveNode, type Sec
 import { geoParameter, slotName, type Slot } from "../../core/design/parameters.ts";
 import { numberEdits, type NumberChange } from "../../core/design/numberEdit.ts";
 import { parseDesign } from "../../core/design/model.ts";
-import { type GeoControl, type GeometryPart, type GeometrySelection, type GeometryTarget, controlOwner, copyGeometryItem,
-    geometryPath, geometrySelection, insertCurveNode, parameterTarget, removeCurveNode, removeCurveSegment, removeGeometryItem,
+import { type GeoControl, type GeometryHover, type GeometryPart, type GeometrySelection, type GeometryTarget, controlOwner, copyGeometryItem,
+    geometryHover, geometryPath, geometrySelection, insertCurveNode, parameterTarget, removeCurveNode, removeCurveSegment, removeGeometryItem,
     removeParameterPoint, resolveGeometrySelection } from "../../core/edit/geoControls.ts";
 import { addInput, addField, copyGeo, defaultFunction, deleteGeo, enableGeo, isLastInitializer, nextId, nodeIds, rangeUsers,
     removalUses, removeDeclaration, requiredInitializer, type RemovalUse } from "../../core/edit/geoNodes.ts";
@@ -74,7 +74,7 @@ export class Editor {
     hoverRefs = $state.raw<string[]>([]);
     displayField = $state(heightId);
     hovered = $state.raw<Selection>();
-    private hoveredPart = $state.raw<GeometrySelection>();
+    private hoveredPart = $state.raw<GeometryHover>();
     geometry = $state.raw<GeometryTarget>();
     objectGeometry = $state.raw<Selection>();
     private selectedPart = $state.raw<GeometrySelection>();
@@ -163,7 +163,7 @@ export class Editor {
         this.canRedo = this.history.canRedo;
         this.files.syncHistory(changed);
     }
-    private resolvePart(selection: Selection | null | undefined, part?: GeometrySelection) {
+    private resolvePart(selection: Selection | null | undefined, part?: GeometryHover) {
         if (!part || selection?.kind !== "geoNode") return;
         const owner = geoAt(this.project.design, selection.id);
         if (owner) return resolveGeometrySelection(owner, part);
@@ -592,11 +592,12 @@ export class Editor {
     }
     hoverSelection(selection?: Selection, control?: GeometryPart) {
         if (selection && (this.tool !== "select" || this.gesture || this.busy)) return;
-        const part = selection?.kind === "geoNode" && control ? geometrySelection(geoAt(this.project.design, selection.id), control) : undefined;
-        const previous = this.hoveredPart;
-        const key = (p?: GeometrySelection) => p && ("nodeId" in p ? p.nodeId : p.path);
+        const part = selection?.kind === "geoNode" && control ? geometryHover(geoAt(this.project.design, selection.id), control) : undefined;
+        const previous = this.hoveredPart, hovered = this.hovered;
+        const key = (p?: GeometryHover) => p && ("nodeId" in p ? p.nodeId : p.path);
         if (part?.role !== previous?.role || key(part) !== key(previous)) this.hoveredPart = part;
-        if (selection?.kind !== this.hovered?.kind || selection?.id !== this.hovered?.id) this.hovered = selection;
+        if (selection?.kind !== hovered?.kind || selection?.id !== hovered?.id ||
+            selection?.role !== hovered?.role || selection?.index !== hovered?.index) this.hovered = selection;
     }
     hover(ids: string[]) {
         this.hoverRefs = ids;

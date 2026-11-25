@@ -5,7 +5,7 @@ import { defaultFunction } from "../../src/core/edit/geoNodes.ts";
 import { arcHandle } from "../../src/core/edit/paths.ts";
 import { type Curve, type Point } from "../../src/core/design/v5.ts";
 import { distance } from "../../src/core/math/geometry.ts";
-import { interfaceColors, overlay } from "../../src/render/palette.ts";
+import { mapColors, overlay, type Theme } from "../../src/render/palette.ts";
 import { layer, openCurve, rect, syntheticDesign } from "../scenarios.ts";
 import { withCurveMap } from "./curveMapFixture.ts";
 
@@ -48,7 +48,14 @@ export async function checkSegmentEditing(url: string) {
         const menu = ".context-menu", row = "[data-curve-segment]", prop = "#property-content";
         const segmentTitle = () => text(row + " .subitem-label");
         const deleteButton = row + " [aria-label=删除线段]", removeItem = menu + " [data-option=delete-segment]";
-        const checkWidth = () => evaluate(() => window.curveMapProbe.strokes.filter(stroke => stroke.width === 4));
+        const highlights = () => evaluate(width => window.curveMapProbe.strokes.filter(s => s.width > width), overlay.selectedWidth);
+        async function selectedStroke(dashed: boolean, theme: Theme = "light") {
+            const strokes = (await highlights()).filter(s => s.alpha === 1);
+            assert.equal(strokes.length, 1);
+            const [stroke] = strokes;
+            assert.deepEqual([stroke.width, stroke.color, stroke.alpha, stroke.dash], [4, mapColors[theme].accent, 1, dashed ? [...overlay.dash] : []]);
+            return stroke;
+        }
         const menuGroups = () => evaluate(() => [...document.querySelectorAll(".context-menu .menu-column")].map(column =>
             [...column.querySelectorAll(".menu-group")].map(group => [
                 group.querySelector(".group-name")!.textContent,
@@ -68,7 +75,7 @@ export async function checkSegmentEditing(url: string) {
         console.log("Contour and parameter segment clicks, hover, styling and navigation");
         await pointer("mouseMoved", pixels(await frame(), edge), 0, "none");
         await paint();
-        assert.deepEqual(await checkWidth(), []);
+        assert.deepEqual(await highlights(), []);
         await tap(edge);
         assert.equal((await frame()).selection?.id, "A");
         assert.equal((await frame()).vertex, undefined);
@@ -76,26 +83,23 @@ export async function checkSegmentEditing(url: string) {
         await pointer("mouseMoved", pixels(await frame(), inside), 0, "none");
         await pointer("mouseMoved", pixels(await frame(), edge), 0, "none");
         await paint();
-        const [hover] = await checkWidth();
-        assert(hover && Math.abs(hover.alpha - .3) < 1e-6);
-        assert.equal(hover.color, interfaceColors.light.accent);
-        assert.deepEqual(hover.dash, []);
+        const hoveredOutline = await highlights(), [hover] = hoveredOutline;
+        assert.equal(hoveredOutline.length, 1);
+        assert(Math.abs(hover.alpha - .3) < 1e-6);
+        assert.deepEqual([hover.width, hover.color, hover.dash], [4, mapColors.light.accent, []]);
         await tap(edge);
         assert.equal((await frame()).vertex?.role, "segment");
         assert.equal(await segmentTitle(), "线段 1");
         assert.deepEqual(await nodeTitles(), []);
         assert.equal(await text(prop + " h3"), "区域");
         assert.equal(await text(row + " .param-name"), "线段类型");
-        const [selected] = await checkWidth(), f = await frame();
-        assert.equal(selected.alpha, 1);
-        assert.equal(selected.color, interfaceColors.light.accent);
-        assert.deepEqual(selected.dash, []);
+        const selected = await selectedStroke(false), f = await frame();
         assert(selected.points.every((p, i) => distance(p, pixels(f, outline.nodes[i].p, true)) < .01));
         await screenshot("segment-light");
         await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] });
         await wait(() => document.documentElement.dataset.theme === "dark");
         await paint();
-        assert.equal((await checkWidth())[0].color, interfaceColors.dark.accent);
+        await selectedStroke(false, "dark");
         await screenshot("segment-dark");
         await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] });
         await wait(() => document.documentElement.dataset.theme === "light");
@@ -121,26 +125,25 @@ export async function checkSegmentEditing(url: string) {
         await undo();
 
         await pointer("mouseMoved", pixels(await frame(), firstRidge), 0, "none"); await paint();
-        const [ridgeHover] = await checkWidth();
+        const hoveredRidge = await highlights(), [ridgeHover] = hoveredRidge;
+        assert.equal(hoveredRidge.length, 1);
         assert(Math.abs(ridgeHover.alpha - .3) < 1e-6);
         assert(ridgeHover.points.length > 2);
-        assert.deepEqual(ridgeHover.dash, [...overlay.dash]);
+        assert.deepEqual([ridgeHover.width, ridgeHover.color, ridgeHover.dash], [4, mapColors.light.accent, [...overlay.dash]]);
         assert((await evaluate(() => window.curveMapProbe.strokes)).some(s => s.width === overlay.parameterWidth && s.dash.length));
         await tap(firstRidge);
         assert.equal((await frame()).selection?.id, "M");
         assert.equal(await segmentTitle(), "");
-        const wholeRidge = (await checkWidth()).find(s => s.alpha === 1);
-        assert.deepEqual(wholeRidge?.dash, [...overlay.dash]);
+        await selectedStroke(true);
         assert.equal(await text(".geometry-box[aria-pressed=true]"), "曲线（5 个节点）");
         await tap(firstRidge);
         assert.equal(await segmentTitle(), "线段 1");
-        const ridgeSegment = (await checkWidth()).find(s => s.alpha === 1);
-        assert.deepEqual(ridgeSegment?.dash, [...overlay.dash]);
+        await selectedStroke(true);
         await screenshot("ridge-segment-light");
         await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] });
         await wait(() => document.documentElement.dataset.theme === "dark");
         await paint();
-        assert.equal((await checkWidth()).find(s => s.alpha === 1)?.color, interfaceColors.dark.accent);
+        await selectedStroke(true, "dark");
         await screenshot("ridge-segment-dark");
         await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] });
         await wait(() => document.documentElement.dataset.theme === "light");
@@ -329,7 +332,7 @@ export async function checkSegmentEditing(url: string) {
         await tap(segmentPoint(shore, 0, .3));
         assert.equal(await segmentTitle(), "线段 1");
         assert.equal(segmentType(shore, 0), "arc");
-        assert((await checkWidth()).some(stroke => stroke.points.length > 2 && stroke.alpha === 1));
+        assert((await selectedStroke(true)).points.length > 2);
         const arc = arcHandle(shore.nodes[0].p, shore.nodes[1].p, shore.nodes[0].bulge!);
         await tap(arc, 0, "right");
         assert((await menuGroups())[0][0].includes("相切"));

@@ -4,7 +4,7 @@ import { displaySteps } from "../../core/design/functionTable.ts";
 import { type GeoDraft } from "../../core/edit/types.ts";
 import { type FieldDeclaration, type Point } from "../../core/design/v5.ts";
 import { type FieldSamples } from "../../core/design/results.ts";
-import { type Box } from "../../core/math/geometry.ts";
+import { type GridSpec } from "../../core/math/geometry.ts";
 import { type Tool } from "../types.ts";
 
 const lineEnd = "回车或双击结束，单击首个节点闭合";
@@ -82,13 +82,13 @@ export function readingRange(samples?: FieldSamples): [number, number] | undefin
 }
 
 export function positionReadings(cursor: { point: Point; sample?: number } | undefined, field: FieldDeclaration | undefined,
-    viewport?: Box, range?: [number, number]) {
+    grid?: GridSpec, range?: [number, number]) {
     if (!field) return [];
     const coord = (value?: number) => displayReading(value, displaySteps.coordinates, displaySteps.coordinateUnit);
     const sample = (value?: number) => displayReading(value, fieldPrecision(field), field.unit);
     return [
-        { label: "X", min: coord(viewport?.[0]), max: coord(viewport?.[2]), value: coord(cursor?.point[0]) },
-        { label: "Y", min: coord(viewport?.[1]), max: coord(viewport?.[3]), value: coord(cursor?.point[1]) },
+        { label: "X", min: coord(grid?.xMin), max: coord(grid?.xMax), value: coord(cursor?.point[0]) },
+        { label: "Y", min: coord(grid?.yMin), max: coord(grid?.yMax), value: coord(cursor?.point[1]) },
         { label: field.label, min: sample(range?.[0]), max: sample(range?.[1]), value: sample(cursor?.sample) }
     ];
 }

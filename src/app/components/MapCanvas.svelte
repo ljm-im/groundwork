@@ -166,8 +166,7 @@
     let hint = $derived(drawingHint(editor.tool, editor.geoDraft, editor.drawing?.end));
     let field = $derived(editor.project?.design.fields[editor.displayField]);
     let range = $derived(readingRange(editor.mapProject?.terrain.fields[editor.displayField]));
-    let readingBounds = $state.raw<Box>();
-    let readings = $derived(positionReadings(editor.cursor, field, readingBounds, range));
+    let readings = $derived(positionReadings(editor.cursor, field, editor.project?.terrain.grid, range));
     let canvas: HTMLCanvasElement;
     let hintChip = $state<HTMLDivElement>(), positionChip = $state<HTMLOutputElement>(), zoomChip = $state<HTMLDivElement>();
     let chips = $derived([hintChip, positionChip, zoomChip].filter(el => el !== undefined));
@@ -197,23 +196,15 @@
         for (const chip of chips) observer.observe(chip);
         return () => observer.disconnect();
     });
-    function updateReadingBounds() {
-        const { map } = editor;
-        if (!map.center) return;
-        const [left, bottom] = map.world(0, map.height), [right, top] = map.world(map.width, 0);
-        readingBounds = [left, bottom, right, top];
-    }
     onMount(() => {
         editor.attach(canvas, () => {
             zoom = editor.map.zoomFactor();
-            updateReadingBounds();
             requestDraw();
         });
         const detach = attachController(editor, canvas);
         function resize() {
             const { width, height } = canvas.getBoundingClientRect();
             if (!editor.map.resize(width, height, window.devicePixelRatio || 1)) return;
-            updateReadingBounds();
             cancelAnimationFrame(frame);
             draw();
         }

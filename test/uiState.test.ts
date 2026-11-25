@@ -5,7 +5,9 @@ import { createGrid, distance } from "../src/core/math/geometry.ts";
 import { sectionHandles } from "../src/core/edit/controls.ts";
 import { geoParameterName, resolveDesign } from "../src/core/design/parameters.ts";
 import { History } from "../src/core/edit/history.ts";
-import { editControl, geometryPath, insertCurveNode } from "../src/core/edit/geoControls.ts";
+import { editControl, geometryPath, insertCurveNode, outlineParameterGeometry } from "../src/core/edit/geoControls.ts";
+import { translateGeo } from "../src/core/edit/paths.ts";
+import { parseDesign } from "../src/core/design/model.ts";
 import { positionReadings, readingRange } from "../src/app/state/mapText.ts";
 import { type Design } from "../src/core/design/v5.ts";
 import { propertyTabs } from "../src/app/state/inspector.ts";
@@ -563,25 +565,69 @@ test("Nested outlines use their own area and expand a selected landform's place 
     assert.deepEqual(overlapping.containingOutlines!([0, 5]), [2, 1, 0]);
 });
 
-test("Dragging an outline shifts its nodes alone and preserves the selected ID through deletion and history", async t => {
+test("Dragging an only outline carries its peaks and ridges with their attributes", () => {
+    const design = syntheticDesign(), owner = design.geoNodes[1];
+    owner.construction = rect(-20, -20, 20, 20);
+    const line = openCurve([{ p: [-12, -4], h: 5 }, { p: [2, 9], h: 8 }, { p: [11, 1], h: 6 }], "auto");
+    owner.function = {
+        type: "mountain", ridges: [{ line, slope: 1 }],
+        peaks: [{ at: { p: [-8, 8], h: 13 }, radius: 7, noise: 0, scale: 1 }]
+    };
+    const shape = new Project(design).terrain.regions.get(owner.id)!.shape;
+    const members = outlineParameterGeometry(owner, 0, shape);
+    const actual = structuredClone(owner), expected = structuredClone(owner);
+    translateGeo(expected, [16, 4]);
+    editControl(actual, { role: "outline", path: 0, index: 0, point: [0, 0] }, [16, 4], false, members);
+    assert.deepEqual(actual, expected);
+});
+
+test("Dragging nested outlines moves only their own geometry and preserves selection through history", async t => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
-    const d = islandDesign(), editor = new Editor();
+    const design = islandDesign(), editor = new Editor();
+    const ridges = [
+        [[-14, -12], [-5, -8]], [[-26, -12], [-5, -12]], [[-28, -27], [8, -27]], [[-28, -25], [14, -25]]
+    ] as [number, number][][];
+    design.geoNodes[1].function = {
+        type: "mountain",
+        ridges: ridges.map((points, i) => ({ line: openCurve(points.map((p, j) => ({ p, h: 5 + j })), "corner", i + "-ridge-"), slope: 1 })),
+        peaks: [{ at: { p: [-8, -7], h: 12 }, radius: 8, noise: 0, scale: 1 },
+            { at: { p: [0, -28], h: 9 }, radius: 6, noise: 0, scale: 1 }]
+    };
+    const d = parseDesign(design, true);
     t.mock.method(editor, "reconcileProject", () => {});
     t.mock.method(editor, "terrainWork", async (_d: Design, fn: () => void) => fn());
     t.mock.method(editor.files, "remember", () => {});
     editor.replace(d, true);
     editor.history = new History(d);
+    const original = structuredClone(d.geoNodes[1]);
+    const shape = editor.project.terrain.regions.get("T")!.shape;
     editor.select({ kind: "geoNode", id: "T" });
+    const outer = { role: "outline" as const, path: 0, index: 0, point: [-10, -28] as [number, number] };
+    editor.selectControl(outer);
+    await editor.editNode("T", n => editControl(n, outer, [-7, -28], false, outlineParameterGeometry(original, 0, shape)));
+    const movedOuter = editor.project.design.geoNodes[1];
+    assert(movedOuter.function.type === "mountain" && original.function.type === "mountain");
+    for (const i of [-1, -2, -4, 1, 2]) assert.deepEqual(geometryPath(movedOuter, i), geometryPath(original, i));
+    for (const i of [0, -3])
+        assert.deepEqual(geometryPath(movedOuter, i)?.nodes.map(node => node.p), geometryPath(original, i)?.nodes.map(({ p: [x, y] }) => [x + 3, y]));
+    assert.deepEqual(movedOuter.function.peaks[0], original.function.peaks[0]);
+    assert.deepEqual(movedOuter.function.peaks[1].at.p, [3, -28]);
+    await editor.navigate(false);
+    assert.deepEqual(editor.project.design.geoNodes[1], original);
+
     const control = { role: "outline" as const, path: 2, index: 0, point: [-10, -10] as [number, number] };
     editor.selectControl(control);
     assert.equal(editor.outline, 2);
     assert.equal(editor.vertex, undefined);
-    const original = structuredClone(d.geoNodes[1]);
-    await editor.editNode("T", n => editControl(n, control, [-8, -13], false));
+    await editor.editNode("T", n => editControl(n, control, [-8, -13], false, outlineParameterGeometry(original, 2, shape)));
     const moved = editor.project.design.geoNodes[1];
-    assert.deepEqual(moved.function, original.function);
-    for (const i of [0, 1]) assert.deepEqual(geometryPath(moved, i), geometryPath(original, i));
-    assert.deepEqual(geometryPath(moved, 2)?.nodes.map(node => node.p), geometryPath(original, 2)?.nodes.map(({ p: [x, y] }) => [x + 2, y - 3]));
+    assert(moved.function.type === "mountain");
+    for (const i of [-2, -3, -4, 0, 1]) assert.deepEqual(geometryPath(moved, i), geometryPath(original, i));
+    for (const i of [2, -1])
+        assert.deepEqual(geometryPath(moved, i)?.nodes.map(node => node.p),
+            geometryPath(original, i)?.nodes.map(({ p: [x, y] }) => [x + 2, y - 3]));
+    assert.deepEqual(moved.function.peaks[1], original.function.peaks[1]);
+    assert.deepEqual(moved.function.peaks[0].at.p, [-6, -10]);
     editor.removePath("T", 1);
     editor.removal?.perform?.();
     editor.removal = null;
@@ -612,16 +658,25 @@ test("Dragging an outline shifts its nodes alone and preserves the selected ID t
     assert.equal(editor.outline, 0);
 });
 
-test("Coordinate slots format camera and sample ranges independently of the current reading", () => {
+test("Coordinate slots use design grid and sample bounds while longer readings stay intact", () => {
     const range = readingRange({ values: Float32Array.of(-2345, 123, 800000), defined: Uint8Array.of(1, 1, 0) });
     assert.deepEqual(range, [-2345, 123]);
-    const field = { label: "高度", unit: "m", precision: .1 }, viewport = [-499.96, -15, 305.1, 130.1] as const;
-    const readings = positionReadings({ point: [9, 29] }, field, [...viewport], range);
+    const field = { label: "高度", unit: "m", precision: .1 };
+    const grid = createGrid({ xMin: -500, yMin: -15, xMax: 305, yMax: 130, step: 1 });
+    const readings = positionReadings({ point: [9, 29], sample: 3 }, field, grid, range);
     assert.deepEqual(readings, [
-        { label: "X", min: "-500.0 m", max: "305.1 m", value: "9.0 m" },
-        { label: "Y", min: "-15.0 m", max: "130.1 m", value: "29.0 m" },
-        { label: "高度", min: "-2345.0 m", max: "123.0 m", value: "–" }
+        { label: "X", min: "-500.0 m", max: "305.0 m", value: "9.0 m" },
+        { label: "Y", min: "-15.0 m", max: "130.0 m", value: "29.0 m" },
+        { label: "高度", min: "-2345.0 m", max: "123.0 m", value: "3.0 m" }
     ]);
+    const outside = positionReadings({ point: [12345.6, -54321.5] }, field, grid, range);
+    const slots = (values: typeof readings) => values.map(({ min, max }) => [min, max]);
+    assert.deepEqual(slots(outside), slots(readings));
+    assert.deepEqual(outside.map(({ value }) => value), ["12345.6 m", "-54321.5 m", "–"]);
+    for (const reading of outside.slice(0, 2))
+        assert(reading.value.length > Math.max(reading.min.length, reading.max.length));
+    const expanded = positionReadings(undefined, field, { ...grid, xMax: 1500, yMax: 300 }, range);
+    assert.deepEqual(slots(expanded), [["-500.0 m", "1500.0 m"], ["-15.0 m", "300.0 m"], slots(readings)[2]]);
 });
 
 test("Removing a segment asks before leaving a strip reference to its removed endpoint", async t => {

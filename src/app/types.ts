@@ -1,4 +1,4 @@
-import { type GeoControl } from "../core/edit/geoControls.ts";
+import { type GeoControl, type OutlineParameterGeometry } from "../core/edit/geoControls.ts";
 import { type GeoNode, type Point, type Section } from "../core/design/v5.ts";
 import { type Handle } from "../core/edit/types.ts";
 import { type DrawTool } from "../core/edit/types.ts";
@@ -17,7 +17,7 @@ export type Layer = keyof typeof layerDefaults;
 
 interface GestureStart { screen: Point; pointer: number; changed?: boolean }
 export type Gesture = GestureStart & (
-  { geo: GeoNode; control: GeoControl } |
+  { geo: GeoNode; control: GeoControl; outlineGeometry?: OutlineParameterGeometry } |
   { label: LabelTarget; offset: Point } |
   { section: Section } |
   { pan: "middle" | "space" | "stationary"; center: number[]; click?: () => void } |

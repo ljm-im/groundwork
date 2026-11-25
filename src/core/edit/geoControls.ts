@@ -2,6 +2,7 @@ import { parameters, readAt, slotName, writeAt, type Address } from "../design/p
 import { type Curve, type Design, type Expression, type GeoNode, type Point } from "../design/v5.ts";
 import { legacyRidge } from "../design/functionTable.ts";
 import { lineProfile } from "../design/polyline.ts";
+import { type RegionShape } from "../design/regions.ts";
 import { arcHandle, canRemoveNode, insertPathNode, moveHandle, nearestSegment, removePathNode, removePathSegment,
     segmentRemovalIndex, setBulge, translateCurve, translateGeo } from "./paths.ts";
 import { flattenPath, neighbor, pathHandle } from "../design/path.ts";
@@ -16,6 +17,7 @@ export interface GeoControl {
 
 export interface CurveSelection { role: "outline" | "curve" | "vertex" | "segment"; nodeId: string }
 export type GeometrySelection = CurveSelection | { role: "parameter"; path: number };
+export type GeometryHover = GeometrySelection | { role: "in" | "out" | "arc"; nodeId: string };
 export type GeometryPart = Pick<GeoControl, "role" | "path" | "index">;
 
 export function geometrySelection(n: GeoNode, { role, path, index }: GeometryPart): GeometrySelection | undefined {
@@ -24,6 +26,15 @@ export function geometrySelection(n: GeoNode, { role, path, index }: GeometryPar
         const curve = geometryPath(n, path), node = curve?.nodes[role === "outline" || role === "curve" ? 0 : index];
         if (node) return { role, nodeId: node.id };
     }
+}
+
+export function geometryHover(n: GeoNode, control: GeometryPart): GeometryHover | undefined {
+    const { role, path, index } = control;
+    if (role === "in" || role === "out" || role === "arc") {
+        const node = geometryPath(n, path)?.nodes[index];
+        return node && { role, nodeId: node.id };
+    }
+    return geometrySelection(n, control);
 }
 
 export function controlOwner(control?: GeoControl): GeoControl | undefined {
@@ -65,10 +76,26 @@ export function pathEntries(n: GeoNode): [number, Curve][] {
     return paths;
 }
 
+export interface OutlineParameterGeometry {
+    paths: readonly number[];
+    points: ReadonlySet<number>;
+}
+
+export function outlineParameterGeometry(n: GeoNode, outline: number, shape?: RegionShape): OutlineParameterGeometry | undefined {
+    const containingOutlines = shape?.containingOutlines;
+    if (!containingOutlines) return;
+    const owns = (point: Point) => containingOutlines(point)[0] === outline;
+    return {
+        paths: pathEntries(n).filter(([index, path]) => index < 0 && path.nodes.length && path.nodes.every(node => owns(node.p)))
+            .map(([index]) => index),
+        points: new Set(parameterPoints(n).filter(([, point]) => owns(point)).map(([index]) => index))
+    };
+}
+
 const vertexControl = (path: number, index: number, point: Point): GeoControl => ({ role: "vertex", path, index, point });
 const pointControl = (path: number, point: Point): GeoControl => ({ role: "parameter", path, index: 0, point });
 
-export function resolveGeometrySelection(n: GeoNode, part: GeometrySelection): GeoControl | undefined {
+export function resolveGeometrySelection(n: GeoNode, part: GeometryHover): GeoControl | undefined {
     if (part.role === "parameter") {
         const point = parameterPoints(n).find(([i]) => i === part.path);
         return point && pointControl(...point);
@@ -76,8 +103,15 @@ export function resolveGeometrySelection(n: GeoNode, part: GeometrySelection): G
     const { role, nodeId } = part;
     for (const [path, curve] of pathEntries(n)) {
         const index = curve.nodes.findIndex(v => v.id === nodeId);
-        if (index >= 0 && (role === "vertex" || neighbor(curve, index, 1) !== undefined))
-            return { role, path, index, point: curve.nodes[index].p };
+        if (index < 0) continue;
+        const node = curve.nodes[index];
+        if (role === "in" || role === "out") return { role, path, index, point: pathHandle(curve, index, role) };
+        const next = neighbor(curve, index, 1);
+        if (role === "arc") {
+            if (next !== undefined && node.bulge !== undefined)
+                return { role, path, index, point: arcHandle(node.p, curve.nodes[next].p, node.bulge) };
+        }
+        else if (role === "vertex" || next !== undefined) return { role, path, index, point: node.p };
     }
 }
 
@@ -147,7 +181,7 @@ export function* hitParameterGeometries(n: GeoNode, p: Point, scale: number, tol
 export function hitPathSegment(n: GeoNode, p: Point, scale: number, tolerance: number, target?: GeometryTarget) {
     return hitSegments(editablePaths(n, target), p, scale, tolerance);
 }
-export function editControl(n: GeoNode, h: GeoControl, at: Point, independent: boolean) {
+export function editControl(n: GeoNode, h: GeoControl, at: Point, independent: boolean, outlineGeometry?: OutlineParameterGeometry) {
     const delta: Point = [at[0] - h.point[0], at[1] - h.point[1]];
     if (h.role === "body") return translateGeo(n, delta);
     if (h.role === "parameter") {
@@ -156,7 +190,18 @@ export function editControl(n: GeoNode, h: GeoControl, at: Point, independent: b
         return;
     }
     const path = geometryPath(n, h.path)!;
-    if (h.role === "outline" || h.role === "curve" || h.role === "segment" && h.path < 0) return translateCurve(path, delta);
+    if (h.role === "outline") {
+        translateCurve(path, delta);
+        if (outlineGeometry) {
+            for (const index of outlineGeometry.paths) translateCurve(geometryPath(n, index)!, delta);
+            for (const [index, point] of parameterPoints(n)) if (outlineGeometry.points.has(index)) {
+                point[0] += delta[0];
+                point[1] += delta[1];
+            }
+        }
+        return;
+    }
+    if (h.role === "curve" || h.role === "segment" && h.path < 0) return translateCurve(path, delta);
     const v = path.nodes[h.index];
     if (h.role === "vertex") v.p = at;
     if (h.role === "in" || h.role === "out") moveHandle(path, h.index, h.role, at, independent);

@@ -5,13 +5,22 @@ import { type Point, type GeoNode } from "../core/design/v5.ts";
 import { type Segment } from "../core/design/regions.ts";
 import { overlay, type MapColors } from "./palette.ts";
 
-export function drawHandle(ctx: CanvasRenderingContext2D, colors: MapColors, x: number, y: number, selected: boolean, control = false) {
+type HandleState = "normal" | "hovered" | "selected";
+
+export function drawHandle(ctx: CanvasRenderingContext2D, colors: MapColors, x: number, y: number, state: HandleState = "normal", control = false) {
     ctx.beginPath();
     ctx.arc(x, y, control ? overlay.controlRadius : overlay.handleRadius, 0, Math.PI * 2);
-    ctx.fillStyle = selected ? colors.accent : colors.bgPanel;
+    ctx.fillStyle = state === "selected" ? colors.accent : colors.bgPanel;
+    ctx.fill();
+    if (state === "hovered") {
+        const alpha = ctx.globalAlpha;
+        ctx.globalAlpha = alpha * overlay.segmentHoverOpacity;
+        ctx.fillStyle = colors.accent;
+        ctx.fill();
+        ctx.globalAlpha = alpha;
+    }
     ctx.strokeStyle = colors.accent;
     ctx.lineWidth = overlay.handleOutline;
-    ctx.fill();
     ctx.stroke();
 }
 
@@ -55,6 +64,7 @@ export function drawParameterGeometry(map: ProjectMap, view: MapView, colors: Ma
         const n = drag ?? owner;
         const whole = selectedLine(view, n.id), focused = view.selection?.kind === "geoNode" && view.selection.id === n.id;
         const part = focused ? view.vertex : undefined;
+        const hover = !view.draft && !view.dragNode && view.hovered?.kind === "geoNode" && view.hovered.id === n.id ? view.hoverPart : undefined;
         const origin = !drag || view.dragCurve === undefined || view.dragCurve >= 0 || view.dragCommitting ? undefined : geometryPath(owner, view.dragCurve);
         if (origin) strokeEdges(map, flattenPath(origin, tolerance), colors.dragOrigin, overlay.parameterWidth, true);
         for (const [i, path] of pathEntries(n)) {
@@ -63,9 +73,11 @@ export function drawParameterGeometry(map: ProjectMap, view: MapView, colors: Ma
             const selected = part?.role === "segment" && part.path === i ? path.nodes[part.index]?.id : undefined;
             strokeEdges(map, selected ? edges.filter(edge => edge.from !== selected) : edges, colors.parameterGeometry, overlay.parameterWidth, true);
         }
-        for (const [i, point] of parameterPoints(n))
+        for (const [i, point] of parameterPoints(n)) {
+            if (hover?.role === "parameter" && hover.path === i) continue;
             if (!focused || view.geometry?.kind !== "parameter" || view.geometry.index !== i)
-                drawHandle(ctx, colors, ...map.screen(point), false);
+                drawHandle(ctx, colors, ...map.screen(point));
+        }
         if (n.function.type === "coast" && owner.function.type === "coast" && owner.function.harbor.radius > 0) {
             const { center } = n.function.harbor, { radius } = owner.function.harbor;
             ctx.beginPath();
@@ -82,14 +94,15 @@ export function drawParameterGeometry(map: ProjectMap, view: MapView, colors: Ma
 
 export function drawGeoOverlay(map: ProjectMap, view: MapView, colors: MapColors) {
     const ctx = map.ctx, scale = map.scale, d = view.project.design, draft = view.draft;
-    const dot = (point: Point, active = false, control = false) => drawHandle(ctx, colors, ...map.screen(point), active, control);
+    const dot = (point: Point, state?: HandleState, control = false) => drawHandle(ctx, colors, ...map.screen(point), state, control);
     ctx.save();
     const owner = view.selection?.kind === "geoNode" ? d.geoNodes.find(n => n.id === view.selection!.id) : undefined;
     const n = view.dragNode ?? owner;
+    const outline = n?.construction.type === "free" && n.construction.paths.length > 1 ? view.outline : undefined;
     const moved = view.dragNode && (view.dragCurve === undefined || view.dragCurve >= 0);
     if (n?.construction.type === "free" && (!draft || draft.owner === n.id) && (moved || draft)) {
         for (const [i, path] of n.construction.paths.entries()) {
-            if (i === view.dragCurve) continue;
+            if (i === view.dragCurve && i === outline) continue;
             strokeEdges(map, flattenPath(path, .6 / scale), colors.accent, overlay.selectedWidth);
         }
         if (moved && owner && view.dragCurve !== undefined && !view.dragCommitting) {
@@ -109,12 +122,13 @@ export function drawGeoOverlay(map: ProjectMap, view: MapView, colors: MapColors
         const onOwner = !!owner && hoverOwner === owner.id, whole = n && selectedLine(view, n.id);
         let hoverHandle: GeoControl | undefined;
         if (hovered && !view.dragNode) {
-            if (hovered.role === "vertex" || hovered.role === "parameter") hoverHandle = hovered;
+            if (hovered.role === "vertex" || hovered.role === "parameter" || hovered.role === "in" || hovered.role === "out" || hovered.role === "arc")
+                hoverHandle = hovered;
             else {
                 const selected = onOwner && (sameControl(hovered, view.vertex) ||
                     hovered.role === "outline" && hovered.path === view.outline || hovered.role === "curve" && hovered.path === whole);
                 const target = !selected && d.geoNodes.find(node => node.id === hoverOwner);
-                if (target) {
+                if (target && (hovered.role !== "outline" || target.construction.type === "free" && target.construction.paths.length > 1)) {
                     ctx.save();
                     ctx.globalAlpha = overlay.segmentHoverOpacity;
                     highlight(target, hovered.path, hovered.role === "segment" ? hovered.index : undefined);
@@ -123,28 +137,30 @@ export function drawGeoOverlay(map: ProjectMap, view: MapView, colors: MapColors
             }
         }
         if (n) {
-            const index = view.outline ?? whole;
+            const index = outline ?? whole;
             if (index !== undefined) highlight(n, index);
             if (view.vertex?.role === "segment") highlight(n, view.vertex.path, view.vertex.index);
-            for (const c of geoControls(n, view.geometry)) {
+            const controls = geoControls(n, view.geometry);
+            for (const c of controls) if (c.role === "in" || c.role === "out") {
+                const node = geometryPath(n, c.path)!.nodes[c.index];
+                strokeEdges(map, [{ a: node.p, b: c.point }], accent, overlay.controlLine, node.mode === "auto");
+            }
+            for (const c of controls) {
                 const tangent = c.role === "in" || c.role === "out";
-                if (tangent) {
-                    const node = geometryPath(n, c.path)!.nodes[c.index];
-                    strokeEdges(map, [{ a: node.p, b: c.point }], accent, overlay.controlLine, node.mode === "auto");
-                }
-                const hover = onOwner && sameControl(hoverHandle, c);
-                dot(c.point, !!(hover || sameControl(view.vertex, c)), tangent);
+                const hover = onOwner && sameControl(hoverHandle, c), selected = sameControl(view.vertex, c);
+                const state = selected ? "selected" : hover ? "hovered" : "normal";
+                dot(c.point, state, tangent);
                 if (hover) hoverHandle = undefined;
             }
         }
-        if (hoverHandle) dot(hoverHandle.point, true);
+        if (hoverHandle) dot(hoverHandle.point, "hovered", hoverHandle.role === "in" || hoverHandle.role === "out");
     }
     if (draft) {
         if (draft.tool === "strip") {
             strokeEdges(map, draft.spine ?? [], colors.accent, overlay.selectedWidth);
             const upper = d.geoNodes.findLast(n => draft.ids.includes(n.id));
             if (upper?.construction.type === "free") for (const path of upper.construction.paths) for (const v of path.nodes)
-                dot(v.p, draft.anchors.includes(v.id));
+                dot(v.p, draft.anchors.includes(v.id) ? "selected" : "normal");
         }
         else {
             if (["peak", "center", "harbor"].includes(draft.tool)) {

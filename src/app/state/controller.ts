@@ -3,7 +3,7 @@ import { commitFocusedInput, isEditableText } from "./pendingInput.ts";
 import { defaultFollow } from "../../core/design/v5.ts";
 import { distance } from "../../core/math/geometry.ts";
 import { moveHandle, sectionHandlePoint } from "../../core/edit/controls.ts";
-import { editControl, geometryPath } from "../../core/edit/geoControls.ts";
+import { editControl, geometryPath, outlineParameterGeometry } from "../../core/edit/geoControls.ts";
 import { setNodeMode } from "../../core/edit/paths.ts";
 import { doubleClickTools, draftPointer, geoAt, snapPoint, updatePreview } from "./geoTools.ts";
 import { type GeoDraft } from "../../core/edit/types.ts";
@@ -109,7 +109,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         const clicked = hoverAlternate ? alternateHit(hoverPoint) : pick(hoverPoint);
         if (clicked && "issues" in clicked) return editor.hoverSelection();
         const part = clicked && clickControl(view, clicked, hoverAlternate);
-        const hit = hoverAlternate || part && part.role !== "body" ? clicked :
+        const hit = hoverAlternate || part && part.role !== "body" || clicked?.handle?.kind === "section" ? clicked :
             map.selectedControl(view, hoverPoint) ?? map.selectedBody(view, hoverPoint) ?? clicked;
         if (hit) editor.hoverSelection(hit.selection, hit === clicked ? part : hit.control);
         else editor.hoverSelection();
@@ -181,8 +181,11 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         selectHit(hit, c?.role === "segment" && c.path < 0 ? { ...c, role: "curve" } : c, true);
         if (c) {
             const geo = geoAt(editor.project.design, selection.id);
-            if (c.role !== "body" || geo.construction.type === "free")
-                editor.gesture = { geo, control: c, screen, pointer };
+            if (c.role !== "body" || geo.construction.type === "free") {
+                const shape = view.project.terrain.regions.get(geo.id)?.shape;
+                const outlineGeometry = c.role === "outline" ? outlineParameterGeometry(geo, c.path, shape) : undefined;
+                editor.gesture = { geo, control: c, outlineGeometry, screen, pointer };
+            }
         }
         else if (h) {
             const mark = h.kind === "mark" ? editor.project.design.marks.find(m => m.id === h.id)! : undefined;
@@ -328,7 +331,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             return;
         }
         if ("geo" in editor.gesture) {
-            const { geo, control } = editor.gesture, copy = structuredClone(geo);
+            const { geo, control, outlineGeometry } = editor.gesture, copy = structuredClone(geo);
             let at = p;
             if (control.role === "segment" || control.role === "curve") {
                 const start = map.world(...editor.gesture.screen);
@@ -336,7 +339,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             }
             else if (control.role === "vertex" && !ev.ctrlKey)
                 at = snapPoint(editor.mapProject.terrain, editor.mapProject.design, p, map.scale, geo.id);
-            editControl(copy, control, at, ev.altKey);
+            editControl(copy, control, at, ev.altKey, outlineGeometry);
             editor.dragCurve = control.path < 0 || control.role === "outline" ? control.path : undefined;
             editor.dragNode = copy; return;
         }
