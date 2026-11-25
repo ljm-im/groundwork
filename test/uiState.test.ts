@@ -181,7 +181,11 @@ test("Attached menus open within the inspector and keep the control's edges", as
     const box = { left: 37, width: 184, top: 390, bottom: 418 };
     assert.deepEqual(popupBounds(box, 180, 430, 160), { left: 37, top: 228, width: 184, height: 160, upwards: true });
     assert.deepEqual(popupBounds(box, 375, 780, 160), { left: 37, top: 420, width: 184, height: 160, upwards: false });
-    assert.equal(popupBounds(box, 360, 429, 200).height, 28);
+    assert.equal(popupBounds(box, 360, 429, 200).height, 12);
+    assert.equal(popupBounds(box, 360, 429, 200).top - 360, 16);
+    const down = popupBounds(box, 375, 470, 200);
+    assert.equal(470 - down.top - down.height, 16);
+    assert.equal(popupBounds(box, 360, 429, 200, 0).top - 360, 16);
 });
 
 test("Drawing or canceling a parameter keeps its owner and activates only the completed line", async t => {

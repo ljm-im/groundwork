@@ -9,11 +9,12 @@ export function menuDirection(event: KeyboardEvent) {
     return !composingKey(event) && ["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key);
 }
 
-export function popupBounds(box: AnchorBounds, top: number, bottom: number, desiredHeight: number) {
-    const above = Math.max(0, box.top - top - 2), below = Math.max(0, bottom - box.bottom - 2);
+export function popupBounds(box: AnchorBounds, top: number, bottom: number, desiredHeight: number, gap = 2) {
+    const clearance = 16;
+    const above = Math.max(0, box.top - top - gap - clearance), below = Math.max(0, bottom - box.bottom - gap - clearance);
     const upwards = desiredHeight > below && above > below;
     const height = Math.min(desiredHeight, upwards ? above : below);
-    return { left: box.left, top: upwards ? box.top - 2 - height : box.bottom + 2, width: box.width, height, upwards };
+    return { left: box.left, top: upwards ? box.top - gap - height : box.bottom + gap, width: box.width, height, upwards };
 }
 
 export function placePopup(menu: HTMLElement, config: PopupPosition) {
@@ -48,8 +49,10 @@ export function placePopup(menu: HTMLElement, config: PopupPosition) {
             const left = (bounds?.left ?? box.right - width) + inset;
             menu.style.width = width + "px";
             menu.style.left = Math.max(4, Math.min(left, innerWidth - width - 4)) + "px";
-            menu.style.top = box.bottom + "px";
-            menu.style.maxHeight = Math.max(0, innerHeight - box.bottom - 4) + "px";
+            const desired = menu.scrollHeight + menu.offsetHeight - menu.clientHeight;
+            const r = popupBounds(box, 0, innerHeight, desired, 0);
+            menu.style.top = r.top + "px";
+            menu.style.maxHeight = r.height + "px";
             return;
         }
         menu.style.width = box.width + "px";
