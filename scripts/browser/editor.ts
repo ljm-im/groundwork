@@ -10,6 +10,7 @@ import { layer, rect, syntheticDesign } from "../../test/scenarios.ts";
 import { startChromium } from "./chromium.ts";
 import { installPickers } from "./pickers.ts";
 import { checkAppearance } from "./appearance.ts";
+import { checkRound26 } from "./round26.ts";
 
 test("Editor interactions in Chromium", async t => {
     const server = await createServer({ configFile: "configs/vite.config.ts", server: { host: "127.0.0.1", port: 0 } });
@@ -18,6 +19,7 @@ test("Editor interactions in Chromium", async t => {
         const url = server.resolvedUrls!.local[0];
         await checkEditor(url);
         await t.test("Appearance changes in Chromium", () => checkAppearance(url));
+        await t.test("Trial feedback fixes in Chromium", () => checkRound26(url));
     }
     finally {
         await server.close();
