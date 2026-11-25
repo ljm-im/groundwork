@@ -25,14 +25,6 @@
         }}>放弃修改</button>
     </form>
 </dialog>
-<dialog class="dialog" id="draft-dialog" bind:this={recovery} aria-labelledby="draft-title" hidden={!editor.draft} oncancel={e => e.preventDefault()}>
-    <h2 id="draft-title">恢复未保存的草稿？</h2>
-    <div class="sub" id="draft-date">{editor.draft ? "上次编辑于 " + new Date(editor.draft.date).toLocaleString() + "。" : ""}</div>
-    <form method="dialog">
-        <button type="button" class="danger" id="discard" onclick={() => editor.files.discard()}>放弃草稿</button>
-        <button type="button" id="restore" onclick={() => editor.files.restore()}>恢复草稿</button>
-    </form>
-</dialog>
 
 <style>
     :global {
@@ -73,11 +65,7 @@
 <script lang="ts">
     import * as session from "../state/session.svelte.ts";
     let { editor }: { editor: session.Editor } = $props();
-    let remove: HTMLDialogElement, discard: HTMLDialogElement, recovery: HTMLDialogElement;
-    $effect(() => {
-        if (editor.draft && !recovery.open) recovery.showModal();
-        else if (!editor.draft && recovery.open) recovery.close();
-    });
+    let remove: HTMLDialogElement, discard: HTMLDialogElement;
     $effect(() => {
         if (editor.fileRequest && !discard.open) discard.showModal();
     });

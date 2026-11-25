@@ -49,10 +49,11 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
         step = name;
         console.log(name);
     }
-    async function navigate() {
+    async function navigate(recovered?: string) {
         const url = baseUrl + "?test=" + ++visit;
         await cdp("Page.navigate", { url });
-        await wait(url => location.href === url && !!document.querySelector(".empty-state"), url);
+        await wait(({ url, recovered }) => location.href === url && (recovered ?
+            document.querySelector("#filename")?.textContent === recovered : !!document.querySelector(".empty-state")), { url, recovered });
         assert.equal(await evaluate(() => document.querySelectorAll("[title]").length), 0);
     }
     const set = (values: Partial<Probe>) => evaluate(values => Object.assign(window.probe, values) && true, values);
@@ -307,12 +308,12 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
         await prompt("刷新后需要恢复。");
         const beforeReload = await draft();
         assert.equal(beforeReload?.filename, b);
-        await navigate();
-        await wait(() => !document.querySelector<HTMLElement>("#draft-dialog")!.hidden);
+        await navigate(b);
         assert(browser.dialogs.includes("beforeunload"));
-        await click("#restore");
         await filename(b);
         assert.equal(await state(), "未保存");
+        assert.equal(await evaluate(() => document.querySelector("#toast")?.textContent), "已恢复未保存的草稿");
+        assert(await evaluate(() => !document.querySelector("#draft-dialog")));
         assert(await evaluate(() => document.querySelector<HTMLButtonElement>("#undo")!.disabled));
         await prompt("恢复后依然未绑定。");
         assert.equal(await prop("writes"), 0);
@@ -325,10 +326,19 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
         assert.deepEqual(await storage(), cleanStorage);
         await navigate();
         await filename("未打开文件");
-        assert(await evaluate(() => document.querySelector<HTMLElement>("#draft-dialog")!.hidden));
+        assert(await evaluate(() => !document.querySelector("#draft-dialog")));
         assert.equal(await prop("exampleReads"), 0);
         assert.deepEqual(await storage(), cleanStorage);
         report.checks.recover = { originalName: b, suggested: b, newName: c, actualBeforeUnload: true, refreshEmpty: true };
+
+        check("Keep an invalid draft available after a failed recovery");
+        const invalid = JSON.stringify({ text: '{"version":4}', filename: "invalid.json" });
+        await evaluate(text => localStorage.setItem("terrain-editor/unsaved-v1", text), invalid);
+        await navigate();
+        await filename("未打开文件");
+        assert.match(await evaluate(() => document.querySelector("#toast")?.textContent ?? ""), /^草稿无法恢复：.+/);
+        assert.equal(await evaluate(() => localStorage.getItem("terrain-editor/unsaved-v1")), invalid);
+        report.checks.invalidDraft = { empty: true, draftUnchanged: true };
 
         check("Retry a failed first save and retain edits made before its stream closes");
         await click(".empty-actions button:first-child");

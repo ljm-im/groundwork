@@ -4,8 +4,8 @@
         <div class="empty-state">
             {#if !editor.files.supported}<div class="browser-required">需要 Chrome 或 Edge</div>{/if}
             <div class="empty-actions">
-                <button disabled={!editor.files.supported || !!editor.busy || !!editor.draft} onclick={() => editor.files.choose("new")}><Icon name="new" />新建</button>
-                <button disabled={!editor.files.supported || !!editor.busy || !!editor.draft} onclick={() => editor.files.choose("open")}><Icon name="open" />打开</button>
+                <button disabled={!editor.files.supported || !!editor.busy} onclick={() => editor.files.choose("new")}><Icon name="new" />新建</button>
+                <button disabled={!editor.files.supported || !!editor.busy} onclick={() => editor.files.choose("open")}><Icon name="open" />打开</button>
             </div>
         </div>
     {/if}

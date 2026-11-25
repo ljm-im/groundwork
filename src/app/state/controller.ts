@@ -412,7 +412,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         if (composingKey(ev) || ev.defaultPrevented && !(ev.key === "Escape" && editor.tool !== "select")) return;
         const save = (ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "s";
         if (save) ev.preventDefault();
-        if (!editor.project || editor.busy || editor.draft || editor.fileRequest || editor.removal) return;
+        if (!editor.project || editor.busy || editor.fileRequest || editor.removal) return;
         const input = ev.target instanceof Element && ev.target.closest("input, select, textarea, [contenteditable=true]");
         if (save) {
             void editor.files.save();

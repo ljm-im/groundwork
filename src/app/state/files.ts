@@ -1,4 +1,4 @@
-import { flushSync, tick } from "svelte";
+import { flushSync } from "svelte";
 import { History } from "../../core/edit/history.ts";
 import { parseDesign, serializeDesign } from "../../core/design/model.ts";
 import { type Design, errorText } from "../types.ts";
@@ -44,24 +44,22 @@ export class DesignFiles {
         this.editor = editor;
     }
     async start() {
-        const e = this.editor;
         if (!this.supported) return;
+        let stored: string | null;
         try {
-            const stored = localStorage.getItem(draftKey);
-            if (stored) {
-                const draft: unknown = JSON.parse(stored);
-                if (draft && typeof draft === "object" && "text" in draft && typeof draft.text === "string") {
-                    parseDesign(draft.text, true);
-                    e.draft = draft as NonNullable<session.Editor["draft"]>;
-                }
-            }
+            stored = localStorage.getItem(draftKey);
         }
-        catch {
-            e.draft = null;
+        catch { return; }
+        if (stored === null) return;
+        try {
+            const draft: unknown = JSON.parse(stored);
+            if (!draft || typeof draft !== "object" || !("text" in draft) || typeof draft.text !== "string")
+                throw Error("缺少项目设计");
+            const filename = "filename" in draft && typeof draft.filename === "string" && draft.filename || "project.json";
+            await this.restore(draft.text, filename);
         }
-        if (e.draft) {
-            await tick();
-            document.getElementById("restore")?.focus();
+        catch (error) {
+            this.editor.message("草稿无法恢复：" + errorText(error));
         }
     }
     remember() {
@@ -92,16 +90,16 @@ export class DesignFiles {
         if (e.saveState === "正在保存" || !changed && e.saveState === "保存失败") this.status(e.saveState);
         else this.status(e.history.dirty || this.handle && !this.writable ? "未保存" : "已保存");
     }
-    discard() {
-        this.editor.draft = null;
-        this.remember();
-    }
-    restore() {
-        const e = this.editor, draft = e.draft;
-        if (!draft || !this.supported) return;
+    private restore(text: string, filename: string) {
+        const e = this.editor, design = parseDesign(text, true);
         return e.working("正在恢复草稿…", () => {
-            this.install(parseDesign(draft.text, true), draft.filename || "project.json", { recovered: true });
-            e.draft = null;
+            try {
+                this.install(design, filename, { recovered: true });
+            }
+            catch (error) {
+                e.message("草稿无法恢复：" + errorText(error));
+                return;
+            }
             e.message("已恢复未保存的草稿");
         });
     }
@@ -125,7 +123,7 @@ export class DesignFiles {
     }
     async choose(action: FileAction, confirmed = false) {
         const e = this.editor;
-        if (!this.supported || e.busy || e.gesture || e.draft) return;
+        if (!this.supported || e.busy || e.gesture) return;
         commitFocusedInput();
         if (e.dirty && !confirmed) {
             e.fileRequest = action;
@@ -199,7 +197,7 @@ export class DesignFiles {
     }
     async save() {
         const e = this.editor;
-        if (!e.project || e.busy || e.gesture || e.draft || e.fileRequest) return;
+        if (!e.project || e.busy || e.gesture || e.fileRequest) return;
         commitFocusedInput();
         const history = e.history, handle = this.handle;
         if (!handle && this.choosingSaveFor === history) return;

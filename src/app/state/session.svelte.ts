@@ -88,7 +88,6 @@ export class Editor {
     busy = $state<string | null>(null);
     toast = $state.raw<{ text: string; point?: Point } | null>(null);
     removal = $state.raw<{ title: string; items?: RemovalItem[]; detail: string; action?: string; perform?: () => void } | null>(null);
-    draft = $state.raw<{ text: string; filename?: string; date: string } | null>(null);
     fileRequest = $state<FileAction | null>(null);
     filename = $state("未打开文件");
     saveState = $state<SaveState>("已保存");

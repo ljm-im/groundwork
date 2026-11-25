@@ -166,13 +166,21 @@ test("Opening, creating and recovering a design each starts with empty terrain c
     surfaces.push(editor.project.terrain);
     await editor.files.choose("new");
     surfaces.push(editor.project.terrain);
-    editor.draft = { filename: file.name, text, date: "" };
-    await editor.files.restore();
+    const storage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+    t.after(() => {
+        if (storage) Object.defineProperty(globalThis, "localStorage", storage);
+        else Reflect.deleteProperty(globalThis, "localStorage");
+    });
+    Object.defineProperty(globalThis, "localStorage", {
+        configurable: true,
+        value: { getItem: () => JSON.stringify({ filename: file.name, text, date: "" }) }
+    });
+    await editor.files.start();
     surfaces.push(editor.project.terrain);
     for (const field of ["fields", "regions"] as const)
         assert.equal(new Set(surfaces.map(s => s[field])).size, 4, field);
     assert.equal(new Set(surfaces.map(s => s.fields.height.defined)).size, 4);
-    assert.equal(editor.draft, null);
+    assert.equal(editor.filename, file.name);
     assert.equal(editor.dirty, true);
 });
 

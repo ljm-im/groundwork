@@ -56,7 +56,7 @@
     let { editor, appearance, chooseAppearance }: {
         editor: session.Editor; appearance: Appearance; chooseAppearance: (value: Appearance) => void;
     } = $props();
-    let unavailable = $derived(!editor.files.supported || !!editor.draft);
+    let unavailable = $derived(!editor.files.supported);
     const appearances: readonly { id: Appearance; name: string; icon: IconName }[] = [
         { id: "system", name: "跟随系统", icon: "themeSystem" },
         { id: "light", name: "浅色", icon: "themeLight" },
