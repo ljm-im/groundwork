@@ -6,7 +6,7 @@ import { type GeoFunction, type GeoNode } from "../src/core/design/v5.ts";
 import { createGrid } from "../src/core/math/geometry.ts";
 import { TerrainCache } from "../src/core/terrain/cache.ts";
 import { evaluateLayer, type FieldState } from "../src/core/terrain/functions.ts";
-import { makeShape, rasterRegion } from "../src/core/design/regions.ts";
+import { makeShape, rasterRegion, regionMaskAt } from "../src/core/design/regions.ts";
 import { evaluateStack } from "../src/core/terrain/terrain.ts";
 import { erosion, layer, openCurve, polygon, rect, syntheticDesign } from "./scenarios.ts";
 
@@ -143,7 +143,7 @@ test("Strip functions skip missing neighbor samples even at defined target cells
         const output = evaluateLayer(node, region, state);
         applyLayer(output, node, state);
         const held = grid.index(2.5, -3.5), changed = grid.index(2.5, 3.5);
-        assert(region.mask[held] && region.mask[changed] && mask[held] && mask[changed]);
+        assert(regionMaskAt(region, held) && regionMaskAt(region, changed) && mask[held] && mask[changed]);
         assert.equal(state.fields.height.values[held], height[held], type);
         assert(output.cells.includes(changed), type);
     }

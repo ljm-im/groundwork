@@ -79,7 +79,7 @@ export type GeoFunction<N = Expression> = (
     { type: "coast"; shore: ClosedCurve; roughness: Expression; harbor: { center: Point; span: N; radius: N } } |
     { type: "mountain"; ridges: Ridge<N>[]; peaks: Peak<N>[]; floor?: N; crestRound?: N; footRound?: N; blend?: N } |
     { type: "cliff"; factor: Expression; seaLevel?: N } |
-    ({ type: "erosion"; strength?: Expression; floor?: N } & NumericProperties<Erosion, N>) |
+    ({ type: "erosion"; strength?: Expression; floor?: N; spacing?: N } & NumericProperties<Erosion, N>) |
     { type: "islets"; density: Expression; reach: N; threshold?: N; seaLevel?: N } |
     { type: "slope"; kind: "path"; line: Curve<N>; ease?: boolean } |
     { type: "slope"; kind: "radial"; center: Point; radius: N; value: N; rate: N } |

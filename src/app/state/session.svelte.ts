@@ -27,6 +27,7 @@ import { sampleField } from "../../core/design/results.ts";
 import { designErrorText } from "./designMessages.ts";
 import { quotedLocation } from "../../core/design/problems.ts";
 import { drawingStatus } from "./mapText.ts";
+import { numberPreviewFactor } from "./numbers.ts";
 import { penNodeGroup, readPenNodes, savePenNodes, type PenNodeMode } from "./penNodes.ts";
 import { objectIssues } from "../../core/checks/issues.ts";
 import { propertyTabs, tabForSelection, type PropertyTab, type SubitemGroup } from "./inspector.ts";
@@ -114,8 +115,10 @@ export class Editor {
     gesture: Gesture | null = null;
     numberEdits = $derived(numberEdits(this.project.design, this.project.resolved));
     private pendingNumber?: { source: ProjectModel; change: NumberChange };
-    private numberPreview = $state.raw<{ source: ProjectModel; project: ProjectModel }>();
+    private numberPreview = $state.raw<{ source: ProjectModel; project: ProjectModel; step?: number }>();
+    numberPreviewStep = $derived(this.numberPreview?.source === this.project ? this.numberPreview?.step : undefined);
     private previewCache?: TerrainCache;
+    private coarsePreviewCache?: TerrainCache;
     mapProject = $derived.by((): ProjectView => {
         const preview = this.numberPreview;
         const project = preview?.source === this.project ? preview.project : this.project;
@@ -424,10 +427,25 @@ export class Editor {
             if (pending?.source !== this.project) return;
             const { source, change } = pending;
             timed("terrain-editor:level-preview", () => {
-                if (this.numberPreview?.source !== source) this.previewCache = this.terrainCache.fork();
-                const design = copyAt(source.design, change.address, change.value);
-                const resolved = change.resolved.reduce((d, { address, value }) => copyAt(d, address, value), source.resolved);
-                this.numberPreview = { source, project: new Project(design, this.previewCache, resolved) };
+                if (this.numberPreview?.source !== source) this.previewCache = this.coarsePreviewCache = undefined;
+                let design = copyAt(source.design, change.address, change.value);
+                let resolved = change.resolved.reduce((d, { address, value }) => copyAt(d, address, value), source.resolved);
+                const grid = source.terrain.grid, step = design.grid.step;
+                // A grid-spacing gesture also changes the dimensions before coarsening.
+                const width = step === grid.step ? grid.width : Math.ceil(grid.xMax / step) - Math.floor(grid.xMin / step);
+                const height = step === grid.step ? grid.height : Math.ceil(grid.yMax / step) - Math.floor(grid.yMin / step);
+                if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height)) return;
+                const factor = numberPreviewFactor(width, height);
+                if (factor === 1) {
+                    const cache = this.previewCache ??= this.terrainCache.fork();
+                    this.numberPreview = { source, project: new Project(design, cache, resolved) };
+                    return;
+                }
+                const previewGrid = { step: step * factor };
+                design = { ...design, grid: previewGrid };
+                resolved = { ...resolved, grid: previewGrid };
+                const cache = this.coarsePreviewCache ??= new TerrainCache();
+                this.numberPreview = { source, project: new Project(design, cache, resolved), step: previewGrid.step };
             });
         });
     }
@@ -435,7 +453,7 @@ export class Editor {
         if (this.frame) cancelAnimationFrame(this.frame);
         this.frame = 0;
         this.pendingNumber = this.numberPreview = undefined;
-        this.previewCache = undefined;
+        this.previewCache = this.coarsePreviewCache = undefined;
     }
     async working(label: string | null, fn: () => void) {
         if (this.busy) return;

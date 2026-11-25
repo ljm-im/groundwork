@@ -1,6 +1,6 @@
-import { displayReading } from "../../core/design/display.ts";
+import { displayReading, displayValue } from "../../core/design/display.ts";
 import { fieldPrecision } from "../../core/design/defaults.ts";
-import { displaySteps } from "../../core/design/functionTable.ts";
+import { displaySteps, gridStep } from "../../core/design/functionTable.ts";
 import { type GeoDraft } from "../../core/edit/types.ts";
 import { type FieldDeclaration, type Point } from "../../core/design/v5.ts";
 import { type FieldSamples } from "../../core/design/results.ts";
@@ -68,6 +68,11 @@ export function drawingHint(tool: Tool, draft?: GeoDraft, finish?: string) {
         else if (draft.ids.length === 2) hint = "单击起止节点只取一段，或回车取整条公共边";
     }
     return hint + "，Esc 取消";
+}
+
+export function numberPreviewHint(step: number) {
+    const spacing = Number(displayValue(step, gridStep.step));
+    return "拖动中按 " + spacing + " " + gridStep.unit + " 间距预览";
 }
 
 export function readingRange(samples?: FieldSamples): [number, number] | undefined {

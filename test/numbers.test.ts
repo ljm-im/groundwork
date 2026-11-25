@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import { functionTable, parameterStep, parameterUnit } from "../src/core/design/functionTable.ts";
 import assert from "node:assert/strict";
-import { adjustInputStep, adjustNumber, NumberDrag, numericText, repeatButton } from "../src/app/state/numbers.ts";
+import { adjustInputStep, adjustNumber, NumberDrag, numberPreviewFactor, numericText, repeatButton } from "../src/app/state/numbers.ts";
 import { copyAt, writeAt, type Address } from "../src/core/design/address.ts";
 import { parseDesign } from "../src/core/design/model.ts";
 import { numberEdits } from "../src/core/design/numberEdit.ts";
@@ -14,6 +14,13 @@ import { ProjectMap } from "../src/render/map.ts";
 import { generateTerrain } from "../src/core/terrain/terrain.ts";
 import { History } from "../src/core/edit/history.ts";
 import { syntheticDesign, layer, rect, openCurve } from "./scenarios.ts";
+
+test("Number previews use the smallest factor within the cell budget", () => {
+    assert.equal(numberPreviewFactor(512, 512), 1);
+    assert.equal(numberPreviewFactor(1, 262145), 2);
+    assert.equal(numberPreviewFactor(513, 2048), 3);
+    assert.equal(numberPreviewFactor(1, 2 ** 21 + 1), 9);
+});
 
 test("Number steps adjust the final signed literal, avoid zero divisors and preserve precision", () => {
     assert.equal(adjustNumber("{input:a} + 0.5", 1, .1), "{input:a} + 0.6");

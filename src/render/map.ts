@@ -18,7 +18,7 @@ import { sectionHandles } from "../core/edit/controls.ts";
 import { relief } from "./relief.ts";
 import { fieldFill } from "./fieldFill.ts";
 
-import { type Region } from "../core/design/regions.ts";
+import { regionMaskAt, type Region } from "../core/design/regions.ts";
 import { type Grid } from "../core/math/geometry.ts";
 
 type Context = CanvasRenderingContext2D;
@@ -92,19 +92,18 @@ function stroke(ctx: Context, points: Point[], color: string, width: number, das
     ctx.setLineDash([]);
 }
 
-const outlines = new WeakMap<Region, { area: Path2D; outline: Path2D }>();
-function regionPaths(region: Region, g: Grid) {
+const outlines = new WeakMap<Region, Path2D>();
+function regionOutline(region: Region, g: Grid) {
     const cached = outlines.get(region);
     if (cached) return cached;
-    const area = new Path2D(), outline = new Path2D();
+    const outline = new Path2D();
     if (!region.shape.cross) {
         for (const edges of region.shape.boundary()) {
             if (!edges.length) continue;
-            area.moveTo(...edges[0].a);
-            for (const edge of edges) area.lineTo(...edge.b);
-            area.closePath();
+            outline.moveTo(...edges[0].a);
+            for (const edge of edges) outline.lineTo(...edge.b);
+            outline.closePath();
         }
-        outline.addPath(area);
     }
     else if (!region.cells.length) {
         for (const path of region.shape.boundary()) for (const { a, b } of path) {
@@ -115,24 +114,52 @@ function regionPaths(region: Region, g: Grid) {
         for (const k of region.cells) {
             const i = k % g.width, j = Math.floor(k / g.width), x = g.xMin + i * g.step, y = g.yMax - j * g.step;
             const right = x + g.step, bottom = y - g.step;
-            area.rect(x, bottom, g.step, g.step);
-            if (!i || !region.mask[k - 1]) {
+            if (!i || !regionMaskAt(region, k - 1)) {
                 outline.moveTo(x, y); outline.lineTo(x, bottom);
             }
-            if (!j || !region.mask[k - g.width]) {
+            if (!j || !regionMaskAt(region, k - g.width)) {
                 outline.moveTo(x, y); outline.lineTo(right, y);
             }
-            if (i + 1 === g.width || !region.mask[k + 1]) {
+            if (i + 1 === g.width || !regionMaskAt(region, k + 1)) {
                 outline.moveTo(right, y); outline.lineTo(right, bottom);
             }
-            if (j + 1 === g.height || !region.mask[k + g.width]) {
+            if (j + 1 === g.height || !regionMaskAt(region, k + g.width)) {
                 outline.moveTo(x, bottom); outline.lineTo(right, bottom);
             }
         }
     }
-    const paths = { area, outline };
-    outlines.set(region, paths);
-    return paths;
+    outlines.set(region, outline);
+    return outline;
+}
+
+interface RegionBitmap { color: string; canvas: OffscreenCanvas }
+const regionFills = new WeakMap<Region, RegionBitmap>(), regionHighlights = new WeakMap<Region, RegionBitmap>();
+function drawRegionArea(ctx: Context, region: Region, g: Grid, color: string, cache = regionFills) {
+    ctx.fillStyle = color;
+    if (!region.shape.cross) {
+        ctx.fill(regionOutline(region, g), "evenodd");
+        return;
+    }
+    if (!region.cells.length) return;
+    const fill = ctx.fillStyle as string;
+    let bitmap = cache.get(region);
+    if (bitmap?.color !== fill) {
+        const canvas = new OffscreenCanvas(region.width, region.height), layer = canvas.getContext("2d")!;
+        const pixels = layer.createImageData(region.width, region.height);
+        for (let k = 0; k < region.mask.length; k++) if (region.mask[k]) pixels.data[k * 4 + 3] = 255;
+        layer.putImageData(pixels, 0, 0);
+        layer.globalCompositeOperation = "source-in";
+        layer.fillStyle = fill;
+        layer.fillRect(0, 0, region.width, region.height);
+        bitmap = { canvas, color: fill };
+        cache.set(region, bitmap);
+    }
+    ctx.save();
+    ctx.translate(g.xMin + region.left * g.step, g.yMax - region.top * g.step);
+    ctx.scale(1, -1);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(bitmap.canvas, 0, 0, region.width * g.step, region.height * g.step);
+    ctx.restore();
 }
 
 function circle(ctx: Context, x: number, y: number, r: number, fill: string | null, outline?: string | null, width = 1) {
@@ -432,14 +459,12 @@ export class ProjectMap {
         for (const n of d.geoNodes) {
             if (n.disabled && !empty) continue;
             if (!empty && !n.fill && !n.outline && !view.layers.geoNodes) continue;
-            const paths = regionPaths(t.regions.get(n.id)!, g);
-            if (n.fill && !empty) {
-                ctx.fillStyle = n.fill; ctx.fill(paths.area, "evenodd");
-            }
+            const region = t.regions.get(n.id)!;
+            if (n.fill && !empty) drawRegionArea(ctx, region, g, n.fill);
             if (n.id !== draggedRegionId && (empty || n.outline || view.layers.geoNodes)) {
                 ctx.strokeStyle = base.boundary;
                 ctx.lineWidth = .6 / scale;
-                ctx.stroke(paths.outline);
+                ctx.stroke(regionOutline(region, g));
             }
         }
         const contours = view.layers.contours && samples ? fieldContours(g, samples, fieldPrecision(d.fields[view.displayField]), scale) : undefined;
@@ -456,14 +481,12 @@ export class ProjectMap {
         for (const id of outlined) {
             const r = t.regions.get(id), outline = this.outlineStyle(view, "geoNode", id, colors);
             if (!r || !outline || (draggingOutline || view.dragCommitting) && id === draggedRegionId) continue;
-            const paths = regionPaths(r, g);
             if (r.shape.spine) {
-                ctx.fillStyle = colors.stripArea;
-                ctx.fill(paths.area, "evenodd");
+                drawRegionArea(ctx, r, g, colors.stripArea, regionHighlights);
                 for (const edge of r.shape.spine) stroke(ctx, [edge.a, edge.b], outline.color, outline.width);
             }
             ctx.strokeStyle = id === draggedRegionId ? colors.dragOrigin : outline.color;
-            ctx.lineWidth = outline.width; ctx.stroke(paths.outline);
+            ctx.lineWidth = outline.width; ctx.stroke(regionOutline(r, g));
         }
         this.drawIssueShapes(ctx, view, colors);
         ctx.restore();

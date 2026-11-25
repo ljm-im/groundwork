@@ -48,7 +48,7 @@
     import { SvelteMap } from "svelte/reactivity";
     import * as session from "../state/session.svelte.ts";
     import { heightId } from "../../core/design/defaults.ts";
-    import { isBuiltinFunction, parameterStep } from "../../core/design/functionTable.ts";
+    import { isBuiltinFunction, parameterDefault, parameterStep } from "../../core/design/functionTable.ts";
     import { geoParameter } from "../../core/design/parameters.ts";
     import { flagOverflow, referenceLabel } from "../state/numbers.ts";
     import { displayValue } from "../../core/design/display.ts";
@@ -89,7 +89,7 @@
     function flatAmount(n: GeoNode, authored: Expression | undefined) {
         const p = geoParameter(n, ["function", "amount"]);
         if (!p || p.type === "geometry") return "";
-        const value = authored ?? p.default;
+        const value = authored ?? parameterDefault(p, n.id);
         return (typeof value === "number" && value < 0 ? "" : "+") + displayValue(value, parameterStep(p, d.fields[n.field]), "", key => {
             const item = referenceLabel(key, d, slots);
             return item.name + (item.property ? "." + item.property : "");

@@ -5,6 +5,18 @@ import { type Design, type Expression } from "../../core/design/v5.ts";
 
 export const composingKey = (event: KeyboardEvent) => event.isComposing || event.keyCode === 229;
 
+export function numberPreviewFactor(width: number, height: number) {
+    const budget = 2 ** 18;
+    if (width * height <= budget) return 1;
+    let low = 2, high = Math.max(width, height);
+    while (low < high) {
+        const k = low + Math.floor((high - low) / 2);
+        if (Math.ceil(width / k) * Math.ceil(height / k) <= budget) high = k;
+        else low = k + 1;
+    }
+    return low;
+}
+
 export type Range = [number, number, number];
 export function numericText(text: string, literal: boolean) {
     const trimmed = text.trim().replaceAll("×", "*").replaceAll("÷", "/").replaceAll("−", "-");

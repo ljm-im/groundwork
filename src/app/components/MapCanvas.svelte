@@ -153,7 +153,7 @@
     import { displayReading } from "../../core/design/display.ts";
     import { type Box } from "../../core/math/geometry.ts";
     import { type Theme } from "../../render/palette.ts";
-    import { drawingHint, positionReadings, readingRange } from "../state/mapText.ts";
+    import { drawingHint, numberPreviewHint, positionReadings, readingRange } from "../state/mapText.ts";
     import { attachController } from "../state/controller.ts";
     import { nodeModes } from "../state/inspector.ts";
     import * as session from "../state/session.svelte.ts";
@@ -163,7 +163,8 @@
     let { editor, theme }: { editor: session.Editor; theme: Theme } = $props();
     const penModes = [nodeModes[0], nodeModes[1]];
     let drawView = $derived(editor.mapView && { view: editor.mapView, theme });
-    let hint = $derived(drawingHint(editor.tool, editor.geoDraft, editor.drawing?.end));
+    let hint = $derived(editor.numberPreviewStep === undefined ? drawingHint(editor.tool, editor.geoDraft, editor.drawing?.end)
+        : numberPreviewHint(editor.numberPreviewStep));
     let field = $derived(editor.project?.design.fields[editor.displayField]);
     let range = $derived(readingRange(editor.mapProject?.terrain.fields[editor.displayField]));
     let readings = $derived(positionReadings(editor.cursor, field, editor.project?.terrain.grid, range));

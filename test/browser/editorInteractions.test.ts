@@ -22,6 +22,7 @@ import { checkSectionPlots } from "./sectionPlots.ts";
 import { checkNumericEditing } from "./numericEditing.ts";
 import { checkPenDrawing } from "./penDrawing.ts";
 import { checkMapOverlays } from "./mapOverlays.ts";
+import { checkCoarsePreview } from "./coarsePreview.ts";
 
 test("Editor interactions in Chromium", async t => {
     const server = await createServer({ configFile: "configs/vite.config.ts", server: { host: "127.0.0.1", port: 0 } });
@@ -42,6 +43,7 @@ test("Editor interactions in Chromium", async t => {
         await t.test("Numeric editing in Chromium", () => checkNumericEditing(url));
         await t.test("Pen drawing in Chromium", () => checkPenDrawing(url));
         await t.test("Map overlays in Chromium", () => checkMapOverlays(url));
+        await t.test("Coarse numeric drag previews in Chromium", () => checkCoarsePreview(url));
     }
     finally {
         await server.close();

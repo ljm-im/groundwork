@@ -2,7 +2,7 @@ import { type Design, type ResolvedDesign } from "../design/v5.ts";
 import { rasterRegion, shapeLayout } from "../design/regions.ts";
 import { type Terrain, type FieldSamples } from "../design/results.ts";
 import { heightId } from "../design/defaults.ts";
-import { type Grid } from "../math/geometry.ts";
+import { canvasFrame, type Grid } from "../math/geometry.ts";
 import { resolveDesign } from "../design/parameters.ts";
 import { applyLayer, evaluateLayer, type FieldState } from "./functions.ts";
 import { shoreDistance } from "./shore.ts";
@@ -39,7 +39,7 @@ function resolvedStack(d: ResolvedDesign) {
 
 export function finishTerrain(stack: ReturnType<typeof evaluateStack>): Terrain {
     const { grid, regions, batterResiduals, fields } = stack, { values, defined } = fields[heightId];
-    const shore = shoreDistance(grid, Uint8Array.from(values, h => +(h > 0)), defined);
+    const shore = shoreDistance(canvasFrame(grid), grid.step, Uint8Array.from(values, h => +(h > 0)), defined);
     return { grid, fields, shore, regions, batterResiduals };
 }
 
