@@ -1,6 +1,6 @@
 import { parameters, readAt, slotName, writeAt, type Address } from "../design/parameters.ts";
 import { type Curve, type Design, type GeoNode, type Point } from "../design/v5.ts";
-import { arcHandle, canRemoveNode, cleanHandles, insertPathNode, moveHandle, nearestSegment, setBulge, translateGeo } from "./paths.ts";
+import { arcHandle, canRemoveNode, cleanHandles, insertPathNode, moveHandle, nearestSegment, setBulge, translateCurve, translateGeo } from "./paths.ts";
 import { flattenPath, neighbor, pathHandle } from "../design/path.ts";
 import { distance } from "../math/geometry.ts";
 import { nodeIds } from "./geoNodes.ts";
@@ -97,13 +97,15 @@ export function hitPathSegment(n: GeoNode, p: Point, scale: number, tolerance: n
     return hitSegments(editablePaths(n, target), p, scale, tolerance);
 }
 export function editControl(n: GeoNode, h: GeoControl, at: Point, independent: boolean) {
-    if (h.role === "body") return translateGeo(n, [at[0] - h.point[0], at[1] - h.point[1]]);
+    const delta: Point = [at[0] - h.point[0], at[1] - h.point[1]];
+    if (h.role === "body") return translateGeo(n, delta);
     if (h.role === "parameter") {
         const p = parameterPoints(n).find(([i]) => i === h.path)![1];
         p[0] = at[0]; p[1] = at[1];
         return;
     }
     const path = geometryPath(n, h.path)!, v = path.nodes[h.index];
+    if (h.role === "segment" && h.path < 0) translateCurve(path, delta);
     if (h.role === "vertex") v.p = at;
     if (h.role === "in" || h.role === "out") moveHandle(path, h.index, h.role, at, independent);
     if (h.role === "arc") setBulge(v, path.nodes[neighbor(path, h.index, 1)!].p, at);

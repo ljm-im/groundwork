@@ -39,6 +39,7 @@ export type MapView = Readonly<{
     vertex?: GeoControl;
     draft?: Readonly<GeoDraft>;
     dragNode?: GeoNode;
+    dragCurve?: number;
     dragCommitting?: boolean;
     dragMark?: Readonly<{ id: string; point: Point }>;
     dragLabel?: Readonly<LabelPreview>;
@@ -309,7 +310,7 @@ export class ProjectMap {
             ctx.restore();
         }
         if (view.layers.grid) this.drawGrid(ctx, view, scale);
-        const draggedRegionId = view.dragNode?.construction.type === "free" ? view.dragNode.id : undefined;
+        const draggedRegionId = view.dragCurve === undefined && view.dragNode?.construction.type === "free" ? view.dragNode.id : undefined;
         for (const n of d.geoNodes) {
             if (n.disabled && !empty) continue;
             if (!empty && !n.fill && !n.outline && !view.layers.geoNodes) continue;

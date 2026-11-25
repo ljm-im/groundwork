@@ -1,5 +1,5 @@
 import { type GeoControl } from "../core/edit/geoControls.ts";
-import { type GeoNode, type Point } from "../core/design/v5.ts";
+import { type GeoNode, type Point, type Section } from "../core/design/v5.ts";
 import { type Handle } from "../core/edit/types.ts";
 import { type DrawTool } from "../core/edit/types.ts";
 import { type layerDefaults } from "../core/edit/display.ts";
@@ -19,6 +19,7 @@ interface GestureStart { screen: Point; pointer: number; changed?: boolean }
 export type Gesture = GestureStart & (
   { geo: GeoNode; control: GeoControl } |
   { label: LabelTarget; offset: Point } |
+  { section: Section } |
   { pan: true; middle?: boolean; center: number[]; click?: () => void } |
   { handle: Handle; offset: Point }
 );

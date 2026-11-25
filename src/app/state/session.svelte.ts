@@ -8,7 +8,7 @@ import { type GridDisplay } from "../../core/edit/display.ts";
 import { constructionCenter } from "../../core/design/regions.ts";
 import { bounds, type Box } from "../../core/math/geometry.ts";
 import { heightId, isBuiltin } from "../../core/design/defaults.ts";
-import { defaultFollow, type GeoNode, type GeoFunction, type CurveNode } from "../../core/design/v5.ts";
+import { defaultFollow, type GeoNode, type GeoFunction, type CurveNode, type Section } from "../../core/design/v5.ts";
 import { geoParameter, slotName, type Slot } from "../../core/design/parameters.ts";
 import { numberEdits, type NumberChange } from "../../core/design/numberEdit.ts";
 import { parseDesign } from "../../core/design/model.ts";
@@ -72,10 +72,11 @@ export class Editor {
     objectGeometry = $state.raw<Selection>();
     vertex = $state.raw<GeoControl>();
     dragNode = $state.raw<GeoNode>();
+    dragCurve = $state<number>();
     dragCommitting = $state(false);
     dragMark = $state.raw<{ id: string; point: Point }>();
     dragLabel = $state.raw<LabelPreview>();
-    dragSection = $state.raw<{ id: string; index: number; point: Point }>();
+    dragSection = $state.raw<{ id: string; points: Section["points"] }>();
     private issueStart = $state<number>();
     viewport = $state<string | null>(null);
     menu = $state.raw<{ x: number; y: number; map?: boolean; control?: GeoControl } | null>(null);
@@ -114,12 +115,7 @@ export class Editor {
     mapDesign = $derived.by(() => {
         const design = this.mapProject?.design, drag = this.dragSection;
         if (!design || !drag) return design;
-        const sections = design.sections.map(section => {
-            if (section.id !== drag.id) return section;
-            const points = section.points.slice() as [Point, Point];
-            points[drag.index] = drag.point;
-            return { ...section, points };
-        });
+        const sections = design.sections.map(section => section.id === drag.id ? { ...section, points: drag.points } : section);
         return { ...design, sections };
     });
     mapView = $derived.by((): MapView | null => {
@@ -129,7 +125,7 @@ export class Editor {
             project: { ...this.mapProject, design: this.mapDesign! }, selection: this.selection, hovered: this.hovered,
             geometry: this.geometry, objectGeometry: this.objectGeometry, vertex: this.vertex,
             draft: draft && { ...draft, nodes: [...draft.nodes], ids: [...draft.ids], anchors: [...draft.anchors] },
-            dragNode: this.dragNode, dragCommitting: this.dragCommitting, dragMark: this.dragMark, dragLabel: this.dragLabel,
+            dragNode: this.dragNode, dragCurve: this.dragCurve, dragCommitting: this.dragCommitting, dragMark: this.dragMark, dragLabel: this.dragLabel,
             displayField: this.displayField,
             layers: { ...this.layers }, grid: { ...this.displayGrid }, referencedGeo: this.hoverRefs,
             issue: this.issueStart === undefined ? undefined : this.selectedIssues[0], issueStart: this.issueStart

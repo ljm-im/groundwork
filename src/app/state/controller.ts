@@ -166,7 +166,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             if (c.role === "parameter" || c.path < 0)
                 editor.focusFunctionGeometry(n, c);
             else if (c.role === "vertex") editor.pickVertex(c);
-            if (ev && c.role !== "segment" && (c.role !== "body" || n.construction.type === "free"))
+            if (ev && (c.role !== "segment" || c.path < 0) && (c.role !== "body" || n.construction.type === "free"))
                 editor.gesture = { geo: n, control: c, screen, pointer: ev.pointerId };
             return;
         }
@@ -180,8 +180,15 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             }
             return;
         }
-        const click = hit?.kind === "issues" ? () => editor.pickMarkers(hit.hits) :
-            () => editor.select(hit?.kind === "section" ? hit.section : null);
+        if (hit?.kind === "section") {
+            editor.select(hit.section);
+            if (ev) {
+                const section = editor.project.design.sections.find(s => s.id === hit.section.id)!;
+                editor.gesture = { section, screen, pointer: ev.pointerId };
+            }
+            return;
+        }
+        const click = hit?.kind === "issues" ? () => editor.pickMarkers(hit.hits) : () => editor.select(null);
         if (ev) beginPan(ev, screen, click);
         else click();
     }
@@ -294,9 +301,23 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         }
         if ("geo" in editor.gesture) {
             const { geo, control } = editor.gesture, copy = structuredClone(geo);
-            const at = control.role === "vertex" && !ev.ctrlKey ? snapPoint(editor.mapProject.terrain, editor.mapProject.design, p, map.scale, geo.id) : p;
+            let at = p;
+            if (control.role === "segment") {
+                const start = map.world(...editor.gesture.screen);
+                at = [control.point[0] + p[0] - start[0], control.point[1] + p[1] - start[1]];
+            }
+            else if (control.role === "vertex" && !ev.ctrlKey)
+                at = snapPoint(editor.mapProject.terrain, editor.mapProject.design, p, map.scale, geo.id);
             editControl(copy, control, at, ev.altKey);
+            editor.dragCurve = control.path < 0 ? control.path : undefined;
             editor.dragNode = copy; return;
+        }
+        if ("section" in editor.gesture) {
+            const { section, screen: origin } = editor.gesture, start = map.world(...origin);
+            const dx = p[0] - start[0], dy = p[1] - start[1];
+            const [a, b] = section.points;
+            editor.dragSection = { id: section.id, points: [[a[0] + dx, a[1] + dy], [b[0] + dx, b[1] + dy]] };
+            return;
         }
         const h = editor.gesture.handle, mark = h.kind === "mark" ? d.marks.find(m => m.id === h.id)! : undefined;
         const at = mark ? map.markCoordinate(screen, mark.follow) : p;
@@ -306,7 +327,11 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         }
         const section = d.sections.find(s => s.id === h.id)!, index = h.index!;
         const point = sectionHandlePoint(section, index, target);
-        if (point) editor.dragSection = { id: h.id, index, point };
+        if (point) {
+            const points = [...section.points] as typeof section.points;
+            points[index] = point;
+            editor.dragSection = { id: h.id, points };
+        }
     }, { signal });
 
     canvas.addEventListener("pointerleave", () => {
@@ -350,16 +375,19 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
                 }
             }
             else {
-                const drag = g.handle.kind === "mark" ? editor.dragMark : editor.dragSection;
-                if (drag) {
-                    const mark = g.handle.kind === "mark" ? editor.project.resolved.marks.find(m => m.id === g.handle.id) : undefined;
-                    const point = mark?.follow === "screen" ? map.visibleMarkPoint({ ...mark, point: drag.point }) : drag.point;
-                    await editor.edit(d => moveHandle(d, g.handle, point));
+                const drag = editor.dragSection;
+                if (drag) await editor.edit(d => {
+                    d.sections.find(s => s.id === drag.id)!.points = drag.points;
+                });
+                if ("handle" in g && editor.dragMark) {
+                    const mark = editor.project.resolved.marks.find(m => m.id === g.handle.id), point = editor.dragMark.point;
+                    await editor.edit(d => moveHandle(d, g.handle, mark?.follow === "screen" ? map.visibleMarkPoint({ ...mark, point }) : point));
                 }
             }
         }
         finally {
             editor.dragNode = editor.dragMark = editor.dragLabel = editor.dragSection = undefined;
+            editor.dragCurve = undefined;
             editor.dragCommitting = false;
         }
     }

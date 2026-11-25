@@ -40,7 +40,7 @@ export function drawGeoOverlay(map: ProjectMap, view: MapView) {
     function controls(n: GeoNode, numeric: GeoNode<number>, selected: boolean) {
         for (const [i, path] of pathEntries(n)) {
             if (i < 0) edges(flattenPath(path, tolerance), mapColors.parameterGeometry, overlay.parameterWidth, true);
-            else if (selected && (view.dragNode || draft?.owner === n.id))
+            else if (selected && (view.dragNode && view.dragCurve === undefined || draft?.owner === n.id))
                 edges(flattenPath(path, .6 / scale), mapColors.accent, overlay.selectedWidth);
         }
         for (const [, point] of parameterPoints(n)) dot(point);
@@ -66,7 +66,11 @@ export function drawGeoOverlay(map: ProjectMap, view: MapView) {
     const owner = view.selection?.kind === "geoNode" ? d.geoNodes.find(n => n.id === view.selection!.id) : undefined;
     if (!draft) for (const node of d.geoNodes) if (node !== owner && showsParameterGeometry(view, node))
         controls(node, node, false);
-    if (owner && (!draft || draft.owner === owner.id)) controls(view.dragNode ?? owner, owner, true);
+    if (owner && (!draft || draft.owner === owner.id)) {
+        const origin = view.dragCurve === undefined || view.dragCommitting ? undefined : geometryPath(owner, view.dragCurve);
+        if (origin) edges(flattenPath(origin, tolerance), mapColors.dragOrigin, overlay.parameterWidth, true);
+        controls(view.dragNode ?? owner, owner, true);
+    }
     if (draft) {
         if (draft.tool === "strip") {
             edges(draft.spine ?? [], mapColors.accent, overlay.selectedWidth);
