@@ -3,9 +3,10 @@ import "../configs/register-svelte.ts";
 import assert from "node:assert/strict";
 import { createGrid, distance } from "../src/core/math/geometry.ts";
 import { sectionHandles } from "../src/core/edit/controls.ts";
-import { resolveDesign } from "../src/core/design/parameters.ts";
+import { geoParameterName, resolveDesign } from "../src/core/design/parameters.ts";
 import { History } from "../src/core/edit/history.ts";
 import { propertyTabs } from "../src/app/state/inspector.ts";
+import { designProblemText } from "../src/app/state/designMessages.ts";
 import { Project } from "../src/core/project.ts";
 import { pixelGridSpacing } from "../src/core/edit/display.ts";
 import { constrainGeoLabel, constrainSectionLabel, geoLabelPoint } from "../src/render/labelLayout.ts";
@@ -105,6 +106,17 @@ test("Variable preview keeps cached geometry and matches a freshly opened design
     assert.deepEqual(preview.terrain.fields.height.values, full.terrain.fields.height.values);
     assert.deepEqual(preview.terrain.fields.height.defined, full.terrain.fields.height.defined);
     assert.deepEqual(preview.issues, full.issues);
+});
+
+test("A shared strip quotes a side label and a full property path independently", () => {
+    const d = syntheticDesign(), west = { ...d.geoNodes[1], label: "西台" },
+        east = { ...layer("B", rect(-7, -14, 5, -2), { type: "flat", amount: 3 }), label: "东台" };
+    const strip = { ...layer("S", { type: "strip", of: [west.id, east.id], widths: [2, 3] }, { type: "split" }), label: "条带" };
+    d.geoNodes.push(east, strip);
+    d.geoNodes[1] = west;
+    const message = "无效", path = ["construction", "widths", 0];
+    assert.equal(geoParameterName(d, strip, path, false), "“西台”一侧");
+    assert.equal(designProblemText({ location: { kind: "geo", id: strip.id, path }, message }, d), "“条带.西台一侧” 无效");
 });
 
 test("A committed prompt, undo and redo preserve all terrain references", async t => {

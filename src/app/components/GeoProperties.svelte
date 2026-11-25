@@ -35,8 +35,10 @@
     {/if}
 {/snippet}
 {#snippet memberActions(group: "ridges" | "peaks", label: string, index: number)}
-    <button class="icon-button" aria-label={"复制" + label} data-tip={"复制" + label} onclick={() => editor.changeMember(n.id, group, index, true)}><Icon name="copy" /></button>
-    <button class="icon-button danger" aria-label={"删除" + label} data-tip={"删除" + label} onclick={() => editor.changeMember(n.id, group, index, false)}><Icon name="delete" /></button>
+    {@const copy = "复制“" + label + "”"}
+    {@const remove = "删除“" + label + "”"}
+    <button class="icon-button" aria-label={copy} data-tip={copy} onclick={() => editor.changeMember(n.id, group, index, true)}><Icon name="copy" /></button>
+    <button class="icon-button danger" aria-label={remove} data-tip={remove} onclick={() => editor.changeMember(n.id, group, index, false)}><Icon name="delete" /></button>
 {/snippet}
 <PropertyPane {editor}>
     {#snippet title()}
@@ -187,6 +189,6 @@
         const names = construction.of.map(id => "“" + nameOf(id) + "”");
         const edge = names.length === 2 ? names.join("和") + "的公共边" : names[0] + "的轮廓";
         const range = construction.range;
-        return range ? edge + "，从 " + range.from + " 到 " + range.to : edge;
+        return range ? edge + "，从“" + range.from + "”到“" + range.to + "”" : edge;
     }
 </script>

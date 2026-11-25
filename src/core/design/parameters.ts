@@ -24,7 +24,8 @@ export function geoParameterName(d: Design, node: GeoNode, path: Address, contex
     const c = node.construction;
     if (path[0] === "construction" && c.type === "strip" && c.of?.length === 2 && typeof path[2] === "number") {
         const id = c.of[path[2]];
-        return (d.geoNodes.find(n => n.id === id)?.label ?? id) + "一侧";
+        const label = d.geoNodes.find(n => n.id === id)?.label ?? id;
+        return (context ? label : "“" + label + "”") + "一侧";
     }
     const prefix: string[] = [];
     for (const [key, label] of [["ridges", "山脊"], ["peaks", "山峰"], ["nodes", "节点"]] as const) {
