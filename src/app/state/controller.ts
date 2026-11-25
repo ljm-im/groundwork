@@ -212,7 +212,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         firstClick = ev.detail === 1 ? current?.drawing : undefined;
         if (current?.up && editor.project && !editor.busy) {
             if (current.state !== "active") beginPointer(current.down);
-            finishGesture(current.up);
+            void finishGesture(current.up);
         }
     }, { signal });
     canvas.addEventListener("dblclick", ev => {
@@ -311,7 +311,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         editor.hoverSelection();
     }, { signal });
 
-    function finishGesture(ev: PointerEvent) {
+    async function finishGesture(ev: PointerEvent) {
         if (editor.geoDraft?.down && !editor.gesture) {
             if (ev.type !== "pointercancel") {
                 try {
@@ -332,29 +332,29 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             if (!g.changed && ev.type === "pointerup") g.click?.();
             return;
         }
-        if ("label" in g) {
-            const drag = editor.dragLabel;
-            editor.dragLabel = undefined;
-            if (ev.type === "pointerup") {
-                if (drag) editor.moveLabel(g.label, drag.offset);
+        try {
+            if (ev.type !== "pointerup") return;
+            if ("label" in g) {
+                const drag = editor.dragLabel;
+                if (drag) await editor.moveLabel(g.label, drag.offset);
                 else if (!g.changed) selectAt(g.screen, false);
             }
-            return;
+            else if ("geo" in g) {
+                const copy = editor.dragNode;
+                if (copy) {
+                    editor.dragCommitting = true;
+                    await editor.editNode(copy.id, n => Object.assign(n, copy));
+                }
+            }
+            else {
+                const drag = g.handle.kind === "mark" ? editor.dragMark : editor.dragSection;
+                if (drag) await editor.edit(d => moveHandle(d, g.handle, drag.point));
+            }
         }
-        if ("geo" in g) {
-            const copy = editor.dragNode; editor.dragNode = undefined;
-            if (g.changed && copy && ev.type === "pointerup") editor.editNode(copy.id, n => Object.assign(n, copy));
-            return;
+        finally {
+            editor.dragNode = editor.dragMark = editor.dragLabel = editor.dragSection = undefined;
+            editor.dragCommitting = false;
         }
-        if (g.handle.kind === "mark") {
-            const drag = editor.dragMark;
-            editor.dragMark = undefined;
-            if (drag && ev.type === "pointerup") return editor.edit(d => moveHandle(d, g.handle, drag.point));
-            return;
-        }
-        const drag = editor.dragSection;
-        editor.dragSection = undefined;
-        if (drag && ev.type === "pointerup") return editor.edit(d => moveHandle(d, g.handle, drag.point));
     }
     canvas.addEventListener("pointerup", ev => {
         if (firstClick && press?.down.pointerId === ev.pointerId) {
@@ -365,12 +365,12 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             }
             if (press.state === "pending") beginPointer(press.down);
         }
-        finishGesture(ev);
+        void finishGesture(ev);
     }, { signal });
     canvas.addEventListener("pointercancel", ev => {
         press = undefined; firstClick = undefined;
         if (editor.tool !== "select") editor.cancelDrawing();
-        finishGesture(ev);
+        void finishGesture(ev);
     }, { signal });
     canvas.addEventListener("auxclick", ev => ev.preventDefault(), { signal });
     document.addEventListener("keydown", ev => {

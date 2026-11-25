@@ -70,6 +70,7 @@ export class Editor {
     objectGeometry = $state.raw<Selection>();
     vertex = $state.raw<GeoControl>();
     dragNode = $state.raw<GeoNode>();
+    dragCommitting = $state(false);
     dragMark = $state.raw<{ id: string; point: Point }>();
     dragLabel = $state.raw<LabelPreview>();
     dragSection = $state.raw<{ id: string; index: number; point: Point }>();
@@ -126,7 +127,8 @@ export class Editor {
             project: { ...this.mapProject, design: this.mapDesign! }, selection: this.selection, hovered: this.hovered,
             geometry: this.geometry, objectGeometry: this.objectGeometry, vertex: this.vertex,
             draft: draft && { ...draft, nodes: [...draft.nodes], ids: [...draft.ids], anchors: [...draft.anchors] },
-            dragNode: this.dragNode, dragMark: this.dragMark, dragLabel: this.dragLabel, displayField: this.displayField,
+            dragNode: this.dragNode, dragCommitting: this.dragCommitting, dragMark: this.dragMark, dragLabel: this.dragLabel,
+            displayField: this.displayField,
             layers: { ...this.layers }, grid: { ...this.displayGrid }, referencedGeo: this.hoverRefs,
             issue: this.issueStart === undefined ? undefined : this.selectedIssues[0], issueStart: this.issueStart
         };

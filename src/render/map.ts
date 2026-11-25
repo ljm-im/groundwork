@@ -39,6 +39,7 @@ export type MapView = Readonly<{
     vertex?: GeoControl;
     draft?: Readonly<GeoDraft>;
     dragNode?: GeoNode;
+    dragCommitting?: boolean;
     dragMark?: Readonly<{ id: string; point: Point }>;
     dragLabel?: Readonly<LabelPreview>;
     issue?: Issue;
@@ -311,7 +312,7 @@ export class ProjectMap {
         if (view.hovered?.kind === "geoNode") outlined.add(view.hovered.id);
         for (const id of outlined) {
             const r = t.regions.get(id), outline = this.outlineStyle(view, "geoNode", id);
-            if (!r || !outline) continue;
+            if (!r || !outline || view.dragCommitting && id === draggedRegionId) continue;
             const paths = regionPaths(r, g);
             if (r.shape.spine) {
                 ctx.fillStyle = mapColors.stripArea;
