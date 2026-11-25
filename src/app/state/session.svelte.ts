@@ -25,6 +25,7 @@ import { sampleField } from "../../core/design/results.ts";
 import { designErrorText } from "./designMessages.ts";
 import { quotedLocation } from "../../core/design/problems.ts";
 import { drawingStatus } from "./mapText.ts";
+import { penNodeGroup, readPenNodes, savePenNodes, type PenNodeMode } from "./penNodes.ts";
 import { objectIssues } from "../../core/checks/issues.ts";
 import { propertyTabs, tabForSelection, type PropertyTab, type SubitemGroup } from "./inspector.ts";
 import { ProjectMap, type LabelPreview, type LabelTarget, type MapView } from "../../render/map.ts";
@@ -46,6 +47,9 @@ export class Editor {
     tab = $state<Tab>("terrain");
     tool = $state<Tool>("select");
     geoDraft = $state<GeoDraft>();
+    private penNodes = $state.raw(readPenNodes());
+    private penGroup = $derived(penNodeGroup(this.geoDraft?.tool));
+    penNodeMode = $derived(this.penGroup && this.penNodes[this.penGroup]);
     drawing = $derived.by(() => {
         if (this.tool === "select") return;
         const { owner, member } = this.geoDraft ?? {};
@@ -309,6 +313,13 @@ export class Editor {
     }
     toolActive(mode: Tool, owner?: string, member?: number) {
         return this.tool === mode && this.drawing?.owner === owner && this.drawing?.member === member;
+    }
+    choosePenNode(mode: PenNodeMode) {
+        const group = this.penGroup, draft = this.geoDraft;
+        if (!group || !draft || this.penNodes[group] === mode) return;
+        this.penNodes = { ...this.penNodes, [group]: mode };
+        savePenNodes(this.penNodes);
+        updatePreview(this, draft);
     }
     setTool(mode: Tool, owner?: string, member?: number) {
         if (owner && (this.selection?.kind !== "geoNode" || this.selection.id !== owner)) this.select({ kind: "geoNode", id: owner });
@@ -703,6 +714,13 @@ export class Editor {
         const id = this.selection?.id;
         if (id) this.editNode(id, n => setSegment(geometryPath(n, control.path)!, control.index, type));
     }
+    wholeCurve(control: GeoControl, action: "auto" | "line") {
+        if (this.selection?.kind !== "geoNode") return;
+        const id = this.selection.id, curve = geometryPath(geoAt(this.project.design, id), control.path);
+        if (!curve) return;
+        const next = structuredClone(curve);
+        if (editWholeCurve(next, action)) return this.editNode(id, n => geometryPath(n, control.path)!.nodes = next.nodes);
+    }
     insertNode(id: string, control: GeoControl) {
         this.edit(d => {
             insertCurveNode(d, geoAt(d, id), control);
@@ -714,13 +732,6 @@ export class Editor {
             if (offset[0] || offset[1]) item.labelOffset = offset;
             else delete item.labelOffset;
             return target;
-    wholeCurve(control: GeoControl, action: "auto" | "line") {
-        if (this.selection?.kind !== "geoNode") return;
-        const id = this.selection.id, curve = geometryPath(geoAt(this.project.design, id), control.path);
-        if (!curve) return;
-        const next = structuredClone(curve);
-        if (editWholeCurve(next, action)) return this.editNode(id, n => geometryPath(n, control.path)!.nodes = next.nodes);
-    }
         });
     }
     focus(kind: Selection["kind"], id: string) {

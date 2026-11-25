@@ -13,6 +13,14 @@
         <div class="drawing-status" aria-label="绘制状态" role="group">
             <strong>{editor.drawing.title}</strong>
             <span>{editor.drawing.end}</span>
+            {#if editor.penNodeMode}
+                <div class="pen-modes" role="group" aria-label="单击放置的节点">
+                    {#each penModes as [mode, label, icon] (mode)}
+                        <button aria-pressed={editor.penNodeMode === mode} data-tip="按 S 切换"
+                            disabled={!!editor.busy} onclick={() => editor.choosePenNode(mode)}><Icon name={icon} />{label}</button>
+                    {/each}
+                </div>
+            {/if}
             <div class="drawing-actions">
                 {#if editor.drawing.finish}
                     <button disabled={!editor.drawingReady || !!editor.busy} onclick={() => editor.completeDrawing()}>完成</button>
@@ -101,6 +109,9 @@
             color: var(--text-secondary);
         }
         .coords > span { overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+        .pen-modes { display: flex; align-items: center; }
+        .pen-modes button { flex: none; border-color: transparent; background: transparent; }
+        .pen-modes button[aria-pressed="true"] { background: var(--bg-selected); color: var(--accent); }
         #busy { grid-column: 2; grid-row: 1; }
         #mode-hint { grid-column: 1; grid-row: 1; }
         #position { grid-column: 3; grid-row: 1; font-family: var(--font-coords); text-align: right; white-space: pre; }
@@ -134,11 +145,13 @@
         const { view, theme } = drawView;
         editor.map.draw(view, theme);
         if (view.issueStart !== undefined && performance.now() - view.issueStart < 1500) requestDraw();
+    import { nodeModes } from "../state/inspector.ts";
     }
     function requestDraw() {
         frame ||= requestAnimationFrame(draw);
     }
     $effect(() => {
+    const penModes = [nodeModes[0], nodeModes[1]];
         if (drawView) requestDraw();
     });
     onMount(() => {

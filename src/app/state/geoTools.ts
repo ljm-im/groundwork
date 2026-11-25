@@ -64,10 +64,18 @@ export function updatePreview(e: Editor, draft: GeoDraft) {
     }
     else if (doubleClickTools.includes(tool) && nodes.length) {
         const preview = [...nodes];
-        if (draft.down) preview.push(penNode("", draft.down, cursor));
-        else if (cursor) preview.push(penNode("", cursor));
+        if (draft.down) {
+            const drag = draft.downRaw && cursor && distance(draft.downRaw, cursor) * e.map.scale > 3 ? cursor : undefined;
+            preview.push(drawingNode(e, draft.down, drag));
+        }
+        else if (cursor) preview.push(drawingNode(e, cursor));
         draft.path = penPath(preview, closedTools.includes(tool));
     }
+}
+
+function drawingNode(e: Editor, point: Point, drag?: Point) {
+    if (drag) return penNode("", point, drag);
+    return { id: "", p: point, mode: e.penNodeMode ?? "corner" } as const;
 }
 
 function pickStripPoint(e: Editor, draft: GeoDraft, at: Point, alt: boolean) {
@@ -221,7 +229,7 @@ export function draftPointer(e: Editor, phase: "down" | "move" | "up", raw: Poin
     }
     else {
         const drag = doubleClickTools.includes(tool) && dragged ? raw : undefined;
-        const node = penNode("", down, drag);
+        const node = doubleClickTools.includes(tool) ? drawingNode(e, down, drag) : penNode("", down);
         if (pointTools.includes(tool)) {
             draft.nodes = [node];
             complete = true;

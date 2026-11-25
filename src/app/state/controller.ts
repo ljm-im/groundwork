@@ -439,6 +439,11 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         }
         const draft = editor.geoDraft;
         if (draft && (!input || ev.key === "Escape")) {
+            if (editor.penNodeMode && ev.key.toLowerCase() === "s" && !ev.altKey && !ev.repeat) {
+                ev.preventDefault();
+                editor.choosePenNode(editor.penNodeMode === "corner" ? "auto" : "corner");
+                return;
+            }
             if (ev.key === "Escape") {
                 ev.preventDefault(); editor.cancelDrawing(); return;
             }

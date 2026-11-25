@@ -258,7 +258,9 @@ test("Drawing or canceling a parameter keeps its owner and activates only the co
     const owner = editor.project.design.geoNodes[1], target = editor.geometry;
     assert.deepEqual(target, { kind: "path", index: -1 });
     const handles = geoControls(owner, target);
-    assert.equal(handles.length, 3); assert(handles.every(c => c.role === "vertex" && c.path === -1));
+    assert.equal(handles.filter(c => c.role === "vertex").length, 3);
+    assert(handles.some(c => c.role === "in" || c.role === "out"));
+    assert(handles.every(c => c.path === -1));
     editor.setTool("peak", n.id);
     draftPointer(editor, "down", [4, 4], { ctrlKey: true } as PointerEvent);
     assert.deepEqual(editor.selection, selected); assert.equal(editor.history.index, 1);

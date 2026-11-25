@@ -6,17 +6,19 @@ import { type FieldDeclaration, type Point } from "../../core/design/v5.ts";
 import { type Tool } from "../types.ts";
 
 const lineEnd = "回车或双击结束，单击首个节点闭合";
-const lineHint = "单击放置尖角节点，按下并拖动放置平滑节点，" + lineEnd;
+const penHint = "单击放置节点，按 S 切换尖角和自动平滑，";
+const closedPenHint = penHint + "回车、双击或单击首点闭合";
+const lineHint = penHint + lineEnd;
 
 const hints: Record<Tool, string> = {
-    select: "单击选择，中键平移，滚轮缩放",
-    pen: "单击放置尖角节点，按下并拖动放置平滑节点，回车、双击或单击首点闭合",
+    select: "单击选择，Alt 单击选择下层，中键平移，滚轮缩放",
+    pen: closedPenHint,
     rect: "拖动或单击矩形的两个对角",
     circle: "拖出半径或单击圆心和圆周",
     sector: "拖出半径或单击圆心和圆周，再单击确定终止角",
     strip: "单击要沿的地件，按住 Alt 单击可选被遮住的地件",
-    addPath: "单击放置尖角节点，按下并拖动放置平滑节点，回车、双击或单击首点闭合",
-    shore: "单击放点，回车、双击或单击首点闭合海岸线",
+    addPath: closedPenHint,
+    shore: closedPenHint,
     ridge: lineHint,
     slopeLine: lineHint,
     peak: "单击放置山峰",
