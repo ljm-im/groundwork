@@ -351,7 +351,11 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             }
             else {
                 const drag = g.handle.kind === "mark" ? editor.dragMark : editor.dragSection;
-                if (drag) await editor.edit(d => moveHandle(d, g.handle, drag.point));
+                if (drag) {
+                    const mark = g.handle.kind === "mark" ? editor.project.resolved.marks.find(m => m.id === g.handle.id) : undefined;
+                    const point = mark?.follow === "screen" ? map.visibleMarkPoint({ ...mark, point: drag.point }) : drag.point;
+                    await editor.edit(d => moveHandle(d, g.handle, point));
+                }
             }
         }
         finally {

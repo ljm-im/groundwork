@@ -737,7 +737,8 @@ export class Editor {
         return this.edit(d => {
             const mark = d.marks.find(m => m.id === id)!;
             if (mark.follow === follow) return;
-            mark.point = this.map.markCoordinate(this.map.markScreen(mark), follow);
+            const resolved = this.project.resolved.marks.find(m => m.id === id)!;
+            mark.point = this.map.markCoordinate(this.map.visibleMarkPoint(resolved), follow);
             mark.follow = follow;
         });
     }

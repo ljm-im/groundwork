@@ -121,14 +121,14 @@ function circle(ctx: Context, x: number, y: number, r: number, fill: string | nu
     }
 }
 
-function mapText(ctx: Context, text: string, x: number, y: number, bold = false, color: string = mapColors.text) {
+function mapText(ctx: Context, text: string, x: number, y: number, bold = false, color: string = mapColors.text, maxWidth?: number) {
     ctx.font = labelFont(bold);
     ctx.lineJoin = "round";
     ctx.lineWidth = overlay.labelHalo;
     ctx.strokeStyle = mapColors.bgPanel;
-    ctx.strokeText(text, x, y);
+    ctx.strokeText(text, x, y, maxWidth);
     ctx.fillStyle = color;
-    ctx.fillText(text, x, y);
+    ctx.fillText(text, x, y, maxWidth);
 }
 
 const sampledTerrains = new WeakMap<Terrain, boolean>();
@@ -138,6 +138,11 @@ export function hasSamples(terrain: Terrain) {
     const sampled = Object.values(terrain.fields).some(field => field.defined.some(Boolean));
     sampledTerrains.set(terrain, sampled);
     return sampled;
+}
+
+export function clampMarkPoint([x, y]: Point, [left, top, right, bottom]: Box, width: number, height: number): Point {
+    const fit = (value: number, low: number, high: number) => low <= high ? clamp(value, low, high) : (low + high) / 2;
+    return [fit(x, -left, width - right), fit(y, -top, height - bottom)];
 }
 
 export class ProjectMap {
@@ -436,41 +441,59 @@ export class ProjectMap {
         return follow === "screen" ? screen : this.world(...screen);
     }
 
+    private markLayout(mark: Mark<number>, ctx = this.ctx): { text: string; width: number; ruler?: number; box: Box } {
+        const screen = mark.follow === "screen";
+        ctx.save();
+        ctx.font = labelFont(mark.kind === "text");
+        if (mark.kind === "scale") {
+            const target = Math.min(80, Math.max(1, (this.width - 15) / 2));
+            const length = screen ? pixelGridSpacing(this.scale, target) : mark.length ?? Number(markParameters.scale.default);
+            const ruler = length * this.scale, text = displayReading(length, displaySteps.length, markParameters.scale.unit);
+            const measured = ctx.measureText(text).width, width = screen ? Math.min(measured, Math.max(1, this.width - ruler - 15)) : measured;
+            ctx.restore();
+            return { text, width, ruler, box: [-5, -12, ruler + 10 + width, 7] };
+        }
+        const text = markReading(mark), measured = Math.max(10, ctx.measureText(text).width);
+        const width = screen ? Math.min(measured, Math.max(1, this.width - 10)) : measured;
+        ctx.restore();
+        return { text, width, box: [-width / 2 - 5, -10, width / 2 + 5, 10] };
+    }
+    visibleMarkPoint(mark: Mark<number>): Point {
+        if (mark.follow === "map") return this.screen(mark.point);
+        return clampMarkPoint(mark.point, this.markLayout(mark).box, this.width, this.height);
+    }
+
     private drawMarks(ctx: Context, view: MapView) {
         this.markBoxes = [];
         if (!view.layers.marks) return;
         for (const mark of view.project.design.marks) {
             const point = view.dragMark?.id === mark.id ? view.dragMark.point : mark.point;
-            const [x, y] = this.markScreen({ point, follow: mark.follow });
+            const { text, width, ruler, box } = this.markLayout(mark, ctx);
+            const screen = mark.follow === "screen";
+            const [x, y] = screen ? clampMarkPoint(point, box, this.width, this.height) : this.markScreen({ point, follow: mark.follow });
             const selected = view.selection?.kind === "mark" && view.selection.id === mark.id;
-            const handle: Handle = { kind: "mark", id: mark.id, role: "body", point };
-            const color = selected ? mapColors.accent : mapColors.text;
+            const handle: Handle = { kind: "mark", id: mark.id, role: "body", point: screen ? [x, y] : point };
             ctx.save();
-            if (mark.kind === "scale") {
-                const length = mark.follow === "screen" ? pixelGridSpacing(this.scale, 80) : mark.length;
-                const right = x + length * this.scale;
-                ctx.textAlign = "left";
+            ctx.textAlign = "left";
+            if (ruler !== undefined) {
+                const right = x + ruler, color = selected ? mapColors.accent : mapColors.text;
                 stroke(ctx, [[x, y - 4], [x, y], [right, y], [right, y - 4]], mapColors.bgPanel, 4);
                 stroke(ctx, [[x, y - 4], [x, y], [right, y], [right, y - 4]], color, selected ? overlay.selectedWidth : 1.7);
-                const text = displayReading(length, displaySteps.length, markParameters.scale.unit);
-                mapText(ctx, text, right + 6, y - 2);
-                this.markBoxes.push({ mark: handle, box: [x - 5, y - 10, right + 10 + ctx.measureText(text).width, y + 7] });
+                mapText(ctx, text, right + 6, y - 2, false, mapColors.text, width);
+                if (selected) drawHandle(ctx, x, y, true);
             }
             else {
-                const text = markReading(mark).text;
-                ctx.font = labelFont(true);
-                const width = Math.max(10, ctx.measureText(text).width), left = x - width / 2;
+                const left = x - width / 2;
                 if (selected) {
                     ctx.fillStyle = mapColors.bgSelected;
                     ctx.beginPath();
                     ctx.roundRect(left - 4, y - 9, width + 8, 18, 3);
                     ctx.fill();
                 }
-                ctx.textAlign = "left";
-                mapText(ctx, text, left, y, true);
-                this.markBoxes.push({ mark: handle, box: [Math.min(left - 5, x - 4), y - 10, left + width + 5, y + 10] });
+                mapText(ctx, text, left, y, true, mapColors.text, width);
             }
-            if (selected && mark.kind === "scale") drawHandle(ctx, x, y, true);
+            const [l, t, r, b] = box;
+            this.markBoxes.push({ mark: handle, box: [x + l, y + t, x + r, y + b] });
             ctx.restore();
         }
     }
@@ -532,6 +555,5 @@ function addOffset([x, y]: Point, [dx, dy]: Point): Point {
 }
 
 function markReading(mark: TextMark<number>) {
-    const text = mark.showElevation ? [mark.label, displayValue(mark.elevation, markParameters.text.step, markParameters.text.unit)].filter(Boolean).join(" ") : mark.label;
-    return { text };
+    return mark.showElevation ? [mark.label, displayValue(mark.elevation, markParameters.text.step, markParameters.text.unit)].filter(Boolean).join(" ") : mark.label;
 }

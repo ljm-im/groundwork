@@ -10,7 +10,7 @@ import { Project } from "../src/core/project.ts";
 import { pixelGridSpacing } from "../src/core/edit/display.ts";
 import { constrainGeoLabel, constrainSectionLabel, geoLabelPoint } from "../src/render/labelLayout.ts";
 import { makeShape, rasterRegion } from "../src/core/design/regions.ts";
-import { ProjectMap } from "../src/render/map.ts";
+import { clampMarkPoint, ProjectMap } from "../src/render/map.ts";
 import { render } from "svelte/server";
 import { polygon, rect, syntheticDesign } from "./scenarios.ts";
 
@@ -366,11 +366,19 @@ test("Selection history restores edited elements and list tabs preserve the sele
     assert.equal(editor.selection, null);
 });
 
+test("Screen marks retain their anchors and clamp their full drawing to each viewport", () => {
+    const bounds = [-5, -12, 127, 7] as [number, number, number, number];
+    assert.deepEqual(clampMarkPoint([94, 399], bounds, 550, 420), [94, 399]);
+    assert.deepEqual(clampMarkPoint([94, 399], bounds, 180, 140), [53, 133]);
+    assert.deepEqual(clampMarkPoint([-5, -30], bounds, 180, 140), [5, 12]);
+    assert.deepEqual(clampMarkPoint([94, 399], [-35, -10, 35, 10], 550, 220), [94, 210]);
+});
+
 test("Mark follow changes preserve the displayed anchor and screen coordinates ignore camera changes", async t => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
     const d = syntheticDesign(), editor = new Editor();
     const map: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), { center: [0, 0], width: 800, height: 450, scale: 3, referenceScale: 3,
-        cameraChanged() {}, clearIssue() {} });
+        cameraChanged() {}, clearIssue() {}, ctx: { save() {}, restore() {}, measureText: () => ({ width: 38 }) } });
     Object.assign(editor, { map });
     t.mock.method(editor, "reconcileProject", () => {});
     t.mock.method(editor, "terrainWork", async (_d: unknown, fn: () => void) => fn());
