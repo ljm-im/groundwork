@@ -22,9 +22,11 @@ function inputs(node: ResolvedGeoNode) {
 }
 
 function readBox(n: ResolvedGeoNode, shape: RegionShape, grid: Grid): Box {
-    const spec = functionTable[n.function.type];
+    const f = n.function, spec = functionTable[f.type];
     if (spec.readArea === "canvas") return [grid.xMin, grid.yMin, grid.xMax, grid.yMax];
-    const extra = spec.reading === "neighborhood" && n.construction.type === "strip" ? Math.max(...n.construction.widths) + 2 * grid.step : 0;
+    let extra = 0;
+    if (f.type === "noise" && f.warp) extra = f.warp + 2 * grid.step;
+    else if (spec.reading === "neighborhood" && n.construction.type === "strip") extra = Math.max(...n.construction.widths) + 2 * grid.step;
     const [x0, y0, x1, y1] = shape.box;
     return [x0 - extra, y0 - extra, x1 + extra, y1 + extra];
 }

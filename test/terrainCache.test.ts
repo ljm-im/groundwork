@@ -20,6 +20,19 @@ function compare(cache: TerrainCache, d: Design) {
     return actual;
 }
 
+test("Noise position warp invalidates samples read just outside its region", () => {
+    const d = syntheticDesign(), cache = new TerrainCache();
+    const source = layer("A", rect(-18, -18, 0, 18), { type: "flat", amount: 4 });
+    const warp = layer("B", rect(1, -18, 18, 18), { type: "noise", amplitude: 0, scale: 8, warp: 14, warpScale: 12 });
+    d.geoNodes = [d.geoNodes[0], source, warp];
+    const before = compare(cache, d);
+    assert(source.function.type === "flat");
+    source.function.amount = 8;
+    const after = compare(cache, d);
+    assert(cache.recomputed.includes(warp.id));
+    assert(after.regions.get(warp.id)!.cells.some(k => after.fields.height.values[k] !== before.fields.height.values[k]));
+});
+
 test("Incremental layers match a fresh stack byte for byte after every fixture edit", fixtureOptions("round14-coast.json", "round14-land.json", "regressions.json"), async () => {
     const rules = (await readRegressions()).fixtures;
     const fixtures = new Map((await designFixtures()).map(fixture => [fixture.name.replace("round14-", "").replace(".json", ""), fixture]));

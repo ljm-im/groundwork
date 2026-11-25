@@ -4,7 +4,7 @@ import { type Expression, type FieldDeclaration, type GeoFunction, type Ridge } 
 import { shiftDecimal } from "../math/interval.ts";
 
 type Unit = "" | "m" | "m/m" | "%" | "px" | "field" | "field/m";
-type Constraint = "positive" | "nonnegative" | "positive-integer" | "nonnegative-integer";
+type Constraint = "positive" | "nonnegative" | "positive-integer" | "nonnegative-integer" | "percentage";
 type ParameterStep = number | "field";
 interface ParameterBase {
     key: Address;
@@ -123,7 +123,10 @@ export const functionTable: Record<GeoFunction["type"], FunctionSpec> = {
     noise: { initial: false, writes: "any", reading: "point", parameters: [
         number("amplitude", "振幅", "field", "field", 1, { type: "field" }),
         number("scale", "噪声尺度", "m", 1, 24, { constraint: "positive" }),
-        number("octaves", "倍频数", "", 1, 5, { constraint: "positive-integer" }), feather, seed
+        number("octaves", "倍频数", "", 1, 5, { constraint: "positive-integer" }), feather, seed,
+        number("warp", "取样扭曲", "m", .1, 0, advanced),
+        number("warpScale", "扭曲尺度", "m", 1, 60, { advanced: true, constraint: "positive" }),
+        number("carve", "沟谷深度", "%", 1, 0, { advanced: true, constraint: "percentage" })
     ] },
     blend: { initial: false, writes: "any", reading: "neighborhood", construction: "strip", parameters: [] },
     split: { initial: false, writes: "any", reading: "neighborhood", construction: "strip", parameters: [] },
@@ -207,6 +210,7 @@ export function numericValid(p: NumericParameter, value: unknown) {
     if (typeof value !== "number" || !Number.isFinite(value)) return false;
     if (p.type === "seed" && !Number.isSafeInteger(value)) return false;
     if (!p.constraint) return true;
+    if (p.constraint === "percentage") return value >= 0 && value <= 100;
     if (p.constraint.endsWith("-integer") && !Number.isSafeInteger(value)) return false;
     return p.constraint.startsWith("nonnegative") ? value >= 0 : value > 0;
 }

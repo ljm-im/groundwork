@@ -83,7 +83,7 @@ export type GeoFunction<N = Expression> = (
     { type: "islets"; density: Expression; reach: N; threshold?: N; seaLevel?: N } |
     { type: "slope"; kind: "path"; line: Curve<N>; ease?: boolean } |
     { type: "slope"; kind: "radial"; center: Point; radius: N; value: N; rate: N } |
-    { type: "noise"; amplitude: Expression; scale: N; octaves?: N; feather?: N } |
+    { type: "noise"; amplitude: Expression; scale: N; octaves?: N; feather?: N; warp?: N; warpScale?: N; carve?: N } |
     { type: "blend" | "split" } |
     { type: "batter"; grade: N }
 ) & { seed?: N };

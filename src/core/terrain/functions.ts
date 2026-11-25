@@ -4,7 +4,7 @@ import { fieldExpressions, functionTable } from "../design/functionTable.ts";
 import { type FieldSamples } from "../design/results.ts";
 import { evaluate, fieldValue, sampleValue } from "../design/expression.ts";
 import { type CrossSection, type Region, signedBoundaryDistance } from "../design/regions.ts";
-import { distance, nearest, polygonField, sampleDefined, smooth, type Grid } from "../math/geometry.ts";
+import { clamp, distance, nearest, polygonField, sampleDefined, smooth, type Grid } from "../math/geometry.ts";
 import { fbm, noise } from "../math/noise.ts";
 import { erode } from "./erosion.ts";
 import { flattenPath } from "../design/path.ts";
@@ -91,7 +91,26 @@ export function evaluateLayer(n: ResolvedGeoNode, region: Region, state: FieldSt
             }
             case "noise": {
                 const pattern = noise(seed), octaves = f.octaves, weight = featherWeight(f.feather);
-                return (k, x, y) => source[k] + input(f.amplitude, k) * fbm(pattern, x / f.scale, y / f.scale, octaves) * weight(x, y);
+                if (!f.warp && !f.carve)
+                    return (k, x, y) => source[k] + input(f.amplitude, k) * fbm(pattern, x / f.scale, y / f.scale, octaves) * weight(x, y);
+                const warp = noise(seed + 101), gullies = noise(seed + 202);
+                return (k, x, y) => {
+                    const original = source[k], factor = weight(x, y);
+                    if (!factor) return original;
+                    let value = original;
+                    if (f.warp) {
+                        const u = x / f.warpScale, v = y / f.warpScale;
+                        const dx = f.warp * clamp(fbm(warp, u, v, 4), -1, 1);
+                        const dy = f.warp * clamp(fbm(warp, u + 7.3, v - 2.1, 4), -1, 1);
+                        x += dx;
+                        y += dy;
+                        value = sampleDefined(grid, source, mask, x, y) ?? original;
+                    }
+                    const u = x / f.scale, v = y / f.scale;
+                    const detail = input(f.amplitude, k) * fbm(pattern, u, v, octaves);
+                    const carve = f.carve && value > 0 ? value * f.carve / 100 * (1 - clamp(fbm(gullies, u, v, octaves, true))) : 0;
+                    return original + (value - original + detail - carve) * factor;
+                };
             }
             case "coast": {
                 const n1 = noise(seed), n2 = noise(seed + 101);

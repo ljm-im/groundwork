@@ -307,6 +307,20 @@ test("Slope ridges round the crown and foot, interpolate heights and merge at th
     assert(Math.abs(merged(0, 10, 0) - height(0, 10, 0) - 1.25) < 1e-9);
 });
 
+test("Noise gullies cut a bounded proportion of positive heights and leave the sea floor unchanged", () => {
+    const area = rect(-16, -16, 16, 16);
+    const run = (value: number, carve: number) => generateTerrain(design([
+        layer("A", area, { type: "ground", value }),
+        layer("B", area, { type: "noise", amplitude: 0, scale: 9, carve })
+    ])).fields.height.values;
+    const low = run(8, 20), high = run(16, 20);
+    assert(low.some(h => h < 8));
+    assert(low.every(h => h >= 6.4 - 1e-6 && h <= 8));
+    assert(high.every((h, i) => h === 2 * low[i]));
+    assert.deepEqual(run(-4, 20), run(-4, 0));
+    assert.deepEqual(run(0, 20), run(0, 0));
+});
+
 test("Omitted mountain and erosion floors preserve cells at and below minus one thousand", () => {
     const area = rect(-12, -12, 12, 12);
     const m = layer("M", area, { type: "mountain", ridges: [], peaks: [{ at: { p: [0, 0], h: 5 }, radius: 3, noise: 0, scale: 12 }] });
