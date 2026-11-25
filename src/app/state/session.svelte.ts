@@ -284,6 +284,22 @@ export class Editor {
     focusGeometry(target?: GeometryTarget) {
         this.setTool("select"); this.geometry = target;
     }
+    focusFunctionGeometry(node: GeoNode, control: GeoControl) {
+        const target: GeometryTarget = { kind: control.path < 0 ? "path" : "parameter", index: control.path };
+        this.changePropertyTab("function");
+        const f = node.function;
+        if (f.type === "mountain") {
+            if (control.path < f.ridges.length) this.toggleSubitem(node.id, "ridges", control.path, true);
+            else this.toggleSubitem(node.id, "peaks", control.path - f.ridges.length, true);
+        }
+        this.focusGeometry(target);
+        if (control.role === "parameter" || control.role === "vertex") this.pickVertex(control);
+        this.revealProperties?.();
+        void tick().then(() => {
+            if (this.geometry === target && this.selection?.id === node.id && this.propertyTab === "function")
+                this.properties?.querySelector(".geometry-box[aria-pressed=true]")?.scrollIntoView({ block: "nearest" });
+        });
+    }
     toolActive(mode: Tool, owner?: string, member?: number) {
         return this.tool === mode && this.drawing?.owner === owner && this.drawing?.member === member;
     }

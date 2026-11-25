@@ -8,10 +8,10 @@ import { type GridDisplay, type layerDefaults, pixelGridSpacing } from "../core/
 import { type Box } from "../core/math/geometry.ts";
 import { clamp, distance, nearest } from "../core/math/geometry.ts";
 import { issueView, objectIssues } from "../core/checks/issues.ts";
-import { type GeoControl, type GeometryTarget } from "../core/edit/geoControls.ts";
+import { hitParameterGeometry, type GeoControl, type GeometryTarget } from "../core/edit/geoControls.ts";
 import { contourLabels, fieldContours } from "./fieldContours.ts";
 import { constrainGeoLabel, constrainSectionLabel, geoLabelPoint } from "./labelLayout.ts";
-import { drawGeoOverlay, drawHandle } from "./geoOverlay.ts";
+import { drawGeoOverlay, drawHandle, showsParameterGeometry } from "./geoOverlay.ts";
 import { baseMap, canvasText, contourStyle, interfaceColors, mapColors, overlay, type Theme } from "./palette.ts";
 import { displayReading, displayValue } from "../core/design/display.ts";
 import { sectionHandles } from "../core/edit/controls.ts";
@@ -251,6 +251,14 @@ export class ProjectMap {
         if (selected || stripSource) return { color: mapColors.accent, width: overlay.selectedWidth / this.scale };
         if (view.hovered?.kind === kind && view.hovered.id === id || kind === "geoNode" && view.referencedGeo.includes(id))
             return { color: mapColors.accentHover, width: overlay.hoverWidth / this.scale };
+    }
+    hitParameter(view: MapView, point: Point) {
+        const { geoNodes, grid } = view.project.design;
+        for (const node of geoNodes.toReversed()) {
+            if (!showsParameterGeometry(view, node)) continue;
+            const control = hitParameterGeometry(node, point, this.scale, grid.step / 8);
+            if (control) return { kind: "geo" as const, id: node.id, control };
+        }
     }
     pickGeo(project: ProjectView, point: Point, after?: string, excluded: readonly string[] = []) {
         const empty = !hasSamples(project.terrain);

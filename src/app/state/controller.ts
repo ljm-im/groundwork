@@ -81,6 +81,10 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         if (mark) return { kind: "handle" as const, h: mark };
         const hits = map.issueHits(view, screen);
         if (hits.length && !alt && !context) return { kind: "issues" as const, hits };
+        if (!alt && !context) {
+            const parameter = map.hitParameter(view, p);
+            if (parameter) return parameter;
+        }
         if (geo) return geo;
         if (h && !alt) return { kind: "handle" as const, h };
         const section = !alt && map.hitSection(view, p);
@@ -160,8 +164,10 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             }
             editor.select({ kind: "geoNode", id: hit.id });
             const n = geoAt(editor.project.design, hit.id), c = hit.control;
-            if (c.role === "vertex" || c.role === "parameter") editor.pickVertex(c);
-            if (ev && c.role !== "segment" && (c.role !== "body" || n.construction.type === "free"))
+            if (c.role === "parameter" || c.role === "parameterSegment" || c.path < 0)
+                editor.focusFunctionGeometry(n, c);
+            else if (c.role === "vertex") editor.pickVertex(c);
+            if (ev && c.role !== "segment" && c.role !== "parameterSegment" && (c.role !== "body" || n.construction.type === "free"))
                 editor.gesture = { geo: n, control: c, screen, pointer: ev.pointerId };
             return;
         }

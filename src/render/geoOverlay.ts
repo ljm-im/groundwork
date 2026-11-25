@@ -15,6 +15,10 @@ export function drawHandle(ctx: CanvasRenderingContext2D, x: number, y: number, 
     ctx.stroke();
 }
 
+export function showsParameterGeometry(view: MapView, node: GeoNode) {
+    return view.selection?.kind === "geoNode" && view.selection.id === node.id || view.layers.geoNodes && !node.disabled;
+}
+
 export function drawGeoOverlay(map: ProjectMap, view: MapView) {
     const ctx = map.ctx, scale = map.scale, d = view.project.design, draft = view.draft;
     const edges = (segments: Segment[], color: string, width: number, dashed = false) => {
@@ -32,10 +36,10 @@ export function drawGeoOverlay(map: ProjectMap, view: MapView) {
         ctx.setLineDash([]);
     };
     const dot = (point: Point, active = false, control = false) => drawHandle(ctx, ...map.screen(point), active, control);
-    function controls(n: GeoNode, numeric: GeoNode<number>) {
+    function controls(n: GeoNode, numeric: GeoNode<number>, selected: boolean) {
         for (const [i, path] of pathEntries(n)) {
             if (i === -1) edges(flattenPath(path, .6 / scale), mapColors.parameterGeometry, overlay.parameterWidth, true);
-            else if (view.dragNode || draft?.owner === n.id) edges(flattenPath(path, .6 / scale), mapColors.accent, overlay.selectedWidth);
+            else if (selected && (view.dragNode || draft?.owner === n.id)) edges(flattenPath(path, .6 / scale), mapColors.accent, overlay.selectedWidth);
         }
         for (const points of linePoints(n)) {
             if (points.length === 1) dot(points[0]);
@@ -51,7 +55,7 @@ export function drawGeoOverlay(map: ProjectMap, view: MapView) {
             ctx.stroke();
             ctx.setLineDash([]);
         }
-        if (draft) return;
+        if (draft || !selected) return;
         for (const c of geoControls(n, view.geometry)) {
             const tangent = c.role === "in" || c.role === "out";
             if (tangent) edges([{ a: geometryPath(n, c.path)!.nodes[c.index].p, b: c.point }], mapColors.accent, overlay.controlLine);
@@ -61,7 +65,9 @@ export function drawGeoOverlay(map: ProjectMap, view: MapView) {
     }
     ctx.save();
     const owner = view.selection?.kind === "geoNode" ? d.geoNodes.find(n => n.id === view.selection!.id) : undefined;
-    if (owner && (!draft || draft.owner === owner.id)) controls(view.dragNode ?? owner, owner);
+    if (!draft) for (const node of d.geoNodes) if (node !== owner && showsParameterGeometry(view, node))
+        controls(node, node, false);
+    if (owner && (!draft || draft.owner === owner.id)) controls(view.dragNode ?? owner, owner, true);
     if (draft) {
         if (draft.tool === "strip") {
             edges(draft.spine ?? [], mapColors.accent, overlay.selectedWidth);

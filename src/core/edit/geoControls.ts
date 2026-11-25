@@ -6,7 +6,7 @@ import { distance, spline } from "../math/geometry.ts";
 
 export interface GeometryTarget { kind: "path" | "parameter"; index: number }
 export interface GeoControl {
-    role: "vertex" | "in" | "out" | "arc" | "segment" | "body" | "parameter";
+    role: "vertex" | "in" | "out" | "arc" | "segment" | "body" | "parameter" | "parameterSegment";
     path: number; index: number; point: Point;
 }
 export function geometryPath(n: GeoNode, index: number): Path | undefined {
@@ -51,15 +51,36 @@ export function geoControls(n: GeoNode, target?: GeometryTarget) {
 function editablePaths(n: GeoNode, target?: GeometryTarget) {
     return pathEntries(n).filter(([i]) => target ? target.kind === "path" && i === target.index : i >= 0);
 }
+const handleRadius = 7, segmentRadius = 5;
+function hitGeoHandle(controls: GeoControl[], p: Point, scale: number) {
+    let best: GeoControl | undefined, gap = handleRadius;
+    for (const control of controls) {
+        const distancePx = distance(p, control.point) * scale;
+        if (distancePx > gap) continue;
+        best = control; gap = distancePx;
+    }
+    return best;
+}
 export function hitControl(n: GeoNode, p: Point, scale: number, tolerance: number, target?: GeometryTarget): GeoControl | undefined {
-    const handle = geoControls(n, target).reverse().map(c => ({ c, gap: distance(p, c.point) * scale })).filter(v => v.gap <= 7).sort((a, b) => a.gap - b.gap)[0];
-    if (handle) return handle.c;
-    return hitPathSegment(n, p, scale, tolerance, target);
+    return hitGeoHandle(geoControls(n, target), p, scale) ?? hitPathSegment(n, p, scale, tolerance, target);
+}
+export function hitParameterGeometry(n: GeoNode, p: Point, scale: number, tolerance: number): GeoControl | undefined {
+    const controls = parameterLines(n).flatMap(({ points }, path) =>
+        points.map((v, index): GeoControl => ({ role: "parameter", path, index, point: v.p })));
+    const handle = hitGeoHandle(controls, p, scale);
+    if (handle) return handle;
+    const lines = linePoints(n);
+    for (let path = lines.length - 1; path >= 0; path--) {
+        const points = lines[path];
+        const hit = nearestSegment(points.slice(1).map((b, i) => ({ a: points[i], b })), p);
+        if (hit && hit.distance * scale <= segmentRadius) return { role: "parameterSegment", path, index: 0, point: hit.point };
+    }
+    return hitPathSegment(n, p, scale, tolerance, { kind: "path", index: -1 });
 }
 export function hitPathSegment(n: GeoNode, p: Point, scale: number, tolerance: number, target?: GeometryTarget): GeoControl | undefined {
     for (const [index, path] of editablePaths(n, target).reverse()) {
         const hit = nearestSegment(flattenPath(path, Math.min(tolerance, .5 / scale)), p);
-        if (hit && hit.distance * scale <= 5)
+        if (hit && hit.distance * scale <= segmentRadius)
             return { role: "segment", path: index, index: path.nodes.findIndex(v => v.id === hit.edge.from), point: hit.point };
     }
 }
