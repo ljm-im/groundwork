@@ -16,11 +16,10 @@ interface ParameterBase {
 }
 export interface NumericParameter extends ParameterBase {
     type: "number" | "field" | "seed";
-    default: Expression;
+    default: Expression | ((id: string) => Expression);
     constraint?: Constraint;
     create?: Expression;
     profile?: true;
-    derived?: true;
 }
 type GeometryDefault = "boundary" | "center" | "axis" | "draw-line" | "draw-point" | "empty";
 interface GeometryParameter extends ParameterBase { type: "geometry"; default: GeometryDefault }
@@ -37,8 +36,8 @@ interface FunctionSpec {
 }
 
 const asKey = (key: string): Address => key.split(".").map(part => /^\d+$/.test(part) ? Number(part) : part);
-function number<S extends ParameterStep>(key: string, label: string, unit: Unit, step: S, value: Expression,
-    options: Partial<Pick<NumericParameter, "type" | "constraint" | "advanced" | "variant" | "create" | "profile" | "derived">> = {}): NumericParameter & { step: S } {
+function number<S extends ParameterStep, D extends NumericParameter["default"]>(key: string, label: string, unit: Unit, step: S, value: D,
+    options: Partial<Pick<NumericParameter, "type" | "constraint" | "advanced" | "variant" | "create" | "profile">> = {}): NumericParameter & { step: S; default: D } {
     return { key: asKey(key), label, unit, step, default: value, type: "number", advanced: false, ...options };
 }
 function geometry(key: string, label: string, value: GeometryDefault, variant?: GeometryParameter["variant"]): GeometryParameter {
@@ -94,7 +93,7 @@ export const functionTable: Record<GeoFunction["type"], FunctionSpec> = {
         number("evaporation", "蒸发率", "", .01, .02, advanced),
         number("gravity", "重力", "", .1, 6, advanced),
         number("lifetime", "流动距离", "m", 1, 50, { ...advanced, constraint: "positive" }),
-        number("spacing", "计算间距", "m", .1, 1, { ...advanced, constraint: "positive", derived: true })
+        number("spacing", "计算间距", "m", .1, id => "{geo:" + id + ".radius} / 2", { ...advanced, constraint: "positive" })
     ] },
     islets: { initial: false, writes: "height", reading: "neighborhood", readArea: "canvas", parameters: [
         number("density", "礁石密度", "", .05, .5, { type: "field" }),
@@ -151,6 +150,10 @@ export function canWrite(type: GeoFunction["type"], field: string) {
     return functionTable[type].writes === "any" || field === heightId;
 }
 
+export function parameterDefault(spec: NumericParameter, id: string): Expression {
+    return typeof spec.default === "function" ? spec.default(id) : spec.default;
+}
+
 export function parameterStep(spec: ParameterSpec, field?: FieldDeclaration) {
     if (spec.step !== "field") return spec.step;
     const precision = fieldPrecision(field);
@@ -178,7 +181,7 @@ export function fillFunctionParameters(f: GeoFunction, prefix: Address = []) {
         if (p.type === "geometry") {
             if (!prefix.length && p.default === "empty" && readAt(f, p.key) === undefined) writeAt(f, p.key, []);
         }
-        else if (!p.profile && !p.derived) for (const key of expandKeys(f, p.key))
+        else if (!p.profile && typeof p.default !== "function") for (const key of expandKeys(f, p.key))
             if (prefix.every((part, i) => key[i] === part) && readAt(f, key) === undefined) writeAt(f, key, p.create ?? p.default);
     }
     return f;

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { functionTable } from "../src/core/design/functionTable.ts";
 import { parseDesign, serializeDesign } from "../src/core/design/model.ts";
 import { parameters, resolveDesign } from "../src/core/design/parameters.ts";
 import { defaultFunction } from "../src/core/edit/geoNodes.ts";
@@ -61,7 +62,10 @@ test("Erosion spacing defaults to half its own radius and supports an authored n
     const design = syntheticDesign(), fn = defaultFunction("erosion");
     assert(fn.type === "erosion");
     design.geoNodes.push(layer("E", design.geoNodes[0].construction, fn));
-    assert.equal(parameters(design).get("geo:E.spacing")?.value, "{geo:E.radius} / 2");
+    const spec = functionTable.erosion.parameters.find(p => p.key[0] === "spacing");
+    assert(spec && typeof spec.default === "function");
+    assert.equal(spec.default("E"), "{geo:E.radius} / 2");
+    assert.equal(parameters(design).get("geo:E.spacing")?.value, spec.default("E"));
     assert.equal(Object.hasOwn(fn, "spacing"), false);
     const spacing = () => {
         const result = resolveDesign(parseDesign(design)).geoNodes.at(-1)!.function;

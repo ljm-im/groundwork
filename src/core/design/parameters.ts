@@ -1,5 +1,5 @@
 import { readAt, type Address } from "./address.ts";
-import { expandKeys, functionParameters, functionTable, markParameters, matchesKey, stripWidths, type NumericParameter } from "./functionTable.ts";
+import { expandKeys, functionParameters, functionTable, markParameters, matchesKey, parameterDefault, stripWidths, type NumericParameter } from "./functionTable.ts";
 import { lineProfile } from "./polyline.ts";
 import { evaluate, fieldValue, references, type Value } from "./expression.ts";
 import { check, DesignError, quotedLocation, type DesignProblem, type Location } from "./problems.ts";
@@ -52,15 +52,14 @@ export function parameters(d: Design, geoIndex?: number) {
         const f = n.function, c = n.construction;
         const at = (path: Address): Location & { kind: "geo" } => ({ kind: "geo", id: n.id, index, path });
         check(f && Object.hasOwn(functionTable, f.type), "无效", at(["function", "type"]));
-        const addGeo = (path: Address, property: Address, p: NumericParameter, fallback = p.default, virtual = false) => {
+        const addGeo = (path: Address, property: Address, p: NumericParameter, fallback = parameterDefault(p, n.id), virtual = false) => {
             add(at(path), n.label, ["geoNodes", index], property, geoParameterName(d, n, path) ?? p.label, p.type, fallback, virtual, p);
         };
         const profiles = new Map<Curve, ReturnType<typeof lineProfile>>();
         for (const p of functionParameters(f)) {
             if (p.type === "geometry") continue;
             for (const key of expandKeys(f, p.key)) {
-                let fallback = p.default, virtual = false;
-                if (f.type === "erosion" && p.derived) fallback = "{geo:" + n.id + ".radius} / 2";
+                let fallback = parameterDefault(p, n.id), virtual = false;
                 if (p.profile && readAt(f, key) === undefined) {
                     const lineKey = key.slice(0, -3), line = readAt(f, lineKey) as Curve;
                     const index = Number(key.at(-2)), ease = f.type === "slope" && f.kind === "path" && f.ease;
