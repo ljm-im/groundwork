@@ -62,6 +62,16 @@ test("Pointer lock transitions discard the cursor jump without losing subsequent
     }
     assert.equal(value, 2.8);
 });
+test("Offsetting an expression without numeric literals removes the added term at zero", () => {
+    const formula = "({input:A} - {field:F})";
+    for (const steps of [-3, 1, 3]) {
+        const adjusted = adjustNumber(formula, steps, .1);
+        assert.notEqual(adjusted, formula);
+        assert.equal(adjustNumber(adjusted, -steps, .1), formula);
+    }
+    assert.equal(adjustNumber("{input:A} * 2 + 1", -1, 1), "{input:A} * 2 + 0");
+});
+
 test("Dragging and repeating preview several values but release records one history entry", async t => {
     const jitter = new NumberDrag();
     for (const dx of [2, -2, 2, -2]) assert.equal(jitter.move(dx, 0, false, false), 0);

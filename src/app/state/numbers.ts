@@ -41,13 +41,17 @@ export function adjustNumber(value: Expression, steps: number, step: number, ran
         before--; closing++;
     }
     const initial = Number(literal.text) * (signed ? -1 : 1);
-    let next = sumSteps(initial, steps * step);
+    let next = sumSteps(initial, sumSteps(0, steps * step));
     if (parts[before]?.text === "/" && initial * steps < 0) {
         const zeroStep = Math.abs(initial / step);
         if (Math.abs(zeroStep - Math.round(zeroStep)) < 1e-10 && Math.round(zeroStep) <= Math.abs(steps))
             next = sumSteps(next, Math.sign(steps) * step);
     }
-    if (operator && binary) return value.slice(0, operator.start) + (next < 0 ? "-" : "+") + value.slice(operator.end, literal.start) + Math.abs(next) + value.slice(literal.end);
+    if (operator && binary) {
+        if (next === 0 && i === parts.length - 1 && parts.findIndex(t => literalPattern.test(t.text)) === i)
+            return value.slice(0, operator.start).trimEnd() + value.slice(literal.end);
+        return value.slice(0, operator.start) + (next < 0 ? "-" : "+") + value.slice(operator.end, literal.start) + Math.abs(next) + value.slice(literal.end);
+    }
     return value.slice(0, signed ? last.start : literal.start) + next + value.slice(literal.end);
 }
 
