@@ -1,5 +1,5 @@
 import { readAt, type Address } from "./address.ts";
-import { expandKeys, functionParameters, functionTable, markParameters, matchesKey, stripWidths, type NumericParameter } from "./functionTable.ts";
+import { functionParameterApplies, functionParameterKeys, functionParameters, functionTable, legacyRidge, markParameters, matchesKey, stripWidths, type NumericParameter } from "./functionTable.ts";
 import { lineProfile } from "./polyline.ts";
 import { evaluate, fieldValue, references, type Value } from "./expression.ts";
 import { check, DesignError, quotedLocation, type DesignProblem, type Location } from "./problems.ts";
@@ -15,7 +15,7 @@ export function geoParameter(node: GeoNode, path: Address) {
     const c = node.construction;
     if (group === "construction" && c.type === "strip") return stripWidths(c.of?.length === 2).find(p => matchesKey(p.key, key));
     if (group === "function" && Object.hasOwn(functionTable, node.function.type))
-        return functionParameters(node.function).find(p => matchesKey(p.key, key));
+        return functionParameters(node.function).find(p => matchesKey(p.key, key) && functionParameterApplies(node.function, p, key));
 }
 
 export function geoParameterName(d: Design, node: GeoNode, path: Address, context = true): string | undefined {
@@ -59,11 +59,12 @@ export function parameters(d: Design, geoIndex?: number) {
         const profiles = new Map<Curve, ReturnType<typeof lineProfile>>();
         for (const p of functionParameters(f)) {
             if (p.type === "geometry") continue;
-            for (const key of expandKeys(f, p.key)) {
+            for (const key of functionParameterKeys(f, p)) {
                 let fallback = p.default, virtual = false;
                 if (p.profile && readAt(f, key) === undefined) {
                     const lineKey = key.slice(0, -3), line = readAt(f, lineKey) as Curve;
-                    const index = Number(key.at(-2)), ease = f.type === "slope" && f.kind === "path" && f.ease;
+                    const index = Number(key.at(-2)), ease = f.type === "mountain" ? !legacyRidge(f.ridges[Number(key[1])])
+                        : f.type === "slope" && f.kind === "path" && f.ease;
                     if (line?.nodes.every(v => Array.isArray(v?.p))) {
                         if (!profiles.has(line)) profiles.set(line, lineProfile(line, d.grid.step / 8));
                         const profile = profiles.get(line)!;

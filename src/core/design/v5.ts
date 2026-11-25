@@ -41,7 +41,14 @@ export interface Strip<N = Expression> {
 }
 export type Construction<N = Expression> = { type: "free"; paths: ClosedCurve[] } | Strip<N>;
 export interface RidgeNoise<N> { amount: N; wavelength: N }
-export interface Ridge<N> { line: Curve<N>; widths: [N, N]; widthNoise: RidgeNoise<N>; heightNoise: RidgeNoise<N> }
+export interface Ridge<N> {
+    line: Curve<N>;
+    slope?: N;
+    // Authored v5 ridges with widths keep their original profile and reference addresses.
+    widths?: [N, N];
+    widthNoise?: RidgeNoise<N>;
+    heightNoise?: RidgeNoise<N>;
+}
 export interface Peak<N> { at: { p: Point; h: N }; radius: N; noise: N; scale: N }
 export interface Erosion {
     /** Number of simulated droplets. */
@@ -70,7 +77,7 @@ export type GeoFunction<N = Expression> = (
     { type: "ground"; value: N } |
     { type: "flat"; amount: Expression; feather?: N } |
     { type: "coast"; shore: ClosedCurve; roughness: Expression; harbor: { center: Point; span: N; radius: N } } |
-    { type: "mountain"; ridges: Ridge<N>[]; peaks: Peak<N>[]; floor?: N } |
+    { type: "mountain"; ridges: Ridge<N>[]; peaks: Peak<N>[]; floor?: N; crestRound?: N; footRound?: N; blend?: N } |
     { type: "cliff"; factor: Expression; seaLevel?: N } |
     ({ type: "erosion"; strength?: Expression; floor?: N } & NumericProperties<Erosion, N>) |
     { type: "islets"; density: Expression; reach: N; threshold?: N; seaLevel?: N } |

@@ -112,7 +112,8 @@
                         {#each advancedParameters as p (p.key.join("."))}{@render param(p.key)}{/each}
                     </Subitem>
                 </Part>
-            {:else if f.type === "mountain"}
+            {/if}
+            {#if f.type === "mountain"}
                 <Part title="山脊">
                     {#snippet actions()}<AddButton label="添加山脊" active={editor.toolActive("ridge", n.id)} action={() => editor.setTool("ridge", n.id)} />{/snippet}
                     {#each f.ridges as ridge, j (editor.subitemKey(n.id, "ridges", j))}
@@ -179,7 +180,7 @@
     let advancedParameters = $derived(specs.filter(p => p.advanced));
     function memberParameters(group: "ridges" | "peaks", i: number) {
         return specs.filter(p => p.key[0] === group && p.type !== "geometry" && p.key.slice(2).every(part => part !== "*") && p.key.at(-1) !== "h")
-            .map(p => [group, i, ...p.key.slice(2)]);
+            .map(p => [group, i, ...p.key.slice(2)]).filter(key => geoParameter(n, ["function", ...key]));
     }
     let vertex = $derived(editor.vertex);
     function nameOf(id: string) {

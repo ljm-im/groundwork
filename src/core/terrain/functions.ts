@@ -5,10 +5,11 @@ import { type FieldSamples } from "../design/results.ts";
 import { evaluate, fieldValue, sampleValue } from "../design/expression.ts";
 import { type CrossSection, type Region, signedBoundaryDistance } from "../design/regions.ts";
 import { distance, nearest, polygonField, sampleDefined, smooth, type Grid } from "../math/geometry.ts";
-import { fbm, noise, noise1D } from "../math/noise.ts";
+import { fbm, noise } from "../math/noise.ts";
 import { erode } from "./erosion.ts";
 import { flattenPath } from "../design/path.ts";
 import { shoreDistance } from "./shore.ts";
+import { mountainProfile } from "./mountain.ts";
 
 export interface FieldState {
     grid: Grid;
@@ -113,27 +114,8 @@ export function evaluateLayer(n: ResolvedGeoNode, region: Region, state: FieldSt
                 return k => source[k] + (land[k] ? Math.min(shore[k] * .28, 3.5) : -1 - Math.min(-shore[k] * .09, 5));
             }
             case "mountain": {
-                const n3 = noise(seed + 202);
-                const floor = f.floor;
-                const ridges = f.ridges.map(r => ({ ...r, profile: numericProfile(r.line, grid.step / 8) }));
-                const peaks = f.peaks.map(p => ({ ...p, h: p.at.h }));
-                return (k, x, y) => {
-                    let h = source[k];
-                    if (h <= floor) return h;
-                    for (const { profile, widths, widthNoise: w, heightNoise: gain } of ridges) {
-                        const hit = nearest(x, y, profile.points), a = profile.points[hit.segment], b = profile.points[hit.segment + 1];
-                        const side = (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]) > 0 ? 0 : 1;
-                        const s = profile.station(hit.segment, hit.t);
-                        const breadth = widths[side] * (1 + w.amount / 100 * noise1D(seed, s / w.wavelength));
-                        const crest = profile.value(s) * (1 + gain.amount / 100 * noise1D(seed + 1, s / gain.wavelength));
-                        h = Math.max(h, crest * Math.exp(-((hit.distance / (breadth || 1e-9)) ** 2)));
-                    }
-                    for (const p of peaks) {
-                        const radius = p.radius + p.noise * n3(x / p.scale, y / p.scale);
-                        h = Math.max(h, p.h * Math.exp(-((distance([x, y], p.at.p) / (radius || 1e-9)) ** 2)));
-                    }
-                    return h;
-                };
+                const height = mountainProfile(f, grid.step / 8, seed);
+                return (k, x, y) => source[k] <= f.floor ? source[k] : height(x, y, source[k]);
             }
             case "cliff": {
                 const n1 = noise(seed);
