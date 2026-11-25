@@ -16,7 +16,7 @@ import { constrainGeoLabel, constrainSectionLabel, geoLabelPoint } from "../src/
 import { makeShape, rasterRegion } from "../src/core/design/regions.ts";
 import { clampMarkPoint, nextMapHit, ProjectMap } from "../src/render/map.ts";
 import { render } from "svelte/server";
-import { layer, openCurve, polygon, rect, syntheticDesign } from "./scenarios.ts";
+import { coveredLandformPoints, layer, openCurve, overlappingLandforms, polygon, rect, syntheticDesign } from "./scenarios.ts";
 
 test("Overlapping map objects cycle in paint order, including separate geometries of the same terrain", async () => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
@@ -50,6 +50,36 @@ test("Overlapping map objects cycle in paint order, including separate geometrie
     editor.layers.geoNodes = false;
     assert.deepEqual([...map.objectHits(editor.mapView!, screen)].map(h => h.selection.id), ["B", "A", "Q", "M", "T", "G"]);
     assert.equal(nextMapHit([], { kind: "geoNode", id: "M" }), undefined);
+});
+
+test("An upper landform face covers lower outlines, vertices and parameter geometry", async () => {
+    const { Editor } = await import("../src/app/state/session.svelte.ts");
+    const project = new Project(overlappingLandforms()), editor = new Editor();
+    const map: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), { width: 1000, height: 700, markBoxes: [] });
+    map.fit(project.terrain, false);
+    Object.assign(editor, { project, map });
+    editor.layers.geoNodes = true;
+    for (const point of coveredLandformPoints) {
+        const screen = map.screen(point), view = editor.mapView!;
+        for (const mode of ["select", "edit", "cycle"] as const)
+            assert.equal(map.objectHits(view, screen, mode).next().value?.selection.id, "B");
+        const next = nextMapHit(map.objectHits(view, screen, "cycle"), { kind: "geoNode", id: "B" });
+        assert.equal(next?.selection.id, "A");
+    }
+    const view = editor.mapView!;
+    const ridge = map.objectHits(view, map.screen([0, 10]), "edit").next().value!;
+    assert.equal(ridge.selection.id, "A");
+    assert.equal(ridge.control?.role, "segment");
+    assert.equal(ridge.control.path, -2);
+    for (const [point, role] of [[[-16, 10], "vertex"], [[-16, 8], "segment"]] as const) {
+        const screen = map.screen([...point]);
+        assert.equal(map.objectHits(view, screen, "select").next().value?.control?.role, "body");
+        assert.equal(map.objectHits(view, screen, "edit").next().value?.control?.role, role);
+    }
+    editor.setSelection({ kind: "geoNode", id: "A" });
+    const atVertex = map.screen(coveredLandformPoints[2]);
+    assert.equal(map.selectedControl(editor.mapView!, atVertex)?.selection.id, "A");
+    assert.equal(map.selectedControl(editor.mapView!, atVertex)?.control?.role, "vertex");
 });
 
 test("Map issue hits keep the view and inspector issues only pan from outside it", async () => {

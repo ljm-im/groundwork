@@ -17,6 +17,7 @@ import { checkMapIssues } from "./mapIssues.ts";
 import { checkCurveEditing } from "./curveEditing.ts";
 import { checkSegmentEditing } from "./segmentEditing.ts";
 import { checkRound31Fix } from "./round31Fix.ts";
+import { checkLayeredHits } from "./mapInput.ts";
 import { checkSectionPlots } from "./sectionPlots.ts";
 import { checkNumericEditing } from "./numericEditing.ts";
 import { checkPenDrawing } from "./penDrawing.ts";
@@ -35,6 +36,7 @@ test("Editor interactions in Chromium", async t => {
         await t.test("Curve editing in Chromium", () => checkCurveEditing(url));
         await t.test("Segment editing in Chromium", () => checkSegmentEditing(url));
         await t.test("Contour selection and sidebar feedback in Chromium", () => checkRound31Fix(url));
+        await t.test("Map hits follow layer order in Chromium", () => checkLayeredHits(url));
         await t.test("Section plots in Chromium", () => checkSectionPlots(url));
         await t.test("Numeric editing in Chromium", () => checkNumericEditing(url));
         await t.test("Pen drawing in Chromium", () => checkPenDrawing(url));

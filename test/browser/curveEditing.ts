@@ -315,6 +315,8 @@ export async function checkCurveEditing(url: string) {
         assert.equal(await evaluate(() => document.querySelector("[data-geo-node=D]")?.getAttribute("aria-pressed")), "true");
         await panel("layers"); await click("input[data-layer=geoNodes]");
         await tap(await at(ridge));
+        assert.equal(await evaluate(() => document.querySelector("[data-geo-node=D]")?.getAttribute("aria-pressed")), "true");
+        await tap(await at(ridge), 1);
         await wait(() => {
             const row = document.querySelector("button.geometry-box[aria-label=山脊线][aria-pressed=true]")?.getBoundingClientRect();
             const panel = document.querySelector("#property-content")!.getBoundingClientRect();
@@ -328,6 +330,7 @@ export async function checkCurveEditing(url: string) {
         await wait(s => !!document.querySelector(s), heightRow);
         await click("[data-geo-node=A]");
         await tap(await at(vertex));
+        await tap(await at(vertex), 1);
         await drag(await at(vertex), await at([-4, 32.3])); await saved();
         const mountain = (await authored()).geoNodes.find(n => n.id === "C")!.function;
         assert(mountain.type === "mountain" && distance(mountain.ridges[2].line.nodes[1].p, [-4, 32.3]) < .3);

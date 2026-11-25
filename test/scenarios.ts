@@ -13,6 +13,26 @@ export function rect(x0: number, y0: number, x1: number, y1: number): Constructi
 export function layer(id: string, construction: Construction, fn: GeoFunction, field = heightId): GeoNode {
     return { id, label: id, construction, function: fn, field };
 }
+export function overlappingLandforms(): Design {
+    const design = syntheticDesign();
+    const upper = rect(-20, -15, 16, 6), island = rect(20, -9, 24, -5).paths[0];
+    for (const node of island.nodes) node.id = "island-" + node.id;
+    upper.paths.push(island);
+    design.geoNodes.push(
+        layer("A", rect(-16, -10, 12, 10), {
+            type: "mountain", peaks: [],
+            ridges: [[[-10, 0], [4, 0]], [[-12, 10], [8, 10]]].map((points, i) => ({
+                line: openCurve((points as Point[]).map(p => ({ p, h: 8 })), "corner", "ridge-" + i + "-"),
+                widths: [4, 4], widthNoise: { amount: 0, wavelength: 10 }, heightNoise: { amount: 0, wavelength: 10 }
+            }))
+        }),
+        layer("B", upper, { type: "flat", amount: 2 })
+    );
+    return design;
+}
+
+export const coveredLandformPoints: Point[] = [[0, -5], [-1, -10], [-16, -10], [-3, 0]];
+
 export const erosion = { type: "erosion" as const, droplets: 300, inertia: .2, capacity: 2, minCapacity: .04, deposition: .2,
     erosion: .2, evaporation: .05, gravity: 3, lifetime: 14, radius: 2 };
 

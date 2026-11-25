@@ -306,7 +306,7 @@ export class ProjectMap {
         if (view.hovered?.kind === kind && view.hovered.id === id && !view.hoverPart || kind === "geoNode" && view.referencedGeo.includes(id))
             return { color: colors.accentHover, width: overlay.hoverWidth / this.scale };
     }
-    *objectHits(view: MapView, screen: Point, mode?: "select" | "edit" | "cycle"): Generator<MapHit> {
+    *objectHits(view: MapView, screen: Point, mode: "select" | "edit" | "cycle" = "cycle"): Generator<MapHit> {
         for (const h of this.markHits(...screen)) yield { selection: h, handle: h };
         const p = this.world(...screen), scale = this.scale;
         const { terrain, design } = view.project, { geoNodes, grid, sections } = design;
@@ -321,33 +321,33 @@ export class ProjectMap {
             else if (view.layers.sections && nearest(...p, s.points).distance * scale <= sectionHitRadius)
                 yield { selection: { kind: "section", id: s.id } };
         }
-        for (const node of geoNodes.toReversed()) if (showsParameterGeometry(view, node)) {
-            for (const control of hitParameterGeometries(node, p, scale, grid.step / 8)) yield geoHit(node.id, control);
-        }
-        const empty = !hasSamples(terrain);
-        const nodes = geoNodes.toReversed();
-        const selected = view.selection?.kind === "geoNode" ? nodes.find(n => n.id === view.selection?.id) : undefined;
-        if (mode === "select" || mode === "edit") {
-            for (const node of selected ? [selected, ...nodes.filter(n => n !== selected)] : nodes) {
-                const active = node === selected;
-                if (!active && !empty && (node.disabled || !view.layers.geoNodes && !node.outline && !node.fill)) continue;
-                const box = terrain.regions.get(node.id)?.shape.box, vertices = mode === "edit" || active, margin = (vertices ? 7 : 5) / scale;
-                if (!box || p[0] < box[0] - margin || p[0] > box[2] + margin || p[1] < box[1] - margin || p[1] > box[3] + margin) continue;
-                const control = (vertices ? hitOutlineVertex(node, p, scale) : undefined) ?? hitPathSegment(node, p, scale, grid.step / 8);
-                if (control) yield geoHit(node.id, active || mode === "edit" ? control : bodyControl(p));
+        const empty = !hasSamples(terrain), tolerance = grid.step / 8;
+        for (let i = geoNodes.length - 1; i >= 0; i--) {
+            const node = geoNodes[i], active = view.selection?.kind === "geoNode" && view.selection.id === node.id;
+            if (showsParameterGeometry(view, node)) {
+                for (const control of hitParameterGeometries(node, p, scale, tolerance)) yield geoHit(node.id, control);
             }
-        }
-        for (const node of nodes) {
-            if (node.disabled && !empty) continue;
             const shape = terrain.regions.get(node.id)?.shape;
             if (!shape) continue;
-            if (mode === "cycle" && node === selected && view.outline !== undefined) {
+            const enabled = !node.disabled || empty;
+            if (enabled && mode === "cycle" && active && view.outline !== undefined) {
                 const outlines = shape.containingOutlines?.(p) ?? [];
                 for (const index of outlines) yield geoHit(node.id, outlineControl(index, p));
                 if (outlines.length) continue;
             }
-            if (!shape.contains(p)) continue;
-            const index = mode === "edit" || mode === "select" && node === selected ? shape.containingOutlines?.(p)[0] : undefined;
+            if (active || empty || enabled && (view.layers.geoNodes || node.outline || node.fill)) {
+                const vertices = mode === "edit" || active, margin = (vertices ? 7 : 5) / scale;
+                const box = shape.box;
+                if (p[0] >= box[0] - margin && p[0] <= box[2] + margin && p[1] >= box[1] - margin && p[1] <= box[3] + margin) {
+                    const control = (vertices ? hitOutlineVertex(node, p, scale) : undefined) ?? hitPathSegment(node, p, scale, tolerance);
+                    if (control) {
+                        yield geoHit(node.id, mode === "edit" || mode === "select" && active ? control : bodyControl(p));
+                        continue;
+                    }
+                }
+            }
+            if (!enabled || !shape.contains(p)) continue;
+            const index = mode === "edit" || mode === "select" && active ? shape.containingOutlines?.(p)[0] : undefined;
             yield geoHit(node.id, index === undefined ? bodyControl(p) : outlineControl(index, p));
         }
     }
