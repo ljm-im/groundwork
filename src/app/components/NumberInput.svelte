@@ -130,7 +130,7 @@
     import { evaluate, sampleValue } from "../../core/design/expression.ts";
     import { declarationEntries, isBuiltin } from "../../core/design/defaults.ts";
     import { adjustInputStep, adjustNumber, authoredCaret, caretOffsetAt, chipSpans, composingKey, editorSelection, flagOverflow,
-        editorText, NumberDrag, numericCaret, numericText, repeatButton, selectionOffsets, type Range } from "../state/numbers.ts";
+        editorText, NumberDrag, numericCaret, numericText, referenceLabel, repeatButton, selectionOffsets, type Range } from "../state/numbers.ts";
     import { displayReading, displayValue } from "../../core/design/display.ts";
     import { designErrorText } from "../state/designMessages.ts";
     import { placePopup } from "../state/popup.ts";
@@ -363,6 +363,14 @@
     function adjusted(v: Expression, steps: number) {
         return inputStep ? adjustInputStep(Number(v), steps) : adjustNumber(v, steps, step, range);
     }
+    function rejectedStep(next: Expression, cause: unknown) {
+        const reading = displayValue(next, step, "", key => {
+            const { name, property } = referenceLabel(key, base, slots);
+            return property ? name + "." + property : name;
+        });
+        const reason = designErrorText(cause, base, "message");
+        return "值 " + reading + (reason === "无效" ? " " : "：") + reason;
+    }
     function advance(n: number) {
         const next = adjusted(live, n);
         if (next === live) return;
@@ -372,18 +380,20 @@
             if (change) editor.previewNumber(change);
         }
         catch (e) {
-            error = designErrorText(e, base, "message");
+            error = rejectedStep(next, e);
         }
     }
     function keyboardStep(e: MouseEvent, direction: number) {
         if (e.detail) return;
+        let next: Expression | undefined;
         try {
-            const next = adjusted(value, direction), change = candidate(next);
+            next = adjusted(value, direction);
+            const change = candidate(next);
             if (address && change) editor.commitNumber(address, change.value);
             else if (typeof next === "number") setting?.change(next);
         }
         catch (e) {
-            error = designErrorText(e, base, "message");
+            error = next === undefined ? designErrorText(e, base, "message") : rejectedStep(next, e);
         }
     }
     function beginGesture(e: PointerEvent, direction: number) {
