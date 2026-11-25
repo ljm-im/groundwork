@@ -9,7 +9,7 @@ import { interfaceColors, mapColors } from "../src/render/palette.ts";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const tests = resolve(root, "test"), core = resolve(root, "src/core"), render = resolve(root, "src/render");
 const browserTests = resolve(tests, "browser");
-const testImports = new Set(["node:assert/strict", "node:crypto", "node:test", "svelte/server"]);
+const testImports = new Set(["node:assert/strict", "node:crypto", "node:test", "node:zlib", "svelte/server"]);
 const browserImports = new Set(["vite", "node:child_process", "node:fs", "node:fs/promises", "node:os", "node:path", "node:stream", "node:timers/promises"]);
 const browserNames = new Set(["document", "window", "localStorage", "HTMLCanvasElement", "navigator", "Path2D", "requestAnimationFrame"]);
 const ioNames = new Set(["require", "process", "fetch", "XMLHttpRequest", "Worker"]);
@@ -20,7 +20,8 @@ const allowed: Record<string, string[]> = {
     terrain: ["math", "design"],
     checks: ["math", "design"],
     edit: ["math", "design"],
-    "export.ts": ["math", "design", "terrain", "project.ts"],
+    "export.ts": ["math", "design", "terrain", "project.ts", "export"],
+    export: [],
     "project.ts": ["math", "design", "terrain", "checks"]
 };
 const testTools = new Set(["read-fixture", "fixtureSchema", "register-svelte", "boundaries"].map(name => resolve(root, "configs", name + ".ts")));

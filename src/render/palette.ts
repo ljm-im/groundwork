@@ -1,3 +1,5 @@
+import { reliefColors, reliefThemes } from "../core/terrain/relief.ts";
+
 export const interfaceColors = {
     light: { bgApp: "#f9faf6", textSecondary: "#657570", border: "#d9dfd7", accent: "#226659" },
     dark: { bgApp: "#171d1b", textSecondary: "#8f9e98", border: "#323d39", accent: "#62b3a0" }
@@ -61,22 +63,9 @@ export const overlay = {
 const fieldRamp = { light: [238, 242, 230], dark: [104, 140, 128] } as const;
 
 export const baseMap = {
-    elevation: [
-        [0, 226, 231, 200],
-        [4, 204, 221, 168],
-        [8, 182, 209, 146],
-        [13, 160, 192, 124],
-        [18, 190, 183, 138],
-        [24, 176, 158, 122],
-        [32, 154, 134, 104]
-    ],
-    waterShallow: [186, 221, 230],
-    waterDepthDelta: [36, 26, 18],
-    rock: [163, 157, 143],
-    sand: [232, 222, 190],
+    ...reliefColors,
     light: {
-        rasterDim: 1,
-        shadowGain: 1,
+        ...reliefThemes.light,
         fieldRamp: { low: fieldRamp.light, high: fieldRamp.dark },
         boundary: "#806d50",
         sectionLine: "rgb(38 71 70 / 60%)",
@@ -84,8 +73,7 @@ export const baseMap = {
         mainGrid: "rgba(54,99,104,.23)"
     },
     dark: {
-        rasterDim: .31,
-        shadowGain: 2,
+        ...reliefThemes.dark,
         fieldRamp: { low: fieldRamp.dark, high: fieldRamp.light },
         boundary: "#d4c29f",
         sectionLine: "rgb(214 230 224 / 60%)",

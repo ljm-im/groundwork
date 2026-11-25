@@ -4,7 +4,8 @@ import { readFixture, writeGolden, readRegressions } from "../configs/read-fixtu
 import { evaluateStack } from "../src/core/terrain/terrain.ts";
 import { Project } from "../src/core/project.ts";
 import { parseDesign, serializeDesign } from "../src/core/design/model.ts";
-import { exportProject, serializeExport } from "../src/core/export.ts";
+import { exportProject } from "../src/core/export.ts";
+import { decodePreview, readZip } from "./exportFiles.ts";
 
 const digest = (bytes: string | Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 const values = (value: unknown) => digest(JSON.stringify(value));
@@ -16,18 +17,20 @@ export async function snapshots() {
         coast: await readFixture("round14-coast.json"),
         land: await readFixture("round14-land.json")
     };
-    return Object.fromEntries(Object.entries(inputs).map(([name, raw]) => {
+    return Object.fromEntries(await Promise.all(Object.entries(inputs).map(async ([name, raw]) => {
         const design = parseDesign(raw);
         const serialized = digest(serializeDesign(design));
         const project = new Project(design), terrain = project.terrain, fields = evaluateStack(design).fields;
         assert.deepEqual(terrain.fields, fields);
+        const files = readZip(await exportProject(project, exportCommit));
+        const exported = values([...files].map(([path, data]) => [path, digest(path === "preview.png" ? decodePreview(data).pixels : data)]));
         return [name, {
             fields: Object.fromEntries(Object.entries(fields).map(([key, field]) => [key, { values: bytes(field.values), defined: bytes(field.defined) }])),
             issues: values(project.issues),
             serialized,
-            exported: digest(serializeExport(exportProject(project, { sha256: digest(raw), commit: exportCommit })))
+            exported
         }];
-    }));
+    })));
 }
 
 export async function captureSnapshots() {

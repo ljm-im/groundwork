@@ -16,7 +16,8 @@ export type Request =
     { kind: "generate"; id: number; design: Design | string; reset: boolean; known: KnownRegions } |
     { kind: "number" | "coarse"; id: number; source: number; design: Design; resolved: ResolvedDesign; known: KnownRegions } |
     { kind: "below"; id: number; source: number; through: string; known: KnownRegions } |
-    { kind: "reading"; id: number; source: number; owner: string; field: string; point?: Point };
+    { kind: "reading"; id: number; source: number; owner: string; field: string; point?: Point } |
+    { kind: "export"; id: number; source: number; design: Design };
 
 export type Command = Request | { kind: "clearPreviews" } | { kind: "release"; source: number };
 
@@ -28,7 +29,8 @@ export type Reply =
     { kind: "dropped"; id: number } |
     { kind: "project"; id: number; project: ProjectData } |
     { kind: "view"; id: number; view: ViewData } |
-    { kind: "reading"; id: number; value?: number };
+    { kind: "reading"; id: number; value?: number } |
+    { kind: "export"; id: number; bytes: Uint8Array<ArrayBuffer> };
 
 export function failure(error: unknown): Failure {
     if (error instanceof DesignError) return { name: error.name, message: error.message, problems: error.problems };

@@ -22,11 +22,12 @@ type Params = Record<string, unknown>;
 
 export type Chromium = Awaited<ReturnType<typeof startChromium>>;
 
-export function createBrowserServer() {
+export function createBrowserServer(shared = true) {
     return createServer({
         configFile: "configs/vite.config.ts",
         // Vite drops a null watch override when it merges the project configuration.
-        server: { host: "127.0.0.1", port: 0, watch: { ignored: /.*/ } }
+        server: { host: "127.0.0.1", port: 0, watch: { ignored: /.*/ },
+            ...(shared ? {} : { headers: { "Cross-Origin-Opener-Policy": "unsafe-none", "Cross-Origin-Embedder-Policy": "unsafe-none" } }) }
     });
 }
 

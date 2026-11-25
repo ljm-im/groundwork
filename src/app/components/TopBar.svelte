@@ -19,6 +19,9 @@
         <button id="new" disabled={unavailable} onclick={() => editor.files.choose("new")}><Icon name="new" />新建</button>
         <button id="open" disabled={unavailable} onclick={() => editor.files.choose("open")}><Icon name="open" />打开</button>
         <button id="save" class="primary" disabled={unavailable || !editor.project} onclick={() => editor.files.save()}><Icon name="save" />保存</button>
+        <button id="export" disabled={unavailable || !editor.project} onpointerdown={e => {
+            if (e.button === 0 && isEditableText(document.activeElement)) e.preventDefault();
+        }} onclick={() => editor.files.export()}><Icon name="export" />导出</button>
     </div>
 </header>
 {#if open}
@@ -47,6 +50,7 @@
 </style>
 
 <script lang="ts">
+    import { isEditableText } from "../state/pendingInput.ts";
     import { menuDirection } from "../state/popup.ts";
     import { type Appearance } from "../state/theme.ts";
     import * as session from "../state/session.svelte.ts";

@@ -3,12 +3,13 @@ import { History } from "../../core/edit/history.ts";
 import { serializeDesign } from "../../core/design/model.ts";
 import { newDesign } from "../../core/design/newDesign.ts";
 import { type Design, errorText } from "../types.ts";
-import { FileWrites, type WriteHandle } from "./fileWrites.ts";
+import { FileWrites, type WriteHandle, writeFile } from "./fileWrites.ts";
 import { commitFocusedInput } from "./pendingInput.ts";
 import * as session from "./session.svelte.ts";
 
 const draftKey = "terrain-editor/unsaved-v1";
 const types = [{ description: "项目设计 JSON", accept: { "application/json": [".json"] } }];
+const zipTypes = [{ description: "导出 ZIP", accept: { "application/zip": [".zip"] } }];
 const permissionWarning = "未获得写入权限，修改不会写入文件";
 
 interface DesignHandle extends WriteHandle {
@@ -19,7 +20,7 @@ interface DesignHandle extends WriteHandle {
 declare global {
     interface Window {
         showOpenFilePicker?: (options: { types: typeof types; multiple: boolean }) => Promise<DesignHandle[]>;
-        showSaveFilePicker?: (options: { types: typeof types; suggestedName: string }) => Promise<DesignHandle>;
+        showSaveFilePicker?: (options: { types: typeof types | typeof zipTypes; suggestedName: string }) => Promise<DesignHandle>;
     }
 }
 
@@ -39,6 +40,7 @@ export class DesignFiles {
     private unbound = false;
     private suggestedName = "project.json";
     private choosingSaveFor: History | null = null;
+    private choosingExport = false;
     private writes = new FileWrites();
 
     constructor(editor: session.Editor) {
@@ -212,6 +214,32 @@ export class DesignFiles {
             }
         });
     }
+    async export() {
+        const e = this.editor;
+        if (!this.supported || !e.project || e.busy || e.gesture || e.fileRequest || this.choosingExport) return;
+        const history = e.history, baseName = this.unbound ? "project" : e.filename.replace(/\.json$/i, "") || "project";
+        const report = (error: unknown) => e.message("导出失败：" + errorText(error));
+        this.choosingExport = true;
+        try {
+            commitFocusedInput();
+            const target = await window.showSaveFilePicker!({ types: zipTypes, suggestedName: baseName + "-export.zip" });
+            if (e.busy) await e.finishWork();
+            if (history !== e.history || e.busy || e.gesture || e.fileRequest) return;
+            const project = e.project;
+            e.toast = null;
+            await e.working("正在导出…", async () => {
+                await writeFile(target, await project.export());
+                e.message("已导出“" + target.name + "”");
+            }, report);
+        }
+        catch (error) {
+            if (history === e.history && !cancelled(error)) report(error);
+        }
+        finally {
+            this.choosingExport = false;
+        }
+    }
+
     async save() {
         const e = this.editor;
         if (!e.project || e.busy || e.gesture || e.fileRequest) return;

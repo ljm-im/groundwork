@@ -145,6 +145,12 @@ export class TerrainClient {
         if (reply?.kind === "reading") return reply.value;
     }
 
+    async export(source: number, design: Design) {
+        const reply = await this.request({ kind: "export", source, design });
+        if (reply?.kind !== "export") throw Error("缺少导出结果");
+        return reply.bytes;
+    }
+
     hasPendingRequests() {
         return this.pending.size > 0;
     }
@@ -189,6 +195,10 @@ export class ProjectModel {
 
     view(): ProjectView {
         return { design: this.resolved, terrain: this.terrain, issues: this.issues };
+    }
+
+    export() {
+        return this.client.export(this.id, this.design);
     }
 
     viewBelow(id: string) {

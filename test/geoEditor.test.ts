@@ -19,6 +19,7 @@ import { TerrainCache } from "../src/core/terrain/cache.ts";
 import { generateTerrain } from "../src/core/terrain/terrain.ts";
 import { Project } from "../src/core/project.ts";
 import { exportProject } from "../src/core/export.ts";
+import { readProject, readZip } from "./exportFiles.ts";
 import { distance, mixPoint } from "../src/core/math/geometry.ts";
 
 function historyEdit(d: Design, edit: () => void) {
@@ -255,7 +256,7 @@ test("Erosion defaults match the example parameters with unit strength", fixture
     assert.deepEqual(defaultFunction("erosion"), { ...f, strength: 1, floor: -1000 });
 });
 
-test("Disabled layers match deletion byte for byte and active strips can still use disabled outlines", () => {
+test("Disabled layers match deletion byte for byte and active strips can still use disabled outlines", async () => {
     const d = syntheticDesign(), n = d.geoNodes[1], cache = new TerrainCache();
     const extra = layer("X", rect(1, 3, 6, 8), { type: "ground", value: 9 }); d.geoNodes.push(extra); d.fields.f = { label: "F" };
     function same(a: ReturnType<typeof generateTerrain>, b: ReturnType<typeof generateTerrain>) {
@@ -280,7 +281,7 @@ test("Disabled layers match deletion byte for byte and active strips can still u
     const project = new Project(d);
     assert(project.terrain.regions.get(band.id)!.cells.length > 0);
     assert(!project.issues.some(i => i.geoNode === n.id));
-    assert(!exportProject(project, { commit: "", sha256: "" }).issues.some(i => i.geoNode === n.id));
+    assert(!readProject(readZip(await exportProject(project, ""))).issues.some(i => i.geoNode === n.id));
     for (const bad of [false, null, 0, "true"]) assert.throws(() => parseDesign({ ...d, geoNodes: [{ ...n, disabled: bad }] }), /disabled/);
     for (const g of d.geoNodes) enableGeo(g, false);
     assert(!new Project(d).terrain.fields.height.defined.some(Boolean));

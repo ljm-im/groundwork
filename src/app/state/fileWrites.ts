@@ -1,6 +1,6 @@
 export interface WriteHandle {
     createWritable(): Promise<{
-        write(text: string): Promise<void>;
+        write(contents: string | Uint8Array<ArrayBuffer>): Promise<void>;
         close(): Promise<void>;
         abort?(): Promise<void>;
     }>;
@@ -9,10 +9,10 @@ export interface WriteHandle {
 type Result = { ok: true } | { ok: false; error: unknown };
 type Write = { handle: WriteHandle; text: string; finish: (result: Result) => void };
 
-async function writeText({ handle, text }: Write) {
+export async function writeFile(handle: WriteHandle, contents: string | Uint8Array<ArrayBuffer>) {
     const stream = await handle.createWritable();
     try {
-        await stream.write(text);
+        await stream.write(contents);
         await stream.close();
     }
     catch (error) {
@@ -40,7 +40,7 @@ export class FileWrites {
                 const job = this.latest;
                 let result: Result;
                 try {
-                    await writeText(job);
+                    await writeFile(job.handle, job.text);
                     result = { ok: true };
                 }
                 catch (error) {

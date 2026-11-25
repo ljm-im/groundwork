@@ -21,6 +21,8 @@ pnpm dev
 
 Run `pnpm test` to perform regression testing, and `pnpm check` to verify types and code.
 
+The **导出** button in the editor's top bar saves a ZIP with a README, project metadata, NumPy arrays for terrain heights and surfaces, a terrain preview, and the design JSON.
+
 ## Contributing
 
 You are welcome to contribute to Groundwork.

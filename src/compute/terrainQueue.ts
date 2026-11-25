@@ -1,5 +1,7 @@
 import { type Command, type Reply, type Request, TerrainSender, failure, transfers } from "./messages.ts";
 import { parseDesign } from "../core/design/model.ts";
+import { heightId } from "../core/design/defaults.ts";
+import { exportProject } from "../core/export.ts";
 import { resolveDesign } from "../core/design/parameters.ts";
 import { constructionCenter } from "../core/design/regions.ts";
 import { Project } from "../core/project.ts";
@@ -15,6 +17,7 @@ export class TerrainQueue {
     private readonly send: SendReply;
     private readonly pool: Promise<WorkPool>;
     private readonly schedule: (callback: () => void) => void;
+    private readonly commit: string;
     private readonly previews = new Map<number, Project>();
     private readonly queue: Request[] = [];
     private scheduled = false;
@@ -25,10 +28,11 @@ export class TerrainQueue {
 
     constructor(pool: Promise<WorkPool>, send: SendReply, schedule = (callback: () => void) => {
         setTimeout(callback, 0);
-    }) {
+    }, commit = "") {
         this.pool = pool;
         this.send = send;
         this.schedule = schedule;
+        this.commit = commit;
     }
 
     receive(request: Command) {
@@ -69,7 +73,7 @@ export class TerrainQueue {
         try {
             const pool = await this.pool;
             request = this.queue.shift();
-            if (request) this.calculate(request, pool);
+            if (request) await this.calculate(request, pool);
         }
         catch (error) {
             request ??= this.queue.shift();
@@ -81,7 +85,7 @@ export class TerrainQueue {
         }
     }
 
-    private calculate(request: Request, pool: WorkPool) {
+    private async calculate(request: Request, pool: WorkPool) {
         const { id } = request;
         if (request.kind === "generate") {
             const design = parseDesign(request.design, true, pool), resolved = resolveDesign(design);
@@ -106,7 +110,19 @@ export class TerrainQueue {
             else this.previewCache = cache;
             return;
         }
-        const source = request.source === this.current?.id ? this.current.project : this.previews.get(request.source);
+        const current = request.source === this.current?.id ? this.current.project : undefined;
+        if (request.kind === "export") {
+            if (!current) return this.send({ kind: "dropped", id });
+            const { terrain, resolved, issues } = current;
+            // Transferred fields can be rebuilt by replaying the cached layers.
+            const exportTerrain = terrain.fields[heightId].values.length === terrain.grid.size ? terrain :
+                new Project(current.design, this.cache.fork(), resolved, pool).terrain;
+            // Description edits live in the editor and do not require terrain generation.
+            const bytes = await exportProject({ design: request.design, resolved, issues, terrain: exportTerrain }, this.commit);
+            this.send({ kind: "export", id, bytes }, [bytes.buffer]);
+            return;
+        }
+        const source = current ?? this.previews.get(request.source);
         if (!source) return this.send({ kind: "dropped", id });
         if (request.kind === "below") {
             const view = this.sender.view(source.viewBelow(request.through), request.known);
@@ -122,7 +138,6 @@ export class TerrainQueue {
 
     private sendProject(id: number, project: Project, known: Parameters<TerrainSender["view"]>[1], helpers: number) {
         const view = this.sender.view(project.view(), known);
-        // Subsequent queries read the grid and cached layer outputs. They do not read these field buffers.
         this.send({ kind: "project", id, project: { design: project.design, view, helpers } }, transfers(view));
     }
 }

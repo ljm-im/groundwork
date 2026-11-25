@@ -60,6 +60,7 @@
         open: "M2 5h5l2 2h7v2M2 5v10h13l2-6H5l-2 6",
         new: "M3 2h8l4 4v10H3zM11 2v4h4M6 10h6m-3-3v6",
         save: "M3 3h10l3 3v10H3zM6 3v5h7V3M6 16v-5h7v5",
+        export: "M9 2v9m-3-3 3 3 3-3M3 10v5h12v-5",
         minus: "M3 9h12",
         plus: "M3 9h12M9 3v12",
         fit: "M2 7V3h4m6 0h4v4m0 5v4h-4m-6 0H2v-4"

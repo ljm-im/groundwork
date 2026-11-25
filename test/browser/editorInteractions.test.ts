@@ -23,6 +23,7 @@ import { checkPenDrawing } from "./penDrawing.ts";
 import { checkMapOverlays } from "./mapOverlays.ts";
 import { checkCoarsePreview } from "./coarsePreview.ts";
 import { checkWorkerTerrain } from "./workerTerrain.ts";
+import { checkUnsharedExport, checkWorkerExport } from "./workerExport.ts";
 
 test("Editor interactions in Chromium", async t => {
     const server = await createBrowserServer();
@@ -45,11 +46,15 @@ test("Editor interactions in Chromium", async t => {
         await t.test("Map overlays in Chromium", () => checkMapOverlays(url));
         await t.test("Coarse numeric drag previews in Chromium", () => checkCoarsePreview(url));
         await t.test("Terrain worker, viewport and sampled expressions in Chromium", () => checkWorkerTerrain(url));
+        const commit: string = JSON.parse(server.config.define!.__GROUNDWORK_COMMIT__);
+        await t.test("Terrain export with shared memory in Chromium", () => checkWorkerExport(url, commit, true));
     }
     finally {
         await server.close();
     }
 });
+
+test("Terrain export without shared memory in Chromium", checkUnsharedExport);
 
 async function checkEditor(url: string) {
     const d = syntheticDesign();
