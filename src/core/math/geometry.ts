@@ -14,6 +14,11 @@ export interface GridSpec {
     step: number;
 }
 export type Grid = ReturnType<typeof createGrid>;
+export interface GridFrame { left: number; top: number; width: number; height: number }
+
+export function canvasFrame(grid: Grid): GridFrame {
+    return { left: 0, top: 0, width: grid.width, height: grid.height };
+}
 
 export const clamp = (x: number, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, x));
 export const smooth = (x: number) => {
@@ -156,20 +161,22 @@ export function sampleDefined(grid: Grid, field: ArrayLike<number>, mask: Uint8A
     return weight ? sum / weight : undefined;
 }
 
-export function eachCell(grid: Grid, box: Box, margin: number, visit: (index: number, x: number, y: number) => void) {
-    const left = grid.col(box[0] - margin),
-        right = grid.col(box[2] + margin);
-    const top = grid.row(box[3] + margin),
-        bottom = grid.row(box[1] - margin);
+// The visitor receives row-major indices relative to the frame.
+export function eachCell(grid: Grid, box: Box, margin: number, visit: (index: number, x: number, y: number) => void, frame = canvasFrame(grid)) {
+    const left = Math.max(frame.left, grid.col(box[0] - margin)),
+        right = Math.min(frame.left + frame.width - 1, grid.col(box[2] + margin));
+    const top = Math.max(frame.top, grid.row(box[3] + margin)),
+        bottom = Math.min(frame.top + frame.height - 1, grid.row(box[1] - margin));
     for (let j = top; j <= bottom; j++) {
-        const y = grid.y(j);
-        for (let i = left; i <= right; i++) visit(j * grid.width + i, grid.x(i), y);
+        const y = grid.y(j), offset = (j - frame.top) * frame.width - frame.left;
+        for (let i = left; i <= right; i++) visit(offset + i, grid.x(i), y);
     }
 }
 
 // Restrict exact segment-distance work to the band where the caller uses it.
-export function polygonField(grid: Grid, polygon: Point[], reach: number) {
-    const dist = new Float32Array(grid.size).fill(reach);
+export function polygonField(grid: Grid, polygon: Point[], reach: number, frame = canvasFrame(grid)) {
+    const { left, top, width, height } = frame;
+    const dist = new Float32Array(width * height).fill(reach);
     for (let i = 0; i < polygon.length; i++) {
         const a = polygon[i],
             b = polygon[(i + 1) % polygon.length];
@@ -182,11 +189,12 @@ export function polygonField(grid: Grid, polygon: Point[], reach: number) {
                 ey = a[1] + t * dy - y,
                 d = ex * ex + ey * ey;
             if (d < dist[k] * dist[k]) dist[k] = Math.sqrt(d);
-        });
+        }, frame);
     }
     const box = bounds(polygon), crossings: number[] = [];
-    for (let j = grid.row(box[3]); j <= grid.row(box[1]); j++) {
-        const y = grid.y(j);
+    const firstRow = Math.max(top, grid.row(box[3])), lastRow = Math.min(top + height - 1, grid.row(box[1]));
+    for (let j = firstRow; j <= lastRow; j++) {
+        const y = grid.y(j), offset = (j - top) * width - left;
         crossings.length = 0;
         for (let i = 0, last = polygon.length - 1; i < polygon.length; last = i++) {
             const a = polygon[i],
@@ -195,9 +203,9 @@ export function polygonField(grid: Grid, polygon: Point[], reach: number) {
         }
         crossings.sort((a, b) => a - b);
         for (let n = 0; n < crossings.length; n += 2) {
-            const end = grid.col(crossings[n + 1]);
-            for (let i = grid.col(crossings[n]); i <= end; i++) {
-                if (grid.x(i) >= crossings[n] && grid.x(i) < crossings[n + 1]) dist[j * grid.width + i] *= -1;
+            const start = Math.max(left, grid.col(crossings[n])), end = Math.min(left + width - 1, grid.col(crossings[n + 1]));
+            for (let i = start; i <= end; i++) {
+                if (grid.x(i) >= crossings[n] && grid.x(i) < crossings[n + 1]) dist[offset + i] *= -1;
             }
         }
     }
