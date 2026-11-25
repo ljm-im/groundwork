@@ -1,4 +1,4 @@
-import { type ResolvedDesign as Design, type Construction, type GeoNode, type Path, type Point, type Strip } from "./v5.ts";
+import { type ResolvedDesign as Design, type Construction, type GeoNode, type ClosedCurve, type Point, type Strip } from "./v5.ts";
 import { bounds, clamp, createGrid, distance, eachCell, mixPoint, projection, type Box, type Grid } from "../math/geometry.ts";
 import { functionTable } from "./functionTable.ts";
 import { insidePolygon } from "../math/polygon.ts";
@@ -176,7 +176,7 @@ export function signedBoundaryDistance(shape: RegionShape) {
     };
 }
 
-function pathCenter(path: Path, tolerance: number): Point {
+function pathCenter(path: ClosedCurve, tolerance: number): Point {
     const edges = flattenPath(path, tolerance);
     let area = 0, x = 0, y = 0;
     for (const { a, b } of edges) {

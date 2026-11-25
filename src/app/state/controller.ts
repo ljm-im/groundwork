@@ -75,12 +75,12 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         const selected = editor.selection?.kind === "geoNode" && editor.mapProject.design.geoNodes.find(n => n.id === editor.selection!.id);
         const control = selected && hitControl(selected, p, map.scale, editor.mapProject.design.grid.step / 8, editor.geometry);
         const geo = selected && control ? { kind: "geo" as const, id: selected.id, control } : undefined;
-        if (geo && (context || control && control.role !== "segment")) return geo;
+        if (geo && (geo.control.role !== "segment" || geo.control.path < 0)) return geo;
         const mark = !alt && map.hitMark(...screen);
         if (mark) return { kind: "handle" as const, h: mark };
         const hits = map.issueHits(view, screen);
         if (hits.length && !alt && !context) return { kind: "issues" as const, hits };
-        if (!alt && !context) {
+        if (!alt) {
             const parameter = map.hitParameter(view, p);
             if (parameter) return parameter;
         }
@@ -163,10 +163,10 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             }
             editor.select({ kind: "geoNode", id: hit.id });
             const n = geoAt(editor.project.design, hit.id), c = hit.control;
-            if (c.role === "parameter" || c.role === "parameterSegment" || c.path < 0)
+            if (c.role === "parameter" || c.path < 0)
                 editor.focusFunctionGeometry(n, c);
             else if (c.role === "vertex") editor.pickVertex(c);
-            if (ev && c.role !== "segment" && c.role !== "parameterSegment" && (c.role !== "body" || n.construction.type === "free"))
+            if (ev && c.role !== "segment" && (c.role !== "body" || n.construction.type === "free"))
                 editor.gesture = { geo: n, control: c, screen, pointer: ev.pointerId };
             return;
         }

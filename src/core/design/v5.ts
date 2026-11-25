@@ -22,26 +22,26 @@ export type Mark<N = Expression> = TextMark<N> | ScaleMark<N>;
 export const defaultFollow = (kind: Mark["kind"]): MarkFollow => kind === "scale" ? "screen" : "map";
 
 export interface CustomInput<N = Expression> { value: N; label?: string; range: [number, number, number] }
-export interface PathNode {
+export interface CurveNode<N = Expression> {
     id: string;
     p: Point;
     mode: "corner" | "auto" | "manual";
     in?: Point;
     out?: Point;
-    next?: "line" | "curve" | "arc";
     bulge?: number;
+    h?: N;
 }
-export interface Path { closed: true; nodes: PathNode[] }
-export interface Polyline<N = Expression> { points: { p: Point; h?: N }[]; smooth?: boolean }
+export interface Curve<N = Expression> { closed: boolean; nodes: CurveNode<N>[] }
+export type ClosedCurve = Curve<never> & { closed: true };
 export interface Strip<N = Expression> {
     type: "strip";
     of: [string] | [string, string];
     widths: [N, N];
     range?: { from: string; to: string };
 }
-export type Construction<N = Expression> = { type: "free"; paths: Path[] } | Strip<N>;
+export type Construction<N = Expression> = { type: "free"; paths: ClosedCurve[] } | Strip<N>;
 export interface RidgeNoise<N> { amount: N; wavelength: N }
-export interface Ridge<N> { line: Polyline<N>; widths: [N, N]; widthNoise: RidgeNoise<N>; heightNoise: RidgeNoise<N> }
+export interface Ridge<N> { line: Curve<N>; widths: [N, N]; widthNoise: RidgeNoise<N>; heightNoise: RidgeNoise<N> }
 export interface Peak<N> { at: { p: Point; h: N }; radius: N; noise: N; scale: N }
 export interface Erosion {
     /** Number of simulated droplets. */
@@ -69,12 +69,12 @@ export interface Erosion {
 export type GeoFunction<N = Expression> = (
     { type: "ground"; value: N } |
     { type: "flat"; amount: Expression; feather?: N } |
-    { type: "coast"; shore: Path; roughness: Expression; harbor: { center: Point; span: N; radius: N } } |
+    { type: "coast"; shore: ClosedCurve; roughness: Expression; harbor: { center: Point; span: N; radius: N } } |
     { type: "mountain"; ridges: Ridge<N>[]; peaks: Peak<N>[]; floor?: N } |
     { type: "cliff"; factor: Expression; seaLevel?: N } |
     ({ type: "erosion"; strength?: Expression; floor?: N } & NumericProperties<Erosion, N>) |
     { type: "islets"; density: Expression; reach: N; threshold?: N; seaLevel?: N } |
-    { type: "slope"; kind: "path"; line: Polyline<N>; ease?: boolean } |
+    { type: "slope"; kind: "path"; line: Curve<N>; ease?: boolean } |
     { type: "slope"; kind: "radial"; center: Point; radius: N; value: N; rate: N } |
     { type: "noise"; amplitude: Expression; scale: N; octaves?: N; feather?: N } |
     { type: "blend" | "split" } |

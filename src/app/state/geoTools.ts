@@ -11,8 +11,8 @@ import { sampleField, type Terrain } from "../../core/design/results.ts";
 type Editor = import("./session.svelte.ts").Editor;
 
 export const drawingTools: DrawTool[] = ["pen", "rect", "circle", "sector", "strip", "addPath", "shore", "ridge", "peak", "slopeLine", "center", "harbor", "section"];
-const penTools: DrawTool[] = ["pen", "addPath", "shore"];
-export const doubleClickTools: DrawTool[] = [...penTools, "ridge", "slopeLine"];
+const closedTools: DrawTool[] = ["pen", "addPath", "shore"];
+export const doubleClickTools: DrawTool[] = [...closedTools, "ridge", "slopeLine"];
 const pointTools: DrawTool[] = ["peak", "center", "harbor"];
 
 export function startDrawing(e: Editor, tool: DrawTool, owner?: string, member?: number): GeoDraft {
@@ -28,7 +28,7 @@ export function startDrawing(e: Editor, tool: DrawTool, owner?: string, member?:
 export function drawingReady(draft: GeoDraft) {
     const { tool, nodes, ids, anchors } = draft;
     if (tool === "strip") return ids.length > 0 && anchors.length !== 1;
-    if (penTools.includes(tool)) return nodes.length >= 3;
+    if (closedTools.includes(tool)) return nodes.length >= 3;
     if (tool === "ridge" || tool === "slopeLine" || tool === "section") return nodes.length >= 2;
     if (pointTools.includes(tool)) return !!nodes.length;
     return true;
@@ -62,11 +62,11 @@ export function updatePreview(e: Editor, draft: GeoDraft) {
         }
         catch { /* The drag has not defined an area yet. */ }
     }
-    else if (penTools.includes(tool) && nodes.length) {
+    else if (doubleClickTools.includes(tool) && nodes.length) {
         const preview = [...nodes];
         if (draft.down) preview.push(penNode("", draft.down, cursor));
         else if (cursor) preview.push(penNode("", cursor));
-        draft.path = penPath(preview);
+        draft.path = penPath(preview, closedTools.includes(tool));
     }
 }
 
@@ -127,14 +127,14 @@ export function finishDraft(d: Design, terrain: Terrain, draft: GeoDraft) {
         const f = n!.function;
         const previous = f.type === "slope" && f.kind === "path" ? f.line
             : f.type === "mountain" && member !== undefined ? f.ridges[member].line : undefined;
-        const line = { ...previous, points: draft.nodes.map(({ p }, i) => {
-            if (previous?.points[i]?.h !== undefined) return { p, h: previous.points[i].h };
-            if (tool === "ridge") return { p, h: tenth(sampleField(terrain, heightId, p)) };
-            if (i === 0) return { p, h: slopeEndpointValues[0] };
-            if (i === draft.nodes.length - 1) return { p, h: slopeEndpointValues[1] };
-            return { p };
-        }) };
-        if (line.points.length < 2) throw Error("折线至少需要两个顶点");
+        const closed = !!draft.closed;
+        if (draft.nodes.length < (closed ? 3 : 2)) throw Error(closed ? "闭合曲线至少需要三个节点" : "曲线至少需要两个节点");
+        const id = nodeIds(d), line = penPath(draft.nodes.map(v => ({ ...v, id: id() })), closed);
+        for (const [i, v] of line.nodes.entries()) {
+            const h = previous?.nodes[i]?.h ?? (tool === "ridge" ? tenth(sampleField(terrain, heightId, v.p)) :
+                i === 0 ? slopeEndpointValues[0] : i === line.nodes.length - 1 ? slopeEndpointValues[1] : undefined);
+            if (h !== undefined) v.h = h;
+        }
         if (tool === "slopeLine") {
             if (n!.function.type === "slope" && n!.function.kind === "path") n!.function.line = line;
             else n!.function = defaultFunction("slope", { line });
@@ -185,7 +185,7 @@ export function draftPointer(e: Editor, phase: "down" | "move" | "up", raw: Poin
     const draft = e.geoDraft;
     if (!draft) return false;
     const { tool } = draft;
-    const at = !ev.ctrlKey && penTools.includes(tool) && !(phase === "move" && draft.down) ?
+    const at = !ev.ctrlKey && doubleClickTools.includes(tool) && !(phase === "move" && draft.down) ?
         snapPoint(e.mapProject.terrain, e.mapProject.design, raw, e.map.scale, draft.owner) : raw;
     if (phase === "down") {
         draft.down = at;
@@ -215,10 +215,12 @@ export function draftPointer(e: Editor, phase: "down" | "move" | "up", raw: Poin
         }
         else complete = true;
     }
-    else if (penTools.includes(tool) && !dragged && draft.nodes.length >= 3 && distance(down, draft.nodes[0].p) * e.map.scale < 7)
+    else if (doubleClickTools.includes(tool) && !dragged && draft.nodes.length >= 3 && distance(downRaw, draft.nodes[0].p) * e.map.scale < 7) {
+        draft.closed = true;
         complete = true;
+    }
     else {
-        const drag = penTools.includes(tool) && dragged ? raw : undefined;
+        const drag = doubleClickTools.includes(tool) && dragged ? raw : undefined;
         const node = penNode("", down, drag);
         if (pointTools.includes(tool)) {
             draft.nodes = [node];

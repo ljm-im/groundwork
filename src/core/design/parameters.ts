@@ -3,7 +3,7 @@ import { expandKeys, functionParameters, functionTable, markParameters, matchesK
 import { lineProfile } from "./polyline.ts";
 import { evaluate, fieldValue, references, type Value } from "./expression.ts";
 import { check, DesignError, quotedLocation, type DesignProblem, type Location } from "./problems.ts";
-import { type Design, type Expression, type GeoNode, type Polyline, type ResolvedDesign } from "./v5.ts";
+import { type Design, type Expression, type GeoNode, type Curve, type ResolvedDesign } from "./v5.ts";
 
 export { readAt, writeAt, type Address } from "./address.ts";
 export type Owner = "input" | "geo" | "mark";
@@ -27,12 +27,12 @@ export function geoParameterName(d: Design, node: GeoNode, path: Address, contex
         return (d.geoNodes.find(n => n.id === id)?.label ?? id) + "一侧";
     }
     const prefix: string[] = [];
-    for (const [key, label] of [["ridges", "山脊"], ["peaks", "山峰"], ["points", "顶点"]] as const) {
+    for (const [key, label] of [["ridges", "山脊"], ["peaks", "山峰"], ["nodes", "节点"]] as const) {
         const i = path.indexOf(key);
-        if (i !== -1 && (context || key === "points") && typeof path[i + 1] === "number")
+        if (i !== -1 && context && typeof path[i + 1] === "number")
             prefix.push(label + " " + (Number(path[i + 1]) + 1));
     }
-    return [...prefix, spec.label].join(" ");
+    return [...prefix, spec.label].join(path.includes("nodes") ? "." : " ");
 }
 
 export function parameters(d: Design, geoIndex?: number) {
@@ -55,19 +55,19 @@ export function parameters(d: Design, geoIndex?: number) {
         const addGeo = (path: Address, property: Address, p: NumericParameter, fallback = p.default, virtual = false) => {
             add(at(path), n.label, ["geoNodes", index], property, geoParameterName(d, n, path) ?? p.label, p.type, fallback, virtual, p);
         };
-        const profiles = new Map<Polyline, ReturnType<typeof lineProfile>>();
+        const profiles = new Map<Curve, ReturnType<typeof lineProfile>>();
         for (const p of functionParameters(f)) {
             if (p.type === "geometry") continue;
             for (const key of expandKeys(f, p.key)) {
                 let fallback = p.default, virtual = false;
                 if (p.profile && readAt(f, key) === undefined) {
-                    const lineKey = key.slice(0, -3), line = readAt(f, lineKey) as Polyline;
-                    const vertex = Number(key.at(-2)), ease = f.type === "slope" && f.kind === "path" && f.ease;
-                    if (line.points.every(v => Array.isArray(v?.p))) {
-                        if (!profiles.has(line)) profiles.set(line, lineProfile(line));
+                    const lineKey = key.slice(0, -3), line = readAt(f, lineKey) as Curve;
+                    const index = Number(key.at(-2)), ease = f.type === "slope" && f.kind === "path" && f.ease;
+                    if (line?.nodes.every(v => Array.isArray(v?.p))) {
+                        if (!profiles.has(line)) profiles.set(line, lineProfile(line, d.grid.step / 8));
                         const profile = profiles.get(line)!;
-                        const span = profile.span(profile.vertexStation(vertex), ease);
-                        const ref = (j: number) => "{geo:" + n.id + "." + [...lineKey, "points", j, "h"].join(".") + "}";
+                        const span = profile.span(profile.nodeStation(index), ease);
+                        const ref = (j: number) => "{geo:" + n.id + "." + [...lineKey, "nodes", j, "h"].join(".") + "}";
                         if (span) fallback = span.a === span.b ? ref(span.a.index) : ref(span.a.index) + " * " + (1 - span.t) + " + " + ref(span.b.index) + " * " + span.t;
                         // Keep authored stops sparse so easing is applied across the whole span in the evaluator.
                         virtual = !!ease && !!span;

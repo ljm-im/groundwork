@@ -1,8 +1,11 @@
-import { type Construction, type Design, type GeoFunction, type GeoNode, type Path, type Point, type ResolvedDesign } from "../src/core/design/v5.ts";
+import { type ClosedCurve, type Construction, type Curve, type Design, type Expression, type GeoFunction, type GeoNode, type Point, type ResolvedDesign } from "../src/core/design/v5.ts";
 import { defaultInputRange, heightId, reserved } from "../src/core/design/defaults.ts";
 
-export function polygon(points: Point[]): Path {
-    return { closed: true, nodes: points.map((p, i) => ({ id: String(i), p, mode: "corner", next: "line" })) };
+export function polygon(points: Point[]): ClosedCurve {
+    return { closed: true, nodes: points.map((p, i) => ({ id: String(i), p, mode: "corner" })) };
+}
+export function openCurve<N extends Expression>(points: { p: Point; h?: N }[], mode: "corner" | "auto" = "corner", prefix = "node-"): Curve<N> {
+    return { closed: false, nodes: points.map((v, i) => ({ id: prefix + i, ...v, mode })) };
 }
 export function rect(x0: number, y0: number, x1: number, y1: number): Construction & { type: "free" } {
     return { type: "free", paths: [polygon([[x0, y0], [x1, y0], [x1, y1], [x0, y1]])] };

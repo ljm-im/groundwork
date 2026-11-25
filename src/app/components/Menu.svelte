@@ -15,7 +15,7 @@
                 <button role={kind === "listbox" ? "option" : item.selected === undefined ? "menuitem" : "menuitemradio"}
                     aria-selected={kind === "listbox" ? keyboardTarget ? current === item.id : !!item.selected : undefined}
                     aria-checked={kind === "menu" ? item.selected : undefined}
-                    class:danger={item.danger} data-option={item.id} onmouseenter={() => {
+                    class:danger={item.danger} disabled={item.disabled} data-option={item.id} onmouseenter={() => {
                         if (keyboardTarget) active = item.id;
                     }} onclick={() => choose(item.id)}>
                     {#if item.icon}<Icon name={item.icon} builtin={item.builtin} />{/if}
@@ -37,7 +37,7 @@
 <script module lang="ts">
     import { type IconName } from "./Icon.svelte";
 
-    export interface MenuItem { id: string; name: string; icon?: IconName; builtin?: boolean; selected?: boolean; danger?: boolean; branch?: boolean }
+    export interface MenuItem { id: string; name: string; icon?: IconName; builtin?: boolean; selected?: boolean; disabled?: boolean; danger?: boolean; branch?: boolean }
     export interface MenuGroup { title?: string; items: readonly MenuItem[] }
 </script>
 
@@ -56,13 +56,13 @@
     } = $props();
     let menu: HTMLElement;
     let placement = $derived(point ? { point, close } : { anchor: anchor!, close, viewport });
-    let items = $derived(groups.flatMap(group => group.items));
+    let items = $derived(groups.flatMap(group => group.items).filter(item => !item.disabled));
     const backId = "";
     let active = $state<string>();
     let current = $derived(items.some(item => item.id === active) || back && active === backId ? active :
         (items.find(item => item.selected) ?? items[0])?.id ?? (back ? backId : undefined));
     function buttons() {
-        return [...menu.querySelectorAll("button")];
+        return [...menu.querySelectorAll<HTMLButtonElement>("button:enabled")];
     }
     function itemButton(id: string | undefined) {
         return buttons().find(button => id === backId ? button.classList.contains("ref-back") : button.dataset.option === id);

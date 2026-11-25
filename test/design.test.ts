@@ -11,7 +11,7 @@ import { resolveDesign } from "../src/core/design/parameters.ts";
 import { removeDeclaration } from "../src/core/edit/geoNodes.ts";
 import { DesignError } from "../src/core/design/problems.ts";
 import { generateTerrain } from "../src/core/terrain/terrain.ts";
-import { syntheticDesign, rect, layer, polygon } from "./scenarios.ts";
+import { syntheticDesign, rect, layer, polygon, openCurve } from "./scenarios.ts";
 
 test("Version five opens atomically and older formats have a common version error", () => {
     const d = syntheticDesign(), bytes = serializeDesign(d);
@@ -56,7 +56,7 @@ test("Noise validates its inputs and rejects the retired inline noise parameter"
     }
     for (const surface of [{ type: "ground", value: 1 }, { type: "flat", amount: 1 },
         { type: "slope", kind: "radial", value: 1, center: [0, 0], radius: 2, rate: .1 },
-        { type: "slope", kind: "path", line: { points: [{ p: [0, 0], h: 1 }, { p: [2, 0], h: 2 }] } }]) {
+        { type: "slope", kind: "path", line: openCurve([{ p: [0, 0], h: 1 }, { p: [2, 0], h: 2 }]) }]) {
         Object.assign(node, { function: { ...surface, noise: { amplitude: 1 } } });
         assert.throws(() => parseDesign(d), /geoNodes\[1\]\.function\.noise.*未知字段/);
     }

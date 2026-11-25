@@ -3,15 +3,15 @@ import { bindField, bindHeight, resolved } from "./expressionHelpers.ts";
 import assert from "node:assert/strict";
 import { fixtureOptions, readFixture } from "../configs/read-fixture.ts";
 import { syntheticDesign, rect, layer } from "./scenarios.ts";
-import { type Design, type GeoFunction, type Path, type Point } from "../src/core/design/v5.ts";
+import { type Design, type GeoFunction, type Point } from "../src/core/design/v5.ts";
 import { parseDesign, serializeDesign } from "../src/core/design/model.ts";
 import { defaultInputRange } from "../src/core/design/defaults.ts";
 import { History } from "../src/core/edit/history.ts";
 import { addField, addInput, copyGeo, createStrip, removalUses, removalUseName, defaultFunction, deleteGeo, stripUsers, enableGeo,
     nodeIds, rangeUsers, removeDeclaration, reorderGeo, stripRange } from "../src/core/edit/geoNodes.ts";
-import { arcHandle, moveHandle, penNode, setSegment, translateGeo } from "../src/core/edit/paths.ts";
-import { flattenPath } from "../src/core/design/path.ts";
-import { copyGeometryItem, geoControls, geometryPath, insertPathNode, removeGeometryItem } from "../src/core/edit/geoControls.ts";
+import { arcHandle, insertPathNode, moveHandle, penNode, setSegment, translateGeo } from "../src/core/edit/paths.ts";
+import { defaultArcBulge, flattenPath, segmentType } from "../src/core/design/path.ts";
+import { copyGeometryItem, geoControls, geometryPath, removeGeometryItem } from "../src/core/edit/geoControls.ts";
 import { finishDraft, snapPoint } from "../src/app/state/geoTools.ts";
 import { type GeoDraft, type DrawTool } from "../src/core/edit/types.ts";
 import { TerrainCache } from "../src/core/terrain/cache.ts";
@@ -41,8 +41,8 @@ test("Closed tools add one unit to height and insert above the selection with on
             assert.deepEqual(d.geoNodes, [ground, n, terrace]);
             assert.equal(n.field, "height"); assert.deepEqual(n.function, { type: "flat", amount: 1, feather: 0 });
             assert(path.closed);
-            assert.deepEqual(path.nodes.map(v => v.next ?? "curve"), { rect: ["line", "line", "line", "line"], circle: ["arc", "arc"], sector: ["line", "arc", "line"], pen: ["curve", "curve", "line"] }[tool]);
-            if (tool === "circle") assert.deepEqual(path.nodes.map(v => v.bulge), [1, 1]);
+            assert.deepEqual(path.nodes.map((_, i) => segmentType(path, i)), { rect: ["line", "line", "line", "line"], circle: ["arc", "arc", "arc"], sector: ["line", "arc", "line"], pen: ["curve", "curve", "line"] }[tool]);
+            if (tool === "circle") assert.deepEqual(path.nodes.map(v => v.bulge), [Math.tan(Math.PI / 8), Math.tan(Math.PI / 8), 1]);
             if (tool === "pen") {
                 assert.equal(path.nodes[1].mode, "manual"); assert.deepEqual(path.nodes[1].in, [-1, -1]);
             }
@@ -174,8 +174,8 @@ test("Function defaults preserve construction and drawn geometry retains its aut
     historyEdit(d, () => {
         finishDraft(d, t, { ...pending, tool: "slopeLine" });
         assert(n.function.type === "slope" && n.function.kind === "path");
-        assert.deepEqual(n.function.line.points.map(v => v.h !== undefined), [true, false, false, true]);
-        assert.deepEqual(n.function.line.points.map(v => v.h), [0, undefined, undefined, 2]);
+        assert.deepEqual(n.function.line.nodes.map(v => v.h !== undefined), [true, false, false, true]);
+        assert.deepEqual(n.function.line.nodes.map(v => v.h), [0, undefined, undefined, 2]);
     });
     historyEdit(d, () => {
         finishDraft(d, t, { ...pending, tool: "center" });
@@ -206,10 +206,10 @@ for (const construction of ["free", "strip"] as const) test("Default shore and s
         }
         else {
             assert(f.type === "slope" && f.kind === "path");
-            assert.deepEqual(f.line.points.map(p => p.h), [0, 2]);
+            assert.deepEqual(f.line.nodes.map(p => p.h), [0, 2]);
             const shape = editor.project.terrain.regions.get(n.id)!.shape;
-            assert(f.line.points.every(v => shape.contains(v.p)));
-            if (construction === "free") assert.deepEqual(f.line.points.map(v => v.p), [[-19.6, -8], [-8.4, -8]]);
+            assert(f.line.nodes.every(v => shape.contains(v.p)));
+            if (construction === "free") assert.deepEqual(f.line.nodes.map(v => v.p), [[-19.6, -8], [-8.4, -8]]);
             await editor.switchFunction(n, "slope", "radial");
             const radial = editor.project.design.geoNodes.find(v => v.id === n.id)!.function;
             assert(radial.type === "slope" && radial.kind === "radial");
@@ -260,18 +260,19 @@ test("Disabled layers match deletion byte for byte and active strips can still u
 });
 
 test("Curves, handles, tangency, insertion and six-pixel snap use the editable geometry", () => {
-    const d = syntheticDesign(), n = d.geoNodes[1], path: Path = geometryPath(n, 0)!, t = generateTerrain(d);
+    const d = syntheticDesign(), n = d.geoNodes[1], path = geometryPath(n, 0)!, t = generateTerrain(d);
     const near: Point = [path.nodes[0].p[0] + .5, path.nodes[0].p[1] + .5];
     assert.deepEqual(snapPoint(t, d, near, 5), path.nodes[0].p);
     assert.deepEqual(snapPoint(t, d, [-16, -14.5], 5), [-16, -14]);
     historyEdit(d, () => setSegment(path, 1, "tangent"));
-    assert.equal(path.nodes[1].next, "arc"); assert(Math.abs(path.nodes[1].bulge! - 1) < 1e-6);
+    assert.equal(segmentType(path, 1), "arc"); assert(Math.abs(path.nodes[1].bulge! - 1) < 1e-6);
     historyEdit(d, () => {
         insertPathNode(path, 1, arcHandle(path.nodes[1].p, path.nodes[2].p, 1), nodeIds(d)());
     });
     const before = path.nodes.length;
     historyEdit(d, () => {
         setSegment(path, 2, "curve");
+        setSegment(path, 1, "curve");
     });
     historyEdit(d, () => {
         moveHandle(path, 2, "out", [-10, -8], false);
@@ -312,18 +313,21 @@ test("Copying a mountain member preserves its geometry and the targets of existi
     assert.equal(new Project(design).resolved.inputs.B.value, 7);
 });
 
-test("An arc with omitted bulge uses the editor's quarter-turn in sampling and handles", () => {
+test("The arc operation stores the default quarter-turn and an absent bulge leaves a line", () => {
     const d = syntheticDesign(), n = d.geoNodes[0], construction = n.construction;
     assert(construction.type === "free");
     const path = construction.paths[0], v = path.nodes[0];
-    v.next = "arc";
-    const omitted = flattenPath(path, .02), control = geoControls(n).find(h => h.role === "arc");
+    v.bulge = defaultArcBulge;
+    const expected = flattenPath(path, .02), control = geoControls(n).find(h => h.role === "arc");
     assert(control);
-    setSegment(path, 0, "arc");
-    assert.deepEqual(flattenPath(path, .02), omitted);
-    assert.deepEqual(geoControls(n).find(h => h.role === "arc"), control);
     delete v.bulge;
     assert.doesNotThrow(() => parseDesign(d));
+    assert.equal(segmentType(path, 0), "line");
+    assert(!geoControls(n).some(h => h.role === "arc" && h.index === 0));
+    setSegment(path, 0, "arc");
+    assert.equal(v.bulge, defaultArcBulge);
+    assert.deepEqual(flattenPath(path, .02), expected);
+    assert.deepEqual(geoControls(n).find(h => h.role === "arc"), control);
     v.bulge = 0;
     assert.throws(() => parseDesign(d), /bulge/);
 });

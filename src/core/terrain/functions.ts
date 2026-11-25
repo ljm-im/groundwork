@@ -82,7 +82,7 @@ export function evaluateLayer(n: ResolvedGeoNode, region: Region, state: FieldSt
                     const base = f.value;
                     return (k, x, y) => source[k] + base + f.rate * (Math.hypot(x - f.center[0], y - f.center[1]) - f.radius);
                 }
-                const line = numericProfile(f.line);
+                const line = numericProfile(f.line, grid.step / 8);
                 return (k, x, y) => {
                     const hit = nearest(x, y, line.points);
                     return source[k] + line.value(line.station(hit.segment, hit.t), f.ease);
@@ -115,7 +115,7 @@ export function evaluateLayer(n: ResolvedGeoNode, region: Region, state: FieldSt
             case "mountain": {
                 const n3 = noise(seed + 202);
                 const floor = f.floor;
-                const ridges = f.ridges.map(r => ({ ...r, profile: numericProfile(r.line) }));
+                const ridges = f.ridges.map(r => ({ ...r, profile: numericProfile(r.line, grid.step / 8) }));
                 const peaks = f.peaks.map(p => ({ ...p, h: p.at.h }));
                 return (k, x, y) => {
                     let h = source[k];

@@ -68,7 +68,7 @@ export const functionTable: Record<GeoFunction["type"], FunctionSpec> = {
     mountain: { initial: false, writes: "height", reading: "point", parameters: [
         floor, seed, geometry("ridges", "山脊", "empty"), geometry("peaks", "山峰", "empty"),
         geometry("ridges.*.line", "山脊线", "draw-line"),
-        number("ridges.*.line.points.*.h", "高度", "field", "field", 0, { profile: true }),
+        number("ridges.*.line.nodes.*.h", "高度", "field", "field", 0, { profile: true }),
         number("ridges.*.widths.0", "左侧宽度", "m", .1, 5, { constraint: "positive" }),
         number("ridges.*.widths.1", "右侧宽度", "m", .1, 5, { constraint: "positive" }),
         ...ridgeNoise("widthNoise", "宽度起伏"), ...ridgeNoise("heightNoise", "高度起伏"),
@@ -77,7 +77,7 @@ export const functionTable: Record<GeoFunction["type"], FunctionSpec> = {
         number("peaks.*.radius", "半径", "m", .1, 5, { constraint: "positive" }),
         number("peaks.*.noise", "半径起伏", "m", .1, 0),
         number("peaks.*.scale", "噪声尺度", "m", 1, 12, { constraint: "positive" })
-    ], toggles: [{ key: ["ridges", "*", "line", "smooth"], label: "平滑折线", default: false }] },
+    ] },
     cliff: { initial: false, writes: "height", reading: "neighborhood", readArea: "canvas", parameters: [
         number("factor", "悬崖系数", "m/m", .05, .6, { type: "field" }), sea, seed
     ] },
@@ -104,12 +104,12 @@ export const functionTable: Record<GeoFunction["type"], FunctionSpec> = {
     ] },
     slope: { initial: false, writes: "any", reading: "point", parameters: [
         geometry("line", "坡线", "axis", "path"),
-        number("line.points.*.h", "增量", "field", "field", slopeEndpointValues[0], { variant: "path", profile: true }),
+        number("line.nodes.*.h", "增量", "field", "field", slopeEndpointValues[0], { variant: "path", profile: true }),
         geometry("center", "圆心", "center", "radial"),
         number("radius", "半径", "m", .1, 5, { variant: "radial" }),
         number("value", "增量", "field", "field", 2, { variant: "radial" }),
         number("rate", "径向变化率", "field/m", "field", -.2, { variant: "radial" })
-    ], toggles: [{ key: ["line", "smooth"], label: "平滑折线", default: false }, { key: ["ease"], label: "平滑增量过渡", default: false }] },
+    ], toggles: [{ key: ["ease"], label: "平滑增量过渡", default: false }] },
     noise: { initial: false, writes: "any", reading: "point", parameters: [
         number("amplitude", "振幅", "field", "field", 1, { type: "field" }),
         number("scale", "噪声尺度", "m", 1, 24, { constraint: "positive" }),

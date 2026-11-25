@@ -1,7 +1,7 @@
 import { bounds, mixPoint } from "../math/geometry.ts";
 import { slopeEndpointValues } from "../design/functionTable.ts";
 import { type RegionShape, type Segment } from "../design/regions.ts";
-import { type Construction, type Path, type Point } from "../design/v5.ts";
+import { type Construction, type ClosedCurve, type Point } from "../design/v5.ts";
 
 function closedContours(edges: Segment[], tolerance: number) {
     const key = ([x, y]: Point) => Math.round(x / tolerance) + "," + Math.round(y / tolerance);
@@ -50,12 +50,12 @@ export function functionGeometry(c: Construction, shape: RegionShape, step: numb
     if (!largest?.area) throw Error("地件没有可用的区域边界");
     const { center } = largest;
     return { center,
-        shore(): Path {
+        shore(): ClosedCurve {
             if (c.type === "free") return { closed: true, nodes: c.paths[largest.i].nodes.map(n => ({ ...n, id: nextId(),
                 p: mixPoint(center, n.p, .9),
                 ...(n.in && { in: [n.in[0] * .9, n.in[1] * .9] }),
                 ...(n.out && { out: [n.out[0] * .9, n.out[1] * .9] }) })) };
-            return { closed: true, nodes: largest.ring.map(p => ({ id: nextId(), p: mixPoint(center, p, .9), mode: "corner", next: "line" })) };
+            return { closed: true, nodes: largest.ring.map(p => ({ id: nextId(), p: mixPoint(center, p, .9), mode: "corner" })) };
         },
         line() {
             const [x0, y0, x1, y1] = bounds(rings.flat());
@@ -83,7 +83,7 @@ export function functionGeometry(c: Construction, shape: RegionShape, step: numb
                 vertices = crossLine(preferred, (p[other] + largest.ring[(i + 1) % largest.ring.length][other]) / 2);
             }
             if (!vertices) throw Error("地件没有足够的空间放置坡线");
-            return { points: vertices.map((p, i) => ({ p, h: slopeEndpointValues[i] })) };
+            return { closed: false, nodes: vertices.map((p, i) => ({ id: nextId(), p, mode: "corner" as const, h: slopeEndpointValues[i] })) };
         }
     };
 }

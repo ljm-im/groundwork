@@ -16,7 +16,7 @@
 <script module lang="ts">
     const icons = {
         point: "M9 1v4m0 8v4M1 9h4m8 0h4M12 9a3 3 0 1 1-6 0 3 3 0 1 1 6 0z",
-        polyline: "M3 12l4-7 7 4M1 12h3v3H1z M6 2h3v3H6z M13 8h3v3h-3z",
+        curve: "M4.5 13.5C6 5 12 13 13.5 4.5 M6 13.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 1 1 3 0z M15 4.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 1 1 3 0z",
         closedPath: "M5 3c4-2 10 0 10 5s-3 8-7 7-7-4-6-8z M3 2h3v3H3z",
         up: "M9 15V3m-5 5 5-5 5 5",
         field: "M2 3h14v12H2z M2 7h14M2 11h14M7 3v12m4-12v12",

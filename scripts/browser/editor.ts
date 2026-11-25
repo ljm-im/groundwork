@@ -334,7 +334,7 @@ async function checkEditor(url: string) {
         await saved();
         const slope = parseDesign(await disk(), true).geoNodes.find(n => n.id === "T")?.function;
         assert(slope?.type === "slope" && slope.kind === "path");
-        assert.deepEqual(slope.line.points.map(v => v.h), [0, 2]);
+        assert.deepEqual(slope.line.nodes.map(v => v.h), [0, 2]);
 
         console.log("Displayed field, undefined readings, and mark follow");
         await moveMap(.5, .5);
@@ -608,7 +608,10 @@ async function checkEditor(url: string) {
         await click("button[aria-label='复制山脊 1']"); await idle(); await saved();
         const mountain = ridgeOf(await disk());
         assert(mountain.type === "mountain" && mountain.ridges.length === 2);
-        assert.deepEqual(mountain.ridges[0], mountain.ridges[1]);
+        const [originalMember, copy] = mountain.ridges;
+        const copiedIds = new Set(copy.line.nodes.map(v => v.id));
+        assert(originalMember.line.nodes.every(v => !copiedIds.has(v.id)));
+        assert.deepEqual({ ...copy, line: { ...copy.line, nodes: copy.line.nodes.map((v, i) => ({ ...v, id: originalMember.line.nodes[i].id })) } }, originalMember);
         assert.equal(await evaluate(() => [...document.querySelectorAll("#properties .subitem-toggle")]
             .find(button => button.textContent?.includes("山脊 2"))?.getAttribute("aria-expanded")), "true");
         await undo();

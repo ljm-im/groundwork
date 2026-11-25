@@ -2,17 +2,17 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { applyLayer } from "../src/core/terrain/functions.ts";
 import { resolveDesign, type Address, writeAt } from "../src/core/design/parameters.ts";
-import { type GeoFunction, type GeoNode, type Point } from "../src/core/design/v5.ts";
+import { type GeoFunction, type GeoNode } from "../src/core/design/v5.ts";
 import { createGrid } from "../src/core/math/geometry.ts";
 import { TerrainCache } from "../src/core/terrain/cache.ts";
 import { evaluateLayer, type FieldState } from "../src/core/terrain/functions.ts";
 import { makeShape, rasterRegion } from "../src/core/design/regions.ts";
 import { evaluateStack } from "../src/core/terrain/terrain.ts";
-import { erosion, layer, polygon, rect, syntheticDesign } from "./scenarios.ts";
+import { erosion, layer, openCurve, polygon, rect, syntheticDesign } from "./scenarios.ts";
 
 const area = rect(-28, -25, 28, 25);
 const shore = polygon([[-16, -20], [16, -20], [18, 16], [-15, 19]]);
-const points = [{ p: [-17, -9] as Point, h: 2 }, { p: [-3, 4] as Point, h: 8 }, { p: [18, 0] as Point, h: 4 }];
+const line = openCurve([{ p: [-17, -9], h: 2 }, { p: [-3, 4], h: 8 }, { p: [18, 0], h: 4 }], "auto");
 type Fn = GeoFunction<number>;
 type Mutation = [address: Address, replacement: unknown];
 type Case = { fn: Fn; changes: Mutation[]; fieldInput?: boolean };
@@ -31,19 +31,19 @@ const stripRegion = rasterRegion(grid, makeShape({ field: "height", id: "B", lab
 const cases: Record<Fn["type"], Case> = {
     ground: { fn: { type: "ground", value: 2 }, changes: [[["value"], 4]] },
     flat: { fn: { type: "flat", amount: "{field:A} * 3", feather: 9 }, fieldInput: true, changes: [[["amount"], 1], [["feather"], 3]] },
-    slope: { fn: { type: "slope", kind: "path", line: { points, smooth: true }, ease: true },
-        changes: [[["line", "points", 1, "p"], [0, 12]], [["line", "points", 0, "h"], 3], [["line", "points", 1, "h"], 11],
-            [["line", "points", 2, "h"], 6], [["line", "smooth"], false], [["ease"], false]] },
+    slope: { fn: { type: "slope", kind: "path", line, ease: true },
+        changes: [[["line", "nodes", 1, "p"], [0, 12]], [["line", "nodes", 0, "h"], 3], [["line", "nodes", 1, "h"], 11],
+            [["line", "nodes", 2, "h"], 6], [["line", "nodes", 1, "mode"], "corner"], [["ease"], false]] },
     noise: { fn: { type: "noise", amplitude: "{field:A}", scale: 8, seed: 3, octaves: 4, feather: 6 }, fieldInput: true,
         changes: [[["amplitude"], 1], [["scale"], 10], [["seed"], 5], [["octaves"], 2], [["feather"], 2]] },
     coast: { fn: { type: "coast", shore, roughness: "{field:A} * 16", harbor: { center: [-14, 8], radius: 3, span: 7 }, seed: 11 }, fieldInput: true,
         changes: [[["shore", "nodes", 0, "p"], [-5, -11]], [["roughness"], 2], [["harbor", "center"], [14, 16]], [["harbor", "radius"], 12],
             [["harbor", "span"], 25], [["seed"], 23]] },
-    mountain: { fn: { type: "mountain", floor: -5, seed: 16, ridges: [{ line: { points, smooth: true }, widths: [8, 9],
+    mountain: { fn: { type: "mountain", floor: -5, seed: 16, ridges: [{ line, widths: [8, 9],
         widthNoise: { amount: 18, wavelength: 11 }, heightNoise: { amount: 20, wavelength: 9 } }],
     peaks: [{ at: { p: [11, -10], h: 24 }, radius: 5, noise: 1.4, scale: 8 }] },
-    changes: [[["floor"], 10], [["seed"], 19], [["ridges", 0, "line", "points", 1, "p"], [-6, 9]], [["ridges", 0, "line", "points", 0, "h"], 8],
-        [["ridges", 0, "line", "points", 1, "h"], 12], [["ridges", 0, "line", "points", 2, "h"], 15], [["ridges", 0, "line", "smooth"], false],
+    changes: [[["floor"], 10], [["seed"], 19], [["ridges", 0, "line", "nodes", 1, "p"], [-6, 9]], [["ridges", 0, "line", "nodes", 0, "h"], 8],
+        [["ridges", 0, "line", "nodes", 1, "h"], 12], [["ridges", 0, "line", "nodes", 2, "h"], 15], [["ridges", 0, "line", "nodes", 1, "mode"], "corner"],
         [["ridges", 0, "widths", 0], 12], [["ridges", 0, "widths", 1], 12], [["ridges", 0, "widthNoise", "amount"], 30],
         [["ridges", 0, "widthNoise", "wavelength"], 17], [["ridges", 0, "heightNoise", "amount"], 35], [["ridges", 0, "heightNoise", "wavelength"], 20],
         [["peaks", 0, "at", "p"], [8, -14]], [["peaks", 0, "at", "h"], 31], [["peaks", 0, "radius"], 8],

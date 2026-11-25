@@ -1,8 +1,9 @@
-import { type ResolvedDesign, type Path, type Point, type Polyline } from "./v5.ts";
+import { type ClosedCurve, type Curve, type GeoNode, type Point, type ResolvedDesign } from "./v5.ts";
 import { defaultFieldPrecision, isBuiltin, reserved, seedId, heightId } from "./defaults.ts";
 import { canWrite, expandKeys, functionParameters, functionTable, numericValid } from "./functionTable.ts";
 import { readAt, type Address } from "./address.ts";
-import { check, DesignError, type DesignProblem } from "./problems.ts";
+import { check, DesignError, rejectRetired, type DesignProblem, type Location } from "./problems.ts";
+import { hasHandleSide, neighbor } from "./path.ts";
 
 export const point = (p: unknown): p is Point => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite);
 export const record = (v: unknown) => !!v && typeof v === "object" && !Array.isArray(v);
@@ -11,6 +12,60 @@ export const validInputRange = (range: unknown) =>
     Array.isArray(range) && range.length === 3 && range.every(Number.isFinite) && range[0] < range[1] && range[2] > 0;
 export const validFieldPrecision = (precision: unknown) => precision === undefined || typeof precision === "number" && Number.isFinite(precision) && precision > 0;
 export const validStripWidths = (widths: unknown) => point(widths) && widths.every(w => w >= 0) && widths.some(w => w > 0);
+
+export function validateCurves(n: GeoNode, index: number) {
+    const at = (path: Address): Location => ({ kind: "geo", id: n.id, index, path });
+    const ids = new Set<string>();
+    function curve(value: unknown, key: Address, closed: boolean) {
+        check(record(value), "无效", at(key));
+        const p = value as Curve;
+        rejectRetired(p, ["points", "smooth"], at(key));
+        check(typeof p.closed === "boolean" && (!closed || p.closed), "无效", at([...key, "closed"]));
+        const nodesAt = [...key, "nodes"];
+        check(Array.isArray(p.nodes), "无效", at(nodesAt));
+        check(p.nodes.length >= (p.closed ? 3 : 2), p.closed ? "闭合曲线至少需要三个节点" : "曲线至少需要两个节点", at(nodesAt));
+        for (const [i, node] of p.nodes.entries()) {
+            const pos = [...nodesAt, i], field = (name: string) => at([...pos, name]);
+            check(record(node), "无效", at(pos));
+            rejectRetired(node, ["next"], at(pos));
+            check(typeof node.id === "string" && node.id, "无效", field("id"));
+            check(!ids.has(node.id), "重复“" + node.id + "”", field("id"));
+            ids.add(node.id);
+            check(point(node.p), "无效", field("p"));
+            check(node.mode === "corner" || node.mode === "auto" || node.mode === "manual", "无效", field("mode"));
+            if (!p.closed && i === 0) check(!Object.hasOwn(node, "in"), "开放曲线的首节点没有前一段", field("in"));
+            if (!p.closed && i === p.nodes.length - 1) for (const name of ["out", "bulge"])
+                check(!Object.hasOwn(node, name), "开放曲线的末节点没有后一段", field(name));
+            if (closed) check(!Object.hasOwn(node, "h"), "这里的节点不能有高度", field("h"));
+            if (node.bulge !== undefined) check(Number.isFinite(node.bulge) && node.bulge !== 0, "无效", field("bulge"));
+        }
+        for (const [i, node] of p.nodes.entries()) {
+            const field = (name: string) => at([...nodesAt, i, name]);
+            if (node.mode === "manual") check(node.bulge === undefined && p.nodes[neighbor(p, i, -1) ?? -1]?.bulge === undefined,
+                "手动平滑节点不能和圆弧相邻", field("mode"));
+            for (const side of ["in", "out"] as const) {
+                if (Object.hasOwn(node, side)) {
+                    check(hasHandleSide(p, i, side), "和圆弧相邻的一侧不能有控制柄", field(side));
+                    check(node.mode !== "auto", "自动平滑节点不存储控制柄", field(side));
+                    check(point(node[side]), "无效", field(side));
+                }
+                else check(node.mode !== "manual", "手动平滑节点需要两侧控制柄", field(side));
+            }
+            if (node.mode === "manual") {
+                const [ix, iy] = node.in!, [ox, oy] = node.out!;
+                const a = Math.hypot(ix, iy) || 1, b = Math.hypot(ox, oy) || 1;
+                check(Math.abs(ix / a * (oy / b) - iy / a * (ox / b)) < 1e-8 &&
+                    ix / a * (ox / b) + iy / a * (oy / b) <= 0, "无效", field("mode"));
+            }
+        }
+    }
+    const c = n.construction;
+    if (c?.type === "free" && Array.isArray(c.paths)) c.paths.forEach((p, i) => curve(p, ["construction", "paths", i], true));
+    const f = n.function;
+    if (f?.type === "coast") curve(f.shore, ["function", "shore"], true);
+    if (f?.type === "slope" && f.kind === "path") curve(f.line, ["function", "line"], false);
+    if (f?.type === "mountain" && Array.isArray(f.ridges)) f.ridges.forEach((r, i) => curve(r?.line, ["function", "ridges", i, "line"], false));
+}
 
 export function validateGeo(d: ResolvedDesign, allowBrokenReferences = false) {
     for (const [id, v] of Object.entries(d.inputs)) {
@@ -36,7 +91,7 @@ export function validateGeo(d: ResolvedDesign, allowBrokenReferences = false) {
         }
     }
     const problems: DesignProblem[] = [];
-    const upperPaths = new Map<string, Path[]>();
+    const upperPaths = new Map<string, ClosedCurve[]>();
     for (const [index, n] of d.geoNodes.entries()) {
         const at = (path: Address) => ({ kind: "geo" as const, id: n.id, index, path });
         const valid = (ok: unknown, path: Address) => check(ok, "无效", at(path));
@@ -44,24 +99,7 @@ export function validateGeo(d: ResolvedDesign, allowBrokenReferences = false) {
             if (!n.disabled) problems.push({ location: at(path), message });
         };
         valid(!Object.hasOwn(n, "disabled") || n.disabled === true, ["disabled"]);
-        const ids = new Set<string>();
-        function path(p: Path, key: Address) {
-            valid(p?.closed === true && Array.isArray(p.nodes) && p.nodes.length >= 2, key);
-            for (const [j, v] of p.nodes.entries()) {
-                const pos = [...key, "nodes", j];
-                valid(v && typeof v.id === "string" && v.id && point(v.p), pos);
-                check(!ids.has(v.id), "重复“" + v.id + "”", at([...pos, "id"]));
-                ids.add(v.id);
-                valid(["auto", "corner", "manual"].includes(v.mode) && ["curve", "arc", "line"].includes(v.next ?? "curve"), pos);
-                valid([v.in, v.out].every(h => h === undefined || point(h)) && (v.mode !== "auto" || !v.in && !v.out), [...pos, "mode"]);
-                if (v.mode === "manual") valid(v.in && v.out && Math.abs(v.in[0] * v.out[1] - v.in[1] * v.out[0]) < 1e-8, [...pos, "manual"]);
-                if (v.next === "arc" && v.bulge !== undefined) valid(Number.isFinite(v.bulge) && v.bulge !== 0, [...pos, "bulge"]);
-            }
-        }
-        function line(l: Polyline<number>, key: Address) {
-            valid(l && Array.isArray(l.points) && l.points.length >= 2 && l.points.some(v => v?.h !== undefined), key);
-            for (const [j, v] of l.points.entries()) valid(v && point(v.p), [...key, "points", j, "p"]);
-        }
+        validateCurves(n, index);
         const c = n.construction, f = n.function, spec = functionTable[f.type];
         const fn = (key: Address) => ["function", ...key];
         valid(c && ["free", "strip"].includes(c.type), ["construction"]);
@@ -74,7 +112,6 @@ export function validateGeo(d: ResolvedDesign, allowBrokenReferences = false) {
         check(!Object.hasOwn(f, "noise"), "是未知字段", at(fn(["noise"])));
         if (c.type === "free") {
             valid(Array.isArray(c.paths) && c.paths.length > 0, ["construction", "paths"]);
-            c.paths.forEach((p, j) => path(p, ["construction", "paths", j]));
         }
         else {
             valid(Array.isArray(c.of) && [1, 2].includes(c.of.length) && c.of.every(id => typeof id === "string") && new Set(c.of).size === c.of.length, ["construction", "of"]);
@@ -98,8 +135,6 @@ export function validateGeo(d: ResolvedDesign, allowBrokenReferences = false) {
                     continue;
                 }
                 switch (p.default) {
-                    case "boundary": path(value as Path, pos); break;
-                    case "draw-line": case "axis": line(value as Polyline<number>, pos); break;
                     case "center": case "draw-point": valid(point(value), pos); break;
                     case "empty": valid(Array.isArray(value), pos); break;
                 }

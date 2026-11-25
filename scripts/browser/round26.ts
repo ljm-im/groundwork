@@ -6,7 +6,7 @@ import { type Design, type Point } from "../../src/core/design/v5.ts";
 import { parseDesign, serializeDesign } from "../../src/core/design/model.ts";
 import { sampleField } from "../../src/core/design/results.ts";
 import { Project } from "../../src/core/project.ts";
-import { layer, rect, syntheticDesign } from "../../test/scenarios.ts";
+import { layer, rect, syntheticDesign, openCurve } from "../../test/scenarios.ts";
 import { startChromium } from "./chromium.ts";
 import { installPickers } from "./pickers.ts";
 
@@ -95,7 +95,7 @@ function sampleDesign() {
     const mountain = defaultFunction("mountain");
     assert(mountain.type === "mountain");
     for (const y of [23, 27, 31]) {
-        mountain.ridges.push({ line: { points: [{ p: [-33, y], h: 5 }, { p: [-7, y], h: 5 }, { p: [18, y], h: 5 }] },
+        mountain.ridges.push({ line: openCurve([{ p: [-33, y], h: 5 }, { p: [-7, y], h: 5 }, { p: [18, y], h: 5 }], "corner", "ridge-" + y + "-"),
             widths: [3, 3], widthNoise: { amount: 0, wavelength: 10 }, heightNoise: { amount: 0, wavelength: 10 } });
     }
     d.geoNodes = [
@@ -474,12 +474,12 @@ export async function checkRound26(url: string) {
         assert.equal(await evaluate(() => document.querySelector("[data-property-tab=function]")?.getAttribute("aria-pressed")), "true");
         assert.deepEqual(await evaluate(() => [...document.querySelectorAll(".subitem-toggle[aria-expanded=true]")].map(el => el.textContent?.trim())), ["山脊 3"]);
         await tap(await at(vertex));
-        const heightRow = "[data-parameter$=\".ridges.2.line.points.1.h\"]";
+        const heightRow = "[data-parameter$=\".ridges.2.line.nodes.1.h\"]";
         await wait(s => !!document.querySelector(s), heightRow);
         await click("[data-geo-node=D]");
         await drag(await at(vertex), await at([-4, 32.3])); await saved();
         const mountain = (await authored()).geoNodes.find(n => n.id === "C")!.function;
-        assert(mountain.type === "mountain" && distance(mountain.ridges[2].line.points[1].p, [-4, 32.3]) < .3);
+        assert(mountain.type === "mountain" && distance(mountain.ridges[2].line.nodes[1].p, [-4, 32.3]) < .3);
         await undo();
 
         console.log("Round 26: section endpoints outside height and plots from the displayed field");

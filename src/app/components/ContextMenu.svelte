@@ -9,6 +9,8 @@
     import * as session from "../state/session.svelte.ts";
     import { geoAt } from "../state/geoTools.ts";
     import { geometryPath } from "../../core/edit/geoControls.ts";
+    import { neighbor, segmentType } from "../../core/design/path.ts";
+    import { canRemoveNode, canSetManual } from "../../core/edit/paths.ts";
     import { nodeModes, segmentTypes } from "../state/inspector.ts";
     import Menu, { type MenuItem } from "./Menu.svelte";
 
@@ -29,19 +31,25 @@
                 result.push({ items });
             }
             if (control?.role === "vertex" || control?.role === "segment") {
-                const point = geometryPath(node, control.path)?.nodes[control.index];
-                if (point) {
+                const curve = geometryPath(node, control.path), point = curve?.nodes[control.index];
+                if (curve && point) {
                     result.push({ title: "节点类型", items: nodeModes.map(([id, name, icon]) => ({
-                        id, name, icon, selected: point.mode === id, run: () => editor.pathNodeMode(control, id)
+                        id, name, icon, selected: point.mode === id, disabled: id === "manual" && !canSetManual(curve, control.index),
+                        run: () => editor.pathNodeMode(control, id)
                     })) });
-                    const items: Action[] = segmentTypes.map(([id, name, icon]) => ({
-                        id, name, icon, selected: (point.next ?? "curve") === id, run: () => editor.segment(control, id)
-                    }));
-                    if (point.next === "arc") items.push({ id: "tangent", name: "相切", icon: "tangent", run: () => editor.segment(control, "tangent") });
-                    result.push({ title: "后一段", items });
-                    result.push({ items: control.role === "vertex" ?
-                        [{ id: "delete-node", name: "删除节点", icon: "delete", danger: true, run: () => editor.removeGeo(h.id, control) }] :
-                            [{ id: "insert-node", name: "插入节点", icon: "nodeCorner", run: () => editor.insertNode(h.id, control) }] });
+                    const type = segmentType(curve, control.index);
+                    if (type) {
+                        const items: Action[] = segmentTypes.map(([id, name, icon]) => ({
+                            id, name, icon, selected: type === id, run: () => editor.segment(control, id)
+                        }));
+                        if (type === "arc") items.push({ id: "tangent", name: "相切", icon: "tangent",
+                            disabled: neighbor(curve, control.index, -1) === undefined, run: () => editor.segment(control, "tangent") });
+                        result.push({ title: "后一段", items });
+                    }
+                    if (control.role === "segment")
+                        result.push({ items: [{ id: "insert-node", name: "插入节点", icon: "nodeCorner", run: () => editor.insertNode(h.id, control) }] });
+                    else if (canRemoveNode(curve))
+                        result.push({ items: [{ id: "delete-node", name: "删除节点", icon: "delete", danger: true, run: () => editor.removeGeo(h.id, control) }] });
                 }
             }
             actions.push({ id: "copy", name: "复制", icon: "copy", run: () => editor.duplicate(h.id) },

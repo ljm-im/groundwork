@@ -1,5 +1,5 @@
 import { quotedLocation } from "../design/problems.ts";
-import { type Design, type GeoFunction, type GeoNode, type Path, type Point, type Strip, type Polyline } from "../design/v5.ts";
+import { type Design, type GeoFunction, type GeoNode, type ClosedCurve, type Curve, type Point, type Strip } from "../design/v5.ts";
 import { defaultInputRange, heightId, isBuiltin } from "../design/defaults.ts";
 import { canWrite, fillFunctionParameters, functionTable, stripWidths } from "../design/functionTable.ts";
 import { referenceSlots, slotName, type Slot } from "../design/parameters.ts";
@@ -12,7 +12,12 @@ export function nextId(used: Iterable<string>, prefix: string) {
 }
 
 export function pathsOf(n: GeoNode) {
-    return [...(n.construction.type === "free" ? n.construction.paths : []), ...(n.function.type === "coast" ? [n.function.shore] : [])];
+    const f = n.function;
+    const boundaries = n.construction.type === "free" ? n.construction.paths : [];
+    if (f.type === "coast") return [...boundaries, f.shore];
+    if (f.type === "mountain") return [...boundaries, ...f.ridges.map(r => r.line)];
+    if (f.type === "slope" && f.kind === "path") return [...boundaries, f.line];
+    return boundaries;
 }
 
 export function nodeIds(d: Design) {
@@ -35,7 +40,7 @@ function identity(d: Design) {
     const id = nextId(d.geoNodes.map(n => n.id), "geo-");
     return { id, label: "地件 " + id.slice(4) };
 }
-export function createFree(d: Design, path: Path, above?: string) {
+export function createFree(d: Design, path: ClosedCurve, above?: string) {
     return insert(d, { ...identity(d), field: heightId, construction: { type: "free", paths: [path] }, function: defaultFunction("flat") }, above);
 }
 export function stripConstruction(d: Design, ids: string[], range?: Strip["range"]): Strip<number> {
@@ -142,7 +147,7 @@ export function allowedFunctions(n: GeoNode) {
     });
 }
 
-export function defaultFunction(type: GeoFunction["type"], geometry: { shore?: Path; line?: Polyline; center?: Point; slope?: "path" | "radial" } = {}): GeoFunction {
+export function defaultFunction(type: GeoFunction["type"], geometry: { shore?: ClosedCurve; line?: Curve; center?: Point; slope?: "path" | "radial" } = {}): GeoFunction {
     let f;
     if (type === "coast") {
         if (!geometry.shore || !geometry.center) throw Error("海岸线或港湾圆心缺失");

@@ -8,6 +8,6 @@ export function newDesign(scalePoint: Point = [0, 0]): Design {
     return { version: 5, grid: { step: gridStep.default as number }, fields: structuredClone(reserved.field),
         inputs: { ...structuredClone(reserved.input), base: { value: 2, label: "地面标高", range: [0, 20, .5] } },
         geoNodes: [{ id: "ground", label: "地面", field: heightId, function: { type: "ground", value: "{input:base}" },
-            construction: { type: "free", paths: [{ closed: true, nodes: points.map((p, i) => ({ id: String(i), mode: "corner", next: "line", p })) }] } }],
+            construction: { type: "free", paths: [{ closed: true, nodes: points.map((p, i) => ({ id: String(i), mode: "corner", p })) }] } }],
         sections: [], marks: [{ id: "mark-1", kind: "scale", label: "比例尺", point: scalePoint, follow: defaultFollow("scale"), length: markParameters.scale.default }] };
 }

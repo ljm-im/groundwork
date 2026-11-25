@@ -1,16 +1,17 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { type Path, type Point, type GeoNode } from "../src/core/design/v5.ts";
+import { type ClosedCurve, type Point, type GeoNode } from "../src/core/design/v5.ts";
 import { parseDesign } from "../src/core/design/model.ts";
 import { distance, nearest, sampleDefined, spline } from "../src/core/math/geometry.ts";
 import { fbm, noise } from "../src/core/math/noise.ts";
 import { signedBoundaryDistance } from "../src/core/design/regions.ts";
+import { shapePath } from "../src/core/edit/paths.ts";
 import { flattenPath } from "../src/core/design/path.ts";
 import { evaluateStack, generateTerrain } from "../src/core/terrain/terrain.ts";
 import { terrainIssues } from "../src/core/checks/terrain.ts";
 import { terrainSurface } from "../src/core/terrain/surface.ts";
 import { Project } from "../src/core/project.ts";
-import { erosion, layer, rect, syntheticDesign } from "./scenarios.ts";
+import { erosion, layer, rect, syntheticDesign, openCurve } from "./scenarios.ts";
 
 function design(nodes: GeoNode[], step = 1) {
     const d = syntheticDesign();
@@ -19,7 +20,10 @@ function design(nodes: GeoNode[], step = 1) {
     return d;
 }
 const base = () => layer("G", rect(-30, -30, 30, 30), { type: "ground", value: 2 });
-const circle = (r: number): Path => ({ closed: true, nodes: [-r, r].map((x, i) => ({ id: "c" + i, p: [x, 0], next: "arc", mode: "corner", bulge: 1 })) });
+const circle = (r: number): ClosedCurve => {
+    let i = 0;
+    return shapePath("circle", [0, 0], [-r, 0], () => "c" + i++);
+};
 
 test("A seed reproduces the final height field", () => {
     const g = base();
@@ -35,10 +39,10 @@ test("A seed reproduces the final height field", () => {
 
 test("A local mountain preserves the underlying height differences along its boundary", () => {
     const g = base(), slope = layer("S", g.construction, { type: "slope", kind: "path",
-        line: { points: [{ p: [-30, 0], h: 4 }, { p: [30, 0], h: 7 }] } });
+        line: openCurve([{ p: [-30, 0], h: 4 }, { p: [30, 0], h: 7 }]) });
     const d = design([g, slope]), before = evaluateStack(d).fields.height.values;
     d.geoNodes.push(layer("M", rect(-12, -12, 12, 12), { type: "mountain",
-        ridges: [{ line: { points: [{ p: [-5, 0], h: 12 }, { p: [5, 0], h: 10 }] },
+        ridges: [{ line: openCurve([{ p: [-5, 0], h: 12 }, { p: [5, 0], h: 10 }]),
             widths: [2, 3], widthNoise: { amount: 10, wavelength: 2 }, heightNoise: { amount: 10, wavelength: 4 } }],
         peaks: [{ at: { p: [0, 3], h: 16 }, radius: 2, noise: .1, scale: 7 }] }));
     const t = evaluateStack(parseDesign(d)), after = t.fields.height.values, mask = t.regions.get("M")!.mask;
@@ -98,14 +102,14 @@ test("A field-bound noise amplitude leaves a zero disk intact and skips undefine
 
 test("Adaptive auto cubic vertices lie on the v4 Catmull-Rom curve", () => {
     const p: Point[] = [[-11, -4], [1, -12], [14, 5], [0, 6]];
-    const path: Path = { closed: true, nodes: p.map((v, i) => ({ id: String(i), p: v, mode: "auto" })) };
+    const path: ClosedCurve = { closed: true, nodes: p.map((v, i) => ({ id: String(i), p: v, mode: "auto" })) };
     const segments = flattenPath(path, .0625), sampled = spline(p, true, 256);
     for (const s of segments) assert(sampled.some(v => distance(v, s.a) < 1e-9));
     const vertices = segments.map(s => s.a);
     for (const v of sampled) assert(nearest(...v, vertices, true).distance <= .0625);
 });
 
-test("Two bulge semicircles cover the disk area and even-odd paths cut a hole", () => {
+test("Bulge arcs cover the disk area and even-odd paths cut a hole", () => {
     const g = base(); g.construction = { type: "free", paths: [circle(20)] };
     const d = design([g], .5), full = evaluateStack(d);
     const area = full.fields.height.defined.reduce((a, b) => a + b, 0) * d.grid.step ** 2;
@@ -142,7 +146,7 @@ test("Shared strips match touching and overlapping rectangles and ranges survive
     delete (band.construction as { range?: unknown }).range;
     assert(mask().reduce((a, b) => a + b) > selected.reduce((a, b) => a + b));
     single.range = { from: "3", to: "0" };
-    p.nodes.splice(2, 0, { id: "extra", p: [12, 0], mode: "corner", next: "line" });
+    p.nodes.splice(2, 0, { id: "extra", p: [12, 0], mode: "corner" });
     assert.deepEqual(mask(), selected);
     p.nodes.splice(2, 1);
     assert.deepEqual(mask(), selected);
@@ -235,7 +239,7 @@ test("All functions operate on a design with only the built-in field", () => {
         layer("C", all, { type: "coast", shore: circle(12), roughness: 2, harbor: { center: [0, 0], radius: 0, span: 3 } }),
         layer("M", all, { type: "mountain", ridges: [], peaks: [], floor: 0 }), layer("N", all, { type: "noise", amplitude: 1, scale: 8 }), layer("K", all, { type: "cliff", factor: .7 }),
         layer("E", all, erosion), layer("I", all, { type: "islets", density: 1, reach: 5 }), layer("F", all, { type: "flat", amount: 5 }),
-        layer("A", all, { type: "flat", amount: 1, feather: 3 }), layer("S", all, { type: "slope", kind: "path", line: { points: [{ p: [-2, 0], h: 2 }, { p: [2, 0], h: 3 }] } })];
+        layer("A", all, { type: "flat", amount: 1, feather: 3 }), layer("S", all, { type: "slope", kind: "path", line: openCurve([{ p: [-2, 0], h: 2 }, { p: [2, 0], h: 3 }]) })];
     for (const type of ["blend", "batter", "split"] as const)
         nodes.push(layer(type, { type: "strip", of: ["F"], widths: [2, 2] }, type === "batter" ? { type, grade: .4 } : { type }));
     const d = parseDesign(design(nodes)), a = new Project(d), b = new Project(parseDesign(d));
@@ -245,7 +249,7 @@ test("All functions operate on a design with only the built-in field", () => {
 });
 
 test("Ridge variation follows distance, wavelength and seed independently of collinear vertices", () => {
-    const area = rect(-2, -8, 131, 8), line = { points: [{ p: [.5, -.5] as Point, h: 10 }, { p: [128.5, -.5] as Point, h: 10 }] };
+    const area = rect(-2, -8, 131, 8), line = openCurve([{ p: [.5, -.5], h: 10 }, { p: [128.5, -.5], h: 10 }]);
     const ridge = { line, widths: [4, 4] as [number, number], widthNoise: { amount: 0, wavelength: 8 }, heightNoise: { amount: 0, wavelength: 8 } };
     const mountain = { type: "mountain" as const, ridges: [ridge], peaks: [], seed: 12 };
     const d = design([layer("A", area, { type: "ground", value: 0 }), layer("B", area, mountain)]);
@@ -264,11 +268,11 @@ test("Ridge variation follows distance, wavelength and seed independently of col
         const long = samples(y);
         // The entire waveform, including every zero crossing, stretches twofold.
         assert.deepEqual(long.filter((_, i) => i % 2 === 0), short.slice(0, 65));
-        line.points.splice(1, 0, { p: [37.5, -.5], h: 10 });
+        line.nodes.splice(1, 0, { id: "extra", p: [37.5, -.5], h: 10, mode: "corner" });
         assert.deepEqual(samples(y), long);
         mountain.seed++;
         assert.notDeepEqual(samples(y), long);
-        line.points.splice(1, 1); ridge[key].amount = 0;
+        line.nodes.splice(1, 1); ridge[key].amount = 0;
     }
 });
 
@@ -278,7 +282,7 @@ test("Omitted mountain and erosion floors preserve cells at and below minus one 
     const e = layer("E", area, { ...erosion });
     for (const node of [m, e]) {
         const d = design([layer("A", area, { type: "ground", value: -1000 }),
-            layer("B", area, { type: "slope", kind: "path", line: { points: [{ p: [-8, 0], h: -12 }, { p: [8, 0], h: 0 }] } })]);
+            layer("B", area, { type: "slope", kind: "path", line: openCurve([{ p: [-8, 0], h: -12 }, { p: [8, 0], h: 0 }]) })]);
         const before = evaluateStack(d).fields.height.values;
         d.geoNodes.push(node);
         const initial = evaluateStack(d).fields.height.values;

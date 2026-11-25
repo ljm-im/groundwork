@@ -5,6 +5,9 @@ import { type GeoDraft } from "../../core/edit/types.ts";
 import { type FieldDeclaration, type Point } from "../../core/design/v5.ts";
 import { type Tool } from "../types.ts";
 
+const lineEnd = "回车或双击结束，单击首个节点闭合";
+const lineHint = "单击放置尖角节点，按下并拖动放置平滑节点，" + lineEnd;
+
 const hints: Record<Tool, string> = {
     select: "单击选择，中键平移，滚轮缩放",
     pen: "单击放置尖角节点，按下并拖动放置平滑节点，回车、双击或单击首点闭合",
@@ -14,8 +17,8 @@ const hints: Record<Tool, string> = {
     strip: "单击要沿的地件，按住 Alt 单击可选被遮住的地件",
     addPath: "单击放置尖角节点，按下并拖动放置平滑节点，回车、双击或单击首点闭合",
     shore: "单击放点，回车、双击或单击首点闭合海岸线",
-    ridge: "单击放置山脊顶点，回车或双击完成",
-    slopeLine: "单击放置坡线顶点，回车或双击完成",
+    ridge: lineHint,
+    slopeLine: lineHint,
     peak: "单击放置山峰",
     center: "单击选择圆心",
     harbor: "单击选择港湾圆心",
@@ -25,7 +28,7 @@ const hints: Record<Tool, string> = {
 };
 
 export function drawingStatus(mode: Exclude<Tool, "select">, name: string, owner?: string, member?: number, names: string[] = []) {
-    const label = "“" + name + "”", pen = "回车、双击或单击首点结束", line = "回车或双击结束", point = "单击地图放置";
+    const label = "“" + name + "”", pen = "回车、双击或单击首点结束", point = "单击地图放置";
     const text: Record<Exclude<Tool, "select">, [string, string, boolean]> = {
         pen: ["新建地件（钢笔）", pen, true],
         rect: ["新建地件（矩形）", "单击或拖出两个对角", false],
@@ -35,9 +38,9 @@ export function drawingStatus(mode: Exclude<Tool, "select">, name: string, owner
             ["新建地件（条带）", names.length ? "沿" + names.map(name => "“" + name + "”").join("、") + "，回车确认" : "单击要沿的地件", true],
         addPath: ["给" + label + "添加边界", pen, true],
         shore: ["重画" + label + "的海岸线", pen, true],
-        ridge: [member === undefined ? "给" + label + "添加山脊" : "重画" + label + "的山脊线", line, true],
+        ridge: [member === undefined ? "给" + label + "添加山脊" : "重画" + label + "的山脊线", lineEnd, true],
         peak: [member === undefined ? "给" + label + "添加山峰" : "移动" + label + "的山峰", point, false],
-        slopeLine: ["重画" + label + "的坡线", line, true],
+        slopeLine: ["重画" + label + "的坡线", lineEnd, true],
         center: ["选择" + label + "的圆心", point, false],
         harbor: ["选择" + label + "的港湾圆心", point, false],
         textMark: ["新建文字标记", point, false],

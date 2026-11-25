@@ -5,12 +5,12 @@ import { canReference, expressionGraph, referenceSlots, resolveDesign, slotName,
 import { problemText } from "../src/core/design/problems.ts";
 import { parseDesign, serializeDesign } from "../src/core/design/model.ts";
 import { newDesign } from "../src/core/design/newDesign.ts";
-import { type Design } from "../src/core/design/v5.ts";
+import { type Design, type Expression } from "../src/core/design/v5.ts";
 import { deleteGeo } from "../src/core/edit/geoNodes.ts";
 import { defaultInputRange } from "../src/core/design/defaults.ts";
 import { TerrainCache } from "../src/core/terrain/cache.ts";
 import { generateTerrain } from "../src/core/terrain/terrain.ts";
-import { layer, rect, syntheticDesign } from "./scenarios.ts";
+import { layer, rect, syntheticDesign, openCurve } from "./scenarios.ts";
 
 function referenceUses(d: Design, kind: Owner, id: string) {
     return referenceSlots(d, kind, id).map(s => slotName(s) + "（" + problemText({ location: s.location, message: "" }).trimEnd() + "）");
@@ -35,7 +35,7 @@ test("Author inputs form one graph across stacks, array parameters and marks", (
     d.geoNodes[1].function = { type: "ground", value: "{input:A}" };
     d.geoNodes.push(layer("M", rect(-8, -8, 8, 8), { type: "mountain", peaks: [], ridges: [{
         widths: [1, "{input:b}"], widthNoise: { amount: 0, wavelength: 20 }, heightNoise: { amount: 0, wavelength: 20 },
-        line: { points: [{ p: [0, 0], h: 2 }, { p: [2, 2], h: "{input:b}" }] }
+        line: openCurve<Expression>([{ p: [0, 0], h: 2 }, { p: [2, 2], h: "{input:b}" }])
     }] }));
     d.inputs.b = { range: defaultInputRange("b"), value: "{geo:T.value} + 1" };
     d.inputs.c = { range: defaultInputRange("c"), value: "{geo:M.ridges.0.widths.1} + 1" };
@@ -105,7 +105,7 @@ test("Rounded per-layer seeds and transitive scalar inputs invalidate only their
 
 test("Omitted parameters can be referenced and old ridge tuples fail at their original address", () => {
     const d: Design = syntheticDesign(), mountain = { type: "mountain" as const, peaks: [], ridges: [{
-        line: { points: [{ p: [0, 0], h: 2 }, { p: [5, 0], h: 2 }] }, widths: [3, 3],
+        line: openCurve([{ p: [0, 0], h: 2 }, { p: [5, 0], h: 2 }]), widths: [3, 3],
         heightNoise: { amount: "{input:A} * 2" }, widthNoise: { wavelength: "{input:A} + 1" }
     }] };
     Object.assign(d.geoNodes[1], { function: mountain });
@@ -126,27 +126,27 @@ test("Omitted parameters can be referenced and old ridge tuples fail at their or
 
 test("Geometry inputs expose concrete defaults without changing authored height stops", () => {
     const d: Design = syntheticDesign(), n = d.geoNodes[1];
-    n.function = { type: "slope", kind: "path", ease: true, line: { points: [
+    n.function = { type: "slope", kind: "path", ease: true, line: openCurve([
         { p: [0, 0], h: 2 }, { p: [2, 0] }, { p: [8, 0], h: 10 }
-    ] } };
-    d.inputs.b = { range: defaultInputRange("b"), value: "{geo:T.line.points.1.h} + {geo:T.line.points.0.h}" };
+    ]) };
+    d.inputs.b = { range: defaultInputRange("b"), value: "{geo:T.line.nodes.1.h} + {geo:T.line.nodes.0.h}" };
     const g = expressionGraph(d), resolved = resolveDesign(parseDesign(d)), t = resolved.geoNodes[1].function;
     assert(t.type === "slope" && t.kind === "path");
-    assert.equal(g.get("geo:T.line.points.1.h"), 3.25);
+    assert.equal(g.get("geo:T.line.nodes.1.h"), 3.25);
     assert.equal(resolved.inputs.b.value, 5.25);
-    assert.equal(t.line.points[1].h, undefined);
+    assert.equal(t.line.nodes[1].h, undefined);
     assert(!Object.hasOwn(t.line, "heightStops"));
     const unchanged = generateTerrain(d).fields.height.values;
     const noMidpoint = structuredClone(d);
     const slope = noMidpoint.geoNodes[1].function;
     assert(slope.type === "slope" && slope.kind === "path");
     noMidpoint.inputs.b.value = resolved.inputs.b.value;
-    slope.line.points.splice(1, 1);
+    slope.line.nodes.splice(1, 1);
     assert.deepEqual(generateTerrain(noMidpoint).fields.height.values, unchanged);
-    assert.equal(n.function.line.points[1].h, undefined, "The source retains its two authored height stops");
+    assert.equal(n.function.line.nodes[1].h, undefined, "The source retains its two authored height stops");
     const ridge = { line: n.function.line, widths: [4, 4] };
     Object.assign(n, { function: { type: "mountain", ridges: [ridge], peaks: [] } });
-    d.inputs.b.value = "{geo:T.ridges.0.line.points.1.h}";
+    d.inputs.b.value = "{geo:T.ridges.0.line.nodes.1.h}";
     const parsed = parseDesign(d), m = resolveDesign(parsed).geoNodes[1].function;
     assert(m.type === "mountain"); assert.equal(m.floor, -1000);
     assert.deepEqual(m.ridges[0].widthNoise, { amount: 0, wavelength: 20 });

@@ -2,8 +2,8 @@ import { defaultFollow, type Design } from "./v5.ts";
 import { defaultFieldPrecision, defaultInputRange, heightId, reserved, seedId } from "./defaults.ts";
 import { constructionCenter, rasterRegion, shapeLayout } from "./regions.ts";
 import { distance } from "../math/geometry.ts";
-import { point, record, validateGeo } from "./validateGeo.ts";
-import { check, type Location } from "./problems.ts";
+import { point, record, validateCurves, validateGeo } from "./validateGeo.ts";
+import { check, rejectRetired, type Location } from "./problems.ts";
 import { fillFunctionParameters, gridStep, markParameters, numericValid } from "./functionTable.ts";
 import { literalPattern } from "./expression.ts";
 import { parameters, resolveDesign, writeAt } from "./parameters.ts";
@@ -12,9 +12,6 @@ export function parseDesign(text: unknown, allowBrokenReferences = false): Desig
     const d: Design = typeof text === "string" ? JSON.parse(text) : structuredClone(text);
     check(d && typeof d === "object", "不支持的版本");
     check(d.version === 5, "不支持的版本");
-    function rejectRetired(value: object, names: string[], at: Location = { kind: "project", path: [] }) {
-        for (const name of names) check(!Object.hasOwn(value, name), "已从 v5 移除", { ...at, path: [...at.path, name] });
-    }
     rejectRetired(d, ["levels", "levelControls", "coast", "ridges", "peaks", "zones", "erosion", "yards", "seed", "variables", "labels",
         "buildings", "nodes", "edges", "roadClasses", "routing", "vegetation"]);
     if (d.grid && d.grid.step === undefined) d.grid.step = gridStep.default as number;
@@ -80,6 +77,7 @@ export function parseDesign(text: unknown, allowBrokenReferences = false): Desig
             });
             if (Array.isArray(f.peaks)) f.peaks.forEach((peak, j) => check(record(peak), "无效", at(["function", "peaks", j])));
         }
+        validateCurves(node, index);
     }
     const slots = parameters(d);
     for (const slot of slots.values()) {

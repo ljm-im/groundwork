@@ -1,5 +1,5 @@
 import { type MapView, type ProjectMap } from "./map.ts";
-import { geoControls, geometryPath, linePoints, pathEntries, type GeoControl } from "../core/edit/geoControls.ts";
+import { displayCurveTolerance, geoControls, geometryPath, parameterPoints, pathEntries, type GeoControl } from "../core/edit/geoControls.ts";
 import { flattenPath } from "../core/design/path.ts";
 import { type Point, type GeoNode } from "../core/design/v5.ts";
 import { type Segment } from "../core/design/regions.ts";
@@ -36,15 +36,14 @@ export function drawGeoOverlay(map: ProjectMap, view: MapView) {
         ctx.setLineDash([]);
     };
     const dot = (point: Point, active = false, control = false) => drawHandle(ctx, ...map.screen(point), active, control);
+    const tolerance = displayCurveTolerance(d.grid.step / 8, scale);
     function controls(n: GeoNode, numeric: GeoNode<number>, selected: boolean) {
         for (const [i, path] of pathEntries(n)) {
-            if (i === -1) edges(flattenPath(path, .6 / scale), mapColors.parameterGeometry, overlay.parameterWidth, true);
-            else if (selected && (view.dragNode || draft?.owner === n.id)) edges(flattenPath(path, .6 / scale), mapColors.accent, overlay.selectedWidth);
+            if (i < 0) edges(flattenPath(path, tolerance), mapColors.parameterGeometry, overlay.parameterWidth, true);
+            else if (selected && (view.dragNode || draft?.owner === n.id))
+                edges(flattenPath(path, .6 / scale), mapColors.accent, overlay.selectedWidth);
         }
-        for (const points of linePoints(n)) {
-            if (points.length === 1) dot(points[0]);
-            else edges(points.slice(1).map((b, i) => ({ a: points[i], b })), mapColors.parameterGeometry, overlay.parameterWidth, true);
-        }
+        for (const [, point] of parameterPoints(n)) dot(point);
         if (n.function.type === "coast" && numeric.function.type === "coast" && numeric.function.harbor.radius > 0) {
             const { center } = n.function.harbor, { radius } = numeric.function.harbor;
             ctx.beginPath();

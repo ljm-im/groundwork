@@ -1,53 +1,65 @@
 import { parameters, readAt, slotName, writeAt, type Address } from "../design/parameters.ts";
-import { type Design, type GeoNode, type Path, type Point } from "../design/v5.ts";
-import { arcHandle, moveHandle, nearestSegment, setBulge, translateGeo } from "./paths.ts";
-import { defaultArcBulge, flattenPath, pathHandle } from "../design/path.ts";
-import { distance, spline } from "../math/geometry.ts";
+import { type Curve, type Design, type GeoNode, type Point } from "../design/v5.ts";
+import { arcHandle, canRemoveNode, cleanHandles, insertPathNode, moveHandle, nearestSegment, setBulge, translateGeo } from "./paths.ts";
+import { flattenPath, neighbor, pathHandle } from "../design/path.ts";
+import { distance } from "../math/geometry.ts";
+import { nodeIds } from "./geoNodes.ts";
 
 export interface GeometryTarget { kind: "path" | "parameter"; index: number }
 export interface GeoControl {
-    role: "vertex" | "in" | "out" | "arc" | "segment" | "body" | "parameter" | "parameterSegment";
+    role: "vertex" | "in" | "out" | "arc" | "segment" | "body" | "parameter";
     path: number; index: number; point: Point;
 }
-export function geometryPath(n: GeoNode, index: number): Path | undefined {
-    if (index === -1) return n.function.type === "coast" ? n.function.shore : undefined;
-    return n.construction.type === "free" ? n.construction.paths[index] : undefined;
-}
-export function parameterLines(n: GeoNode) {
+
+export function geometryPath(n: GeoNode, index: number): Curve | undefined {
+    if (index >= 0) return n.construction.type === "free" ? n.construction.paths[index] : undefined;
     const f = n.function;
-    if (f.type === "mountain") return [...f.ridges.map(r => r.line), ...f.peaks.map(p => ({ points: [p.at] }))];
-    if (f.type === "coast") return [{ points: [{ p: f.harbor.center }] }];
-    if (f.type === "slope") return f.kind === "path" ? [f.line] : [{ points: [{ p: f.center }] }];
+    if (f.type === "mountain") return f.ridges[-1 - index]?.line;
+    if (index === -1) {
+        if (f.type === "coast") return f.shore;
+        if (f.type === "slope" && f.kind === "path") return f.line;
+    }
+}
+
+export function parameterPoints(n: GeoNode): [number, Point][] {
+    const f = n.function;
+    if (f.type === "mountain") return f.peaks.map(({ at }, i) => [f.ridges.length + i, at.p]);
+    if (f.type === "coast") return [[0, f.harbor.center]];
+    if (f.type === "slope" && f.kind === "radial") return [[0, f.center]];
     return [];
 }
-export function linePoints(n: GeoNode) {
-    return parameterLines(n).map(l => {
-        const p = l.points.map(v => v.p);
-        return "smooth" in l && l.smooth && p.length > 1 ? spline(p, false, 12) : p;
-    });
-}
-export function pathEntries(n: GeoNode): [number, Path][] {
-    const paths: [number, Path][] = n.construction.type === "free" ? n.construction.paths.map((p, i) => [i, p]) : [];
-    if (n.function.type === "coast") paths.push([-1, n.function.shore]);
+
+export function pathEntries(n: GeoNode): [number, Curve][] {
+    const paths: [number, Curve][] = n.construction.type === "free" ? n.construction.paths.map((p, i) => [i, p]) : [];
+    const count = n.function.type === "mountain" ? n.function.ridges.length : 1;
+    for (let i = -1; i >= -count; i--) {
+        const curve = geometryPath(n, i);
+        if (curve) paths.push([i, curve]);
+    }
     return paths;
 }
+
+const vertexControl = (path: number, index: number, point: Point): GeoControl => ({ role: "vertex", path, index, point });
+const pointControl = (path: number, point: Point): GeoControl => ({ role: "parameter", path, index: 0, point });
+
 export function geoControls(n: GeoNode, target?: GeometryTarget) {
     const controls: GeoControl[] = [];
     for (const [path, p] of editablePaths(n, target)) for (const [index, v] of p.nodes.entries()) {
-        const next = p.nodes[(index + 1) % p.nodes.length], prev = p.nodes[(index + p.nodes.length - 1) % p.nodes.length];
-        controls.push({ role: "vertex", path, index, point: v.p });
+        controls.push(vertexControl(path, index, v.p));
         for (const role of ["in", "out"] as const) {
-            const segment = role === "in" ? prev : v;
-            if ((segment.next ?? "curve") !== "curve") continue;
             const point = pathHandle(p, index, role);
             if (distance(point, v.p) > .0001) controls.push({ role, path, index, point });
         }
-        if (v.next === "arc") controls.push({ role: "arc", path, index, point: arcHandle(v.p, next.p, v.bulge ?? defaultArcBulge) });
+        const j = neighbor(p, index, 1);
+        if (j !== undefined && v.bulge !== undefined) controls.push({ role: "arc", path, index, point: arcHandle(v.p, p.nodes[j].p, v.bulge) });
     }
-    if (target?.kind === "parameter") parameterLines(n)[target.index]?.points.forEach((v, index) =>
-        controls.push({ role: "parameter", path: target.index, index, point: v.p }));
+    if (target?.kind === "parameter") {
+        const entry = parameterPoints(n).find(([i]) => i === target.index);
+        if (entry) controls.push(pointControl(...entry));
+    }
     return controls;
 }
+
 function editablePaths(n: GeoNode, target?: GeometryTarget) {
     return pathEntries(n).filter(([i]) => target ? target.kind === "path" && i === target.index : i >= 0);
 }
@@ -61,41 +73,42 @@ function hitGeoHandle(controls: GeoControl[], p: Point, scale: number) {
     }
     return best;
 }
-export function hitControl(n: GeoNode, p: Point, scale: number, tolerance: number, target?: GeometryTarget): GeoControl | undefined {
-    return hitGeoHandle(geoControls(n, target), p, scale) ?? hitPathSegment(n, p, scale, tolerance, target);
-}
-export function hitParameterGeometry(n: GeoNode, p: Point, scale: number, tolerance: number): GeoControl | undefined {
-    const controls = parameterLines(n).flatMap(({ points }, path) =>
-        points.map((v, index): GeoControl => ({ role: "parameter", path, index, point: v.p })));
-    const handle = hitGeoHandle(controls, p, scale);
-    if (handle) return handle;
-    const lines = linePoints(n);
-    for (let path = lines.length - 1; path >= 0; path--) {
-        const points = lines[path];
-        const hit = nearestSegment(points.slice(1).map((b, i) => ({ a: points[i], b })), p);
-        if (hit && hit.distance * scale <= segmentRadius) return { role: "parameterSegment", path, index: 0, point: hit.point };
-    }
-    return hitPathSegment(n, p, scale, tolerance, { kind: "path", index: -1 });
-}
-export function hitPathSegment(n: GeoNode, p: Point, scale: number, tolerance: number, target?: GeometryTarget): GeoControl | undefined {
-    for (const [index, path] of editablePaths(n, target).reverse()) {
-        const hit = nearestSegment(flattenPath(path, Math.min(tolerance, .5 / scale)), p);
+
+export const displayCurveTolerance = (tolerance: number, scale: number) => Math.min(tolerance, .5 / scale);
+
+function hitSegments(paths: [number, Curve][], p: Point, scale: number, tolerance: number): GeoControl | undefined {
+    for (const [index, path] of paths.toReversed()) {
+        const hit = nearestSegment(flattenPath(path, displayCurveTolerance(tolerance, scale)), p);
         if (hit && hit.distance * scale <= segmentRadius)
             return { role: "segment", path: index, index: path.nodes.findIndex(v => v.id === hit.edge.from), point: hit.point };
     }
 }
+
+export function hitControl(n: GeoNode, p: Point, scale: number, tolerance: number, target?: GeometryTarget) {
+    return hitGeoHandle(geoControls(n, target), p, scale) ?? hitPathSegment(n, p, scale, tolerance, target);
+}
+export function hitParameterGeometry(n: GeoNode, p: Point, scale: number, tolerance: number) {
+    const paths = pathEntries(n).filter(([i]) => i < 0);
+    const controls = paths.flatMap(([path, curve]) => curve.nodes.map((v, i) => vertexControl(path, i, v.p)));
+    controls.push(...parameterPoints(n).map(([index, point]) => pointControl(index, point)));
+    return hitGeoHandle(controls, p, scale) ?? hitSegments(paths, p, scale, tolerance);
+}
+export function hitPathSegment(n: GeoNode, p: Point, scale: number, tolerance: number, target?: GeometryTarget) {
+    return hitSegments(editablePaths(n, target), p, scale, tolerance);
+}
 export function editControl(n: GeoNode, h: GeoControl, at: Point, independent: boolean) {
     if (h.role === "body") return translateGeo(n, [at[0] - h.point[0], at[1] - h.point[1]]);
     if (h.role === "parameter") {
-        const p = parameterLines(n)[h.path].points[h.index].p;
+        const p = parameterPoints(n).find(([i]) => i === h.path)![1];
         p[0] = at[0]; p[1] = at[1];
         return;
     }
     const path = geometryPath(n, h.path)!, v = path.nodes[h.index];
     if (h.role === "vertex") v.p = at;
     if (h.role === "in" || h.role === "out") moveHandle(path, h.index, h.role, at, independent);
-    if (h.role === "arc") setBulge(v, path.nodes[(h.index + 1) % path.nodes.length].p, at);
+    if (h.role === "arc") setBulge(v, path.nodes[neighbor(path, h.index, 1)!].p, at);
 }
+
 export function removeGeometryItem(d: Design, n: GeoNode, path: Address, index: number) {
     const items = readAt(n.function, path);
     if (!Array.isArray(items) || !items[index]) return;
@@ -106,7 +119,12 @@ export function copyGeometryItem(d: Design, n: GeoNode, path: Address, index: nu
     const items = readAt(n.function, path);
     if (!Array.isArray(items) || !items[index]) return;
     shiftGeometryReferences(d, n, path, index, 1);
-    items.splice(index + 1, 0, structuredClone(items[index]));
+    const copy = structuredClone(items[index]);
+    if (path[0] === "ridges") {
+        const id = nodeIds(d);
+        for (const v of (copy.line as Curve).nodes) v.id = id();
+    }
+    items.splice(index + 1, 0, copy);
 }
 function shiftGeometryReferences(d: Design, n: GeoNode, path: Address, index: number, offset: -1 | 1) {
     const slots = parameters(d), prefix = "geo:" + n.id + "." + path.join(".") + ".";
@@ -128,27 +146,30 @@ function shiftGeometryReferences(d: Design, n: GeoNode, path: Address, index: nu
 }
 export function removeParameterPoint(d: Design, n: GeoNode, h: GeoControl) {
     const f = n.function;
-    if (f.type === "mountain" && h.path >= f.ridges.length) {
-        removeGeometryItem(d, n, ["peaks"], h.path - f.ridges.length); return;
-    }
+    if (f.type === "mountain") removeGeometryItem(d, n, ["peaks"], h.path - f.ridges.length);
     if (f.type === "coast") throw Error("港湾需要保留圆心");
     if (f.type === "slope" && f.kind === "radial") throw Error("径向坡面需要保留圆心");
-    const line = f.type === "mountain" ? f.ridges[h.path]?.line : f.type === "slope" && f.kind === "path" ? f.line : undefined;
-    if (!line) return;
-    if (line.points.length < 3) throw Error("折线至少需要两个顶点");
-    removeGeometryItem(d, n, f.type === "mountain" ? ["ridges", h.path, "line", "points"] : ["line", "points"], h.index);
 }
 
-export function insertPathNode(path: Path, index: number, at: Point, id: string) {
-    const a = path.nodes[index], b = path.nodes[(index + 1) % path.nodes.length];
-    const v = { id, p: at, mode: "auto" as const, next: a.next, bulge: undefined as number | undefined };
-    if (a.next === "arc") {
-        const bulge = a.bulge ?? defaultArcBulge, angle = 4 * Math.atan(bulge), dx = b.p[0] - a.p[0], dy = b.p[1] - a.p[1], k = (1 / bulge - bulge) / 4;
-        const cx = (a.p[0] + b.p[0]) / 2 - dy * k, cy = (a.p[1] + b.p[1]) / 2 + dx * k;
-        const delta = (Math.atan2(at[1] - cy, at[0] - cx) - Math.atan2(a.p[1] - cy, a.p[0] - cx)) * Math.sign(angle);
-        const first = Math.sign(angle) * ((delta + 2 * Math.PI) % (2 * Math.PI));
-        if (Math.abs(first) < .00001 || Math.abs(angle - first) < .00001) return;
-        a.bulge = Math.tan(first / 4); v.bulge = Math.tan((angle - first) / 4);
-    }
-    path.nodes.splice(index + 1, 0, v);
+function profileNodes(n: GeoNode, path: number): Address | undefined {
+    if (path >= 0) return;
+    const f = n.function;
+    if (f.type === "mountain") return ["ridges", -1 - path, "line", "nodes"];
+    if (f.type === "slope" && f.kind === "path") return ["line", "nodes"];
+}
+
+export function removeCurveNode(d: Design, n: GeoNode, h: GeoControl) {
+    const path = geometryPath(n, h.path);
+    if (!path || !canRemoveNode(path)) return;
+    const address = profileNodes(n, h.path);
+    if (address) shiftGeometryReferences(d, n, address, h.index, -1);
+    path.nodes.splice(h.index, 1);
+    cleanHandles(path);
+}
+
+export function insertCurveNode(d: Design, n: GeoNode, h: GeoControl) {
+    const path = geometryPath(n, h.path);
+    if (!path) return;
+    const address = profileNodes(n, h.path);
+    return insertPathNode(path, h.index, h.point, nodeIds(d)(), address ? () => shiftGeometryReferences(d, n, address, h.index, 1) : undefined);
 }

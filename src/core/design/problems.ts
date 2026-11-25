@@ -16,6 +16,10 @@ export function problemText({ message, location }: DesignProblem) {
     return path ? path + " " + message : message;
 }
 
+export function rejectRetired(value: object, names: string[], at: Location = { kind: "project", path: [] }) {
+    for (const name of names) check(!Object.hasOwn(value, name), "已从 v5 移除", { ...at, path: [...at.path, name] });
+}
+
 export class DesignError extends Error {
     readonly problems: DesignProblem[];
 
