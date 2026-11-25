@@ -48,11 +48,13 @@ test("Overlapping map objects cycle in paint order, including separate geometrie
     assert.equal(nextMapHit([], { kind: "geoNode", id: "M" }), undefined);
 });
 
-test("Map focus, hit radius and the selected inspector issue", async () => {
+test("Map issue hits keep the view and inspector issues only pan from outside it", async () => {
     const baseline = new Project(syntheticDesign());
     const session = await import("../src/app/state/session.svelte.ts");
     const { default: GeoProperties } = await import("../src/app/components/GeoProperties.svelte");
-    const selected = baseline.issues.find(i => !!i.geoNode)!;
+    const selected = baseline.issues.find(i => i.severity === "warning" && i.geoNode)!;
+    const error = { kind: "test", severity: "error" as const, message: "测试错误", point: selected.point };
+    baseline.issues.push(error);
     const map: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), {
         width: 1000, height: 700, cameraChanged() {}
     });
@@ -60,12 +62,28 @@ test("Map focus, hit radius and the selected inspector issue", async () => {
     const ui = new session.Editor();
     Object.assign(ui, { project: baseline, map, tab: "terrain" });
     ui.setSelection({ kind: "geoNode", id: selected.geoNode! });
+    map.scale *= 1.4;
+    map.center = [selected.point[0] + (map.width / 2 + 6) / map.scale, selected.point[1] + 4];
+    const scale = map.scale, center = [...map.center];
+    const [x, y] = map.screen(selected.point);
+    assert(x < 0 && x > -12);
+    const hits = map.issueHits(ui.mapView!, [x + 11.9, y]);
+    assert(hits.includes(selected) && hits.includes(error));
+    assert(!map.issueHits(ui.mapView!, [x + 12.1, y]).includes(selected));
+    ui.pickMarkers(hits);
+    assert.deepEqual(map.center, center);
+    assert.equal(map.scale, scale);
+    assert.deepEqual(ui.mapView!.selectedIssues, hits);
+    assert.equal(ui.tab, "issues");
     ui.issueAt(selected);
-    assert(distance(map.center, selected.point) < 5);
-    const screen = map.screen(selected.point), view = ui.mapView!;
-    assert(map.issueHits(view, [screen[0] + 11.9, screen[1]]).includes(selected));
-    assert(!map.issueHits(view, [screen[0] + 12.1, screen[1]]).includes(selected));
-    assert.equal(view.issue, selected);
+    assert.deepEqual(map.center, selected.point);
+    assert.equal(map.scale, scale);
+    map.center = [selected.point[0] + 4, selected.point[1]];
+    const visibleCenter = [...map.center];
+    ui.issueAt(error);
+    assert.deepEqual(map.center, visibleCenter);
+    assert.equal(map.scale, scale);
+    ui.issueAt(selected);
     ui.changePropertyTab("issues");
     const { body: markup } = render(GeoProperties, { props: { editor: ui } });
     assert.match(markup, /data-property-tab="issues"[^>]*aria-pressed="true"/);

@@ -7,7 +7,7 @@ import { type ProjectView } from "../core/project.ts";
 import { type GridDisplay, type layerDefaults, pixelGridSpacing } from "../core/edit/display.ts";
 import { type Box } from "../core/math/geometry.ts";
 import { clamp, distance, nearest } from "../core/math/geometry.ts";
-import { issueView, objectIssues } from "../core/checks/issues.ts";
+import { objectIssues } from "../core/checks/issues.ts";
 import { hitGeoControl, hitParameterGeometries, hitPathSegment, parameterTarget, type GeoControl, type GeometryTarget } from "../core/edit/geoControls.ts";
 import { contourLabels, fieldContours } from "./fieldContours.ts";
 import { constrainGeoLabel, constrainSectionLabel, geoLabelPoint } from "./labelLayout.ts";
@@ -65,7 +65,7 @@ export type MapView = Readonly<{
     dragCommitting?: boolean;
     dragMark?: Readonly<{ id: string; point: Point }>;
     dragLabel?: Readonly<LabelPreview>;
-    issue?: Issue;
+    selectedIssues?: readonly Issue[];
     issueStart?: number;
 }>;
 
@@ -259,24 +259,15 @@ export class ProjectMap {
         this.center = center;
         this.cameraChanged();
     }
-    focusIssue(issue: Issue, fit = true) {
-        if (fit) {
-            const view = issueView(issue, this.width, this.height, this.referenceScale);
-            this.center = view.center;
-            this.scale = view.zoom * this.referenceScale;
-            this.cameraChanged();
-        }
-        else this.revealBounds([...issue.point, ...issue.point]);
-    }
     issueHits(view: MapView, screen: Point) {
         return view.layers.issues ? view.project.issues.filter(i => distance(this.screen(i.point), screen) <= 12)
             .sort((a, b) => distance(this.screen(a.point), screen) - distance(this.screen(b.point), screen)) : [];
     }
     private drawIssueShapes(ctx: Context, view: MapView, colors: MapColors) {
-        const chosen = view.issue && view.project.issues.includes(view.issue) ? view.issue : undefined, scale = this.scale;
+        const chosen = view.selectedIssues?.filter(issue => view.project.issues.includes(issue)) ?? [], scale = this.scale;
         const related = objectIssues(view.project, view.selection);
-        for (const issue of [...related.filter(i => i !== chosen), ...(chosen ? [chosen] : [])]) {
-            const active = issue === chosen, elapsed = performance.now() - (view.issueStart ?? 0);
+        for (const issue of [...related.filter(i => !chosen.includes(i)), ...chosen]) {
+            const active = chosen.includes(issue), elapsed = performance.now() - (view.issueStart ?? 0);
             ctx.save();
             ctx.globalAlpha = active ? (elapsed < 1500 ? .72 + .28 * Math.cos(elapsed * Math.PI / 250) : 1) : .42;
             circle(ctx, ...issue.point, 8 / scale, null, issueColor(colors, issue), 2 / scale);
@@ -625,9 +616,10 @@ export class ProjectMap {
                 active.role === h.role;
             drawHandle(ctx, colors, x, y, selected);
         }
-        if (view.issue && view.project.issues.includes(view.issue)) {
-            const [x, y] = this.screen(view.issue.point);
-            circle(ctx, x, y, 10, null, issueColor(colors, view.issue), overlay.selectedWidth);
+        for (const issue of view.selectedIssues ?? []) {
+            if (!view.project.issues.includes(issue)) continue;
+            const [x, y] = this.screen(issue.point);
+            circle(ctx, x, y, 10, null, issueColor(colors, issue), overlay.selectedWidth);
         }
     }
     private sectionControls(view: MapView) {

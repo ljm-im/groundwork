@@ -132,7 +132,7 @@ export class Editor {
             dragNode: this.dragNode, dragCurve: this.dragCurve, dragCommitting: this.dragCommitting, dragMark: this.dragMark, dragLabel: this.dragLabel,
             displayField: this.displayField,
             layers: { ...this.layers }, grid: { ...this.displayGrid }, referencedGeo: this.hoverRefs,
-            issue: this.issueStart === undefined ? undefined : this.selectedIssues[0], issueStart: this.issueStart
+            selectedIssues: this.selectedIssues, issueStart: this.issueStart
         };
     });
     private readonly terrainCache = new TerrainCache();
@@ -781,21 +781,24 @@ export class Editor {
             row?.scrollIntoView({ block: "nearest" });
         });
     }
-    issueAt(issue: Issue, fit = true) {
+    private selectIssues(issues: Issue[]) {
+        const [issue] = issues;
+        if (!issue) return;
         if (this.tool !== "select") this.cancelDrawing();
         this.layer("issues", true);
         if (!objectIssues(this.project, this.selection).includes(issue))
             this.select(issue.geoNode ? { kind: "geoNode", id: issue.geoNode } : null, false);
-        this.selectedIssues = [issue];
+        this.selectedIssues = issues;
         this.issueStart = performance.now();
-        this.map.focusIssue(issue, fit);
-        this.scrollToIssues([issue]);
+        this.scrollToIssues(issues);
+    }
+    issueAt(issue: Issue) {
+        this.selectIssues([issue]);
+        this.map.revealBounds([...issue.point, ...issue.point]);
     }
     pickMarkers(hits: Issue[]) {
         this.changeTab("issues");
-        this.issueAt(hits[0]);
-        this.selectedIssues = hits;
-        this.scrollToIssues(hits);
+        this.selectIssues(hits);
     }
     addMark(kind: Mark["kind"], point: Point) {
         return this.edit(d => {
