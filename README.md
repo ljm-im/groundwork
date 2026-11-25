@@ -2,10 +2,6 @@
 
 # Groundwork
 
-> [!IMPORTANT]
->
-> THIS SOFTWARE IS NOT GENERALIZED YET. IT STILL ONLY WORKS FOR i.ljm.im's SITE PROJECT. DO NOT EXPECT IT TO WORK FOR YOURS.
-
 Groundwork is a lightweight landscape / site editor designed to organize the design data used by an agent to generate 3D outdoor models. For example, the user defines the paths of roads and the contours of the terrain, while the program calculates slopes and local topographical details.
 
 It was born building [i.ljm.im](https://i.ljm.im), where I want a simple and straightforward way to guide agents to generate site models, without the messiness of describing every single detail of the geometry to it (and it will make a really bad looking model if you try to do that). Groundwork is a tool to help me, the human, to organize the design data in a way that is easy for the agent to understand and use.
