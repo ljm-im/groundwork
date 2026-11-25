@@ -49,7 +49,9 @@ export class DesignFiles {
         try {
             stored = localStorage.getItem(draftKey);
         }
-        catch { return; }
+        catch {
+            return;
+        }
         if (stored === null) return;
         try {
             const draft: unknown = JSON.parse(stored);
