@@ -95,8 +95,8 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
                 if (control) return { kind: "geo" as const, id: node.id, control };
             }
         }
-        const nodes = map.geoHits(view.project, p), index = alt && selected && nodes.length ? (nodes.findIndex(n => n.id === selected.id) + 1) % nodes.length : 0;
-        if (nodes[index]) return { kind: "geo" as const, id: nodes[index].id,
+        const node = map.pickGeo(view.project, p, alt && selected ? selected.id : undefined);
+        if (node) return { kind: "geo" as const, id: node.id,
             control: { role: "body", path: 0, index: 0, point: p } as GeoControl };
     }
     function updateHover() {

@@ -678,10 +678,13 @@ async function checkEditor(url: string) {
         };
         await chooseTool("地件", "strip");
         assert.equal(await text(status + " strong"), "新建地件（条带）");
-        await tap(at([-19, 5]));
         assert.equal(await evaluate(() => document.querySelector<HTMLButtonElement>(".drawing-status button")?.disabled), true);
+        await tap(at([-19, 5]));
+        assert.equal(await evaluate(() => document.querySelector<HTMLButtonElement>(".drawing-status button")?.disabled), false);
         await tap(at([12, 3]));
-        await tap(at([0, -12])); await tap(at([0, 12]));
+        await tap(at([0, -12]));
+        assert.equal(await evaluate(() => document.querySelector<HTMLButtonElement>(".drawing-status button")?.disabled), true);
+        await tap(at([0, 12]));
         assert.equal(await evaluate(() => document.querySelector<HTMLButtonElement>(".drawing-status button")?.disabled), false);
         await click(status + " button:first-child"); await idle(); await saved(); await selected();
         const strip = parseDesign(await disk()).geoNodes.find(n => n.construction.type === "strip")!.construction;

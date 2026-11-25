@@ -246,14 +246,19 @@ export class ProjectMap {
     }
     private outlineStyle(view: MapView, kind: string, id: string) {
         const selected = view.selection?.id === id && view.selection.kind === kind;
-        if (selected) return { color: mapColors.accent, width: overlay.selectedWidth / this.scale };
-        if (view.hovered?.kind === kind && view.hovered.id === id || kind === "geoNode" && (view.referencedGeo.includes(id) ||
-            view.draft?.tool === "strip" && view.draft.ids.includes(id)))
+        const stripSource = kind === "geoNode" && view.draft?.tool === "strip" && view.draft.ids.includes(id);
+        if (selected || stripSource) return { color: mapColors.accent, width: overlay.selectedWidth / this.scale };
+        if (view.hovered?.kind === kind && view.hovered.id === id || kind === "geoNode" && view.referencedGeo.includes(id))
             return { color: mapColors.accentHover, width: overlay.hoverWidth / this.scale };
     }
-    geoHits(project: ProjectView, p: Point) {
+    pickGeo(project: ProjectView, point: Point, after?: string, excluded: readonly string[] = []) {
         const empty = !hasSamples(project.terrain);
-        return project.design.geoNodes.filter(n => (!n.disabled || empty) && project.terrain.regions.get(n.id)?.shape.contains(p)).reverse();
+        const hits = project.design.geoNodes.filter(n => (!n.disabled || empty) && project.terrain.regions.get(n.id)?.shape.contains(point)).reverse();
+        const start = after ? hits.findIndex(n => n.id === after) + 1 : 0;
+        for (let i = 0; i < hits.length; i++) {
+            const hit = hits[(start + i) % hits.length];
+            if (!excluded.includes(hit.id)) return hit;
+        }
     }
     draw(view: MapView, theme: Theme) {
         if (!this.width || !this.center) return;

@@ -27,7 +27,7 @@ export function startDrawing(e: Editor, tool: DrawTool, owner?: string, member?:
 
 export function drawingReady(draft: GeoDraft) {
     const { tool, nodes, ids, anchors } = draft;
-    if (tool === "strip") return ids.length > 0 && anchors.length === 2;
+    if (tool === "strip") return ids.length > 0 && anchors.length !== 1;
     if (penTools.includes(tool)) return nodes.length >= 3;
     if (tool === "ridge" || tool === "slopeLine" || tool === "section") return nodes.length >= 2;
     if (pointTools.includes(tool)) return !!nodes.length;
@@ -70,7 +70,15 @@ export function updatePreview(e: Editor, draft: GeoDraft) {
     }
 }
 
-function pickStripPoint(e: Editor, draft: GeoDraft, at: Point) {
+function pickStripPoint(e: Editor, draft: GeoDraft, at: Point, alt: boolean) {
+    const canPickSource = !draft.owner && !draft.anchors.length && draft.ids.length < 2;
+    const pickSource = () => {
+        const node = e.map.pickGeo(e.mapProject, at, alt ? draft.ids.at(-1) : undefined, draft.ids);
+        if (!node) return false;
+        draft.ids.push(node.id);
+        return true;
+    };
+    if (alt && canPickSource && pickSource()) return;
     const source = stripSource(e.project.design, draft);
     const nodes = source?.construction.type === "free" ? source.construction.paths.flatMap(p => p.nodes) : [];
     const v = nodes.filter(v => distance(v.p, at) * e.map.scale <= 9).sort((a, b) => distance(a.p, at) - distance(b.p, at))[0];
@@ -79,10 +87,7 @@ function pickStripPoint(e: Editor, draft: GeoDraft, at: Point) {
         if (next.length === 2) stripConstruction(e.project.design, draft.ids, stripRange(next));
         draft.anchors = next;
     }
-    else if (!draft.owner && !draft.anchors.length && draft.ids.length < 2) {
-        const node = e.map.geoHits(e.mapProject, at)[0];
-        if (node && !draft.ids.includes(node.id)) draft.ids.push(node.id);
-    }
+    else if (canPickSource && !alt) pickSource();
 }
 
 export function snapPoint(t: Terrain, design: Design, at: Point, scale: number, except?: string): Point {
@@ -196,7 +201,7 @@ export function draftPointer(e: Editor, phase: "down" | "move" | "up", raw: Poin
     if (!down || !downRaw) return true;
     const dragged = distance(downRaw, raw) * e.map.scale > 3;
     let complete = false;
-    if (tool === "strip") pickStripPoint(e, draft, at);
+    if (tool === "strip") pickStripPoint(e, draft, at, ev.altKey);
     else if (tool === "rect" || tool === "circle" || tool === "sector") {
         if (draft.radius) complete = true;
         else if (!dragged && !draft.sizing) {

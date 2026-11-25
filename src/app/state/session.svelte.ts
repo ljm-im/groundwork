@@ -47,7 +47,8 @@ export class Editor {
     drawing = $derived.by(() => {
         if (this.tool === "select") return;
         const { owner, member } = this.geoDraft ?? {};
-        return drawingStatus(this.tool, owner ? geoAt(this.project.design, owner).label : "", owner, member);
+        const d = this.project.design, names = this.tool === "strip" ? this.geoDraft?.ids.map(id => geoAt(d, id).label) : undefined;
+        return drawingStatus(this.tool, owner ? geoAt(d, owner).label : "", owner, member, names);
     });
     drawingReady = $derived(this.geoDraft ? drawingReady(this.geoDraft) : false);
     selection = $state.raw<Selection | null>(null);
@@ -442,7 +443,7 @@ export class Editor {
     completeDrawing() {
         if (!this.geoDraft) return;
         const draft = $state.snapshot(this.geoDraft);
-        if (draft.tool === "strip" && !this.drawingReady && !(draft.owner && draft.ids.length && !draft.anchors.length)) {
+        if (draft.tool === "strip" && !this.drawingReady) {
             this.message(draft.ids.length ? "请选择起止节点" : "请先在地图上选择地件");
             return;
         }
