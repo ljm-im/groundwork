@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { serializeDesign } from "../../src/core/design/model.ts";
-import { layer, rect, syntheticDesign } from "../../test/scenarios.ts";
+import { layer, rect, syntheticDesign } from "../scenarios.ts";
 import { startChromium } from "./chromium.ts";
-import { installPickers } from "./pickers.ts";
+import { installPickers } from "./filePickers.ts";
 
 interface Draws {
     map: number;

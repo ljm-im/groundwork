@@ -12,20 +12,156 @@ import { startChromium } from "./chromium.ts";
 import { test } from "node:test";
 import { fixtureOptions, readFixture } from "../../configs/read-fixture.ts";
 
-import { syntheticDesign } from "../../test/scenarios.ts";
-import { installPickers, type Probe } from "./pickers.ts";
+import { syntheticDesign } from "../scenarios.ts";
+import { installPickers, type Probe } from "./filePickers.ts";
 
-test("Editor file workflows in Chromium", fixtureOptions("round14-coast.json", "round14-land.json"), async () => {
-    const fixture = await readFixture("round14-coast.json");
+async function withFileServer(run: (url: string) => Promise<void>) {
     const server = await createServer({ configFile: "configs/vite.config.ts", server: { host: "127.0.0.1", port: 0 } });
     try {
         await server.listen();
-        await checkFileWorkflows(server.resolvedUrls!.local[0], fixture);
+        await run(server.resolvedUrls!.local[0]);
     }
     finally {
         await server.close();
     }
-});
+}
+
+test("Editor file workflows in Chromium", fixtureOptions("round14-coast.json", "round14-land.json"), () =>
+    withFileServer(async url => checkFileWorkflows(url, await readFixture("round14-coast.json"))));
+
+test("Chromium leaves directly and reopens the latest browser draft", () => withFileServer(checkDraftLifecycle));
+
+async function checkDraftLifecycle(baseUrl: string) {
+    const browser = await startChromium(), { cdp, click, closeTab, dialogs, evaluate, key, openTab, wait } = browser;
+    const file = (name: string) => wait(name => document.querySelector("#filename")?.textContent === name &&
+        !document.querySelector(".map-wrap[data-busy=true]"), name);
+    const state = (name: string) => wait(name => document.querySelector("#save-state")?.textContent === name, name);
+    const draft = () => evaluate(() => JSON.parse(localStorage.getItem("terrain-editor/unsaved-v1") ?? "null") as
+        { filename: string; text: string; unbound?: boolean; dirty?: boolean } | null);
+    const unload = () => evaluate(() => window.dispatchEvent(new Event("beforeunload", { cancelable: true })));
+    const install = () => cdp("Page.addScriptToEvaluateOnNewDocument", { source: "(" + installPickers.toString() + ")()" });
+    let visit = 0;
+    async function navigate() {
+        const url = baseUrl + "?draft=" + ++visit;
+        await cdp("Page.navigate", { url });
+        await wait(url => location.href === url && !!document.querySelector(".map-wrap"), url);
+    }
+    const counts: { action: string; dialogs: number }[] = [];
+    async function leave(action: "refresh" | "navigate" | "close", name: string) {
+        assert(await evaluate(() => navigator.userActivation.hasBeenActive), action + " starts from an activated page");
+        const before = dialogs.length;
+        if (action === "refresh") {
+            const origin = await evaluate(() => performance.timeOrigin);
+            await cdp("Page.reload");
+            await wait(origin => performance.timeOrigin !== origin, origin);
+        }
+        else {
+            if (action === "close") {
+                await closeTab();
+                await openTab();
+                await install();
+            }
+            await navigate();
+        }
+        await file(name);
+        const observed = dialogs.length - before;
+        counts.push({ action, dialogs: observed });
+        assert.equal(observed, 0, action + " beforeunload dialogs");
+    }
+    async function editBase(value: number, commit = false) {
+        await click("[data-tab=inputs]");
+        await click("[data-input=base] .numeric-face");
+        await wait(() => document.activeElement?.matches("[data-input=base] .numeric-edit"));
+        await evaluate(() => document.getSelection()!.selectAllChildren(document.activeElement!));
+        await cdp("Input.insertText", { text: String(value) });
+        if (commit) await key("Enter");
+        else assert(await evaluate(() => document.activeElement?.matches("[data-input=base] .numeric-edit")));
+    }
+    const cleanProject = async (text: string) => {
+        await file("未命名");
+        await state("已保存");
+        const record = await draft();
+        assert(record?.unbound && !record.dirty);
+        assert.equal(record.filename, "未命名");
+        assert.equal(record.text, text);
+    };
+    try {
+        await install();
+        await navigate();
+        await file("未打开文件");
+        await click(".empty-actions button:first-child");
+        await file("未命名");
+        const original = (await draft())!.text, first = parseDesign(original);
+        assert.equal(first.geoNodes[0].id, "ground");
+        assert.equal(first.marks[0].kind, "scale");
+        await cleanProject(original);
+        await leave("refresh", "未命名");
+        await cleanProject(original);
+        await click("#fit");
+        await leave("close", "未命名");
+        await cleanProject(original);
+
+        await editBase(6, true);
+        await state("未保存");
+        await click("#undo");
+        await cleanProject(original);
+        await leave("refresh", "未命名");
+        await cleanProject(original);
+        await evaluate(() => window.probe.cancelOpen = true);
+        await click("#open");
+        await wait(() => window.probe.opens === 1 && !document.querySelector(".map-wrap[data-busy=true]"));
+        assert(!await evaluate(() => document.querySelector<HTMLDialogElement>("#discard-changes")?.open));
+        await cleanProject(original);
+        await leave("navigate", "未命名");
+        await cleanProject(original);
+
+        await editBase(7);
+        assert.equal(parseDesign((await draft())!.text).inputs.base.value, 2);
+        await leave("close", "未命名");
+        assert.equal(parseDesign((await draft())!.text).inputs.base.value, 7);
+        await state("未保存");
+        assert(await unload(), "Unbound edits allow leaving");
+        await evaluate(() => Object.assign(window.probe, { saveName: "held-write.json", hold: true }));
+        await click("#save");
+        await state("正在保存");
+        assert(await unload(), "An open write allows leaving");
+        await leave("refresh", "未命名");
+        assert.equal(parseDesign((await draft())!.text).inputs.base.value, 7);
+
+        await evaluate(() => Object.assign(window.probe, { saveName: "failed-write.json", fail: true }));
+        await click("#save");
+        await state("保存失败");
+        assert(await unload(), "A failed write allows leaving");
+        await leave("navigate", "未命名");
+        assert.equal(parseDesign((await draft())!.text).inputs.base.value, 7);
+        await click("#new");
+        await wait(() => document.querySelector<HTMLDialogElement>("#discard-changes")?.open);
+        await click("#discard-changes [value=discard]");
+        await file("未命名");
+        await cleanProject(original);
+        await leave("refresh", "未命名");
+        await cleanProject(original);
+
+        await evaluate(() => window.showOpenFilePicker = () => new Promise(() => {}));
+        await click("#open");
+        await wait(() => document.querySelector(".map-wrap[data-busy=true]"));
+        assert(await unload(), "The busy editor allows leaving");
+        await leave("navigate", "未命名");
+        await cleanProject(original);
+
+        await evaluate(() => window.probe.saveName = "first-save.json");
+        await click("#save");
+        await file("first-save.json");
+        assert.deepEqual(await evaluate(() => window.probe.suggestions), ["project.json"]);
+        assert.equal(await evaluate(() => window.disk("first-save.json")), original);
+        assert.equal(await draft(), null);
+        await leave("refresh", "未打开文件");
+        console.log("Draft lifecycle dialog counts", counts);
+    }
+    finally {
+        await browser.close();
+    }
+}
 
 async function checkFileWorkflows(baseUrl: string, fixture: string) {
     const artifactDir = process.env.GROUNDWORK_BROWSER_OUTPUT ?? ".local/browser/files";
@@ -198,14 +334,14 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
         await click("#new");
         await filename("未命名");
         assert.equal(await prop("exampleReads"), 0);
-        assert.equal(await draft(), null);
+        assert.equal((await draft())?.filename, "未命名");
         assert.equal(await unload(), false);
         assert(await evaluate(() => document.querySelector<HTMLButtonElement>("#undo")!.disabled && document.querySelector<HTMLButtonElement>("#redo")!.disabled));
         await prompt("尚未绑定的设计。");
         await status("未保存");
         const initialDraft = await draft();
         assert.equal(JSON.parse(initialDraft!.text).prompt, "尚未绑定的设计。");
-        assert.equal(await unload(), true);
+        assert.equal(await unload(), false);
         const lastA = await disk(a), writes = await prop("writes");
         await set({ cancel: true });
         const toast = await evaluate(() => document.querySelector("#toast")!.textContent);
@@ -231,7 +367,7 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
         await prompt("Ctrl+S 提交本段。", false);
         await key("s", 2);
         await status("正在保存");
-        assert.equal(await unload(), true);
+        assert.equal(await unload(), false);
         assert.equal(JSON.parse((await draft())!.text).prompt, "Ctrl+S 提交本段。");
         await evaluate(() => window.probe.release!());
         await filename(b);
@@ -270,7 +406,7 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
         assert.match(reason, /文件暂时被占用/);
         assert.equal(await disk(a), lastGood);
         assert.equal(JSON.parse((await draft())!.text).prompt, "写入失败时保留。");
-        assert.equal(await unload(), true);
+        assert.equal(await unload(), false);
         await set({ fail: false });
         await prompt("失败后的下一步。");
         await saved(openedCount + 3);
@@ -308,8 +444,12 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
         await prompt("刷新后需要恢复。");
         const beforeReload = await draft();
         assert.equal(beforeReload?.filename, b);
+        assert(await evaluate(() => navigator.userActivation.hasBeenActive));
+        const dialogCount = browser.dialogs.length;
         await navigate(b);
-        assert(browser.dialogs.includes("beforeunload"));
+        const beforeUnloadDialogs = browser.dialogs.length - dialogCount;
+        const actualBeforeUnload = beforeUnloadDialogs > 0;
+        assert.equal(beforeUnloadDialogs, 0);
         await filename(b);
         assert.equal(await state(), "未保存");
         assert.equal(await evaluate(() => document.querySelector("#toast")?.textContent), "已恢复未保存的草稿");
@@ -329,7 +469,7 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
         assert(await evaluate(() => !document.querySelector("#draft-dialog")));
         assert.equal(await prop("exampleReads"), 0);
         assert.deepEqual(await storage(), cleanStorage);
-        report.checks.recover = { originalName: b, suggested: b, newName: c, actualBeforeUnload: true, refreshEmpty: true };
+        report.checks.recover = { originalName: b, suggested: b, newName: c, actualBeforeUnload, beforeUnloadDialogs, refreshEmpty: true };
 
         check("Keep an invalid draft available after a failed recovery");
         const invalid = JSON.stringify({ text: "{\"version\":4}", filename: "invalid.json" });

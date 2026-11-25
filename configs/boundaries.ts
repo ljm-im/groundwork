@@ -8,7 +8,9 @@ import { interfaceColors, mapColors } from "../src/render/palette.ts";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const tests = resolve(root, "test"), core = resolve(root, "src/core"), render = resolve(root, "src/render");
+const browserTests = resolve(tests, "browser");
 const testImports = new Set(["node:assert/strict", "node:crypto", "node:test", "svelte/server"]);
+const browserImports = new Set(["vite", "node:child_process", "node:fs", "node:fs/promises", "node:os", "node:path", "node:stream", "node:timers/promises"]);
 const browserNames = new Set(["document", "window", "localStorage", "HTMLCanvasElement", "navigator", "Path2D", "requestAnimationFrame"]);
 const ioNames = new Set(["require", "process", "fetch", "XMLHttpRequest", "Worker"]);
 
@@ -30,15 +32,18 @@ function checkDirectory(directory: string, graph: Map<string, Set<string>>) {
         assert.equal(extname(path), ".ts", relative(root, path) + " must be TypeScript");
         const file = ts.createSourceFile(path, readFileSync(path, "utf8"), ts.ScriptTarget.Latest, true);
         const inCore = directory === core, inRender = directory === render, inTests = directory === tests;
+        const inBrowser = inTests && path.startsWith(browserTests + sep);
         if (inCore) graph.set(path, new Set());
         function fail(node: ts.Node, reason: string): never {
             const line = file.getLineAndCharacterOfPosition(node.getStart()).line + 1;
             assert.fail(`${relative(root, path)}:${line} ${reason}`);
         }
-        function dependency(node: ts.Expression) {
+        function dependency(node: ts.Expression, dynamic = false) {
+            // CDP callbacks import the running app by its Vite URL and type it with a local import.
+            if (inBrowser && dynamic && ts.isIdentifier(node)) return;
             if (!ts.isStringLiteral(node)) fail(node, "Use a literal module specifier.");
             const name = node.text;
-            if (inTests && testImports.has(name)) return;
+            if (inTests && testImports.has(name) || inBrowser && browserImports.has(name)) return;
             if (!name.startsWith(".")) fail(node, "Unexpected dependency " + name);
             const target = resolve(entry.parentPath, name);
             if (inCore && target.startsWith(core + sep) && extname(target) === ".ts") {
@@ -61,14 +66,15 @@ function checkDirectory(directory: string, graph: Map<string, Set<string>>) {
             }
             else if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument)) dependency(node.argument.literal);
             else if (ts.isCallExpression(node)) {
-                if (node.expression.kind === ts.SyntaxKind.ImportKeyword) dependency(node.arguments[0]);
+                if (node.expression.kind === ts.SyntaxKind.ImportKeyword) dependency(node.arguments[0], true);
                 if (inTests && ts.isIdentifier(node.expression) && ["readFixture", "fixtureOptions"].includes(node.expression.text)) {
                     const filename = /^[\w-]+\.json$/;
                     if (!node.arguments.length || !node.arguments.every(arg => ts.isStringLiteral(arg) && filename.test(arg.text)))
                         fail(node, "Use a JSON filename from .local/fixtures/.");
                 }
             }
-            else if (ts.isIdentifier(node) && (ioNames.has(node.text) || inCore && browserNames.has(node.text) || inRender && node.text === "document")) {
+            else if (ts.isIdentifier(node) && (ioNames.has(node.text) || inCore && browserNames.has(node.text) || inRender && node.text === "document") &&
+                !(inBrowser && (node.text === "process" || node.text === "fetch"))) {
                 fail(node, "Unexpected API " + node.text);
             }
             ts.forEachChild(node, visit);

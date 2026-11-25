@@ -7,24 +7,34 @@ import { ProjectMap } from "../../src/render/map.ts";
 import { mapColors } from "../../src/render/palette.ts";
 import { geoLabelPoint } from "../../src/render/labelLayout.ts";
 import { type Point } from "../../src/core/design/v5.ts";
-import { layer, rect, syntheticDesign } from "../../test/scenarios.ts";
+import { layer, rect, syntheticDesign } from "../scenarios.ts";
 import { startChromium } from "./chromium.ts";
-import { installPickers } from "./pickers.ts";
+import { installPickers } from "./filePickers.ts";
 import { checkAppearance } from "./appearance.ts";
-import { checkRound26 } from "./round26.ts";
-import { checkRound27 } from "./round27.ts";
-import { checkRound28 } from "./round28.ts";
+import { checkStripSelection } from "./stripSelection.ts";
+import { checkMapSelection } from "./mapSelection.ts";
+import { checkMapIssues } from "./mapIssues.ts";
+import { checkCurveEditing } from "./curveEditing.ts";
+import { checkSectionPlots } from "./sectionPlots.ts";
+import { checkNumericEditing } from "./numericEditing.ts";
+import { checkPenDrawing } from "./penDrawing.ts";
+import { checkMapOverlays } from "./mapOverlays.ts";
 
 test("Editor interactions in Chromium", async t => {
     const server = await createServer({ configFile: "configs/vite.config.ts", server: { host: "127.0.0.1", port: 0 } });
     try {
         await server.listen();
         const url = server.resolvedUrls!.local[0];
-        await checkEditor(url);
+        await t.test("Editor workflows in Chromium", () => checkEditor(url));
         await t.test("Appearance changes in Chromium", () => checkAppearance(url));
-        await t.test("Trial feedback fixes in Chromium", () => checkRound26(url));
-        await t.test("Unified curves in Chromium", () => checkRound27(url));
-        await t.test("Deferred selection, pen modes and map overlays in Chromium", () => checkRound28(url));
+        await t.test("Strip selection in Chromium", () => checkStripSelection(url));
+        await t.test("Map selection and dragging in Chromium", () => checkMapSelection(url));
+        await t.test("Map and inspector issues in Chromium", () => checkMapIssues(url));
+        await t.test("Curve editing in Chromium", () => checkCurveEditing(url));
+        await t.test("Section plots in Chromium", () => checkSectionPlots(url));
+        await t.test("Numeric editing in Chromium", () => checkNumericEditing(url));
+        await t.test("Pen drawing in Chromium", () => checkPenDrawing(url));
+        await t.test("Map overlays in Chromium", () => checkMapOverlays(url));
     }
     finally {
         await server.close();
@@ -67,7 +77,7 @@ async function checkEditor(url: string) {
     }
     const idle = () => wait(() => !document.querySelector(".map-wrap[data-busy=true]"));
     const saved = () => wait(() => document.querySelector("#save-state")?.textContent === "已保存");
-    const disk = () => evaluate(() => window.disk("regression.json"));
+    const disk = () => evaluate(() => window.disk("editor-interactions.json"));
     async function keyboardStep(selector: string) {
         await evaluate(s => document.querySelector<HTMLButtonElement>(s)!.focus(), selector);
         await key("Enter"); await idle(); await saved();
@@ -92,7 +102,7 @@ async function checkEditor(url: string) {
         await cdp("Page.navigate", { url });
         await wait(() => !!document.querySelector(".empty-state"));
         await evaluate(async bytes => {
-            window.probe.openName = "regression.json";
+            window.probe.openName = "editor-interactions.json";
             const root = await navigator.storage.getDirectory();
             const file = await root.getFileHandle(window.probe.openName, { create: true });
             const stream = await file.createWritable();
@@ -101,7 +111,7 @@ async function checkEditor(url: string) {
             document.addEventListener("compositionend", () => document.body.dataset.imeEnded = "true");
         }, serializeDesign(d));
         await click("#open");
-        await wait(() => document.querySelector("#filename")?.textContent === "regression.json");
+        await wait(() => document.querySelector("#filename")?.textContent === "editor-interactions.json");
         await idle();
 
         console.log("Seed is a selectable built-in input");
@@ -205,7 +215,7 @@ async function checkEditor(url: string) {
         await wait(async () => {
             if (document.querySelector("#save-state")?.textContent !== "已保存") return false;
             try {
-                return JSON.parse(await window.disk("regression.json")).geoNodes.find((node: { id: string }) => node.id === "T").prompt === "场地";
+                return JSON.parse(await window.disk("editor-interactions.json")).geoNodes.find((node: { id: string }) => node.id === "T").prompt === "场地";
             }
             catch (error) {
                 if (error instanceof DOMException && error.name === "NotReadableError") return false;
@@ -237,7 +247,7 @@ async function checkEditor(url: string) {
         await click(title);
         await evaluate(s => document.querySelector<HTMLInputElement>(s)!.select(), title);
         await cdp("Input.insertText", { text: "未提交名称" });
-        await evaluate(() => document.querySelector<HTMLButtonElement>("[data-input=seed] button[aria-label=增大种子]")?.click());
+        await evaluate(() => document.querySelector<HTMLButtonElement>("[data-input=seed] button[aria-label='增大“种子”']")?.click());
         await idle(); await saved();
         assert.equal(parseDesign(await disk(), true).inputs.seed.value, 32);
         assert.equal(parseDesign(await disk(), true).geoNodes.find(n => n.id === "T")?.label, "新台");
@@ -610,17 +620,45 @@ async function checkEditor(url: string) {
         await compareFinish(() => click("button[aria-label=添加山脊]"), false);
         const originalRidge = await disk();
         const ridgeOf = (bytes: string) => parseDesign(bytes, true).geoNodes.findLast(node => node.function.type === "mountain")!.function;
+        async function actionTip(label: string) {
+            const selector = "button[aria-label=" + JSON.stringify(label) + "]";
+            await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 6, y: 6 });
+            const hit = await evaluate(async selector => {
+                const button = document.querySelector<HTMLButtonElement>(selector)!;
+                button.scrollIntoView({ block: "center", behavior: "instant" });
+                await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+                const box = button.getBoundingClientRect();
+                const x = box.x + box.width / 2, y = box.y + box.height / 2;
+                return { x, y, tip: button.dataset.tip, target: document.elementFromPoint(x, y)?.closest("button")?.getAttribute("aria-label") };
+            }, selector);
+            assert.equal(hit.tip, label);
+            assert.equal(hit.target, label);
+            await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: hit.x, y: hit.y });
+            await wait(label => document.querySelector(".tooltip:popover-open")?.textContent === label, label);
+            return selector;
+        }
         assert.equal(await evaluate(() => document.querySelector("[aria-label=添加山脊]")?.getAttribute("aria-pressed")), "false");
-        await click("button[aria-label='复制山脊 1']"); await idle(); await saved();
+        await actionTip("删除“山脊 1”");
+        await click(await actionTip("复制“山脊 1”")); await idle(); await saved();
         const mountain = ridgeOf(await disk());
         assert(mountain.type === "mountain" && mountain.ridges.length === 2);
         const [originalMember, copy] = mountain.ridges;
+        assert.equal(originalMember.slope, .75);
+        assert.equal(originalMember.widths, undefined);
+        assert.equal(await text("#properties [data-parameter$='.ridges.1.slope'] .param-name"), "坡度");
         const copiedIds = new Set(copy.line.nodes.map(v => v.id));
         assert(originalMember.line.nodes.every(v => !copiedIds.has(v.id)));
         assert.deepEqual({ ...copy, line: { ...copy.line, nodes: copy.line.nodes.map((v, i) => ({ ...v, id: originalMember.line.nodes[i].id })) } }, originalMember);
         assert.equal(await evaluate(() => [...document.querySelectorAll("#properties .subitem-toggle")]
             .find(button => button.textContent?.includes("山脊 2"))?.getAttribute("aria-expanded")), "true");
         await undo();
+        assert.equal(await disk(), originalRidge);
+        for (const p of [a, b]) {
+            await click("button[aria-label=添加山峰]"); await tap(p); await idle(); await saved();
+        }
+        await actionTip("删除“山峰 2”");
+        await actionTip("复制“山峰 2”");
+        await undo(); await undo();
         assert.equal(await disk(), originalRidge);
 
         console.log("Only the original outline fades while dragging");
@@ -665,12 +703,12 @@ async function checkEditor(url: string) {
 
         console.log("Strip construction, segment menu, section list and draggable names");
         const adjacent = syntheticDesign();
-        const west = layer("A", rect(-30, -12, 0, 12), { type: "flat", amount: 2 });
+        const west = { ...layer("A", rect(-30, -12, 0, 12), { type: "flat", amount: 2 }), label: "西台" };
         west.showLabel = true;
-        adjacent.geoNodes.push(west, layer("B", rect(0, -12, 24, 12), { type: "flat", amount: 5 }));
+        adjacent.geoNodes.push(west, { ...layer("B", rect(0, -12, 24, 12), { type: "flat", amount: 5 }), label: "东台" });
         adjacent.marks.push({ id: "M", kind: "scale", label: "比例尺", point: [94, 120], follow: "screen" });
         await evaluate(async bytes => {
-            window.probe.openName = "regression.json";
+            window.probe.openName = "editor-interactions.json";
             const root = await navigator.storage.getDirectory();
             const file = await root.getFileHandle(window.probe.openName, { create: true });
             const stream = await file.createWritable();
@@ -723,6 +761,10 @@ async function checkEditor(url: string) {
         assert(strip.type === "strip");
         assert.deepEqual(strip.of, ["B", "A"]);
         assert.deepEqual(strip.range, { from: "0", to: "3" });
+        await click("[data-property-tab=region]");
+        assert.equal(await text("#properties button[aria-label=边] span"), "“东台”和“西台”的公共边，从“0”到“3”");
+        assert.equal(await text("#properties [data-parameter$='.construction.widths.0'] .param-name"), "“东台”一侧");
+        assert.equal(await text("#properties [data-parameter$='.construction.widths.1'] .param-name"), "“西台”一侧");
         await undo();
 
         await tap(at([-21, 5])); await tap(at([13, 3]), 1, "left", 8);
@@ -785,7 +827,7 @@ async function checkEditor(url: string) {
             long.geoNodes.push(layer("P" + i, rect(0, 0, 4, 4), { type: "flat", amount: 1 }));
         await evaluate(async bytes => {
             const root = await navigator.storage.getDirectory();
-            const file = await root.getFileHandle("regression.json");
+            const file = await root.getFileHandle("editor-interactions.json");
             const stream = await file.createWritable();
             await stream.write(bytes); await stream.close();
         }, serializeDesign(long));

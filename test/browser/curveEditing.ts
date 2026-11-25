@@ -1,14 +1,18 @@
 import assert from "node:assert/strict";
-import { mkdir, writeFile } from "node:fs/promises";
 import { parseDesign, serializeDesign } from "../../src/core/design/model.ts";
 import { flattenPath, pathBezier, segmentType, splitBezier } from "../../src/core/design/path.ts";
 import { geometryPath, type GeoControl, type GeometryTarget } from "../../src/core/edit/geoControls.ts";
 import { defaultFunction } from "../../src/core/edit/geoNodes.ts";
 import { type Curve, type Point, type Section } from "../../src/core/design/v5.ts";
 import { distance, mixPoint, nearest } from "../../src/core/math/geometry.ts";
-import { layer, openCurve, rect, syntheticDesign } from "../../test/scenarios.ts";
+import { layer, openCurve, rect, syntheticDesign } from "../scenarios.ts";
 import { startChromium } from "./chromium.ts";
-import { installPickers } from "./pickers.ts";
+import { installPickers } from "./filePickers.ts";
+import { checkLineDragging } from "./mapSelection.ts";
+import { withLayeredMap } from "./layeredMapFixture.ts";
+import { withCurveMap } from "./curveMapFixture.ts";
+import { pathHandle } from "../../src/core/design/path.ts";
+import { overlay } from "../../src/render/palette.ts";
 
 interface Frame {
     origin: Point; scale: number; selected?: string; geometry?: GeometryTarget; vertex?: GeoControl;
@@ -16,12 +20,12 @@ interface Frame {
 }
 interface Probe { frame?: Frame; strokes: Point[][] }
 declare global {
-    interface Window { round27: Probe }
+    interface Window { curveEditingProbe: Probe }
 }
 
-async function observeRound27() {
+async function observeCurveEditing() {
     const probe: Probe = { strokes: [] };
-    window.round27 = probe;
+    window.curveEditingProbe = probe;
     const mapModule = "/src/render/map.ts", paletteModule = "/src/render/palette.ts", terrainModule = "/src/core/design/results.ts";
     const { ProjectMap } = await import(mapModule) as typeof import("../../src/render/map.ts");
     const { mapColors } = await import(paletteModule) as typeof import("../../src/render/palette.ts");
@@ -59,8 +63,8 @@ async function observeRound27() {
     };
 }
 
-export async function checkRound27(url: string) {
-    const design = syntheticDesign(), filename = "round27.json";
+async function checkDrawnCurves(url: string) {
+    const design = syntheticDesign(), filename = "drawn-curve-editing.json";
     const mountain = { ...layer("M", rect(-45, -33, 12, 30), defaultFunction("mountain")), label: "山" };
     const slope = { ...layer("S", rect(17, -24, 53, 24), {
         type: "slope", kind: "path", line: openCurve([{ p: [20, -18], h: 0 }, { p: [49, -18], h: 2 }])
@@ -68,7 +72,7 @@ export async function checkRound27(url: string) {
     design.geoNodes = [layer("G", rect(-60, -47, 60, 47), { type: "ground", value: 4 }), mountain, slope];
     design.sections = [{ id: "Q", label: "剖面线 Q", points: [[-48, -37], [35, -37]], showLabel: false }];
     const browser = await startChromium(), { cdp, click, evaluate, key, mouse, wait } = browser;
-    const frame = () => evaluate(() => window.round27.frame!);
+    const frame = () => evaluate(() => window.curveEditingProbe.frame!);
     const saved = () => wait(() => !document.querySelector(".map-wrap[data-busy=true]") &&
         document.querySelector("#save-state")?.textContent === "已保存");
     const paint = () => evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
@@ -94,9 +98,7 @@ export async function checkRound27(url: string) {
         await mouse("mouseReleased", ...b);
     }
     async function screenshot(name: string, reveal?: string, crop?: [Point, Point]) {
-        if (!process.env.GROUNDWORK_ROUND27_SCREENSHOTS) return;
-        const dir = new URL("../../.local/rounds/27/browser/", import.meta.url);
-        await mkdir(dir, { recursive: true });
+        if (!process.env.GROUNDWORK_BROWSER_OUTPUT) return;
         await wait(() => !document.querySelector("#toast")?.textContent?.trim());
         if (reveal) {
             await cdp("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1320, deviceScaleFactor: 1, mobile: false });
@@ -107,10 +109,9 @@ export async function checkRound27(url: string) {
         let clip;
         if (crop) {
             const [x, y] = await screen(crop[0]), [right, bottom] = await screen(crop[1]);
-            clip = { x, y, width: right - x, height: bottom - y, scale: 1 };
+            clip = { x, y, width: right - x, height: bottom - y };
         }
-        const { data } = await cdp("Page.captureScreenshot", { format: "png", ...(clip && { clip }) });
-        await writeFile(new URL(name + ".png", dir), Buffer.from(data, "base64"));
+        await browser.screenshot(name, clip);
         if (reveal) {
             await cdp("Emulation.setDeviceMetricsOverride", { width: 1440, height: 960, deviceScaleFactor: 1, mobile: false });
             await paint();
@@ -134,7 +135,7 @@ export async function checkRound27(url: string) {
         await cdp("Page.addScriptToEvaluateOnNewDocument", { source: "(" + installPickers.toString() + ")()" });
         await cdp("Page.navigate", { url });
         await wait(() => !!document.querySelector(".empty-state"));
-        await evaluate(observeRound27);
+        await evaluate(observeCurveEditing);
         await evaluate(async ({ filename, bytes }) => {
             window.probe.openName = filename;
             const root = await navigator.storage.getDirectory();
@@ -143,11 +144,11 @@ export async function checkRound27(url: string) {
             await stream.write(bytes); await stream.close();
         }, { filename, bytes: serializeDesign(design) });
         await click("#open");
-        await wait(name => document.querySelector("#filename")?.textContent === name && !!window.round27.frame, filename);
+        await wait(name => document.querySelector("#filename")?.textContent === name && !!window.curveEditingProbe.frame, filename);
         await saved();
         await click("#fit"); await paint();
 
-        console.log("Round 27: boundaries derive their segment types from handles");
+        console.log("boundaries derive their segment types from handles");
         await click("button[aria-label=新建地件]");
         await click(".creation-menu [data-option=pen]");
         for (const p of [[15, 28], [28, 37], [42, 26]] as Point[]) await tap(p);
@@ -179,7 +180,7 @@ export async function checkRound27(url: string) {
         await saved();
         assert.deepEqual(await boundary(), before);
 
-        console.log("Round 27: ridge pen handles, inspector selection and height edits");
+        console.log("ridge pen handles, inspector selection and height edits");
         await click("[data-geo-node=M]");
         await click("[data-property-tab=function]");
         await click("button[aria-label=添加山脊]");
@@ -220,8 +221,8 @@ export async function checkRound27(url: string) {
         assert.equal(line.nodes[1].h, 14);
         assert((await frame()).height! > priorHeight + 2);
 
-        console.log("Round 27: insertion preserves the rendered ridge and deletion stops at two nodes");
-        const strokes = () => evaluate(() => window.round27.strokes);
+        console.log("insertion preserves the rendered ridge and deletion stops at two nodes");
+        const strokes = () => evaluate(() => window.curveEditingProbe.strokes);
         const oldStroke = (await strokes())[0];
         assert(oldStroke.length > 3);
         const insert = splitBezier(pathBezier(line, 0), .5)[0][3];
@@ -246,7 +247,7 @@ export async function checkRound27(url: string) {
         await key("Escape");
         assert.doesNotMatch(await text("#properties"), /平滑折线|顶点 \d+ 高度/);
 
-        console.log("Round 27: drawing and reopening a closed ridge removes its closing handles");
+        console.log("drawing and reopening a closed ridge removes its closing handles");
         await click("button[aria-label=添加山脊]");
         const closedPoints: Point[] = [[-29, 19], [-13, 22], [-8, 14]];
         await drag(await screen(closedPoints[0]), await screen([-28, 23]));
@@ -267,52 +268,164 @@ export async function checkRound27(url: string) {
         assert.equal(reopened.nodes.at(-1)?.bulge, undefined);
         await undo();
 
-        console.log("Round 27: dragging an unselected section or ridge moves the whole line in one undo step");
-        await click("[data-geo-node=S]"); await paint();
-        const originalSection = await section(), sectionStart = await screen(mixPoint(...originalSection, .5));
-        const dx = 30 / (await frame()).scale;
-        await drag(sectionStart, [sectionStart[0] + 30, sectionStart[1]], async () => {
-            await paint();
-            assert.equal((await frame()).selected, "Q");
-            assert.equal((await frame()).vertex, undefined);
-            assert(distance((await frame()).section![0], [originalSection[0][0] + dx, originalSection[0][1]]) < .02);
-            assert.deepEqual(await section(), originalSection);
-        });
-        await saved();
-        await paint();
-        assert.equal((await frame()).vertex, undefined);
-        const movedSection = await section();
-        for (const [i, p] of originalSection.entries()) assert(distance(movedSection[i], [p[0] + dx, p[1]]) < .02);
-        await click("[data-property-tab=section]");
-        assert.equal(await text(".geometry-box[aria-label=剖面线]"), "线段");
-        await undo();
-        assert.deepEqual(await section(), originalSection);
-        await click("[data-tab=layers]"); await click("input[data-layer=geoNodes]");
-        await click("[data-tab=terrain]"); await click("[data-geo-node=S]"); await paint();
-        assert.equal((await frame()).selected, "S");
-        const original = await ridge(), moveFrom = splitBezier(pathBezier(original, 0), .5)[0][3];
-        const dragStart = await screen(moveFrom);
-        await drag(dragStart, [dragStart[0] + 30, dragStart[1]], async () => {
-            await paint();
-            assert.equal((await frame()).selected, "M");
-            assert((await frame()).ridgePreview);
-            assert.deepEqual(await ridge(), original);
-        });
-        await saved();
-        await paint();
-        assert.equal((await frame()).vertex, undefined);
-        const movedRidge = await ridge();
-        for (const [i, { p, ...node }] of original.nodes.entries()) {
-            const { p: actual, ...attributes } = movedRidge.nodes[i];
-            assert(distance(actual, [p[0] + dx, p[1]]) < .02);
-            assert.deepEqual(attributes, node);
-        }
-        const owner = (await authored()).geoNodes.find(n => n.id === "M")!;
-        assert.deepEqual(owner.construction, mountain.construction);
-        await undo();
-        assert.deepEqual(await ridge(), original);
+        await checkLineDragging({ click, authored, drag, frame, mountain, paint, ridge, saved, screen, section, text, undo });
     }
     finally {
         await browser.close();
     }
+}
+
+export async function checkCurveEditing(url: string) {
+    await checkDrawnCurves(url);
+    await withLayeredMap(url, "boundary-controls", async ({ at, authored, cdp, click, drag, evaluate, fit, key, panel, point, property, saved, screenshot, tap, text, undo, wait }) => {
+        const region = "[data-geo-node=A]", status = ".drawing-status";
+        console.log("boundary controls, confirmation and clipped menu");
+        await panel("terrain"); await click(region); await property("region"); await fit();
+        assert.doesNotMatch(await text("#properties"), /构造方式/);
+        assert.match(await text("button[aria-label=边界线]"), /闭合曲线（4 个节点）/);
+        const deleteBoundary = "button[aria-label=\"删除边界\"]";
+        assert.equal(await evaluate(s => document.querySelectorAll(s).length, deleteBoundary), 0);
+        await screenshot("boundary-one");
+        await click("button[aria-label=添加边界]");
+        assert.equal(await evaluate(() => document.querySelector("button[aria-label=添加边界]")?.getAttribute("aria-pressed")), "true");
+        assert.equal(await text(status + " strong"), "给“台地 A”添加边界");
+        for (const p of [[-32, 4], [-28, 4], [-30, 9]] as Point[]) await tap(await at(p));
+        await key("Enter"); await saved();
+        assert.equal(await evaluate(s => document.querySelectorAll(s).length, deleteBoundary), 2);
+        const boundaries = await evaluate(() => [...document.querySelectorAll(".subitem-toggle")].map(el => el.textContent?.trim()));
+        assert.deepEqual(boundaries, ["边界 1", "边界 2"]);
+        const row2 = ".subitem:has(> .subitem-heading " + deleteBoundary + "):nth-of-type(2)";
+        const boundary2 = await evaluate(() => [...document.querySelectorAll(".subitem-toggle")]
+            .find(el => el.textContent?.trim() === "边界 2")?.getAttribute("aria-expanded"));
+        assert.equal(boundary2, "true");
+        await tap(await at([-32, 4]));
+        const selectedNode = ".subitem[data-curve-node]";
+        await wait(s => !!document.querySelector(s), selectedNode);
+        assert.equal(await evaluate(s => document.querySelector(s)?.parentElement?.closest(".subitem")
+            ?.querySelector(".subitem-toggle")?.textContent?.trim(), selectedNode), "边界 2");
+        assert.equal(await evaluate(() => [...document.querySelectorAll("#properties h3")].some(h => h.textContent?.trim() === "节点")), false);
+        const [rowX, rowY] = await point(row2);
+        await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: rowX, y: rowY });
+        await wait(s => getComputedStyle(document.querySelector(s)!).opacity === "1", row2 + " " + deleteBoundary);
+        await screenshot("boundaries-two");
+        await click(row2 + " " + deleteBoundary);
+        assert.equal(await text("#remove-dialog h2"), "删除这条边界？");
+        assert.equal(await text("#remove-dialog button[value=remove]"), "删除边界");
+        await click("#remove-dialog button[value=remove]");
+        await wait(s => !document.querySelector(s), deleteBoundary);
+        await saved();
+        assert.equal(await evaluate(s => document.querySelectorAll(s).length, deleteBoundary), 0);
+
+        const upper = await point("[data-split=upper]");
+        await drag(upper, [upper[0], upper[1] + 222]);
+        await property("function");
+        await click("button.choice-face[aria-label=函数]");
+        await wait(() => !!document.querySelector(".choices[aria-label=\"函数\"]"));
+        const popup = await evaluate(() => {
+            const menu = document.querySelector<HTMLElement>(".choices[aria-label=\"函数\"]")!;
+            const panel = document.querySelector("#property-content")!.getBoundingClientRect(), style = getComputedStyle(menu);
+            return { gap: panel.bottom - menu.getBoundingClientRect().bottom, clipped: menu.scrollHeight > menu.clientHeight,
+                radius: style.borderBottomLeftRadius, shadow: style.boxShadow };
+        });
+        assert(Math.abs(popup.gap - 16) <= 1, JSON.stringify(popup));
+        assert(popup.clipped && popup.radius !== "0px" && popup.shadow !== "none");
+        await screenshot("clipped-dropdown");
+        await key("Escape");
+
+        console.log("rendered ridge geometry opens and scrolls its inspector");
+        await click("[data-geo-node=D]");
+        const ridge: Point = [3, 31], vertex: Point = [-7, 31];
+        await tap(await at(ridge));
+        assert.equal(await evaluate(() => document.querySelector("[data-geo-node=D]")?.getAttribute("aria-pressed")), "true");
+        await panel("layers"); await click("input[data-layer=geoNodes]");
+        await tap(await at(ridge));
+        const ridgeButton = "button.geometry-box[aria-label=\"山脊线\"][aria-pressed=\"true\"]";
+        await wait(s => {
+            const button = document.querySelector(s)?.getBoundingClientRect(), panel = document.querySelector("#property-content")!.getBoundingClientRect();
+            return !!button && button.top >= panel.top && button.bottom <= panel.bottom;
+        }, ridgeButton);
+        assert.equal(await evaluate(() => document.querySelector("[data-geo-node=C]")?.getAttribute("aria-pressed")), "true");
+        assert.equal(await evaluate(() => document.querySelector("[data-property-tab=function]")?.getAttribute("aria-pressed")), "true");
+        assert.deepEqual(await evaluate(() => [...document.querySelectorAll(".subitem-toggle[aria-expanded=true]")].map(el => el.textContent?.trim())), ["山脊 3"]);
+        await tap(await at(vertex));
+        const heightRow = "[data-parameter$=\".ridges.2.line.nodes.1.h\"]";
+        await wait(s => !!document.querySelector(s), heightRow);
+        await click("[data-geo-node=A]");
+        await drag(await at(vertex), await at([-4, 32.3])); await saved();
+        const mountain = (await authored()).geoNodes.find(n => n.id === "C")!.function;
+        assert(mountain.type === "mountain" && distance(mountain.ridges[2].line.nodes[1].p, [-4, 32.3]) < .3);
+        await undo();
+    });
+    await withCurveMap(url, "curve-controls", async ({ authored, boundary, click, curve, disk, drag, evaluate, frame, key, nodeTitles, paint, pixels, saved, screenshot, tap, text, undo }) => {
+        await click("[data-tab=layers]"); await click("input[data-layer=geoNodes]"); await paint();
+        const original = await authored(), originalLine = await curve(), alt = 1;
+        await click("[data-tab=terrain]"); await click("[data-geo-node=B]"); await paint();
+        const b = boundary(original, "B"), edge = mixPoint(b.nodes[2].p, b.nodes[3].p, .5), beforeInsert = await disk();
+        await tap(edge, alt);
+        assert.equal(await disk(), beforeInsert);
+        await tap(edge); await tap(edge, 0, "left", 2); await saved();
+        assert.equal(boundary(await authored(), "B").nodes.length, b.nodes.length + 1);
+        await undo(); assert.equal(await disk(), beforeInsert);
+
+        await tap([-35, 25]); assert.deepEqual(await nodeTitles(), []);
+        await tap(originalLine.nodes[2].p); assert.deepEqual(await nodeTitles(), ["节点 3"]);
+        await click("[aria-label=下一个节点]"); await paint();
+        assert.deepEqual(await nodeTitles(), ["节点 4"]);
+        assert.equal((await frame()).vertex?.index, 3);
+        await tap(originalLine.nodes.at(-1)!.p);
+        assert(await evaluate(() => document.querySelector<HTMLButtonElement>("[aria-label=下一个节点]")?.disabled));
+        await key("Escape"); await paint(); assert.deepEqual(await nodeTitles(), []);
+        await click("[data-property-tab=region]");
+        const boundaryTwo = ".subitem:has(> .subitem-heading .subitem-toggle span)";
+        assert.deepEqual(await evaluate(s => [...document.querySelectorAll(s + " > .subitem-heading .subitem-toggle")]
+            .map(el => [el.textContent?.trim(), el.getAttribute("aria-expanded")]), boundaryTwo), [["边界 1", "false"], ["边界 2", "false"]]);
+        await tap([29, 37]); await tap([33, 31]);
+        assert.deepEqual(await nodeTitles(), ["节点 1"]);
+        assert(await evaluate(() => {
+            const nested = document.querySelector("[data-curve-node]")?.parentElement?.closest(".subitem");
+            return nested?.querySelector(".subitem-toggle")?.textContent?.trim() === "边界 2" &&
+                ![...document.querySelectorAll("#property-content h3")].some(h => h.textContent === "节点");
+        }));
+        await click("[aria-label=上一个节点]"); await paint(); assert.deepEqual(await nodeTitles(), ["节点 4"]);
+        await key("Escape"); await paint();
+        assert.deepEqual(await nodeTitles(), []);
+        assert(await evaluate(() => [...document.querySelectorAll(".subitem-toggle")].some(el =>
+            el.textContent?.trim() === "边界 2" && el.getAttribute("aria-expanded") === "true")));
+        await click("[data-geo-node=B]");
+        assert.equal(await text("#property-content .subitem-toggle"), "边界 1");
+        assert(await evaluate(() => !document.querySelector("#property-content [aria-label=删除边界]")));
+
+        await tap([-35, 25]);
+        const line = await curve();
+        const strokeAt = async (index: number) => {
+            const f = await frame(), start = pixels(f, line.nodes[index].p, true), end = pixels(f, pathHandle(line, index, "out"), true);
+            return (await evaluate(() => window.curveMapProbe.strokes)).find(s => s.width === overlay.controlLine &&
+                s.points.length === 2 && distance(s.points[0], start) < .01 && distance(s.points[1], end) < .01);
+        };
+        assert.deepEqual((await strokeAt(2))?.dash, [...overlay.dash]);
+        assert.deepEqual((await strokeAt(4))?.dash, []);
+        const handlesFrame = await frame(), [left, top] = pixels(handlesFrame, [-27, 36]), [right, bottom] = pixels(handlesFrame, [12, 20]);
+        await screenshot("handle-dashes", { x: left, y: top, width: right - left, height: bottom - top });
+        const handle = pathHandle(line, 2, "out");
+        await drag(handle, 0, async () => {
+            const f = await frame(), [x, y] = pixels(f, handle, true), start = pixels(f, line.nodes[2].p, true);
+            const preview = (await evaluate(() => window.curveMapProbe.strokes)).find(s => s.width === overlay.controlLine &&
+                s.points.length === 2 && distance(s.points[0], start) < .01 && distance(s.points[1], [x + 30, y]) < 1);
+            assert.deepEqual(preview?.dash, []);
+        });
+        assert.equal((await curve()).nodes[2].mode, "manual");
+        await undo();
+
+        await tap([-35, 25], 0, "right");
+        assert.match(await text(".context-menu"), /整条曲线[\s\S]*全部节点改为自动平滑[\s\S]*全部线段改为直线/);
+        await evaluate(() => window.curveMapProbe.editor!.toast = null);
+        await screenshot("whole-curve-menu");
+        const beforeBatch = await disk(), straight = ".context-menu [data-option=curve-line]";
+        await click(straight); await saved();
+        assert((await curve()).nodes.every(n => n.mode === "corner" && !("in" in n || "out" in n || "bulge" in n)));
+        const writes = await evaluate(() => window.probe.writes);
+        await tap([-35, 25], 0, "right"); await click(straight); await saved();
+        assert.equal(await evaluate(() => window.probe.writes), writes);
+        await undo(); assert.equal(await disk(), beforeBatch);
+    });
 }

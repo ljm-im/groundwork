@@ -3,6 +3,7 @@ export interface Probe {
     saveName: string;
     permission: PermissionState;
     cancel: boolean;
+    cancelOpen: boolean;
     fail: boolean;
     hold: boolean;
     release: (() => void) | null;
@@ -24,7 +25,7 @@ declare global {
 // example response and injected failures are simulated. Successful writes close real OPFS streams.
 export function installPickers() {
     const state: Probe = {
-        openName: "海岛 A.json", saveName: "新岛 B.json", permission: "granted", cancel: false,
+        openName: "海岛 A.json", saveName: "新岛 B.json", permission: "granted", cancel: false, cancelOpen: false,
         fail: false, hold: false, release: null, exampleReads: 0, opens: 0, writes: 0, closes: 0, suggestions: [], events: []
     };
     window.probe = state;
@@ -64,6 +65,7 @@ export function installPickers() {
         if (options.multiple || !options.types[0].accept["application/json"].includes(".json")) throw Error("Invalid open picker options");
         state.opens++;
         state.events.push("open");
+        if (state.cancelOpen) throw new DOMException("Cancelled", "AbortError");
         return [await handle(state.openName, false)];
     };
     window.showSaveFilePicker = async options => {
