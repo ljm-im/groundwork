@@ -717,7 +717,7 @@ async function checkEditor(url: string) {
         await browser.mouse("mouseReleased", sx + 15 + 12 * camera.scale, sy - 8 - 7 * camera.scale);
         await idle(); await saved();
         const sectionOffset = parseDesign(await disk()).sections[0].labelOffset;
-        assert(sectionOffset && Math.hypot(sectionOffset[0] - 12, sectionOffset[1]) < .2, JSON.stringify(sectionOffset));
+        assert(sectionOffset && Math.hypot(sectionOffset[0] - 12, sectionOffset[1] - 7) < .2, JSON.stringify(sectionOffset));
         await undo();
         assert.equal(await disk(), beforeSectionLabel);
         await click("#mark-search"); await cdp("Input.insertText", { text: "剖面线" });

@@ -48,7 +48,7 @@
         }
         .empty-state .browser-required { font-size: var(--text-lg); line-height: var(--leading-lg); color: var(--text); }
         .empty-actions { display: flex; gap: var(--space-2); color: var(--text); }
-        #map { min-height: 0; width: 100%; height: 100%; display: block; touch-action: none; outline: none; }
+        #map { min-height: 0; width: 100%; height: 100%; display: block; touch-action: none; outline: none; cursor: default; }
         .map-wrap.pan #map { cursor: grab; }
         .map-wrap.drag #map { cursor: grabbing; }
         .map-wrap.create #map { cursor: crosshair; }

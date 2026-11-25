@@ -1,5 +1,6 @@
 import { type Region, type Segment } from "../core/design/regions.ts";
 import { distance, mixPoint, projection, type Grid, type Point } from "../core/math/geometry.ts";
+import { nearestSegment } from "../core/edit/paths.ts";
 
 function midpoint(segments: Segment[]): Point | undefined {
     const lengths = segments.map(({ a, b }) => distance(a, b));
@@ -50,7 +51,7 @@ function areaCenter(boundary: Segment[]): Point | undefined {
 }
 
 const positions = new WeakMap<Region, Point | undefined>();
-export function constrainGeoLabel(region: Region, grid: Grid, target: Point, fallback?: Point) {
+function interiorLabelPoint(region: Region, grid: Grid, target: Point) {
     if (region.shape.contains(target)) return target;
     let closest: Point | undefined, gap = Infinity;
     for (const cell of region.cells) {
@@ -59,18 +60,30 @@ export function constrainGeoLabel(region: Region, grid: Grid, target: Point, fal
             closest = point; gap = here;
         }
     }
-    return closest ?? fallback;
+    return closest;
 }
 
 export function geoLabelPoint(region: Region, grid: Grid): Point | undefined {
     if (positions.has(region)) return positions.get(region);
     const { shape } = region;
     const center = shape.spine ? midpoint(shape.spine) : areaCenter(shape.boundary().flat());
-    const point = center && !shape.spine ? constrainGeoLabel(region, grid, center) : center;
+    const point = center && !shape.spine ? interiorLabelPoint(region, grid, center) : center;
     positions.set(region, point);
     return point;
 }
 
-export function constrainSectionLabel([a, b]: [Point, Point], target: Point) {
-    return mixPoint(a, b, projection(...target, a, b));
+function limitLabelOffset(boundary: Point, target: Point, scale: number) {
+    const gap = distance(boundary, target), allowance = 8 / scale;
+    return gap > allowance ? mixPoint(boundary, target, allowance / gap) : target;
+}
+
+export function constrainGeoLabel(region: Region, target: Point, scale: number) {
+    if (region.shape.contains(target)) return target;
+    const closest = nearestSegment(region.shape.boundary().flat(), target);
+    if (closest) return limitLabelOffset(closest.point, target, scale);
+}
+
+export function constrainSectionLabel([a, b]: [Point, Point], target: Point, scale = Infinity) {
+    const closest = mixPoint(a, b, projection(...target, a, b));
+    return limitLabelOffset(closest, target, scale);
 }

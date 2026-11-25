@@ -278,15 +278,24 @@ test("Terrain labels use the even-odd centroid, the nearest cell in a hole and t
     assert.deepEqual(geoLabelPoint(rasterRegion(grid, shape), grid), [6, -6]);
 });
 
-test("Map name anchors stay in their region or on their section", () => {
-    const project = new Project(syntheticDesign()), { grid, regions } = project.terrain;
-    const region = regions.get("T")!;
-    assert.deepEqual(constrainGeoLabel(region, grid, [-18, -5]), [-18, -5]);
-    const closest = constrainGeoLabel(region, grid, [100, 100])!;
-    assert(region.cells.some(cell => distance(grid.point(cell), closest) === 0));
-    assert(region.cells.every(cell => distance(grid.point(cell), [100, 100]) >= distance(closest, [100, 100])));
+test("Dragged map names follow the continuous boundary with eight pixels of clearance", () => {
+    const project = new Project(syntheticDesign()), region = project.terrain.regions.get("T")!;
+    assert.deepEqual(constrainGeoLabel(region, [-18, -5], 10), [-18, -5]);
+    assert.deepEqual(constrainGeoLabel(region, [-18, -1.6], 10), [-18, -1.6]);
+    assert.deepEqual(constrainGeoLabel(region, [-18, 2], 10), [-18, -1.2]);
+    assert.deepEqual(constrainGeoLabel(region, [-18, 2], 20), [-18, -1.6]);
+    const corner = constrainGeoLabel(region, [100, 100], 10)!;
+    assert(Math.abs(distance(corner, [-7, -2]) - .8) < 1e-12);
+    assert(distance(corner, [100, 100]) < distance([-7, -2], [100, 100]));
+    let previous = constrainGeoLabel(region, [-20, 2], 10)!;
+    for (let i = 1; i <= 260; i++) {
+        const point = constrainGeoLabel(region, [-20 + i * .05, 2], 10)!;
+        assert(distance(previous, point) <= .1);
+        previous = point;
+    }
     assert.deepEqual(constrainSectionLabel([[0, 0], [10, 0]], [3, 4]), [3, 0]);
     assert.deepEqual(constrainSectionLabel([[0, 0], [10, 0]], [12, -3]), [10, 0]);
+    assert.deepEqual(constrainSectionLabel([[0, 0], [10, 0]], [3, 4], 8), [3, 1]);
 });
 
 test("The inspector keeps compatible tabs and chooses the first available tab", async () => {

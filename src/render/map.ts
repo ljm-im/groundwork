@@ -24,7 +24,7 @@ import { type Grid } from "../core/math/geometry.ts";
 type Context = CanvasRenderingContext2D;
 export type LabelTarget = { kind: "geoNode" | "section"; id: string };
 type LabelHit = LabelTarget & { point: Point; box: Box };
-export type LabelPreview = LabelTarget & { point: Point; offset: Point };
+export type LabelPreview = LabelTarget & { offset: Point };
 
 export type MapView = Readonly<{
     project: Readonly<ProjectView>;
@@ -398,39 +398,25 @@ export class ProjectMap {
             const origin = region && geoLabelPoint(region, terrain.grid);
             if (origin && region) {
                 const drag = view.dragLabel;
-                const point = drag?.kind === target.kind && drag.id === n.id ? drag.point :
-                    n.labelOffset ? constrainGeoLabel(region, terrain.grid, addOffset(origin, n.labelOffset), origin)! : origin;
-                draw(target, n.label, point);
+                const offset = drag?.kind === target.kind && drag.id === n.id ? drag.offset : n.labelOffset;
+                const point = offset && constrainGeoLabel(region, addOffset(origin, offset), this.scale);
+                draw(target, n.label, point || origin);
             }
         }
         if (view.layers.sections) for (const section of d.sections) if (section.showLabel !== false) {
             const target = { kind: "section", id: section.id } as const, drag = view.dragLabel;
-            const point = drag?.kind === "section" && drag.id === section.id ? drag.point :
-                section.labelOffset ? constrainSectionLabel(section.points, addOffset(section.points[0], section.labelOffset)) : section.points[0];
+            const offset = drag?.kind === "section" && drag.id === section.id ? drag.offset : section.labelOffset;
+            const point = offset ? constrainSectionLabel(section.points, addOffset(section.points[0], offset), this.scale) : section.points[0];
             draw(target, section.label, point);
         }
     }
     hitLabel(x: number, y: number) {
         return this.labelBoxes.findLast(({ box: [left, top, right, bottom] }) => x >= left && x <= right && y >= top && y <= bottom);
     }
-    labelPosition({ terrain, design }: ProjectView, target: LabelTarget, at: Point): LabelPreview | undefined {
-        let origin: Point | undefined, point: Point | undefined;
-        if (target.kind === "geoNode") {
-            const region = terrain.regions.get(target.id);
-            if (region) {
-                origin = geoLabelPoint(region, terrain.grid);
-                point = constrainGeoLabel(region, terrain.grid, at, origin);
-            }
-        }
-        else {
-            const section = design.sections.find(s => s.id === target.id);
-            if (section) {
-                origin = section.points[0];
-                point = constrainSectionLabel(section.points, at);
-            }
-        }
-        if (!origin || !point) return;
-        return { ...target, point, offset: [point[0] - origin[0], point[1] - origin[1]] };
+    labelOffset({ terrain, design }: ProjectView, target: LabelTarget, at: Point): LabelPreview | undefined {
+        const region = target.kind === "geoNode" ? terrain.regions.get(target.id) : undefined;
+        const origin = target.kind === "geoNode" ? region && geoLabelPoint(region, terrain.grid) : design.sections.find(s => s.id === target.id)?.points[0];
+        if (origin) return { ...target, offset: [at[0] - origin[0], at[1] - origin[1]] };
     }
 
     markScreen(mark: Pick<Mark, "point" | "follow">): Point {
