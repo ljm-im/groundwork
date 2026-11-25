@@ -128,14 +128,15 @@
     let canvas: HTMLCanvasElement;
     let zoom = $state(1);
     let frame = 0;
+    function draw() {
+        frame = 0;
+        if (!drawView) return;
+        const { view, theme } = drawView;
+        editor.map.draw(view, theme);
+        if (view.issueStart !== undefined && performance.now() - view.issueStart < 1500) requestDraw();
+    }
     function requestDraw() {
-        frame ||= requestAnimationFrame(() => {
-            frame = 0;
-            if (!drawView) return;
-            const { view, theme } = drawView;
-            editor.map.draw(view, theme);
-            if (view.issueStart !== undefined && performance.now() - view.issueStart < 1500) requestDraw();
-        });
+        frame ||= requestAnimationFrame(draw);
     }
     $effect(() => {
         if (drawView) requestDraw();
@@ -148,7 +149,9 @@
         const detach = attachController(editor, canvas);
         function resize() {
             const { width, height } = canvas.getBoundingClientRect();
-            editor.map.resize(width, height, window.devicePixelRatio || 1);
+            if (!editor.map.resize(width, height, window.devicePixelRatio || 1)) return;
+            cancelAnimationFrame(frame);
+            draw();
         }
         resize();
         const observer = new ResizeObserver(resize);

@@ -32,24 +32,26 @@
     function plot(canvas: HTMLCanvasElement, data: { section: Section; terrain: Terrain; theme: Theme }) {
         const ctx = canvas.getContext("2d")!;
         let frame = 0;
-        function redraw() {
-            frame ||= requestAnimationFrame(() => {
-                frame = 0;
-                const w = canvas.clientWidth, h = canvas.clientHeight, dpr = window.devicePixelRatio || 1;
-                if (w < 20 || h < 20) return;
-                if (canvas.width !== Math.round(w * dpr)) canvas.width = Math.round(w * dpr);
-                if (canvas.height !== Math.round(h * dpr)) canvas.height = Math.round(h * dpr);
-                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-                drawSection(ctx, w, h, data.section, data.terrain, data.theme);
-            });
+        function draw() {
+            frame = 0;
+            const w = canvas.clientWidth, h = canvas.clientHeight, dpr = window.devicePixelRatio || 1;
+            if (w < 20 || h < 20) return;
+            if (canvas.width !== Math.round(w * dpr)) canvas.width = Math.round(w * dpr);
+            if (canvas.height !== Math.round(h * dpr)) canvas.height = Math.round(h * dpr);
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            drawSection(ctx, w, h, data.section, data.terrain, data.theme);
         }
-        const observer = new ResizeObserver(redraw);
+        const observer = new ResizeObserver(() => {
+            cancelAnimationFrame(frame);
+            draw();
+        });
         observer.observe(canvas);
-        redraw();
+        frame = requestAnimationFrame(draw);
         return {
             update(next: typeof data) {
                 if (next.section === data.section && next.terrain === data.terrain && next.theme === data.theme) return;
-                data = next; redraw();
+                data = next;
+                frame ||= requestAnimationFrame(draw);
             },
             destroy() {
                 cancelAnimationFrame(frame); observer.disconnect();

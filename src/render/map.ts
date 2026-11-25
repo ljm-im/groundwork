@@ -169,13 +169,13 @@ export class ProjectMap {
         if (reset || !this.center) this.fit(terrain);
     }
     resize(width: number, height: number, dpr: number) {
-        if (width === this.width && height === this.height && dpr === this.dpr) return;
+        if (width === this.width && height === this.height && dpr === this.dpr) return false;
         this.width = width;
         this.height = height;
         this.dpr = dpr;
         this.canvas.width = Math.round(width * dpr);
         this.canvas.height = Math.round(height * dpr);
-        this.cameraChanged();
+        return true;
     }
     fit(terrain: Terrain, notify = true) {
         const g = terrain.grid;
