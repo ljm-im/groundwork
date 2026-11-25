@@ -79,8 +79,10 @@ export function drawGeoOverlay(map: ProjectMap, view: MapView) {
                 strokeEdges(map, flattenPath(path, .6 / scale), mapColors.accent, overlay.selectedWidth);
         if (!draft) for (const c of geoControls(n, view.geometry)) {
             const tangent = c.role === "in" || c.role === "out";
-            if (tangent)
-                strokeEdges(map, [{ a: geometryPath(n, c.path)!.nodes[c.index].p, b: c.point }], mapColors.accent, overlay.controlLine);
+            if (tangent) {
+                const node = geometryPath(n, c.path)!.nodes[c.index];
+                strokeEdges(map, [{ a: node.p, b: c.point }], mapColors.accent, overlay.controlLine, node.mode === "auto");
+            }
             const active = view.vertex && (["path", "role", "index"] as (keyof GeoControl)[]).every(k => view.vertex![k] === c[k]);
             dot(c.point, !!active, tangent);
         }
