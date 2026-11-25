@@ -15,6 +15,7 @@ import { checkStripSelection } from "./stripSelection.ts";
 import { checkMapSelection } from "./mapSelection.ts";
 import { checkMapIssues } from "./mapIssues.ts";
 import { checkCurveEditing } from "./curveEditing.ts";
+import { checkSegmentEditing } from "./segmentEditing.ts";
 import { checkSectionPlots } from "./sectionPlots.ts";
 import { checkNumericEditing } from "./numericEditing.ts";
 import { checkPenDrawing } from "./penDrawing.ts";
@@ -31,6 +32,7 @@ test("Editor interactions in Chromium", async t => {
         await t.test("Map selection and dragging in Chromium", () => checkMapSelection(url));
         await t.test("Map and inspector issues in Chromium", () => checkMapIssues(url));
         await t.test("Curve editing in Chromium", () => checkCurveEditing(url));
+        await t.test("Segment editing in Chromium", () => checkSegmentEditing(url));
         await t.test("Section plots in Chromium", () => checkSectionPlots(url));
         await t.test("Numeric editing in Chromium", () => checkNumericEditing(url));
         await t.test("Pen drawing in Chromium", () => checkPenDrawing(url));
@@ -608,7 +610,7 @@ async function checkEditor(url: string) {
 
         await compareFinish(async () => {
             await tap(a, 1, "right");
-            await click(".context-menu button");
+            await click(".context-menu [data-option=add-path]");
         }, true);
         await undo();
         await terrainTab();
@@ -620,8 +622,9 @@ async function checkEditor(url: string) {
         await compareFinish(() => click("button[aria-label=添加山脊]"), false);
         const originalRidge = await disk();
         const ridgeOf = (bytes: string) => parseDesign(bytes, true).geoNodes.findLast(node => node.function.type === "mountain")!.function;
-        async function actionTip(label: string) {
-            const selector = "button[aria-label=" + JSON.stringify(label) + "]";
+        async function actionTip(label: string, member?: number) {
+            const subitem = member === undefined ? "" : ".subitem:nth-child(" + member + " of .subitem) > .subitem-heading ";
+            const selector = subitem + "button[aria-label=" + JSON.stringify(label) + "]";
             await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 6, y: 6 });
             const hit = await evaluate(async selector => {
                 const button = document.querySelector<HTMLButtonElement>(selector)!;
@@ -638,8 +641,8 @@ async function checkEditor(url: string) {
             return selector;
         }
         assert.equal(await evaluate(() => document.querySelector("[aria-label=添加山脊]")?.getAttribute("aria-pressed")), "false");
-        await actionTip("删除“山脊 1”");
-        await click(await actionTip("复制“山脊 1”")); await idle(); await saved();
+        await actionTip("删除山脊");
+        await click(await actionTip("复制山脊")); await idle(); await saved();
         const mountain = ridgeOf(await disk());
         assert(mountain.type === "mountain" && mountain.ridges.length === 2);
         const [originalMember, copy] = mountain.ridges;
@@ -656,8 +659,8 @@ async function checkEditor(url: string) {
         for (const p of [a, b]) {
             await click("button[aria-label=添加山峰]"); await tap(p); await idle(); await saved();
         }
-        await actionTip("删除“山峰 2”");
-        await actionTip("复制“山峰 2”");
+        await actionTip("删除山峰", 2);
+        await actionTip("复制山峰", 2);
         await undo(); await undo();
         assert.equal(await disk(), originalRidge);
 

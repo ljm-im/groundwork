@@ -11,22 +11,23 @@ import { startChromium, type Chromium } from "./chromium.ts";
 import { installPickers } from "./filePickers.ts";
 
 type View = import("../../src/render/map.ts").MapView;
-interface Stroke { points: Point[]; dash: number[]; color: string; width: number }
+interface Stroke { points: Point[]; dash: number[]; color: string; width: number; alpha: number }
 interface Reading { text: string; y: number; top: number; bottom: number; baseline: string; align: string }
 interface Frame {
     origin: Point; localOrigin: Point; scale: number; selection: View["selection"]; hovered?: View["hovered"];
-    geometry?: View["geometry"]; vertex?: View["vertex"]; section?: [Point, Point];
+    geometry?: View["geometry"]; vertex?: View["vertex"]; outline?: number; hoverPart?: View["hoverPart"]; section?: [Point, Point];
 }
 interface Probe {
     editor?: import("../../src/app/state/session.svelte.ts").Editor;
-    frame?: Frame; strokes: Stroke[]; ticks: Reading[]; release?: () => void;
+    frame?: Frame; strokes: Stroke[]; pathStrokes: { color: string; width: number }[];
+    dots: { point: Point; color: string }[]; ticks: Reading[]; release?: () => void;
 }
 declare global {
     interface Window { curveMapProbe: Probe }
 }
 
 async function observeCurveMap() {
-    const probe: Probe = { strokes: [], ticks: [] };
+    const probe: Probe = { strokes: [], pathStrokes: [], dots: [], ticks: [] };
     window.curveMapProbe = probe;
     const mapModule = "/src/render/map.ts", editorModule = "/src/app/state/session.svelte.ts";
     const { ProjectMap } = await import(mapModule) as typeof import("../../src/render/map.ts");
@@ -37,10 +38,13 @@ async function observeCurveMap() {
         return reconcile.apply(this, args);
     };
     const ctx = CanvasRenderingContext2D.prototype;
-    const { beginPath, moveTo, lineTo, stroke, clearRect, fillText } = ctx;
-    let points: Point[] = [];
+    const { beginPath, moveTo, lineTo, arc, fill, stroke, clearRect, fillText } = ctx;
+    let points: Point[] = [], dot: Point | undefined;
     ctx.beginPath = function () {
-        if (this.canvas.id === "map") points = [];
+        if (this.canvas.id === "map") {
+            points = [];
+            dot = undefined;
+        }
         beginPath.call(this);
     };
     ctx.moveTo = function (x, y) {
@@ -51,9 +55,20 @@ async function observeCurveMap() {
         if (this.canvas.id === "map") points.push([x, y]);
         lineTo.call(this, x, y);
     };
+    ctx.arc = function (x, y, r, start, end, ccw) {
+        if (this.canvas.id === "map") dot = [x, y];
+        arc.call(this, x, y, r, start, end, ccw);
+    };
+    ctx.fill = function (...args: [path?: Path2D | CanvasFillRule, rule?: CanvasFillRule]) {
+        if (this.canvas.id === "map" && !args.length && dot) probe.dots.push({ point: dot, color: String(this.fillStyle) });
+        Reflect.apply(fill, this, args);
+    };
     ctx.stroke = function (...args: [Path2D?]) {
-        if (this.canvas.id === "map" && !args.length && points.length >= 2)
-            probe.strokes.push({ points: points.slice(), dash: this.getLineDash(), color: String(this.strokeStyle), width: this.lineWidth });
+        if (this.canvas.id === "map") {
+            if (args.length) probe.pathStrokes.push({ color: String(this.strokeStyle), width: this.lineWidth * this.getTransform().a / devicePixelRatio });
+            else if (points.length >= 2) probe.strokes.push({ points: points.slice(), dash: this.getLineDash(), color: String(this.strokeStyle),
+                width: this.lineWidth, alpha: this.globalAlpha });
+        }
         Reflect.apply(stroke, this, args);
     };
     ctx.clearRect = function (...args) {
@@ -72,11 +87,13 @@ async function observeCurveMap() {
     const draw = ProjectMap.prototype.draw;
     ProjectMap.prototype.draw = function (view, theme) {
         probe.strokes = [];
+        probe.pathStrokes = [];
+        probe.dots = [];
         draw.call(this, view, theme);
         const localOrigin = this.screen([0, 0]), box = this.canvas.getBoundingClientRect();
         probe.frame = {
             localOrigin, origin: [box.left + localOrigin[0], box.top + localOrigin[1]], scale: this.scale,
-            selection: view.selection, hovered: view.hovered, geometry: view.geometry, vertex: view.vertex,
+            selection: view.selection, hovered: view.hovered, geometry: view.geometry, vertex: view.vertex, outline: view.outline, hoverPart: view.hoverPart,
             section: view.project.design.sections.find(section => section.id === "Q")?.points
         };
     };
@@ -193,8 +210,8 @@ function curveMap(browser: Chromium, design: Design, name: string, url: string) 
     return { ...browser, frame, idle, saved, paint, disk, text, authored, owner, curve, boundary, undo, penMode, nodeTitles, pixels, tap, drag, tool, open, translated, assertSectionStroke, moveOverMap, pointer: mouse };
 }
 
-export async function withCurveMap(url: string, scene: string, check: (page: ReturnType<typeof curveMap>) => Promise<void>) {
-    const browser = await startChromium(), page = curveMap(browser, sample(), scene + ".json", url);
+export async function withCurveMap(url: string, scene: string, check: (page: ReturnType<typeof curveMap>) => Promise<void>, design = sample()) {
+    const browser = await startChromium(), page = curveMap(browser, design, scene + ".json", url);
     const { cdp } = browser;
     try {
         await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] });

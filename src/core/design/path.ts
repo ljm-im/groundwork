@@ -59,6 +59,11 @@ export function neighbor(path: Curve<unknown>, i: number, step: -1 | 1): number 
     return path.closed ? (j + count) % count : j >= 0 && j < count ? j : undefined;
 }
 
+export function segmentNeighbor(path: Curve<unknown>, i: number, step: -1 | 1) {
+    const next = neighbor(path, i, step);
+    if (next !== undefined && neighbor(path, next, 1) !== undefined) return next;
+}
+
 export function autoHandle(path: Curve<unknown>, i: number, side: "in" | "out"): Point {
     const { nodes } = path, prev = nodes[neighbor(path, i, -1) ?? i].p, next = nodes[neighbor(path, i, 1) ?? i].p;
     const sign = side === "in" ? -1 : 1;
@@ -93,19 +98,29 @@ export function pathBezier(path: Curve<unknown>, i: number): Bezier {
     return [path.nodes[i].p, pathHandle(path, i, "out"), pathHandle(path, next, "in"), path.nodes[next].p];
 }
 
+function appendSegment(path: Curve<unknown>, i: number, j: number, tolerance: number, minDepth: number, segments: Segment[]) {
+    const v = path.nodes[i], next = path.nodes[j], points = [v.p];
+    if (v.bulge !== undefined) flattenArc(v.p, next.p, v.bulge, tolerance, points);
+    else if (segmentType(path, i) === "line") points.push(next.p);
+    else flattenBezier(pathBezier(path, i), tolerance, p => points.push(p), minDepth);
+    const start = segments.length;
+    for (let k = 1; k < points.length; k++)
+        if (distance(points[k - 1], points[k]) > 0) segments.push({ a: points[k - 1], b: points[k], from: v.id });
+    if (segments.length === start) segments.push({ a: v.p, b: next.p, from: v.id });
+}
+
+export function flattenSegment(path: Curve<unknown>, i: number, tolerance: number) {
+    const segments: Segment[] = [], j = neighbor(path, i, 1);
+    if (j !== undefined) appendSegment(path, i, j, tolerance, 0, segments);
+    return segments;
+}
+
 export function flattenPath(path: Curve<unknown>, tolerance: number, minDepth = 0) {
-    const { nodes } = path, segments: Segment[] = [];
-    for (let i = 0; i < nodes.length; i++) {
+    const segments: Segment[] = [];
+    for (let i = 0; i < path.nodes.length; i++) {
         const j = neighbor(path, i, 1);
         if (j === undefined) break;
-        const v = nodes[i], next = nodes[j], points = [v.p];
-        if (v.bulge !== undefined) flattenArc(v.p, next.p, v.bulge, tolerance, points);
-        else if (segmentType(path, i) === "line") points.push(next.p);
-        else flattenBezier(pathBezier(path, i), tolerance, p => points.push(p), minDepth);
-        const start = segments.length;
-        for (let j = 1; j < points.length; j++)
-            if (distance(points[j - 1], points[j]) > 0) segments.push({ a: points[j - 1], b: points[j], from: v.id });
-        if (segments.length === start) segments.push({ a: v.p, b: next.p, from: v.id });
+        appendSegment(path, i, j, tolerance, minDepth, segments);
     }
     return segments;
 }

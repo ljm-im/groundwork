@@ -1,4 +1,4 @@
-<div class="parameter-row" {...attributes}>
+<div class="parameter-row" {onmouseenter} {onmouseleave} {...attributes}>
     {#if forInput}<label class="param-name" class:disabled for={forInput}>{label}</label>
     {:else if label}<span class="param-name">{label}</span>{/if}
     <div class="parameter-control">
@@ -29,8 +29,8 @@
 
 <script lang="ts">
     import { type Snippet } from "svelte";
-    let { label, unit = "", forInput, disabled = false, readOnlyValue, problem, attributes, children }: {
+    let { label, unit = "", forInput, disabled = false, readOnlyValue, problem, attributes, children, onmouseenter, onmouseleave }: {
         label?: string; unit?: string; forInput?: string; disabled?: boolean; readOnlyValue?: string;
-        problem?: string; attributes?: Record<string, string>; children?: Snippet;
+        problem?: string; attributes?: Record<string, string>; children?: Snippet; onmouseenter?: () => void; onmouseleave?: () => void;
     } = $props();
 </script>

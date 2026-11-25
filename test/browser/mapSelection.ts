@@ -149,12 +149,12 @@ export async function checkMapSelection(url: string) {
             assert.equal(f.geometry?.index, index);
         }
         await tap([-35, 25]); assert.equal((await frame()).geometry?.index, -1);
-        const functionTab = "[data-property-tab=function][aria-pressed=true]";
         assert.equal(await text(".geometry-box[aria-label=山脊线][aria-pressed=true]"), "曲线（8 个节点）");
         await tap([30, 37]);
         assert.equal((await frame()).selection?.id, "M");
-        assert.equal((await frame()).geometry, undefined);
-        assert(await evaluate(s => !!document.querySelector(s) && !document.querySelector(".geometry-box[aria-label=山脊线][aria-pressed=true]"), functionTab));
+        assert.deepEqual((await frame()).geometry, { kind: "path", index: 0 });
+        assert(await evaluate(() => !!document.querySelector("[data-property-tab=region][aria-pressed=true]") &&
+            !!document.querySelector("[data-outline] [aria-current=true]")));
         assert.equal(await evaluate(() => {
             const { editor, frame } = window.curveMapProbe, ctx = editor!.map.ctx;
             const [x, y] = frame!.localOrigin, scale = frame!.scale;
@@ -169,6 +169,7 @@ export async function checkMapSelection(url: string) {
         await assertSectionStroke();
         await undo();
         const originalLine = await curve();
+        await tap(originalLine.nodes[0].p); assert.equal((await frame()).vertex, undefined);
         await tap(originalLine.nodes[0].p); assert.equal((await frame()).vertex?.index, 0);
         await drag([-35, 25]);
         current = await authored();

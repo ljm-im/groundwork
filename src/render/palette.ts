@@ -1,6 +1,6 @@
 export const interfaceColors = {
-    light: { bgApp: "#f9faf6", textSecondary: "#657570", border: "#d9dfd7" },
-    dark: { bgApp: "#171d1b", textSecondary: "#8f9e98", border: "#323d39" }
+    light: { bgApp: "#f9faf6", textSecondary: "#657570", border: "#d9dfd7", accent: "#226659" },
+    dark: { bgApp: "#171d1b", textSecondary: "#8f9e98", border: "#323d39", accent: "#62b3a0" }
 } as const;
 
 export type Theme = keyof typeof interfaceColors;
@@ -11,7 +11,7 @@ export const mapColors = {
         bgSelected: "#e2ece4",
         text: "#233d37",
         borderRegion: "#c4ccc1",
-        accent: "#226659",
+        accent: interfaceColors.light.accent,
         accentHover: "rgb(34 102 89 / 50%)",
         dragOrigin: "rgb(34 102 89 / 30%)",
         stripArea: "rgb(34 102 89 / 10%)",
@@ -24,7 +24,7 @@ export const mapColors = {
         bgSelected: "#2d3c37",
         text: "#dde6e1",
         borderRegion: "#404c48",
-        accent: "#62b3a0",
+        accent: interfaceColors.dark.accent,
         accentHover: "rgb(98 179 160 / 50%)",
         dragOrigin: "rgb(98 179 160 / 30%)",
         stripArea: "rgb(98 179 160 / 10%)",
@@ -52,6 +52,8 @@ export const overlay = {
     handleOutline: 1.5,
     controlLine: 1,
     parameterWidth: 2,
+    segmentWidth: 4,
+    segmentHoverOpacity: .3,
     labelHalo: 3,
     dash: [6, 4]
 } as const;

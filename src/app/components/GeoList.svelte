@@ -17,7 +17,14 @@
                 selected={editor.selection?.kind === "geoNode" && editor.selection.id === n.id}
                 select={() => editor.focus("geoNode", n.id)} onmenu={(x, y) => editor.openMenu({ kind: "geoNode", id: n.id }, x, y)}
                 ondragstart={e => start(e, n.id)} ondragend={clear}
-                onmouseenter={() => editor.hover(c.type === "strip" ? [...c.of] : [])} onmouseleave={() => editor.hover([])}>
+                onmouseenter={() => {
+                    if (dragged !== undefined || editor.tool !== "select" || editor.gesture) return;
+                    editor.hoverSelection({ kind: "geoNode", id: n.id });
+                    editor.hover(c.type === "strip" ? [...c.of] : []);
+                }} onmouseleave={() => {
+                    editor.hoverSelection();
+                    editor.hover([]);
+                }}>
                 {#snippet detail()}
                     <small class="list-detail"><Icon name="function" builtin={isBuiltinFunction(n.function.type)} />{n.function.type}{#if n.function.type === "flat"}<span class="flat-amount" use:flagOverflow>{flatAmount(n, n.function.amount)}</span>{/if}</small>
                     {#if c.type === "strip"}<small class="along">沿 {c.of.map(id => "“" + (d.geoNodes.find(n => n.id === id)?.label ?? id) + "”").join("、")}</small>{/if}
@@ -90,6 +97,8 @@
     }
     const mime = "application/x-groundwork-stack";
     function start(e: DragEvent, id: string | null) {
+        editor.hoverSelection();
+        editor.hover([]);
         dragged = id; e.dataTransfer!.setData(mime, JSON.stringify(id)); e.dataTransfer!.effectAllowed = "move";
     }
     function clearMark() {

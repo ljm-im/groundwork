@@ -6,7 +6,7 @@ import { layer, rect } from "../scenarios.ts";
 import { withLayeredMap } from "./layeredMapFixture.ts";
 
 export async function checkMapIssues(url: string) {
-    await withLayeredMap(url, "map-issues", async ({ at, cdp, click, d, evaluate, fit, frame, openDesign, paint, panel, point, property, tap }) => {
+    await withLayeredMap(url, "map-issues", async ({ at, cdp, click, d, evaluate, fit, frame, menuFor, openDesign, paint, panel, point, property, tap, text }) => {
         const design = { ...d, sections: [], marks: [], geoNodes: [
             layer("G", rect(-60, -38, 60, 38), { type: "ground", value: 3 }),
             layer("A", rect(-32, -13, -12, 12), { type: "flat", amount: 4 }),
@@ -41,6 +41,10 @@ export async function checkMapIssues(url: string) {
             await fit(); await click("#plus"); await paint();
             const index = issues.indexOf(issue), group = issue.severity === "error" ? errors : [issue];
             assert.notDeepEqual((await camera()).center, issue.point);
+            await unchanged(async () => {
+                await tap(await at(issue.point), 0, "right");
+                assert.equal(await text(".context-menu"), "");
+            });
             const mapHit = () => at(issue.point).then(tap);
             await unchanged(mapHit);
             assert.deepEqual(await rows(), group.map(i => issues.indexOf(i)));
@@ -56,10 +60,16 @@ export async function checkMapIssues(url: string) {
             assert(Math.abs(edgeX - edge + 5) < .5);
             await unchanged(() => tap([edge + 2, edgeY]));
             assert.deepEqual(await rows(), group.map(i => issues.indexOf(i)));
-            await unchanged(() => click(listRow), issue.point);
+            async function reveal(selector: string) {
+                await menuFor(selector);
+                assert.equal(await text(".context-menu .group-name"), issue.severity === "error" ? "错误" : "警告");
+                assert.equal(await text(".context-menu button"), "在视野中显示");
+                await click(".context-menu [data-option=show-in-view]");
+            }
+            await unchanged(() => reveal(listRow), issue.point);
             await panToEdge(issue.point, 24);
             await property("issues");
-            await unchanged(() => click(propertyRow), issue.point);
+            await unchanged(() => reveal(propertyRow), issue.point);
         }
     });
 }

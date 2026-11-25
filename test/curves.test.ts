@@ -1,14 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseDesign } from "../src/core/design/model.ts";
+import { parseDesign, serializeDesign } from "../src/core/design/model.ts";
+import { resolveDesign } from "../src/core/design/parameters.ts";
 import { DesignError } from "../src/core/design/problems.ts";
 import { autoHandle, flattenPath, pathBezier, segmentType, splitBezier, type Bezier } from "../src/core/design/path.ts";
 import { numericProfile } from "../src/core/design/polyline.ts";
 import { type Curve, type Point } from "../src/core/design/v5.ts";
 import { defaultFunction, pathsOf } from "../src/core/edit/geoNodes.ts";
-import { copyGeometryItem, insertCurveNode, removeCurveNode } from "../src/core/edit/geoControls.ts";
-import { editWholeCurve, insertPathNode, moveHandle, penNode, penPath, setNodeMode, setSegment } from "../src/core/edit/paths.ts";
-import { distance, spline } from "../src/core/math/geometry.ts";
+import { copyGeometryItem, insertCurveNode, removeCurveNode, removeCurveSegment } from "../src/core/edit/geoControls.ts";
+import { arcHandle, editWholeCurve, insertPathNode, moveHandle, penNode, penPath, removePathSegment, segmentRemovalIndex,
+    setNodeMode, setSegment } from "../src/core/edit/paths.ts";
+import { distance, mixPoint, spline, stations } from "../src/core/math/geometry.ts";
 import { openCurve, syntheticDesign } from "./scenarios.ts";
 
 const at = (curve: Bezier, t: number) => splitBezier(curve, t)[0][3];
@@ -96,23 +98,197 @@ test("Straightening, curving and arcing a segment leave the adjacent Béziers un
     }
 });
 
-test("Inserting a node reparameterizes the same cubic to nanometre accuracy", () => {
-    const path = line("auto"), index = 1;
-    const original = pathBezier(path, index), before = pathBezier(path, index - 1), after = pathBezier(path, index + 1);
-    const v = insertPathNode(path, index, at(original, .37), "inserted")!;
-    assert.equal(v.mode, "manual");
-    assert.equal(path.nodes[index].mode, "corner");
-    assert.equal(path.nodes[index + 2].mode, "corner");
-    const split = (path.nodes[index].out?.[0] ?? 0) / (original[1][0] - original[0][0]);
-    const left = pathBezier(path, index), right = pathBezier(path, index + 1);
-    for (let j = 0; j < 50; j++) {
-        const t = j / 49, found = t <= split ? at(left, t / split) : at(right, (t - split) / (1 - split));
-        assert(distance(at(original, t), found) < 1e-9);
+test("Inserting between matching corner or manual nodes preserves the cubic and both node modes", () => {
+    for (const mode of ["corner", "manual"] as const) {
+        const path = line("auto"), index = 1;
+        setNodeMode(path, index, mode);
+        setNodeMode(path, index + 1, mode);
+        const original = pathBezier(path, index), before = pathBezier(path, index - 1), after = pathBezier(path, index + 1);
+        const v = insertPathNode(path, index, at(original, .37), "inserted")!;
+        assert.deepEqual(path.nodes.slice(index, index + 3).map(n => n.mode), [mode, mode, mode]);
+        const split = (path.nodes[index].out?.[0] ?? 0) / (original[1][0] - original[0][0]);
+        const left = pathBezier(path, index), right = pathBezier(path, index + 1);
+        for (let j = 0; j < 50; j++) {
+            const t = j / 49, found = t <= split ? at(left, t / split) : at(right, (t - split) / (1 - split));
+            assert(distance(at(original, t), found) < 1e-9);
+        }
+        assert.deepEqual(pathBezier(path, index - 1), before);
+        assert.deepEqual(pathBezier(path, index + 2), after);
+        assert(distance(v.p, at(original, .37)) < 1e-8);
     }
-    assert.deepEqual(pathBezier(path, index - 1), before);
-    assert.deepEqual(pathBezier(path, index + 2), after);
     const straight = line(), middle = insertPathNode(straight, 0, [3, 5], "inserted");
     assert.deepEqual(middle, { id: "inserted", p: [3, 5], mode: "corner" });
+});
+
+test("Insertion keeps automatic and mixed endpoints and splits arcs without handles at the new node", () => {
+    for (const end of ["auto", "corner", "manual"] as const) {
+        const path = line("auto");
+        setNodeMode(path, 2, end);
+        const point = at(pathBezier(path, 1), .42), v = insertPathNode(path, 1, point, "inserted")!;
+        assert.deepEqual(path.nodes.slice(1, 4).map(n => n.mode), ["auto", "auto", end]);
+        assert(!Object.hasOwn(v, "in") && !Object.hasOwn(v, "out"));
+        assert(distance(v.p, point) < 1e-8);
+    }
+    for (const modes of [["auto", "auto"], ["auto", "corner"], ["corner", "corner"], ["manual", "manual"]] as const) {
+        const path = line(), [a, b] = path.nodes.slice(1);
+        [a.mode, b.mode] = modes;
+        a.bulge = .7;
+        const v = insertPathNode(path, 1, arcHandle(a.p, b.p, a.bulge), "inserted")!;
+        assert.deepEqual([a.mode, b.mode], modes);
+        assert.equal(v.mode, modes.some(mode => mode === "auto") ? "auto" : "corner");
+        assert(!Object.hasOwn(v, "in") && !Object.hasOwn(v, "out"));
+        assert.equal(segmentType(path, 1), "arc");
+        assert.equal(segmentType(path, 2), "arc");
+        assert(Math.abs(Math.atan(a.bulge) + Math.atan(v.bulge!) - Math.atan(.7)) < 1e-10);
+    }
+});
+
+test("Closed segment removal uses the length midpoint and keeps the types of the neighboring segments", () => {
+    const d = syntheticDesign(), owner = d.geoNodes[1];
+    assert(owner.construction.type === "free");
+    const [path] = owner.construction.paths;
+    const [a, b, c, last] = path.nodes;
+    assert.deepEqual(removePathSegment(path, 0), { id: a.id, p: [-14, -14], mode: "corner" });
+    assert.deepEqual(path.nodes.map(n => n.id), [a.id, c.id, last.id]);
+    assert.deepEqual(path.nodes.map((_, i) => segmentType(path, i)), ["line", "line", "line"]);
+    const reopened = parseDesign(serializeDesign(d)).geoNodes[1].construction;
+    assert(reopened.type === "free");
+    assert.deepEqual(reopened.paths[0], path);
+    assert.equal(removePathSegment(path, 0), undefined);
+    setSegment(path, 0, "curve");
+    assert.equal(segmentType(path, 0), "curve");
+    assert.equal(segmentType(path, 2), "line");
+
+    const arc = line();
+    arc.closed = true;
+    const start = arc.nodes.at(-1)!, end = arc.nodes[0], prev = arc.nodes.at(-2)!;
+    start.bulge = -.75;
+    end.bulge = .4;
+    prev.bulge = .65;
+    const midpoint = arcHandle(start.p, end.p, start.bulge);
+    assert.equal(removePathSegment(arc, arc.nodes.length - 1), start);
+    assert.equal(arc.nodes.at(-1), start);
+    assert(!arc.nodes.includes(end));
+    assert.deepEqual(start.p, midpoint);
+    assert.equal(start.mode, "corner");
+    assert.equal(start.bulge, .4);
+    assert.equal(prev.bulge, .65);
+
+    const cubic = line();
+    cubic.closed = true;
+    cubic.nodes[1].out = [10, 7];
+    cubic.nodes[2].in = [-1, -1];
+    setSegment(cubic, 2, "curve");
+    const bezier = pathBezier(cubic, 1), samples = Array.from({ length: 2049 }, (_, i) => at(bezier, i / 2048)), lengths = stations(samples);
+    const half = lengths.at(-1)! / 2, index = lengths.findIndex(length => length >= half);
+    const expected = mixPoint(samples[index - 1], samples[index], (half - lengths[index - 1]) / (lengths[index] - lengths[index - 1]));
+    assert(distance(expected, at(bezier, .5)) > .1);
+    assert(distance(removePathSegment(cubic, 1)!.p, expected) < 1e-4);
+    assert.deepEqual([segmentType(cubic, 0), segmentType(cubic, 1)], ["line", "curve"]);
+    assert(!path.nodes.includes(b));
+});
+
+test("Merged endpoints share insertion's mode rule and keep the outside handles", () => {
+    const path = line(), index = 1;
+    path.closed = true;
+    path.nodes[1].in = [-2, 0];
+    path.nodes[2].out = [0, 3];
+    const corner = removePathSegment(structuredClone(path), index)!;
+    assert.equal(corner.mode, "corner");
+    assert.deepEqual(corner.in, [-2, 0]);
+    assert.deepEqual(corner.out, [0, 3]);
+
+    const auto = structuredClone(path);
+    for (const i of [1, 2]) setNodeMode(auto, i, "auto");
+    for (const candidate of [auto, structuredClone(auto)]) {
+        if (candidate !== auto) setNodeMode(candidate, 1, "corner");
+        const merged = removePathSegment(candidate, index)!;
+        assert.equal(merged.mode, "auto");
+        assert(!Object.hasOwn(merged, "in") && !Object.hasOwn(merged, "out"));
+    }
+
+    const manual = structuredClone(path);
+    Object.assign(manual.nodes[1], { mode: "manual", out: [2, 0] });
+    Object.assign(manual.nodes[2], { mode: "manual", in: [0, -3] });
+    const withArc = structuredClone(manual);
+    withArc.nodes[0].bulge = .5;
+    const aligned = removePathSegment(manual, index)!;
+    assert.equal(aligned.mode, "manual");
+    assert(distance(aligned.in!, [-Math.SQRT2, -Math.SQRT2]) < 1e-9);
+    assert(distance(aligned.out!, [3 / Math.SQRT2, 3 / Math.SQRT2]) < 1e-9);
+    const fallback = removePathSegment(withArc, index)!;
+    assert.equal(fallback.mode, "corner");
+    assert.equal(fallback.in, undefined);
+    assert.deepEqual(fallback.out, [0, 3]);
+    assert.equal(withArc.nodes[0].bulge, .5);
+});
+
+test("Legacy drafts with retired automatic handle switches are rejected at the stored field", () => {
+    for (const key of ["autoIn", "autoOut"]) {
+        const d = syntheticDesign(), construction = d.geoNodes[1].construction;
+        assert(construction.type === "free");
+        const path = construction.paths[0];
+        Object.assign(path.nodes[1], { mode: "auto", [key]: false });
+        assert.throws(() => parseDesign(d), { message: "geoNodes[1].construction.paths[0].nodes[1]." + key + " 已从 v5 移除" });
+    }
+});
+
+test("Only the two end segments of an open path can be removed above its node limit", () => {
+    const original = line("auto");
+    setNodeMode(original, 1, "manual");
+    setNodeMode(original, 3, "manual");
+    for (const [segment, removed, newEndpoint] of [[0, 0, 1], [3, 4, 3]]) {
+        const path = structuredClone(original), expected = path.nodes[newEndpoint];
+        assert.equal(segmentRemovalIndex(path, segment), removed);
+        assert.equal(removePathSegment(path, segment), expected);
+        assert.deepEqual(path.nodes.map(n => n.id), original.nodes.filter((_, i) => i !== removed).map(n => n.id));
+        assert.equal(expected.mode, "corner");
+        assert.equal(removed === 0 ? expected.in : expected.out, undefined);
+    }
+    assert.equal(removePathSegment(original, 1), undefined);
+    assert.equal(removePathSegment(original, 2), undefined);
+    original.nodes.length = 2;
+    assert.equal(removePathSegment(original, 0), undefined);
+});
+
+test("Segment removal averages heights and shifts references like node removal", () => {
+    const d = syntheticDesign(), n = d.geoNodes[1], f = defaultFunction("mountain");
+    assert(f.type === "mountain");
+    n.function = f;
+    const path = line();
+    path.closed = true;
+    path.nodes[1].h = "{input:A} * 2";
+    path.nodes[2].h = 6;
+    path.nodes[3].h = 10;
+    f.ridges.push({ line: path, slope: 1 });
+    const control = { role: "segment" as const, path: -1, index: 1, point: path.nodes[1].p };
+    f.floor = "{geo:T.ridges.0.line.nodes.2.h}";
+    const before = structuredClone(path);
+    assert.throws(() => removeCurveSegment(d, n, control), /仍被引用/);
+    assert.deepEqual(path, before);
+    f.floor = "{geo:T.ridges.0.line.nodes.3.h}";
+    const merged = removeCurveSegment(d, n, control)!;
+    assert.equal(merged.id, before.nodes[1].id);
+    assert.equal(f.floor, "{geo:T.ridges.0.line.nodes.2.h}");
+    delete f.floor;
+    const resolved = resolveDesign(d).geoNodes[1].function;
+    assert(resolved.type === "mountain");
+    assert.equal(resolved.ridges[0].line.nodes[1].h, 10);
+    d.inputs.A.value = 9;
+    const updated = resolveDesign(d).geoNodes[1].function;
+    assert(updated.type === "mountain");
+    assert.equal(updated.ridges[0].line.nodes[1].h, 12);
+});
+
+test("Merging a closed slope segment includes its interpolated increment", () => {
+    const d = syntheticDesign(), n = d.geoNodes[1];
+    const path = openCurve([{ p: [0, 0], h: 0 }, { p: [2, 0] }, { p: [6, 0], h: 27 },
+        { p: [6, 6], h: 7 }, { p: [0, 6], h: 1 }]);
+    path.closed = true;
+    n.function = { type: "slope", kind: "path", line: path, ease: true };
+    const merged = removeCurveSegment(d, n, { role: "segment", path: -1, index: 0, point: [1, 0] })!;
+    assert.equal(merged.h, 3.5);
+    assert.doesNotThrow(() => parseDesign(serializeDesign(d)));
 });
 
 test("The open pen and handle drags only store usable handles", () => {

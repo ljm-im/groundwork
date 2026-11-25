@@ -1,14 +1,35 @@
 import { parameters, readAt, slotName, writeAt, type Address } from "../design/parameters.ts";
-import { type Curve, type Design, type GeoNode, type Point } from "../design/v5.ts";
-import { arcHandle, canRemoveNode, cleanHandles, insertPathNode, moveHandle, nearestSegment, setBulge, translateCurve, translateGeo } from "./paths.ts";
+import { type Curve, type Design, type Expression, type GeoNode, type Point } from "../design/v5.ts";
+import { legacyRidge } from "../design/functionTable.ts";
+import { lineProfile } from "../design/polyline.ts";
+import { arcHandle, canRemoveNode, insertPathNode, moveHandle, nearestSegment, removePathNode, removePathSegment,
+    segmentRemovalIndex, setBulge, translateCurve, translateGeo } from "./paths.ts";
 import { flattenPath, neighbor, pathHandle } from "../design/path.ts";
 import { distance } from "../math/geometry.ts";
 import { nodeIds } from "./geoNodes.ts";
 
 export interface GeometryTarget { kind: "path" | "parameter"; index: number }
 export interface GeoControl {
-    role: "vertex" | "in" | "out" | "arc" | "segment" | "body" | "parameter";
+    role: "vertex" | "in" | "out" | "arc" | "segment" | "body" | "outline" | "curve" | "parameter";
     path: number; index: number; point: Point;
+}
+
+export interface CurveSelection { role: "outline" | "curve" | "vertex" | "segment"; nodeId: string }
+export type GeometrySelection = CurveSelection | { role: "parameter"; path: number };
+export type GeometryPart = Pick<GeoControl, "role" | "path" | "index">;
+
+export function geometrySelection(n: GeoNode, { role, path, index }: GeometryPart): GeometrySelection | undefined {
+    if (role === "parameter") return { role, path };
+    if (role === "outline" || role === "curve" || role === "vertex" || role === "segment") {
+        const curve = geometryPath(n, path), node = curve?.nodes[role === "outline" || role === "curve" ? 0 : index];
+        if (node) return { role, nodeId: node.id };
+    }
+}
+
+export function controlOwner(control?: GeoControl): GeoControl | undefined {
+    if (control?.role === "arc") return { ...control, role: "segment" };
+    if (control?.role === "in" || control?.role === "out") return { ...control, role: "vertex" };
+    return control;
 }
 
 export function parameterTarget(control: GeoControl): GeometryTarget | undefined {
@@ -46,6 +67,19 @@ export function pathEntries(n: GeoNode): [number, Curve][] {
 
 const vertexControl = (path: number, index: number, point: Point): GeoControl => ({ role: "vertex", path, index, point });
 const pointControl = (path: number, point: Point): GeoControl => ({ role: "parameter", path, index: 0, point });
+
+export function resolveGeometrySelection(n: GeoNode, part: GeometrySelection): GeoControl | undefined {
+    if (part.role === "parameter") {
+        const point = parameterPoints(n).find(([i]) => i === part.path);
+        return point && pointControl(...point);
+    }
+    const { role, nodeId } = part;
+    for (const [path, curve] of pathEntries(n)) {
+        const index = curve.nodes.findIndex(v => v.id === nodeId);
+        if (index >= 0 && (role === "vertex" || neighbor(curve, index, 1) !== undefined))
+            return { role, path, index, point: curve.nodes[index].p };
+    }
+}
 
 export function geoControls(n: GeoNode, target?: GeometryTarget) {
     const controls: GeoControl[] = [];
@@ -95,6 +129,11 @@ export function hitControl(n: GeoNode, p: Point, scale: number, tolerance: numbe
 export function hitGeoControl(n: GeoNode, p: Point, scale: number, target?: GeometryTarget) {
     return hitGeoHandle(geoControls(n, target), p, scale);
 }
+export function hitOutlineVertex(n: GeoNode, p: Point, scale: number) {
+    const controls = editablePaths(n).flatMap(([path, curve]) => curve.nodes.map((v, i) => vertexControl(path, i, v.p)));
+    return hitGeoHandle(controls, p, scale);
+}
+
 export function* hitParameterGeometries(n: GeoNode, p: Point, scale: number, tolerance: number) {
     for (const [index, point] of parameterPoints(n).reverse())
         if (distance(p, point) * scale <= handleRadius) yield pointControl(index, point);
@@ -116,8 +155,9 @@ export function editControl(n: GeoNode, h: GeoControl, at: Point, independent: b
         p[0] = at[0]; p[1] = at[1];
         return;
     }
-    const path = geometryPath(n, h.path)!, v = path.nodes[h.index];
-    if (h.role === "segment" && h.path < 0) translateCurve(path, delta);
+    const path = geometryPath(n, h.path)!;
+    if (h.role === "outline" || h.role === "curve" || h.role === "segment" && h.path < 0) return translateCurve(path, delta);
+    const v = path.nodes[h.index];
     if (h.role === "vertex") v.p = at;
     if (h.role === "in" || h.role === "out") moveHandle(path, h.index, h.role, at, independent);
     if (h.role === "arc") setBulge(v, path.nodes[neighbor(path, h.index, 1)!].p, at);
@@ -174,11 +214,42 @@ function profileNodes(n: GeoNode, path: number): Address | undefined {
 
 export function removeCurveNode(d: Design, n: GeoNode, h: GeoControl) {
     const path = geometryPath(n, h.path);
-    if (!path || !canRemoveNode(path)) return;
+    if (!path || !path.nodes[h.index] || !canRemoveNode(path)) return;
     const address = profileNodes(n, h.path);
     if (address) shiftGeometryReferences(d, n, address, h.index, -1);
-    path.nodes.splice(h.index, 1);
-    cleanHandles(path);
+    removePathNode(path, h.index);
+}
+
+function mixHeight(a: Expression, b: Expression, t: number): Expression {
+    if (!t || a === b) return a;
+    if (t === 1) return b;
+    if (typeof a === "number" && typeof b === "number") return a * (1 - t) + b * t;
+    return "(" + a + ") * " + (1 - t) + " + (" + b + ") * " + t;
+}
+
+function mergedHeight(d: Design, n: GeoNode, pathIndex: number, path: Curve, a: number, b: number) {
+    const start = path.nodes[a].h, end = path.nodes[b].h;
+    if (start !== undefined && end !== undefined) return mixHeight(start, end, .5);
+    const f = n.function, ease = f.type === "mountain" ? !legacyRidge(f.ridges[-1 - pathIndex]) : f.type === "slope" && f.kind === "path" && f.ease;
+    const profile = lineProfile(path, d.grid.step / 8);
+    function height(index: number) {
+        const span = profile.span(profile.nodeStation(index), ease);
+        return path.nodes[index].h ?? (span ? mixHeight(span.a.h, span.b.h, span.t) : 0);
+    }
+    return mixHeight(height(a), height(b), .5);
+}
+
+export function removeCurveSegment(d: Design, n: GeoNode, control: GeoControl) {
+    const path = geometryPath(n, control.path);
+    if (!path) return;
+    const removed = segmentRemovalIndex(path, control.index);
+    if (removed === undefined) return;
+    const address = profileNodes(n, control.path);
+    if (address) shiftGeometryReferences(d, n, address, removed, -1);
+    const height = address && path.closed ? mergedHeight(d, n, control.path, path, control.index, removed) : undefined;
+    const node = removePathSegment(path, control.index)!;
+    if (height !== undefined) node.h = height;
+    return node;
 }
 
 export function insertCurveNode(d: Design, n: GeoNode, h: GeoControl) {

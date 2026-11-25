@@ -8,10 +8,11 @@
         </div>
     </FieldRow>
 {/snippet}
-{@render segments("节点类型", nodeModes, node.mode, mode => editor.pathNodeMode(control, mode as CurveNode["mode"]),
-    canSetManual(curve, control.index) ? undefined : "manual")}
-{#if segment}
-    {@render segments("后一段", segmentTypes, segment, type => editor.segment(control, type as SegmentType))}
+{#if control.role === "vertex"}
+    {@render segments("节点类型", nodeModes, node.mode, mode => editor.pathNodeMode(control, mode as CurveNode["mode"]),
+        canSetManual(curve, control.index) ? undefined : "manual")}
+{:else if segment}
+    {@render segments("线段类型", segmentTypes, segment, type => editor.segment(control, type as SegmentType))}
     {#if segment === "arc"}
         <FieldRow><button disabled={neighbor(curve, control.index, -1) === undefined} onclick={() => editor.segment(control, "tangent")}><Icon name="tangent" />相切</button></FieldRow>
     {/if}

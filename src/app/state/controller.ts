@@ -3,11 +3,11 @@ import { commitFocusedInput } from "./pendingInput.ts";
 import { defaultFollow } from "../../core/design/v5.ts";
 import { distance } from "../../core/math/geometry.ts";
 import { moveHandle, sectionHandlePoint } from "../../core/edit/controls.ts";
-import { editControl, geometryPath, parameterTarget } from "../../core/edit/geoControls.ts";
+import { editControl, geometryPath } from "../../core/edit/geoControls.ts";
 import { setNodeMode } from "../../core/edit/paths.ts";
 import { doubleClickTools, draftPointer, geoAt, snapPoint, updatePreview } from "./geoTools.ts";
 import { type GeoDraft } from "../../core/edit/types.ts";
-import { nextMapHit, type MapHit } from "../../render/map.ts";
+import { nextMapHit, type MapHit, type MapView } from "../../render/map.ts";
 import { errorText, type Issue, type Point } from "../types.ts";
 import * as session from "./session.svelte.ts";
 
@@ -68,34 +68,41 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
 
     function beginPan(ev: PointerEvent, screen: Point, click?: () => void) {
         ev.preventDefault();
+        editor.hoverSelection();
         editor.gesture = { pan: true, middle: ev.button === 1, screen, center: map.center.slice(), pointer: ev.pointerId, click };
     }
 
-    function pick(screen: Point, edit = false): MapHit | { issues: Issue[] } | undefined {
+    function pick(screen: Point, mode?: "edit" | "menu"): MapHit | { issues: Issue[] } | undefined {
         const view = editor.mapView!, control = map.selectedControl(view, screen);
-        if (edit && control) return control;
-        const top = map.objectHits(view, screen, edit).next().value as MapHit | undefined;
+        if (mode && control) return control;
+        const top = map.objectHits(view, screen, mode ? "edit" : "select").next().value;
         if (top?.selection.kind === "mark") return top;
         if (control) return control;
-        if (edit) {
-            const body = map.selectedBody(view, screen, true);
-            return body?.control ? body : top;
-        }
+        if (mode === "edit") return top;
         const issues = map.issueHits(view, screen);
         return issues.length ? { issues } : top;
     }
     function alternateHit(screen: Point) {
         const view = editor.mapView!;
-        return nextMapHit(map.objectHits(view, screen), view.selection, view.geometry);
+        return nextMapHit(map.objectHits(view, screen, "cycle"), view.selection, view.geometry, view.outline);
+    }
+    function clickControl(view: MapView, hit: MapHit, alternate: boolean) {
+        const c = hit.control;
+        if (c && c.path < 0 && (alternate || view.selection?.id !== hit.selection.id ||
+            view.geometry?.kind !== "path" || view.geometry.index !== c.path)) return { ...c, role: "curve" as const };
+        return c;
     }
     function updateHover() {
         hoverFrame = 0;
         const view = editor.mapView;
         if (!view || !hoverPoint || editor.tool !== "select" || editor.gesture || editor.busy) return;
-        const hit = hoverAlternate ? alternateHit(hoverPoint) :
-            map.selectedControl(view, hoverPoint) ?? map.selectedBody(view, hoverPoint) ?? pick(hoverPoint);
-        if (!hit || "issues" in hit) editor.hoverSelection();
-        else editor.hoverSelection(hit.selection, hit.control && parameterTarget(hit.control));
+        const clicked = hoverAlternate ? alternateHit(hoverPoint) : pick(hoverPoint);
+        if (clicked && "issues" in clicked) return editor.hoverSelection();
+        const part = clicked && clickControl(view, clicked, hoverAlternate);
+        const hit = hoverAlternate || part && part.role !== "body" ? clicked :
+            map.selectedControl(view, hoverPoint) ?? map.selectedBody(view, hoverPoint) ?? clicked;
+        if (hit) editor.hoverSelection(hit.selection, hit === clicked ? part : hit.control);
+        else editor.hoverSelection();
     }
     function hoverModifier(ev: KeyboardEvent) {
         if (ev.key !== "Alt" || hoverAlternate === ev.altKey) return;
@@ -105,8 +112,8 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
     canvas.addEventListener("contextmenu", ev => {
         ev.preventDefault();
         if (!editor.project || editor.busy || editor.geoDraft) return;
-        const hit = pick(localPoint(ev), true);
         editor.menu = null;
+        const hit = pick(localPoint(ev), "menu");
         if (hit && !("issues" in hit)) editor.openMenu(hit.selection, ev.clientX, ev.clientY, true, hit.control);
     }, { signal });
     function beginPointer(ev: PointerEvent) {
@@ -134,20 +141,18 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             return;
         }
     }
-    function selectHit(hit: MapHit, preserveBody = false) {
-        const { selection, control } = hit;
-        if (preserveBody && control?.role === "body" && editor.selection?.kind === "geoNode" && editor.selection.id === selection.id) return;
+    function selectHit(hit: MapHit, control = hit.control, dragging = false) {
+        const { selection } = hit;
+        if (dragging && (control?.role === "body" || control?.role === "outline") &&
+            editor.selection?.kind === "geoNode" && editor.selection.id === selection.id) return;
         editor.select(selection);
-        if (!control) return;
-        if (parameterTarget(control)) editor.focusFunctionGeometry(geoAt(editor.project.design, selection.id), control);
-        else if (control.role === "vertex") editor.pickVertex(control);
-        else if (control.role === "body") editor.focusGeometry();
+        if (control) editor.selectControl(control);
     }
     function selectClick(screen: Point, alternate: boolean) {
         const hit = alternate ? alternateHit(screen) : pick(screen);
         if (!hit) editor.select(null);
         else if ("issues" in hit) editor.pickMarkers(hit.issues);
-        else selectHit(hit);
+        else selectHit(hit, clickControl(editor.mapView!, hit, alternate));
         if (hoverPoint) hoverFrame ||= requestAnimationFrame(updateHover);
     }
     function beginSelectionDrag(down: PointerEvent, screen: Point) {
@@ -159,10 +164,11 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             editor.gesture = { label: { kind, id }, offset: [point[0] - p[0], point[1] - p[1]], screen, pointer };
             return;
         }
-        const hit = control ?? map.selectedBody(view, screen) ?? map.objectHits(view, screen).next().value as MapHit | undefined;
+        const hit = control ?? map.selectedBody(view, screen) ?? map.objectHits(view, screen, "select").next().value;
         if (!hit) return;
-        selectHit(hit, true);
-        const { selection, control: c, handle: h } = hit;
+        const { selection, control: part, handle: h } = hit;
+        const c = part?.role === "vertex" && part.path < 0 && hit !== control ? { ...part, role: "curve" as const } : part;
+        selectHit(hit, c?.role === "segment" && c.path < 0 ? { ...c, role: "curve" } : c, true);
         if (c) {
             const geo = geoAt(editor.project.design, selection.id);
             if (c.role !== "body" || geo.construction.type === "free")
@@ -233,7 +239,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         }
         if (ev.altKey || editor.tool !== "select") return;
         ev.preventDefault();
-        const hit = pick(localPoint(ev), true);
+        const hit = pick(localPoint(ev), "edit");
         if (hit && !("issues" in hit) && hit.control) {
             const { control: c, selection: { id } } = hit;
             if (c.role === "segment") editor.insertNode(id, c);
@@ -265,7 +271,10 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         if (press?.selectFrom && press.down.pointerId === ev.pointerId && !press.up && !press.dragged) {
             if (distance(screen, press.selectFrom) <= dragThreshold) return;
             press.dragged = true;
-            if (editor.tool === "select" && !editor.busy) beginSelectionDrag(press.down, press.selectFrom);
+            if (editor.tool === "select" && !editor.busy) {
+                editor.hoverSelection();
+                beginSelectionDrag(press.down, press.selectFrom);
+            }
         }
         if (!editor.gesture) {
             canvas.style.cursor = editor.tool === "select" ? "default" : "crosshair";
@@ -299,14 +308,14 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         if ("geo" in editor.gesture) {
             const { geo, control } = editor.gesture, copy = structuredClone(geo);
             let at = p;
-            if (control.role === "segment") {
+            if (control.role === "segment" || control.role === "curve") {
                 const start = map.world(...editor.gesture.screen);
                 at = [control.point[0] + p[0] - start[0], control.point[1] + p[1] - start[1]];
             }
             else if (control.role === "vertex" && !ev.ctrlKey)
                 at = snapPoint(editor.mapProject.terrain, editor.mapProject.design, p, map.scale, geo.id);
             editControl(copy, control, at, ev.altKey);
-            editor.dragCurve = control.path < 0 ? control.path : undefined;
+            editor.dragCurve = control.path < 0 || control.role === "outline" ? control.path : undefined;
             editor.dragNode = copy; return;
         }
         if ("section" in editor.gesture) {

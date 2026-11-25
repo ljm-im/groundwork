@@ -4,7 +4,7 @@ import { flattenPath, pathBezier, segmentType, splitBezier } from "../../src/cor
 import { geometryPath, type GeoControl, type GeometryTarget } from "../../src/core/edit/geoControls.ts";
 import { defaultFunction } from "../../src/core/edit/geoNodes.ts";
 import { type Curve, type Point, type Section } from "../../src/core/design/v5.ts";
-import { distance, mixPoint, nearest } from "../../src/core/math/geometry.ts";
+import { distance, mixPoint } from "../../src/core/math/geometry.ts";
 import { layer, openCurve, rect, syntheticDesign } from "../scenarios.ts";
 import { startChromium } from "./chromium.ts";
 import { installPickers } from "./filePickers.ts";
@@ -18,41 +18,19 @@ interface Frame {
     origin: Point; scale: number; selected?: string; geometry?: GeometryTarget; vertex?: GeoControl;
     ridgePreview?: Curve; section?: Section["points"]; height?: number;
 }
-interface Probe { frame?: Frame; strokes: Point[][] }
+interface Probe { frame?: Frame }
 declare global {
     interface Window { curveEditingProbe: Probe }
 }
 
 async function observeCurveEditing() {
-    const probe: Probe = { strokes: [] };
+    const probe: Probe = {};
     window.curveEditingProbe = probe;
-    const mapModule = "/src/render/map.ts", paletteModule = "/src/render/palette.ts", terrainModule = "/src/core/design/results.ts";
+    const mapModule = "/src/render/map.ts", terrainModule = "/src/core/design/results.ts";
     const { ProjectMap } = await import(mapModule) as typeof import("../../src/render/map.ts");
-    const { mapColors } = await import(paletteModule) as typeof import("../../src/render/palette.ts");
-    const colors = mapColors[document.documentElement.dataset.theme === "dark" ? "dark" : "light"];
     const { sampleField } = await import(terrainModule) as typeof import("../../src/core/design/results.ts");
-    const draw = ProjectMap.prototype.draw, ctx = CanvasRenderingContext2D.prototype;
-    const { beginPath, moveTo, lineTo, stroke } = ctx;
-    let points: Point[] = [];
-    ctx.beginPath = function () {
-        if (this.canvas.id === "map") points = [];
-        beginPath.call(this);
-    };
-    ctx.moveTo = function (x, y) {
-        if (this.canvas.id === "map") points.push([x, y]);
-        moveTo.call(this, x, y);
-    };
-    ctx.lineTo = function (x, y) {
-        if (this.canvas.id === "map") points.push([x, y]);
-        lineTo.call(this, x, y);
-    };
-    ctx.stroke = function (...args: [Path2D?]) {
-        if (this.canvas.id === "map" && this.strokeStyle === colors.parameterGeometry && points.length > 1)
-            probe.strokes.push(points.slice());
-        Reflect.apply(stroke, this, args);
-    };
+    const draw = ProjectMap.prototype.draw;
     ProjectMap.prototype.draw = function (view, theme) {
-        probe.strokes = [];
         draw.call(this, view, theme);
         const canvas = document.querySelector("#map")!.getBoundingClientRect(), [x, y] = this.screen([0, 0]);
         const dragged = view.dragNode?.function;
@@ -210,7 +188,8 @@ async function checkDrawnCurves(url: string) {
             const box = row?.getBoundingClientRect();
             return row && box && box.top >= panel.top && box.bottom <= panel.bottom;
         }, third);
-        assert.equal(await evaluate(s => !!document.querySelector(s + " [aria-label=后一段]"), third), false);
+        for (const row of [second, third])
+            assert.equal(await evaluate(s => !!document.querySelector(s + " [aria-label=线段类型]"), row), false);
         await tap(line.nodes[1].p);
         const priorHeight = (await frame()).height!;
         await click(second + " button.numeric-face[aria-label=高度]");
@@ -221,18 +200,15 @@ async function checkDrawnCurves(url: string) {
         assert.equal(line.nodes[1].h, 14);
         assert((await frame()).height! > priorHeight + 2);
 
-        console.log("insertion preserves the rendered ridge and deletion stops at two nodes");
-        const strokes = () => evaluate(() => window.curveEditingProbe.strokes);
-        const oldStroke = (await strokes())[0];
-        assert(oldStroke.length > 3);
+        console.log("insertion keeps ridge endpoint modes and deletion stops at two nodes");
         const insert = splitBezier(pathBezier(line, 0), .5)[0][3];
         await tap(insert, "right"); await click(".context-menu [data-option=insert-node]");
         await saved(); await paint();
         line = await ridge();
         assert.equal(line.nodes.length, 4);
-        const newStroke = (await strokes())[0];
-        for (const [a, b] of [[oldStroke, newStroke], [newStroke, oldStroke]])
-            assert(a.every(p => nearest(...p, b).distance < 1), "Rendered samples stay within a pixel of the same ridge");
+        assert.deepEqual(line.nodes.map(n => n.mode), ["auto", "auto", "manual", "auto"]);
+        assert(distance(line.nodes[1].p, insert) < .25);
+        assert.equal((await frame()).vertex?.index, 1);
         await tap(line.nodes[1].p);
         await click(nodeRow(line.nodes[1].id) + " [aria-label=删除节点]"); await saved();
         line = await ridge();
@@ -282,35 +258,35 @@ export async function checkCurveEditing(url: string) {
         console.log("boundary controls, confirmation and clipped menu");
         await panel("terrain"); await click(region); await property("region"); await fit();
         assert.doesNotMatch(await text("#properties"), /构造方式/);
-        assert.match(await text("button[aria-label=边界线]"), /闭合曲线（4 个节点）/);
-        const deleteBoundary = "button[aria-label=\"删除边界\"]";
+        assert.match(await text("button[aria-label=值]"), /闭合曲线（4 个节点）/);
+        const deleteBoundary = "button[aria-label=\"删除轮廓\"]";
         assert.equal(await evaluate(s => document.querySelectorAll(s).length, deleteBoundary), 0);
         await screenshot("boundary-one");
-        await click("button[aria-label=添加边界]");
-        assert.equal(await evaluate(() => document.querySelector("button[aria-label=添加边界]")?.getAttribute("aria-pressed")), "true");
-        assert.equal(await text(status + " strong"), "给“台地 A”添加边界");
+        await click("button[aria-label=添加轮廓]");
+        assert.equal(await evaluate(() => document.querySelector("button[aria-label=添加轮廓]")?.getAttribute("aria-pressed")), "true");
+        assert.equal(await text(status + " strong"), "给“台地 A”添加轮廓");
         for (const p of [[-32, 4], [-28, 4], [-30, 9]] as Point[]) await tap(await at(p));
         await key("Enter"); await saved();
         assert.equal(await evaluate(s => document.querySelectorAll(s).length, deleteBoundary), 2);
         const boundaries = await evaluate(() => [...document.querySelectorAll(".subitem-toggle")].map(el => el.textContent?.trim()));
-        assert.deepEqual(boundaries, ["边界 1", "边界 2"]);
+        assert.deepEqual(boundaries, ["轮廓 1", "轮廓 2"]);
         const row2 = ".subitem:has(> .subitem-heading " + deleteBoundary + "):nth-of-type(2)";
         const boundary2 = await evaluate(() => [...document.querySelectorAll(".subitem-toggle")]
-            .find(el => el.textContent?.trim() === "边界 2")?.getAttribute("aria-expanded"));
+            .find(el => el.textContent?.trim() === "轮廓 2")?.getAttribute("aria-expanded"));
         assert.equal(boundary2, "true");
         await tap(await at([-32, 4]));
         const selectedNode = ".subitem[data-curve-node]";
         await wait(s => !!document.querySelector(s), selectedNode);
         assert.equal(await evaluate(s => document.querySelector(s)?.parentElement?.closest(".subitem")
-            ?.querySelector(".subitem-toggle")?.textContent?.trim(), selectedNode), "边界 2");
+            ?.querySelector(".subitem-toggle")?.textContent?.trim(), selectedNode), "轮廓 2");
         assert.equal(await evaluate(() => [...document.querySelectorAll("#properties h3")].some(h => h.textContent?.trim() === "节点")), false);
         const [rowX, rowY] = await point(row2);
         await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: rowX, y: rowY });
         await wait(s => getComputedStyle(document.querySelector(s)!).opacity === "1", row2 + " " + deleteBoundary);
         await screenshot("boundaries-two");
         await click(row2 + " " + deleteBoundary);
-        assert.equal(await text("#remove-dialog h2"), "删除这条边界？");
-        assert.equal(await text("#remove-dialog button[value=remove]"), "删除边界");
+        assert.equal(await text("#remove-dialog h2"), "删除这条轮廓？");
+        assert.equal(await text("#remove-dialog button[value=remove]"), "删除轮廓");
         await click("#remove-dialog button[value=remove]");
         await wait(s => !document.querySelector(s), deleteBoundary);
         await saved();
@@ -339,11 +315,11 @@ export async function checkCurveEditing(url: string) {
         assert.equal(await evaluate(() => document.querySelector("[data-geo-node=D]")?.getAttribute("aria-pressed")), "true");
         await panel("layers"); await click("input[data-layer=geoNodes]");
         await tap(await at(ridge));
-        const ridgeButton = "button.geometry-box[aria-label=\"山脊线\"][aria-pressed=\"true\"]";
-        await wait(s => {
-            const button = document.querySelector(s)?.getBoundingClientRect(), panel = document.querySelector("#property-content")!.getBoundingClientRect();
-            return !!button && button.top >= panel.top && button.bottom <= panel.bottom;
-        }, ridgeButton);
+        await wait(() => {
+            const row = document.querySelector("button.geometry-box[aria-label=山脊线][aria-pressed=true]")?.getBoundingClientRect();
+            const panel = document.querySelector("#property-content")!.getBoundingClientRect();
+            return !!row && row.top >= panel.top && row.bottom <= panel.bottom && !document.querySelector("[data-curve-segment]");
+        });
         assert.equal(await evaluate(() => document.querySelector("[data-geo-node=C]")?.getAttribute("aria-pressed")), "true");
         assert.equal(await evaluate(() => document.querySelector("[data-property-tab=function]")?.getAttribute("aria-pressed")), "true");
         assert.deepEqual(await evaluate(() => [...document.querySelectorAll(".subitem-toggle[aria-expanded=true]")].map(el => el.textContent?.trim())), ["山脊 3"]);
@@ -351,6 +327,7 @@ export async function checkCurveEditing(url: string) {
         const heightRow = "[data-parameter$=\".ridges.2.line.nodes.1.h\"]";
         await wait(s => !!document.querySelector(s), heightRow);
         await click("[data-geo-node=A]");
+        await tap(await at(vertex));
         await drag(await at(vertex), await at([-4, 32.3])); await saved();
         const mountain = (await authored()).geoNodes.find(n => n.id === "C")!.function;
         assert(mountain.type === "mountain" && distance(mountain.ridges[2].line.nodes[1].p, [-4, 32.3]) < .3);
@@ -378,22 +355,22 @@ export async function checkCurveEditing(url: string) {
         await click("[data-property-tab=region]");
         const boundaryTwo = ".subitem:has(> .subitem-heading .subitem-toggle span)";
         assert.deepEqual(await evaluate(s => [...document.querySelectorAll(s + " > .subitem-heading .subitem-toggle")]
-            .map(el => [el.textContent?.trim(), el.getAttribute("aria-expanded")]), boundaryTwo), [["边界 1", "false"], ["边界 2", "false"]]);
+            .map(el => [el.textContent?.trim(), el.getAttribute("aria-expanded")]), boundaryTwo), [["轮廓 1", "false"], ["轮廓 2", "false"]]);
         await tap([29, 37]); await tap([33, 31]);
         assert.deepEqual(await nodeTitles(), ["节点 1"]);
         assert(await evaluate(() => {
             const nested = document.querySelector("[data-curve-node]")?.parentElement?.closest(".subitem");
-            return nested?.querySelector(".subitem-toggle")?.textContent?.trim() === "边界 2" &&
+            return nested?.querySelector(".subitem-toggle")?.textContent?.trim() === "轮廓 2" &&
                 ![...document.querySelectorAll("#property-content h3")].some(h => h.textContent === "节点");
         }));
         await click("[aria-label=上一个节点]"); await paint(); assert.deepEqual(await nodeTitles(), ["节点 4"]);
         await key("Escape"); await paint();
         assert.deepEqual(await nodeTitles(), []);
         assert(await evaluate(() => [...document.querySelectorAll(".subitem-toggle")].some(el =>
-            el.textContent?.trim() === "边界 2" && el.getAttribute("aria-expanded") === "true")));
+            el.textContent?.trim() === "轮廓 2" && el.getAttribute("aria-expanded") === "true")));
         await click("[data-geo-node=B]");
-        assert.equal(await text("#property-content .subitem-toggle"), "边界 1");
-        assert(await evaluate(() => !document.querySelector("#property-content [aria-label=删除边界]")));
+        assert.equal(await text("#property-content .subitem-toggle"), "轮廓 1");
+        assert(await evaluate(() => !document.querySelector("#property-content [aria-label=删除轮廓]")));
 
         await tap([-35, 25]);
         const line = await curve();
@@ -417,7 +394,7 @@ export async function checkCurveEditing(url: string) {
         await undo();
 
         await tap([-35, 25], 0, "right");
-        assert.match(await text(".context-menu"), /整条曲线[\s\S]*全部节点改为自动平滑[\s\S]*全部线段改为直线/);
+        assert.match(await text(".context-menu"), /曲线[\s\S]*全部节点改为自动平滑[\s\S]*全部线段改为直线/);
         await evaluate(() => window.curveMapProbe.editor!.toast = null);
         await screenshot("whole-curve-menu");
         const beforeBatch = await disk(), straight = ".context-menu [data-option=curve-line]";

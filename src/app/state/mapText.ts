@@ -38,7 +38,7 @@ export function drawingStatus(mode: Exclude<Tool, "select">, name: string, owner
         sector: ["新建地件（扇形）", "单击圆心和圆周，再单击终止角", false],
         strip: owner ? ["重选" + label + "的边", "单击起止节点，Tab 交换，回车确认", true] :
             ["新建地件（条带）", names.length ? "沿" + names.map(name => "“" + name + "”").join("、") + "，回车确认" : "单击要沿的地件", true],
-        addPath: ["给" + label + "添加边界", pen, true],
+        addPath: ["给" + label + "添加轮廓", pen, true],
         shore: ["重画" + label + "的海岸线", pen, true],
         ridge: [member === undefined ? "给" + label + "添加山脊" : "重画" + label + "的山脊线", lineEnd, true],
         peak: [member === undefined ? "给" + label + "添加山峰" : "移动" + label + "的山峰", point, false],

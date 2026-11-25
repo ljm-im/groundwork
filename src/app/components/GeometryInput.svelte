@@ -1,4 +1,4 @@
-<FieldRow {label} forInput={id}>
+<FieldRow {label} forInput={id} {onmouseenter} {onmouseleave}>
     <div class="geometry-control">
         <button {id} class="input-box geometry-box" aria-label={label} aria-pressed={active} data-tip={summary} {onclick}>
             <Icon name={icon} />
@@ -25,8 +25,8 @@
     import Icon, { type IconName } from "./Icon.svelte";
     import FieldRow from "./FieldRow.svelte";
     const id = $props.id();
-    let { label, icon = "point", count = 1, summary, active, onclick, redraw, redrawing = false }: {
+    let { label, icon = "point", count = 1, summary, active, onclick, redraw, redrawing = false, onmouseenter, onmouseleave }: {
         label: string; icon?: IconName; count?: number; summary?: string; active: boolean; onclick: () => void;
-        redraw?: () => void; redrawing?: boolean;
+        redraw?: () => void; redrawing?: boolean; onmouseenter?: () => void; onmouseleave?: () => void;
     } = $props();
 </script>

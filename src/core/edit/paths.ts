@@ -1,7 +1,7 @@
 import { type ClosedCurve, type Curve, type CurveNode, type GeoNode, type Point } from "../design/v5.ts";
 import { advance, bearing, distance, mixPoint, projection } from "../math/geometry.ts";
-import { arcGeometry, autoHandle, defaultArcBulge, flattenBezier, handleOffset, hasHandleSide, neighbor, pathBezier, pathHandle,
-    segmentType, splitBezier, type Bezier, type Segment, type SegmentType } from "../design/path.ts";
+import { arcGeometry, autoHandle, defaultArcBulge, flattenBezier, flattenSegment, handleOffset, hasHandleSide, neighbor, pathBezier,
+    pathHandle, segmentType, splitBezier, type Bezier, type Segment, type SegmentType } from "../design/path.ts";
 
 export type ShapeTool = "pen" | "rect" | "circle" | "sector";
 type Side = "in" | "out";
@@ -175,11 +175,15 @@ function nearestBezierParameter(curve: Bezier, at: Point) {
     return (low + high) / 2;
 }
 
+function newNodeMode(a: CurveNode, b: CurveNode) {
+    return a.mode === b.mode ? a.mode : "auto";
+}
+
 export function insertPathNode(path: Curve, i: number, at: Point, id: string, beforeInsert?: () => void) {
     const j = neighbor(path, i, 1);
     if (j === undefined) return;
     const a = path.nodes[i], b = path.nodes[j], type = segmentType(path, i);
-    const v: CurveNode = { id, p: at, mode: "corner" };
+    const v: CurveNode = { id, p: at, mode: newNodeMode(a, b) };
     let change: () => void = () => {};
     if (type === "arc") {
         const { cx, cy, radius, start, angle } = arcGeometry(a.p, b.p, a.bulge!);
@@ -194,22 +198,78 @@ export function insertPathNode(path: Curve, i: number, at: Point, id: string, be
         const t = projection(...at, a.p, b.p);
         if (t <= 1e-8 || t >= 1 - 1e-8) return;
         v.p = mixPoint(a.p, b.p, t);
+        if (v.mode === "manual") {
+            v.in = [0, 0];
+            v.out = [0, 0];
+        }
     }
     else {
         const curve = pathBezier(path, i), t = nearestBezierParameter(curve, at);
         if (t <= 1e-8 || t >= 1 - 1e-8) return;
         const [[, out, incoming, mid], [, outgoing, into]] = splitBezier(curve, t);
-        Object.assign(v, { p: mid, mode: "manual", in: offset(incoming, mid), out: offset(outgoing, mid) });
+        v.p = mid;
+        if (v.mode !== "auto") {
+            v.in = offset(incoming, mid);
+            v.out = offset(outgoing, mid);
+        }
         change = () => {
-            a.out = offset(out, a.p);
-            b.in = offset(into, b.p);
+            if (a.mode !== "auto") a.out = offset(out, a.p);
+            if (b.mode !== "auto") b.in = offset(into, b.p);
         };
     }
     beforeInsert?.();
-    for (const k of [i, j]) if (path.nodes[k].mode === "auto") setNodeMode(path, k, "corner");
     change();
     path.nodes.splice(i + 1, 0, v);
+    if (v.mode === "manual" && !canSetManual(path, i + 1)) v.mode = "corner";
     return v;
+}
+
+export function removePathNode(path: Curve, index: number) {
+    path.nodes.splice(index, 1);
+    cleanHandles(path);
+}
+
+export function segmentRemovalIndex(path: Curve, index: number) {
+    if (!canRemoveNode(path) || !path.nodes[index]) return;
+    const next = neighbor(path, index, 1);
+    if (path.closed || next === path.nodes.length - 1) return next;
+    if (index === 0) return 0;
+}
+
+function segmentMidpoint(path: Curve, index: number, next: number): Point {
+    const a = path.nodes[index], b = path.nodes[next];
+    if (a.bulge !== undefined) return arcHandle(a.p, b.p, a.bulge);
+    if (segmentType(path, index) === "line") return mixPoint(a.p, b.p, .5);
+    const [start, out, incoming, end] = pathBezier(path, index);
+    const tolerance = Math.max(distance(start, out), distance(out, incoming), distance(incoming, end)) / 65536;
+    const edges = flattenSegment(path, index, tolerance);
+    const lengths = edges.map(({ a, b }) => distance(a, b));
+    let remaining = lengths.reduce((sum, length) => sum + length, 0) / 2;
+    for (const [i, length] of lengths.entries()) {
+        if (length && remaining <= length) return mixPoint(edges[i].a, edges[i].b, remaining / length);
+        remaining -= length;
+    }
+    return b.p;
+}
+
+export function removePathSegment(path: Curve, index: number) {
+    const removed = segmentRemovalIndex(path, index);
+    if (removed === undefined) return;
+    if (!path.closed) {
+        removePathNode(path, removed);
+        return removed === 0 ? path.nodes[0] : path.nodes.at(-1);
+    }
+
+    const a = path.nodes[index], b = path.nodes[removed], mode = newNodeMode(a, b);
+    a.p = segmentMidpoint(path, index, removed);
+    a.mode = "corner";
+    if (b.out === undefined) delete a.out;
+    else a.out = b.out;
+    if (b.bulge === undefined) delete a.bulge;
+    else a.bulge = b.bulge;
+    removePathNode(path, removed);
+    setNodeMode(path, path.nodes.indexOf(a), mode);
+    return a;
 }
 
 export function nearestSegment(edges: Segment[], at: Point) {

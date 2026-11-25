@@ -3,8 +3,10 @@ import { parseDesign, serializeDesign } from "../design/model.ts";
 import { type Address } from "../design/address.ts";
 
 import { type Selection } from "./types.ts";
+import { type GeometrySelection } from "./geoControls.ts";
 
-interface EditStep { metadata?: Address; group?: symbol; before?: Selection | null; after?: Selection | null }
+export type EditSelection = Selection & { part?: GeometrySelection };
+interface EditStep { metadata?: Address; group?: symbol; before?: EditSelection | null; after?: EditSelection | null }
 
 export class History {
     private edits: EditStep[] = [];

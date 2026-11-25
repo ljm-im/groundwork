@@ -1,3 +1,5 @@
+<svelte:window oncontextmenu={contextMenu} />
+
 <TopBar {editor} {appearance} {chooseAppearance} />
 <Workspace {editor} {theme} />
 <Dialogs {editor} />
@@ -18,6 +20,14 @@
     let systemDark = $state(systemTheme.matches);
     let theme = $derived(resolveTheme(appearance, systemDark));
 
+    function contextMenu(event: MouseEvent) {
+        const target = event.target;
+        if (target instanceof HTMLElement && target.isContentEditable) return;
+        if (target instanceof HTMLTextAreaElement && !target.disabled && !target.readOnly) return;
+        if (target instanceof HTMLInputElement && !target.disabled && !target.readOnly &&
+            ["text", "search", "email", "url", "tel", "password", "number"].includes(target.type)) return;
+        event.preventDefault();
+    }
     function chooseAppearance(value: Appearance) {
         appearance = value;
         saveAppearance(value);

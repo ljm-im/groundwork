@@ -27,7 +27,7 @@ export function validateCurves(n: GeoNode, index: number) {
         for (const [i, node] of p.nodes.entries()) {
             const pos = [...nodesAt, i], field = (name: string) => at([...pos, name]);
             check(record(node), "无效", at(pos));
-            rejectRetired(node, ["next"], at(pos));
+            rejectRetired(node, ["next", "autoIn", "autoOut"], at(pos));
             check(typeof node.id === "string" && node.id, "无效", field("id"));
             check(!ids.has(node.id), "重复“" + node.id + "”", field("id"));
             ids.add(node.id);
