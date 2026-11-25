@@ -14,6 +14,7 @@ import { checkAppearance } from "./appearance.ts";
 import { checkRound26 } from "./round26.ts";
 import { checkRound27 } from "./round27.ts";
 import { checkRound28 } from "./round28.ts";
+import { checkRound33 } from "./round33.ts";
 
 test("Editor interactions in Chromium", async t => {
     const server = await createServer({ configFile: "configs/vite.config.ts", server: { host: "127.0.0.1", port: 0 } });
@@ -25,6 +26,7 @@ test("Editor interactions in Chromium", async t => {
         await t.test("Trial feedback fixes in Chromium", () => checkRound26(url));
         await t.test("Unified curves in Chromium", () => checkRound27(url));
         await t.test("Deferred selection, pen modes and map overlays in Chromium", () => checkRound28(url));
+        await t.test("Coarse numeric drag previews in Chromium", () => checkRound33(url));
     }
     finally {
         await server.close();

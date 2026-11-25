@@ -143,7 +143,7 @@
     import { onMount } from "svelte";
     import { displayReading } from "../../core/design/display.ts";
     import { type Theme } from "../../render/palette.ts";
-    import { drawingHint, positionText } from "../state/mapText.ts";
+    import { drawingHint, numberPreviewHint, positionText } from "../state/mapText.ts";
     import { attachController } from "../state/controller.ts";
     import { nodeModes } from "../state/inspector.ts";
     import * as session from "../state/session.svelte.ts";
@@ -153,7 +153,8 @@
     let { editor, theme }: { editor: session.Editor; theme: Theme } = $props();
     const penModes = [nodeModes[0], nodeModes[1]];
     let drawView = $derived(editor.mapView && { view: editor.mapView, theme });
-    let hint = $derived(drawingHint(editor.tool, editor.geoDraft, editor.drawing?.end));
+    let hint = $derived(editor.numberPreviewStep === undefined ? drawingHint(editor.tool, editor.geoDraft, editor.drawing?.end)
+        : numberPreviewHint(editor.numberPreviewStep));
     let position = $derived(positionText(editor.cursor, editor.project?.design.fields[editor.displayField]));
     let canvas: HTMLCanvasElement;
     let zoom = $state(1);
