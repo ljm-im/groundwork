@@ -1,5 +1,5 @@
 <section class="map-wrap" aria-label="全图平面图" data-busy={!!editor.busy} class:create={editor.tool !== "select"} class:empty={!editor.project}>
-    <canvas bind:this={canvas} id="map" tabindex={editor.project ? 0 : -1} aria-label="可编辑的地形平面图"></canvas>
+    <canvas bind:this={canvas} id="map" data-tip-proxy="mode-hint" tabindex={editor.project ? 0 : -1} aria-label="可编辑的地形平面图"></canvas>
     {#if !editor.project}
         <div class="empty-state">
             {#if !editor.files.supported}<div class="browser-required">需要 Chrome 或 Edge</div>{/if}
@@ -31,15 +31,15 @@
     {/if}
     {#if editor.project}
         <div class="map-reading">
-            <div class="zoom-tools map-chip">
+            <div class="zoom-tools map-chip" bind:this={zoomChip}>
                 <button class="icon-button" id="minus" aria-label="缩小" data-tip="缩小" onclick={() => editor.map.zoomAt(1 / 1.4)}><Icon name="minus" /></button>
                 <output id="zoom-value">{displayReading(zoom * 100, 1, "%")}</output>
                 <button class="icon-button" id="plus" aria-label="放大" data-tip="放大" onclick={() => editor.map.zoomAt(1.4)}><Icon name="plus" /></button>
                 <button class="icon-button" id="fit" aria-label="适应" data-tip="适应" onclick={() => editor.map.fit(editor.project.terrain)}><Icon name="fit" /></button>
             </div>
-            <output id="position" class="map-chip" hidden={!position}>{position}</output>
+            <output id="position" class="map-chip" bind:this={positionChip} hidden={!position}>{position}</output>
         </div>
-        <div id="mode-hint" class="map-chip" data-tip={hint}>{hint}</div>
+        <div id="mode-hint" class="map-chip" bind:this={hintChip} data-tip={hint}>{hint}</div>
     {/if}
     <Messages {editor} />
 </section>
@@ -79,16 +79,18 @@
             z-index: 1;
             border: 1px solid var(--border-region);
             border-radius: var(--radius-lg);
-            background: var(--bg-panel);
+            background: var(--bg-map-chip);
             box-shadow: var(--shadow-pop);
+            pointer-events: none;
         }
-        .map-reading { grid-area: 2 / 3 / 4 / 4; min-width: 0; display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-2); }
+        .map-reading { grid-area: 2 / 3 / 4 / 4; min-width: 0; display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-2); pointer-events: none; }
         .zoom-tools {
             display: flex;
             align-items: center;
             gap: var(--space-1);
             padding: var(--space-1);
         }
+        .zoom-tools button { pointer-events: auto; }
         .zoom-tools output { min-width: var(--row-h); font-size: var(--text-xs); text-align: center; }
         .drawing-status {
             position: absolute;
@@ -124,7 +126,7 @@
             text-overflow: ellipsis;
         }
         #mode-hint { grid-area: 3 / 1; justify-self: start; white-space: nowrap; }
-        #position { font-family: var(--font-coords); white-space: pre; pointer-events: none; }
+        #position { font-family: var(--font-coords); width: 40ch; white-space: pre; }
         #position[hidden] { display: block; visibility: hidden; }
         @container map-column (max-width: 680px) {
             .map-wrap {
@@ -142,6 +144,7 @@
 <script lang="ts">
     import { onMount } from "svelte";
     import { displayReading } from "../../core/design/display.ts";
+    import { type Box } from "../../core/math/geometry.ts";
     import { type Theme } from "../../render/palette.ts";
     import { drawingHint, positionText } from "../state/mapText.ts";
     import { attachController } from "../state/controller.ts";
@@ -156,12 +159,19 @@
     let hint = $derived(drawingHint(editor.tool, editor.geoDraft, editor.drawing?.end));
     let position = $derived(positionText(editor.cursor, editor.project?.design.fields[editor.displayField]));
     let canvas: HTMLCanvasElement;
+    let hintChip = $state<HTMLDivElement>(), positionChip = $state<HTMLOutputElement>(), zoomChip = $state<HTMLDivElement>();
+    let chips = $derived([hintChip, positionChip, zoomChip].filter(el => el !== undefined));
     let zoom = $state(1);
     let frame = 0;
     function draw() {
         frame = 0;
         if (!drawView) return;
         const { view, theme } = drawView;
+        const { left: x, top: y } = canvas.getBoundingClientRect();
+        editor.map.markObstacles = chips.map(chip => {
+            const { left, top, right, bottom } = chip.getBoundingClientRect();
+            return [left - x, top - y, right - x, bottom - y] satisfies Box;
+        });
         editor.map.draw(view, theme);
         if (view.issueStart !== undefined && performance.now() - view.issueStart < 1500) requestDraw();
     }
@@ -170,6 +180,12 @@
     }
     $effect(() => {
         if (drawView) requestDraw();
+    });
+    $effect(() => {
+        if (!chips.length) return;
+        const observer = new ResizeObserver(requestDraw);
+        for (const chip of chips) observer.observe(chip);
+        return () => observer.disconnect();
     });
     onMount(() => {
         editor.attach(canvas, () => {

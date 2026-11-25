@@ -764,13 +764,6 @@ export class Editor {
         else if (kind === "mark") {
             const mark = this.project.resolved.marks.find(m => m.id === id)!;
             if (mark.follow === "map") this.map.revealMark(mark);
-            else {
-                const point = this.map.visibleMarkPoint(mark);
-                if (point[0] !== mark.point[0] || point[1] !== mark.point[1])
-                    return this.edit(d => {
-                        d.marks.find(m => m.id === id)!.point = point;
-                    });
-            }
         }
     }
     private scrollToIssues(issues: Issue[]) {
@@ -802,10 +795,13 @@ export class Editor {
     }
     addMark(kind: Mark["kind"], point: Point) {
         return this.edit(d => {
-            const id = nextId(d.marks.map(m => m.id), "mark-"), p: Point = [+point[0].toFixed(2), +point[1].toFixed(2)];
+            const id = nextId(d.marks.map(m => m.id), "mark-");
             const follow = defaultFollow(kind);
-            d.marks.push(kind === "scale" ? { id, kind, label: "比例尺", point: p, follow, length: markParameters.scale.default }
-                : { id, kind, label: "文字标记 " + id.slice(5), point: p, follow });
+            const mark: Mark<number> = kind === "scale" ? { id, kind, label: "比例尺", point, follow }
+                : { id, kind, label: "文字标记 " + id.slice(5), point, follow };
+            const [x, y] = follow === "screen" ? this.map.visibleMarkPoint(mark) : point;
+            const p: Point = [+x.toFixed(2), +y.toFixed(2)];
+            d.marks.push({ ...mark, point: p, ...(mark.kind === "scale" && { length: markParameters.scale.default }) });
             return { kind: "mark", id };
         });
     }
@@ -814,7 +810,8 @@ export class Editor {
             const mark = d.marks.find(m => m.id === id)!;
             if (mark.follow === follow) return;
             const resolved = this.project.resolved.marks.find(m => m.id === id)!;
-            mark.point = this.map.markCoordinate(this.map.visibleMarkPoint(resolved), follow);
+            const point = this.map.markCoordinate(this.map.visibleMarkPoint(resolved), follow);
+            mark.point = follow === "screen" ? this.map.visibleMarkPoint({ ...resolved, follow, point }) : point;
             mark.follow = follow;
         });
     }
@@ -823,6 +820,10 @@ export class Editor {
             const copy = structuredClone(d.marks.find(m => m.id === id)!);
             copy.id = nextId(d.marks.map(m => m.id), "mark-");
             copy.label += " 副本";
+            if (copy.follow === "screen") {
+                const mark = this.project.resolved.marks.find(m => m.id === id)!;
+                copy.point = this.map.visibleMarkPoint({ ...mark, label: copy.label });
+            }
             d.marks.push(copy);
             return { kind: "mark", id: copy.id };
         });

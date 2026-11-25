@@ -33,8 +33,15 @@
         function target(el: EventTarget | null) {
             return el instanceof Element ? el.closest<HTMLElement>("[data-tip]") : null;
         }
+        function proxy(e: PointerEvent) {
+            if (e.buttons || !(e.target instanceof HTMLElement) || !e.target.dataset.tipProxy) return null;
+            const hint = document.getElementById(e.target.dataset.tipProxy);
+            if (!hint || hint.scrollWidth <= hint.clientWidth) return null;
+            const { left, right, top, bottom } = hint.getBoundingClientRect();
+            return e.clientX >= left && e.clientX <= right && e.clientY >= top && e.clientY <= bottom ? hint : null;
+        }
         function hover(e: PointerEvent) {
-            const next = target(e.target);
+            const next = target(e.target) ?? proxy(e);
             if (next === owner) return;
             hide();
             if (!next?.dataset.tip || e.pointerType === "touch") return;
@@ -54,6 +61,9 @@
         }
         const controller = new AbortController(), options = { capture: true, signal: controller.signal };
         document.addEventListener("pointerover", hover, options); document.addEventListener("pointerout", leave, options);
+        document.addEventListener("pointermove", e => {
+            if (e.target instanceof HTMLElement && e.target.dataset.tipProxy) hover(e);
+        }, options);
         document.addEventListener("pointerdown", hide, options); document.addEventListener("scroll", hide, options);
         window.addEventListener("blur", hide, options);
         return () => {

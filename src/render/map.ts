@@ -163,9 +163,28 @@ export function hasSamples(terrain: Terrain) {
     return sampled;
 }
 
-export function clampMarkPoint([x, y]: Point, [left, top, right, bottom]: Box, width: number, height: number): Point {
+export function clampMarkPoint([x, y]: Point, [left, top, right, bottom]: Box, width: number, height: number, obstacles: readonly Box[] = []): Point {
     const fit = (value: number, low: number, high: number) => low <= high ? clamp(value, low, high) : (low + high) / 2;
-    return [fit(x, -left, width - right), fit(y, -top, height - bottom)];
+    const fitX = (v: number) => fit(v, -left, width - right), fitY = (v: number) => fit(v, -top, height - bottom);
+    let best: Point = [fitX(x), fitY(y)];
+    // Expand the obstacles by the mark's footprint so placement can compare anchor positions.
+    const blocked = obstacles.map(([l, t, r, b]): Box => [l - right, t - bottom, r - left, b - top]);
+    if (!blocked.some(([l, t, r, b]) => best[0] > l && best[0] < r && best[1] > t && best[1] < b)) return best;
+    const xs = [best[0], ...blocked.flatMap(([l, , r]) => [fitX(l), fitX(r)])];
+    const ys = [best[1], ...blocked.flatMap(([, t, , b]) => [fitY(t), fitY(b)])];
+    let leastCovered = Infinity, nearest = Infinity;
+    for (const a of xs) for (const b of ys) {
+        const covered = obstacles.reduce((area, [l, t, r, bottomEdge]) => area +
+            Math.max(0, Math.min(r, a + right) - Math.max(l, a + left)) *
+            Math.max(0, Math.min(bottomEdge, b + bottom) - Math.max(t, b + top)), 0);
+        const gap = (a - x) ** 2 + (b - y) ** 2;
+        if (covered < leastCovered || covered === leastCovered && gap < nearest) {
+            leastCovered = covered;
+            nearest = gap;
+            best = [a, b];
+        }
+    }
+    return best;
 }
 
 export class ProjectMap {
@@ -179,6 +198,7 @@ export class ProjectMap {
     declare dpr: number;
     private readonly cameraChanged: () => void;
 
+    markObstacles: Box[] = [];
     private markBoxes: { mark: Handle; box: Box }[] = [];
     private labelBoxes: LabelHit[] = [];
     private contourText?: { contours: ReturnType<typeof fieldContours>; camera: [number, number, number, number]; placed: ReturnType<typeof contourLabels> };
@@ -545,9 +565,9 @@ export class ProjectMap {
         ctx.restore();
         return { text, width, box: [-width / 2 - 5, -10, width / 2 + 5, 10] };
     }
-    visibleMarkPoint(mark: Mark<number>): Point {
-        if (mark.follow === "map") return this.screen(mark.point);
-        return clampMarkPoint(mark.point, this.markLayout(mark).box, this.width, this.height);
+    visibleMarkPoint(mark: Mark<number>, point = mark.point, box?: Box): Point {
+        if (mark.follow === "map") return this.markScreen({ point, follow: mark.follow });
+        return clampMarkPoint(point, box ?? this.markLayout(mark).box, this.width, this.height, this.markObstacles);
     }
     revealMark(mark: Mark<number>) {
         const { box, ruler = 0 } = this.markLayout(mark);
@@ -563,7 +583,7 @@ export class ProjectMap {
             const point = view.dragMark?.id === mark.id ? view.dragMark.point : mark.point;
             const { text, width, ruler, box } = this.markLayout(mark, ctx);
             const screen = mark.follow === "screen";
-            const [x, y] = screen ? clampMarkPoint(point, box, this.width, this.height) : this.markScreen({ point, follow: mark.follow });
+            const [x, y] = this.visibleMarkPoint(mark, point, box);
             const selected = view.selection?.kind === "mark" && view.selection.id === mark.id;
             const hovered = view.hovered?.kind === "mark" && view.hovered.id === mark.id;
             const handle: Handle = { kind: "mark", id: mark.id, role: "body", point: screen ? [x, y] : point };
