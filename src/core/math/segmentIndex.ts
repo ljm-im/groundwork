@@ -9,6 +9,10 @@ export interface IndexedSegment<T extends Segment> {
     denominator: number;
     length: number;
     padding: number;
+    left: number;
+    right: number;
+    bottom: number;
+    top: number;
 }
 type Metric<T extends Segment> = (x: number, y: number, entry: IndexedSegment<T>) => number;
 interface BucketRow<T extends Segment> {
@@ -36,13 +40,14 @@ export function indexSegments<T extends Segment>(segments: readonly T[], radius:
     const entries = segments.map((segment, order): IndexedSegment<T> => {
         const { a, b } = segment, dx = b[0] - a[0], dy = b[1] - a[1];
         const padding = 8 * Number.EPSILON * Math.max(1, radius, Math.abs(a[0]), Math.abs(a[1]), Math.abs(b[0]), Math.abs(b[1]));
-        return { segment, order, dx, dy, denominator: dx * dx + dy * dy || 1, length: Math.hypot(dx, dy), padding };
+        const reach = radius + padding;
+        return { segment, order, dx, dy, denominator: dx * dx + dy * dy || 1, length: Math.hypot(dx, dy), padding,
+            left: Math.min(a[0], b[0]) - reach, right: Math.max(a[0], b[0]) + reach,
+            bottom: Math.min(a[1], b[1]) - reach, top: Math.max(a[1], b[1]) + reach };
     });
 
     for (const entry of entries) {
-        const { segment: { a, b }, padding } = entry, reach = radius + padding;
-        const left = bin(Math.min(a[0], b[0]) - reach), right = bin(Math.max(a[0], b[0]) + reach);
-        const bottom = bin(Math.min(a[1], b[1]) - reach), top = bin(Math.max(a[1], b[1]) + reach);
+        const left = bin(entry.left), right = bin(entry.right), bottom = bin(entry.bottom), top = bin(entry.top);
         // Keep very long edges and grids with unrepresentable bucket coordinates sparse.
         if (![left, right, bottom, top].every(Number.isSafeInteger) || (right - left + 1) * (top - bottom + 1) > 256) {
             overflow.push(entry);
@@ -78,6 +83,23 @@ export function indexSegments<T extends Segment>(segments: readonly T[], radius:
         return hit;
     }
 
+    function withinRange(x: number, y: number, near: number, far: number) {
+        const i = bin(x), j = bin(y);
+        let candidates: readonly IndexedSegment<T>[] = rows.get(j)?.columns.get(i) ?? empty;
+        const fallback = Number.isSafeInteger(i) && Number.isSafeInteger(j) ? overflow : entries;
+        let match = 0;
+        for (let pass = 0; pass < 2; pass++, candidates = fallback) {
+            for (let k = 0; k < candidates.length; k++) {
+                const edge = candidates[k];
+                if (x < edge.left || x > edge.right || y < edge.bottom || y > edge.top) continue;
+                const d = segmentSquaredDistance(x, y, edge);
+                if (d <= near && d < Infinity) return 1;
+                if (d <= far && d < Infinity) match = 2;
+            }
+        }
+        return match;
+    }
+
     const seen = new Set<number>();
     function forRow(y: number, margin: number, visit: (entry: IndexedSegment<T>) => void) {
         const bottom = bin(y - margin), top = bin(y + margin);
@@ -108,7 +130,7 @@ export function indexSegments<T extends Segment>(segments: readonly T[], radius:
     }
 
     return {
-        forRow,
+        forRow, withinRange,
         nearest: (x: number, y: number, limit = radius * radius, metric: Metric<T> = segmentSquaredDistance) => find(x, y, limit, metric, false),
         within: (x: number, y: number, limit: number) => !!find(x, y, limit, segmentSquaredDistance, true)
     };

@@ -1,9 +1,10 @@
 import { type ResolvedDesign as Design, type Construction, type GeoNode, type ClosedCurve, type Point, type Strip } from "./v5.ts";
-import { bounds, clamp, createGrid, distance, mixPoint, projection, type Box, type Grid } from "../math/geometry.ts";
+import { bounds, clamp, createGrid, distance, mixPoint, projection, gridSpec, type Box, type Grid, type GridFrame, type GridSpec } from "../math/geometry.ts";
 import { functionTable } from "./functionTable.ts";
 import { insidePolygon, polygonArea } from "../math/polygon.ts";
 import { indexSegments, segmentProjection, type IndexedSegment } from "../math/segmentIndex.ts";
 import { flattenPath, type Segment } from "./path.ts";
+import { measureWork, parallelThreshold, runBlocks, workBuffer, type WorkPool } from "../math/work.ts";
 
 export { type Segment } from "./path.ts";
 
@@ -27,6 +28,47 @@ export interface Region {
     width: number;
     height: number;
     canvasWidth: number;
+}
+
+type OrientedEdge = Segment & { normal: Point };
+export type ShapeData =
+    { type: "free"; box: Box; polygons: { points: Point[] }[]; paths: Segment[][] } |
+    { type: "strip"; box: Box; edges: OrientedEdge[]; widths: [number, number]; firstInside: boolean;
+        upperId?: string; lowerId?: string; reach: number; contour?: Segment[][] };
+
+export interface ShapeReference {
+    revision: number;
+    data: ShapeData;
+    tolerance: number;
+    below: [string, number][];
+}
+
+const geometry = new WeakMap<RegionShape, { reference: ShapeReference; below: RegionShape[] }>();
+let shapeRevision = 0;
+
+export function shapeData(shape: RegionShape) {
+    return geometry.get(shape)?.reference.data;
+}
+
+export function shapeWork(shape: RegionShape) {
+    const root = geometry.get(shape);
+    if (!root) return;
+    return {
+        revision: root.reference.revision,
+        references() {
+            const refs = new Map<number, ShapeReference>();
+            function add(entry: NonNullable<typeof root>) {
+                if (refs.has(entry.reference.revision)) return;
+                for (const parent of entry.below) add(geometry.get(parent)!);
+                const ref = entry.reference;
+                // Helpers use contains and cross. Prepared feather edges travel with their layer.
+                const data = ref.data.type === "strip" ? { ...ref.data, contour: undefined } : ref.data;
+                refs.set(ref.revision, { ...ref, data });
+            }
+            add(root);
+            return [...refs.values()];
+        }
+    };
 }
 
 export const intersects = (a: Box, b: Box) => a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1];
@@ -111,6 +153,7 @@ function traceColumns(entry: IndexedSegment<Segment>, reach: number, y: number, 
 }
 
 function mergeColumns(ranges: ColumnRange[]) {
+    if (ranges.length < 2) return;
     ranges.sort((a, b) => a.start - b.start);
     let length = 0;
     for (const range of ranges) {
@@ -121,65 +164,124 @@ function mergeColumns(ranges: ColumnRange[]) {
     ranges.length = length;
 }
 
-// Trace implicit strip boundaries only when another construction needs their contour.
-// Every traced segment fits inside one square of diagonal at most the flattening tolerance.
-export function trace(shape: RegionShape, tolerance: number, clip?: Box) {
-    if (!shape.box.every(Number.isFinite)) return [];
-    const step = tolerance / Math.SQRT2, box = expand(shape.box, step), segments: Segment[] = [];
-    if (clip) {
-        if (!intersects(box, clip)) return [];
-        box[0] = Math.max(box[0], clip[0]); box[1] = Math.max(box[1], clip[1]);
-        box[2] = Math.min(box[2], clip[2]); box[3] = Math.min(box[3], clip[3]);
-    }
-    const nx = Math.ceil((box[2] - box[0]) / step), ny = Math.ceil((box[3] - box[1]) / step);
-    const { spine, reach } = shape, index = spine && reach !== undefined ? shape.spineIndex ?? indexSegments(spine, reach) : undefined;
-    const full = [{ start: 0, end: nx }], point: Point = [0, 0], hits: Point[] = [];
-    let previous = new Uint8Array(nx + 1), row = new Uint8Array(nx + 1);
-    let previousRanges: ColumnRange[] = [], ranges: ColumnRange[] = [];
-    for (let j = 0; j <= ny; j++) {
-        const y = box[1] + j * step;
-        if (index) {
-            ranges.length = 0;
-            index.forRow(y, step, edge => traceColumns(edge, reach!, y, box[0], step, nx, ranges));
-            mergeColumns(ranges);
-        }
-        else ranges = full;
-        row.fill(0);
-        point[1] = y;
-        for (const { start, end } of ranges) {
+const traceRowsPerBlock = 16, traceBatchRows = 2048, traceBatchSamples = 2 ** 21, traceParallelThreshold = 8192;
+
+type TraceSamples = {
+    box: Box; step: number; top: number; rows: Int32Array; spans: Int32Array; samples: Uint8Array;
+};
+export type TraceTask = TraceSamples & { kind: "trace"; shape: number };
+
+export function sampleTraceRows({ box, step, top, rows, spans, samples }: TraceSamples, shape: RegionShape, block: number) {
+    const first = block * traceRowsPerBlock, last = Math.min(rows.length - 1, first + traceRowsPerBlock);
+    const point: Point = [0, 0];
+    for (let j = first; j < last; j++) {
+        point[1] = box[1] + (top + j) * step;
+        for (let range = rows[j]; range < rows[j + 1]; range += 3) {
+            const start = spans[range], end = spans[range + 1], offset = spans[range + 2] - start;
             for (let i = start; i <= end; i++) {
                 point[0] = box[0] + i * step;
-                row[i] = +shape.contains(point);
+                samples[offset + i] = +shape.contains(point);
             }
         }
-
-        // A square can cross the contour if either row visits one of its two columns.
-        if (j) {
-            let current = 0, last = 0, visited = 0;
-            while (current < ranges.length || last < previousRanges.length) {
-                const a = ranges[current], b = previousRanges[last];
-                const range = !b || a && a.start <= b.start ? ranges[current++] : previousRanges[last++];
-                const end = Math.min(nx, range.end + 1);
-                for (let i = Math.max(1, range.start, visited + 1); i <= end; i++) {
-                    const tl = previous[i - 1], tr = previous[i], bl = row[i - 1], br = row[i];
-                    if (tl === tr && tr === br && br === bl) continue;
-                    const x = box[0] + i * step;
-                    hits.length = 0;
-                    if (tl !== tr) hits.push([x - step / 2, y - step]);
-                    if (tr !== br) hits.push([x, y - step / 2]);
-                    if (br !== bl) hits.push([x - step / 2, y]);
-                    if (bl !== tl) hits.push([x - step, y - step / 2]);
-                    for (let k = 1; k < hits.length; k += 2) segments.push({ a: hits[k - 1], b: hits[k] });
-                }
-                visited = Math.max(visited, end);
-            }
-        }
-
-        const next = previous, nextRanges = previousRanges;
-        previous = row; row = next;
-        previousRanges = ranges; ranges = nextRanges;
     }
-    return [segments];
+}
+
+function traceBitmap(ranges: ColumnRange[][], work: number, shared: boolean) {
+    const rows = new Int32Array(workBuffer((ranges.length + 1) * 4, shared));
+    const spans = new Int32Array(workBuffer(ranges.reduce((count, row) => count + row.length, 0) * 12, shared));
+    const samples = new Uint8Array(workBuffer(work, shared));
+    let range = 0, offset = 0;
+    for (let j = 0; j < ranges.length; j++) {
+        rows[j] = range;
+        for (const { start, end } of ranges[j]) {
+            spans[range++] = start;
+            spans[range++] = end;
+            spans[range++] = offset;
+            offset += end - start + 1;
+        }
+    }
+    rows[ranges.length] = range;
+    return { rows, spans, samples };
+}
+
+// A square can cross the contour if either row visits one of its two columns.
+function traceSegments(box: Box, step: number, nx: number, y: number, row: Uint8Array, previous: Uint8Array,
+    ranges: ColumnRange[], previousRanges: ColumnRange[], hits: Point[], segments: Segment[]) {
+    let current = 0, last = 0, visited = 0;
+    while (current < ranges.length || last < previousRanges.length) {
+        const a = ranges[current], b = previousRanges[last];
+        const range = !b || a && a.start <= b.start ? ranges[current++] : previousRanges[last++];
+        const end = Math.min(nx, range.end + 1);
+        for (let i = Math.max(1, range.start, visited + 1); i <= end; i++) {
+            const tl = previous[i - 1], tr = previous[i], bl = row[i - 1], br = row[i];
+            if (tl === tr && tr === br && br === bl) continue;
+            const x = box[0] + i * step;
+            hits.length = 0;
+            if (tl !== tr) hits.push([x - step / 2, y - step]);
+            if (tr !== br) hits.push([x, y - step / 2]);
+            if (br !== bl) hits.push([x - step / 2, y]);
+            if (bl !== tl) hits.push([x - step, y - step / 2]);
+            for (let k = 1; k < hits.length; k += 2) segments.push({ a: hits[k - 1], b: hits[k] });
+        }
+        visited = Math.max(visited, end);
+    }
+}
+
+// Each segment fits in a square whose diagonal is at most the flattening tolerance.
+export function trace(shape: RegionShape, tolerance: number, clip?: Box, pool?: WorkPool): Segment[][] {
+    return measureWork(pool, "trace", () => {
+        if (!shape.box.every(Number.isFinite)) return [];
+        const step = tolerance / Math.SQRT2, box = expand(shape.box, step), segments: Segment[] = [];
+        if (clip) {
+            if (!intersects(box, clip)) return [];
+            box[0] = Math.max(box[0], clip[0]); box[1] = Math.max(box[1], clip[1]);
+            box[2] = Math.min(box[2], clip[2]); box[3] = Math.min(box[3], clip[3]);
+        }
+        const nx = Math.ceil((box[2] - box[0]) / step), ny = Math.ceil((box[3] - box[1]) / step), stride = nx + 1;
+        const { spine, reach } = shape, index = spine && reach !== undefined ? shape.spineIndex ?? indexSegments(spine, reach) : undefined;
+        const full = [{ start: 0, end: nx }], hits: Point[] = [];
+        let previous = new Uint8Array(stride), row = new Uint8Array(stride);
+        let previousRanges: ColumnRange[] = [], recycledRanges: ColumnRange[] = [];
+        const ref = pool?.size ? shapeWork(shape) : undefined;
+        for (let top = 0; top <= ny;) {
+            const ranges: ColumnRange[][] = [];
+            let work = 0;
+            for (let j = top; j <= ny && ranges.length < traceBatchRows; j++) {
+                const columns = index ? [] as ColumnRange[] : full;
+                if (index) {
+                    const y = box[1] + j * step;
+                    index.forRow(y, step, edge => traceColumns(edge, reach!, y, box[0], step, nx, columns));
+                    mergeColumns(columns);
+                }
+                let count = 0;
+                for (const { start, end } of columns) count += end - start + 1;
+                if (ranges.length && work + count > traceBatchSamples) break;
+                work += count;
+                ranges.push(columns);
+            }
+            // Keep only the sampled runs in the shared bitmap. Expand one row at a time for marching squares.
+            const bitmap = traceBitmap(ranges, work, !!ref && work >= traceParallelThreshold);
+            const input = { box, step, top, ...bitmap };
+            runBlocks(ref ? pool : undefined, work, Math.ceil(ranges.length / traceRowsPerBlock),
+                block => sampleTraceRows(input, shape, block),
+                (): TraceTask => ({ kind: "trace", shape: ref!.revision, ...input }), ref?.references, traceParallelThreshold);
+            const { rows, spans, samples } = bitmap;
+            for (let j = 0; j < ranges.length; j++) {
+                for (const { start, end } of recycledRanges) row.fill(0, start, end + 1);
+                for (let range = rows[j]; range < rows[j + 1]; range += 3) {
+                    const start = spans[range], end = spans[range + 1], offset = spans[range + 2];
+                    row.set(samples.subarray(offset, offset + end - start + 1), start);
+                }
+                if (top + j) traceSegments(box, step, nx, box[1] + (top + j) * step, row, previous,
+                    ranges[j], previousRanges, hits, segments);
+                const next = previous;
+                previous = row; row = next;
+                recycledRanges = previousRanges; previousRanges = ranges[j];
+            }
+            top += ranges.length;
+        }
+        return [segments];
+    });
 }
 
 export function nearbyBoundary(shape: RegionShape, p: Point, radius: number, tolerance: number) {
@@ -187,41 +289,53 @@ export function nearbyBoundary(shape: RegionShape, p: Point, radius: number, tol
     return trace(shape, tolerance, expand([p[0], p[1], p[0], p[1]], radius + tolerance));
 }
 
-export function makeShape(node: GeoNode<number>, below: Map<string, RegionShape>, tolerance: number): RegionShape {
+export function makeShapeData(node: GeoNode<number>, below: ReadonlyMap<string, RegionShape>, tolerance: number): ShapeData {
     const c = node.construction;
     if (c.type === "free") {
         const paths = c.paths.map(p => flattenPath(p, tolerance));
         const polygons = paths.map(path => ({ points: path.map(s => s.a) }));
-        const areas: number[] = [];
-        const area = (index: number) => areas[index] ??= polygonArea(polygons[index].points);
-        return {
-            boundary: () => paths, box: bounds(polygons.flatMap(p => p.points)),
-            contains(p) {
-                let inside = false;
-                for (const polygon of polygons) if (insidePolygon(polygon, p)) inside = !inside;
-                return inside;
-            },
-            containingOutlines(p) {
-                const hits = polygons.flatMap((polygon, i) => insidePolygon(polygon, p) ? [i] : []);
-                return hits.sort((a, b) => area(a) - area(b));
-            }
-        };
+        return { type: "free", paths, polygons, box: bounds(polygons.flatMap(p => p.points)) };
     }
     const references = [...below.keys()].filter(id => c.of.some(ref => ref === id));
-    const upperId = references.at(-1)!, upper = below.get(upperId)!;
-    const lower = references.length === 2 ? below.get(references[0]) : undefined;
-    const firstInside = upperId === c.of[0], [w1, w2] = c.widths;
+    const upperId = references.at(-1), lowerId = references.length === 2 ? references[0] : undefined;
+    const upper = upperId === undefined ? undefined : below.get(upperId);
+    const lower = lowerId === undefined ? undefined : below.get(lowerId);
+    const firstInside = upperId === c.of[0];
     const outline = upper && references.length === c.of.length ? rangeOf(upper.boundary(), c.range) : [], lowerEdges = lower?.boundary().flat() ?? [];
     const edges = lower ? outline.flatMap(s => commonEdge(s, lower, lowerEdges, tolerance)) : outline;
     const oriented = edges.filter(({ a, b }) => distance(a, b) > 0).map(({ a, b }) => {
         const length = distance(a, b), nx = (a[1] - b[1]) / length, ny = (b[0] - a[0]) / length, mid = mixPoint(a, b, .5);
-        const sign = upper.contains([mid[0] + nx * tolerance * .001, mid[1] + ny * tolerance * .001]) === firstInside ? -1 : 1;
+        const sign = upper!.contains([mid[0] + nx * tolerance * .001, mid[1] + ny * tolerance * .001]) === firstInside ? -1 : 1;
         return { a, b, normal: [sign * nx, sign * ny] as Point };
     });
-    const reach = Math.max(w1, w2), index = indexSegments(oriented, reach);
+    const reach = Math.max(...c.widths);
+    return { type: "strip", box: expand(bounds(edges.flatMap(e => [e.a, e.b])), reach),
+        edges: oriented, widths: c.widths, firstInside, upperId, lowerId, reach };
+}
+
+function fromFree({ box, paths, polygons }: Extract<ShapeData, { type: "free" }>): RegionShape {
+    const areas: number[] = [];
+    const area = (index: number) => areas[index] ??= polygonArea(polygons[index].points);
+    return {
+        box, boundary: () => paths,
+        contains(p) {
+            let inside = false;
+            for (const polygon of polygons) if (insidePolygon(polygon, p)) inside = !inside;
+            return inside;
+        },
+        containingOutlines(p) {
+            const hits = polygons.flatMap((polygon, i) => insidePolygon(polygon, p) ? [i] : []);
+            return hits.sort((a, b) => area(a) - area(b));
+        }
+    };
+}
+
+function fromStrip(data: Extract<ShapeData, { type: "strip" }>, upper: RegionShape | undefined, lower: RegionShape | undefined,
+    tolerance: number, pool?: WorkPool): RegionShape {
+    const { edges, widths: [w1, w2], firstInside, reach } = data, index = indexSegments(edges, reach);
     function firstSide(p: Point) {
-        if (!oriented.length) return;
-        const inside = upper.contains(p);
+        if (!edges.length) return;
+        const inside = upper!.contains(p);
         if (lower && !inside && !lower.contains(p)) return;
         return inside === firstInside;
     }
@@ -238,16 +352,38 @@ export function makeShape(node: GeoNode<number>, below: Map<string, RegionShape>
         return { s: clamp((w1 + sign * dist) / (w1 + w2)), first, at: [ax, ay],
             normal: dist > 1e-9 ? [sign * (x - ax) / dist, sign * (y - ay) / dist] : normal };
     }
+    const w1Squared = w1 * w1, w2Squared = w2 * w2;
+    const near = Math.min(w1Squared, w2Squared), far = Math.max(w1Squared, w2Squared);
     function contains(p: Point) {
+        const match = index.withinRange(p[0], p[1], near, far);
+        if (!match) return false;
+        if (match === 1 && !lower) return true;
         const first = firstSide(p);
-        if (first === undefined) return false;
-        const width = first ? w1 : w2;
-        return index.within(p[0], p[1], width * width);
+        return first !== undefined && (match === 1 || (first ? w1Squared : w2Squared) === far);
     }
-    let contour: Segment[][] | undefined;
-    const shape: RegionShape = { box: expand(bounds(edges.flatMap(e => [e.a, e.b])), reach),
-        spine: edges, reach, spineIndex: index, cross, contains, boundary: () => contour ??= trace(shape, tolerance) };
+    const shape: RegionShape = { box: data.box, spine: edges, reach, spineIndex: index, cross, contains,
+        boundary: () => data.contour ??= trace(shape, tolerance, undefined, pool) };
     return shape;
+}
+
+export function rebuildShape(data: ShapeData, below: ReadonlyMap<string, RegionShape>, tolerance: number, pool?: WorkPool): RegionShape {
+    const ids = data.type === "strip" ? [data.upperId, data.lowerId] : [];
+    const parents = ids.flatMap(id => {
+        const parent = id === undefined ? undefined : below.get(id);
+        return parent ? [{ id: id!, parent, revision: geometry.get(parent)?.reference.revision }] : [];
+    });
+    const shape = data.type === "free" ? fromFree(data) : fromStrip(data, below.get(data.upperId!), below.get(data.lowerId!), tolerance, pool);
+    if (parents.every(({ revision }) => revision !== undefined)) {
+        geometry.set(shape, {
+            reference: { revision: ++shapeRevision, data, tolerance, below: parents.map(({ id, revision }) => [id, revision!]) },
+            below: parents.map(({ parent }) => parent)
+        });
+    }
+    return shape;
+}
+
+export function makeShape(node: GeoNode<number>, below: ReadonlyMap<string, RegionShape>, tolerance: number, pool?: WorkPool) {
+    return rebuildShape(makeShapeData(node, below, tolerance), below, tolerance, pool);
 }
 
 export function canvasGrid(d: Design, shapes: Map<string, RegionShape>) {
@@ -264,38 +400,115 @@ export function canvasGrid(d: Design, shapes: Map<string, RegionShape>) {
     return createGrid({ xMin, xMax, yMin, yMax, step });
 }
 
-export function rasterRegion(grid: Grid, shape: RegionShape): Region {
-    const left = grid.col(shape.box[0]), right = grid.col(shape.box[2]);
-    const top = grid.row(shape.box[3]), bottom = grid.row(shape.box[1]);
-    const width = Math.max(0, right - left + 1), height = Math.max(0, bottom - top + 1);
-    const mask = new Uint8Array(width * height), point: Point = [0, 0];
+const rasterCellsPerBlock = 8192;
+const ordinaryCanvasCells = new WeakMap<Grid, Int32Array>(), sharedCanvasCells = new WeakMap<Grid, Int32Array>();
+
+function fullCanvasCells(grid: Grid, shared: boolean) {
+    const cache = shared ? sharedCanvasCells : ordinaryCanvasCells;
+    let cells = cache.get(grid);
+    if (!cells) {
+        cells = new Int32Array(workBuffer(grid.size * 4, shared));
+        for (let k = 0; k < cells.length; k++) cells[k] = k;
+        cache.set(grid, cells);
+    }
+    return cells;
+}
+
+type RasterSamples = GridFrame & { mask: Uint8Array; counts: Int32Array; rows: number };
+export type RasterTask = RasterSamples & { kind: "raster"; spec: GridSpec; shape: number };
+
+export function sampleRasterRows({ left, top, width, height, mask, counts, rows }: RasterSamples, grid: Grid, shape: RegionShape, block: number) {
+    const data = shapeData(shape), point: Point = [0, 0], crossings: number[] = [];
+    const start = block * rows, end = Math.min(height, start + rows);
     let count = 0;
-    for (let j = 0; j < height; j++) {
-        point[1] = grid.y(top + j);
-        const start = j * width;
-        for (let i = 0; i < width; i++) {
-            point[0] = grid.x(left + i);
-            if (shape.contains(point)) {
-                mask[start + i] = 1;
-                count++;
+    for (let j = start; j < end; j++) {
+        const y = grid.y(top + j), row = j * width;
+        if (data?.type === "free") {
+            crossings.length = 0;
+            for (const { points } of data.polygons) {
+                for (let i = 0, last = points.length - 1; i < points.length; last = i++) {
+                    const a = points[i], b = points[last];
+                    if ((a[1] > y) !== (b[1] > y)) {
+                        const x = a[0] + (y - a[1]) * (b[0] - a[0]) / (b[1] - a[1]);
+                        if (!Number.isNaN(x)) crossings.push(x);
+                    }
+                }
+            }
+            if (!crossings.length) continue;
+            crossings.sort((a, b) => a - b);
+            let next = 0;
+            for (let i = 0; i < width;) {
+                const x = grid.x(left + i);
+                while (next < crossings.length && !(x < crossings[next])) next++;
+                if (next === crossings.length) break;
+                const crossing = crossings[next];
+                // Locate the next run, correcting the column estimate with the same strict grid-centre comparison.
+                let end = Math.max(i + 1, Math.min(width, grid.col(crossing) - left));
+                while (end < width && grid.x(left + end) < crossing) end++;
+                while (end > i + 1 && !(grid.x(left + end - 1) < crossing)) end--;
+                if ((crossings.length - next) % 2) {
+                    mask.fill(1, row + i, row + end);
+                    count += end - i;
+                }
+                i = end;
+            }
+        }
+        else {
+            point[1] = y;
+            for (let i = 0; i < width; i++) {
+                point[0] = grid.x(left + i);
+                if (shape.contains(point)) {
+                    mask[row + i] = 1;
+                    count++;
+                }
             }
         }
     }
-    const cells = new Int32Array(count);
-    let index = 0;
-    for (let j = 0; j < height; j++) {
-        const start = j * width, canvasStart = (top + j) * grid.width + left;
-        for (let i = 0; i < width; i++) if (mask[start + i]) cells[index++] = canvasStart + i;
-    }
-    return { cells, mask, shape, left, top, width, height, canvasWidth: grid.width };
+    counts[block] = count;
 }
 
-export function regionMaskIndex(region: Region, k: number) {
+export function rasterRegion(grid: Grid, shape: RegionShape, pool?: WorkPool): Region {
+    return measureWork(pool, "rasterRegion", () => {
+        const left = grid.col(shape.box[0]), right = grid.col(shape.box[2]);
+        const top = grid.row(shape.box[3]), bottom = grid.row(shape.box[1]);
+        const width = Math.max(0, right - left + 1), height = Math.max(0, bottom - top + 1), size = width * height;
+        const rows = Math.max(1, Math.floor(rasterCellsPerBlock / width)), blocks = width ? Math.ceil(height / rows) : 0;
+        const ref = pool?.size ? shapeWork(shape) : undefined, shared = !!pool?.size;
+        const mask = new Uint8Array(workBuffer(size, shared)), counts = new Int32Array(workBuffer(blocks * 4, !!ref));
+        const input = { left, top, width, height, mask, counts, rows };
+        const minimum = shapeData(shape)?.type === "strip" ? 16384 : parallelThreshold;
+        runBlocks(ref ? pool : undefined, size, blocks, block => sampleRasterRows(input, grid, shape, block),
+            (): RasterTask => ({ kind: "raster", spec: gridSpec(grid), shape: ref!.revision, ...input }), ref?.references, minimum);
+        const count = counts.reduce((sum, count) => sum + count, 0);
+        if (count === grid.size) {
+            const cells = fullCanvasCells(grid, shared);
+            return { cells, mask, shape, left, top, width, height, canvasWidth: grid.width };
+        }
+        const cells = new Int32Array(workBuffer(count * 4, shared));
+        let index = 0;
+        for (let block = 0; block < blocks; block++) {
+            if (!counts[block]) continue;
+            const first = block * rows, end = Math.min(height, first + rows);
+            const filled = counts[block] === (end - first) * width;
+            for (let j = first; j < end; j++) {
+                const canvasStart = (top + j) * grid.width + left;
+                if (filled) for (let i = 0; i < width; i++) cells[index++] = canvasStart + i;
+                else {
+                    const start = j * width;
+                    for (let i = 0; i < width; i++) if (mask[start + i]) cells[index++] = canvasStart + i;
+                }
+            }
+        }
+        return { cells, mask, shape, left, top, width, height, canvasWidth: grid.width };
+    });
+}
+
+export function regionMaskIndex(region: Omit<Region, "shape" | "cells" | "mask">, k: number) {
     const i = k % region.canvasWidth - region.left, j = Math.floor(k / region.canvasWidth) - region.top;
     return i >= 0 && i < region.width && j >= 0 && j < region.height ? j * region.width + i : -1;
 }
 
-export function regionMaskAt(region: Region, k: number) {
+export function regionMaskAt(region: Omit<Region, "shape">, k: number) {
     return region.mask[regionMaskIndex(region, k)] ?? 0;
 }
 
@@ -304,8 +517,8 @@ function boundarySquaredDistance(x: number, y: number, entry: IndexedSegment<Seg
     return (x - a[0] - t * dx) ** 2 + (y - a[1] - t * dy) ** 2;
 }
 
-export function signedBoundaryDistance(shape: RegionShape, reach?: number) {
-    const edges = shape.boundary().flat(), point: Point = [0, 0];
+export function signedBoundaryDistance(shape: RegionShape, reach?: number, edges = shape.boundary().flat()) {
+    const point: Point = [0, 0];
     const index = reach === undefined ? undefined : indexSegments(edges, reach);
     return (x: number, y: number) => {
         let best = Infinity;
@@ -348,8 +561,8 @@ export function constructionCenter(c: Construction, step: number, grid?: Grid, r
     return box?.every(Number.isFinite) ? [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2] : [0, 0];
 }
 
-export function shapeLayout(d: Design) {
+export function shapeLayout(d: Design, pool?: WorkPool) {
     const shapes = new Map<string, RegionShape>();
-    for (const n of d.geoNodes) shapes.set(n.id, makeShape(n, shapes, d.grid.step / 8));
+    for (const n of d.geoNodes) shapes.set(n.id, makeShape(n, shapes, d.grid.step / 8, pool));
     return { grid: canvasGrid(d, shapes), shapes };
 }

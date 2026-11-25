@@ -33,6 +33,7 @@ function checkDirectory(directory: string, graph: Map<string, Set<string>>) {
         const file = ts.createSourceFile(path, readFileSync(path, "utf8"), ts.ScriptTarget.Latest, true);
         const inCore = directory === core, inRender = directory === render, inTests = directory === tests;
         const inBrowser = inTests && path.startsWith(browserTests + sep);
+        const inPoolTest = inTests && ["parallelBlocks.ts", "parallelTerrain.test.ts"].includes(entry.name);
         if (inCore) graph.set(path, new Set());
         function fail(node: ts.Node, reason: string): never {
             const line = file.getLineAndCharacterOfPosition(node.getStart()).line + 1;
@@ -43,7 +44,8 @@ function checkDirectory(directory: string, graph: Map<string, Set<string>>) {
             if (inBrowser && dynamic && ts.isIdentifier(node)) return;
             if (!ts.isStringLiteral(node)) fail(node, "Use a literal module specifier.");
             const name = node.text;
-            if (inTests && testImports.has(name) || inBrowser && browserImports.has(name)) return;
+            if (inTests && testImports.has(name) || inBrowser && browserImports.has(name) ||
+                inPoolTest && name === "node:worker_threads") return;
             if (!name.startsWith(".")) fail(node, "Unexpected dependency " + name);
             const target = resolve(entry.parentPath, name);
             if (inCore && target.startsWith(core + sep) && extname(target) === ".ts") {
@@ -74,7 +76,7 @@ function checkDirectory(directory: string, graph: Map<string, Set<string>>) {
                 }
             }
             else if (ts.isIdentifier(node) && (ioNames.has(node.text) || inCore && browserNames.has(node.text) || inRender && node.text === "document") &&
-                !(inBrowser && (node.text === "process" || node.text === "fetch"))) {
+                !(inBrowser && (node.text === "process" || node.text === "fetch")) && !(inPoolTest && node.text === "Worker")) {
                 fail(node, "Unexpected API " + node.text);
             }
             ts.forEachChild(node, visit);

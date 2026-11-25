@@ -8,6 +8,7 @@ import { sampleDefined, type Box, type Grid } from "../math/geometry.ts";
 import { applyLayer, evaluateLayer, type LayerOutput } from "./functions.ts";
 import { canvasGrid, intersects, makeShape, rasterRegion } from "../design/regions.ts";
 import { emptyField, finishTerrain, initialFields } from "./terrain.ts";
+import { type WorkPool } from "../math/work.ts";
 
 interface Geometry { key: string; shape: RegionShape; revision: number; region?: Region }
 interface Layer { key: string; revision: number; output: LayerOutput }
@@ -79,16 +80,16 @@ export class TerrainCache {
         return sampleDefined(grid, samples.values, samples.defined, ...p);
     }
 
-    preview(d: ResolvedDesign) {
-        return this.fork().generateResolved(d);
+    preview(d: ResolvedDesign, pool?: WorkPool) {
+        return this.fork().generateResolved(d, pool);
     }
 
     fork() {
-        // A preview can have a different canvas. Copy geometry entries before replacing their raster.
         const copy = new TerrainCache();
-        copy.geometry = new Map([...this.geometry].map(([id, g]) => [id, { ...g }]));
+        copy.geometry = new Map(this.geometry);
         copy.layers = this.layers;
         copy.gridKey = this.gridKey;
+        copy.designKey = this.designKey;
         copy.serial = this.serial;
         return copy;
     }
@@ -97,7 +98,8 @@ export class TerrainCache {
         return this.generateResolved(resolveDesign(d));
     }
 
-    generateResolved(d: ResolvedDesign) {
+    generateResolved(d: ResolvedDesign, pool?: WorkPool) {
+        pool?.begin();
         const shapes = new Map<string, RegionShape>(), current = new Map<string, Geometry>();
         const regions = new Map<string, Region>(), times = new Map<string, number>(), layerTimes = new Map<string, number>();
         let makeShapeTime = 0;
@@ -107,7 +109,7 @@ export class TerrainCache {
             const key = JSON.stringify([d.grid.step, c, refs]);
             const old = this.geometry.get(n.id);
             const shapeStart = performance.now();
-            const entry = old?.key === key ? old : { key, shape: makeShape(n, shapes, d.grid.step / 8), revision: ++this.serial };
+            const entry = old?.key === key ? old : { key, shape: makeShape(n, shapes, d.grid.step / 8, pool), revision: ++this.serial };
             makeShapeTime += performance.now() - shapeStart;
             current.set(n.id, entry);
             shapes.set(n.id, entry.shape);
@@ -118,11 +120,12 @@ export class TerrainCache {
         const gridKey = JSON.stringify([grid.xMin, grid.yMax, grid.width, grid.height, grid.step]);
         for (const [id, g] of current) {
             const start = performance.now();
-            if (!g.region || gridKey !== this.gridKey) g.region = rasterRegion(grid, g.shape);
-            regions.set(id, g.region);
+            const region = g.region && gridKey === this.gridKey ? g.region : rasterRegion(grid, g.shape, pool);
+            if (region !== g.region) current.set(id, { ...g, region });
+            regions.set(id, region);
             times.set(id, times.get(id)! + performance.now() - start);
         }
-        const state = initialFields(d, grid), writers: Writer[] = [], layers = new Map<string, Layer>();
+        const state = initialFields(d, grid, !!pool?.size), writers: Writer[] = [], layers = new Map<string, Layer>();
         const batterResiduals = new Map<string, NonNullable<LayerOutput["residual"]>>(), recomputed: string[] = [];
         for (const n of d.geoNodes) {
             if (n.disabled) continue;
@@ -135,7 +138,7 @@ export class TerrainCache {
                 reads.map(w => w.revision).sort((a, b) => a - b), order.sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]))]);
             let layer = this.layers.get(n.id);
             if (!layer || layer.key !== key) {
-                layer = { key, revision: ++this.serial, output: evaluateLayer(n, g.region!, state) };
+                layer = { key, revision: ++this.serial, output: evaluateLayer(n, g.region!, state, undefined, pool) };
                 recomputed.push(n.id);
             }
             applyLayer(layer.output, n, state);
@@ -146,6 +149,7 @@ export class TerrainCache {
             layerTimes.set(n.id, elapsed);
             times.set(n.id, times.get(n.id)! + elapsed);
         }
+        const terrain = finishTerrain({ ...state, regions, batterResiduals }, pool);
         this.layers = layers;
         this.geometry = current;
         this.gridKey = gridKey;
@@ -154,6 +158,6 @@ export class TerrainCache {
         this.timings = times;
         this.layerTimings = layerTimes;
         this.makeShapeTime = makeShapeTime;
-        return finishTerrain({ ...state, regions, batterResiduals });
+        return terrain;
     }
 }

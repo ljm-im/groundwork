@@ -1,11 +1,13 @@
 import { type Erosion } from "../design/v5.ts";
-import { createGrid, sample, type Grid } from "../math/geometry.ts";
+import { createGrid, sample, gridSpec, type Grid, type GridSpec } from "../math/geometry.ts";
 import { random } from "../math/noise.ts";
+import { workBuffer } from "../math/work.ts";
 
-export function erode(grid: Grid, eligible: Uint8Array, surface: Float32Array, config: Erosion, seed: number) {
+export function erode(grid: Grid, eligible: Uint8Array, surface: Float32Array, config: Erosion, seed: number, shared = false) {
     const { width, height, size, step } = grid;
-    const scaled = Float32Array.from(surface, h => h / 30);
-    const delta = new Float32Array(size);
+    const scaled = new Float32Array(size);
+    for (let k = 0; k < size; k++) scaled[k] = surface[k] / 30;
+    const delta = new Float32Array(workBuffer(size * 4, shared));
     const radius = config.radius / step,
         rim = Math.ceil(radius) + 1,
         offsets = [],
@@ -91,14 +93,13 @@ export function erode(grid: Grid, eligible: Uint8Array, surface: Float32Array, c
     return delta;
 }
 
-export function erodeAtSpacing(grid: Grid, eligible: Uint8Array, surface: Float32Array, config: Erosion & { spacing: number },
-    seed: number, cells: Int32Array) {
+export interface ErosionData { delta?: Float32Array; coarse?: GridSpec; eligible: Uint8Array }
+
+export function prepareErosion(grid: Grid, eligible: Uint8Array, surface: Float32Array, config: Erosion & { spacing: number },
+    seed: number, cells: Int32Array, shared: boolean): ErosionData {
     const m = Math.max(1, Math.round(config.spacing / grid.step));
-    if (m === 1) {
-        const delta = erode(grid, eligible, surface, config, seed);
-        return (k: number) => delta[k];
-    }
-    if (!Number.isFinite(m * grid.step)) return () => 0;
+    if (m === 1) return { delta: erode(grid, eligible, surface, config, seed, shared), eligible };
+    if (!Number.isFinite(m * grid.step)) return { eligible };
 
     const width = Math.ceil(grid.width / m), height = Math.ceil(grid.height / m), step = m * grid.step;
     const coarse = createGrid({
@@ -118,6 +119,17 @@ export function erodeAtSpacing(grid: Grid, eligible: Uint8Array, surface: Float3
         mask[k] = 1;
         heights[k] = sums[k] / counts[k];
     }
-    const delta = erode(coarse, mask, heights, config, seed);
-    return (k: number, x: number, y: number) => eligible[k] ? sample(coarse, delta, x, y) : 0;
+    return { delta: erode(coarse, mask, heights, config, seed, shared), coarse: gridSpec(coarse), eligible };
+}
+
+export function erosionSampler({ delta, coarse, eligible }: ErosionData) {
+    if (!delta) return () => 0;
+    if (!coarse) return (k: number) => delta[k];
+    const grid = createGrid(coarse);
+    return (k: number, x: number, y: number) => eligible[k] ? sample(grid, delta, x, y) : 0;
+}
+
+export function erodeAtSpacing(grid: Grid, eligible: Uint8Array, surface: Float32Array, config: Erosion & { spacing: number },
+    seed: number, cells: Int32Array) {
+    return erosionSampler(prepareErosion(grid, eligible, surface, config, seed, cells, false));
 }

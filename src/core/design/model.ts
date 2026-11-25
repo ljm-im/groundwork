@@ -2,13 +2,14 @@ import { defaultFollow, type Design } from "./v5.ts";
 import { defaultFieldPrecision, defaultInputRange, heightId, reserved, seedId } from "./defaults.ts";
 import { constructionCenter, rasterRegion, shapeLayout } from "./regions.ts";
 import { distance } from "../math/geometry.ts";
+import { type WorkPool } from "../math/work.ts";
 import { point, record, validateCurves, validateGeo } from "./validateGeo.ts";
 import { check, rejectRetired, type Location } from "./problems.ts";
 import { fillFunctionParameters, gridStep, markParameters, numericValid } from "./functionTable.ts";
 import { literalPattern } from "./expression.ts";
 import { parameters, resolveDesign, writeAt } from "./parameters.ts";
 
-export function parseDesign(text: unknown, allowBrokenReferences = false): Design {
+export function parseDesign(text: unknown, allowBrokenReferences = false, pool?: WorkPool): Design {
     const d: Design = typeof text === "string" ? JSON.parse(text) : structuredClone(text);
     check(d && typeof d === "object", "不支持的版本");
     check(d.version === 5, "不支持的版本");
@@ -99,8 +100,8 @@ export function parseDesign(text: unknown, allowBrokenReferences = false): Desig
         if (construction.type === "free" && construction.paths.length === 1)
             f.harbor.center = constructionCenter(construction, d.grid.step);
         else {
-            const { grid, shapes } = layout ??= shapeLayout(numeric);
-            f.harbor.center = constructionCenter(construction, d.grid.step, grid, rasterRegion(grid, shapes.get(id)!));
+            const { grid, shapes } = layout ??= shapeLayout(numeric, pool);
+            f.harbor.center = constructionCenter(construction, d.grid.step, grid, rasterRegion(grid, shapes.get(id)!, pool));
         }
     }
     for (const object of [d, ...d.geoNodes, ...d.sections]) {

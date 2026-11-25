@@ -1,7 +1,6 @@
 import { type Design, type Point } from "../design/v5.ts";
 import { heightId } from "../design/defaults.ts";
 import { functionTable } from "../design/functionTable.ts";
-import { regionMaskAt } from "../design/regions.ts";
 import { type Issue, type Terrain } from "../design/results.ts";
 
 const untreatedHeightLimit = .5;
@@ -16,7 +15,7 @@ export function terrainIssues(d: Design, t: Terrain): Issue[] {
         const region = t.regions.get(n.id)!;
         let count = 0, max = 0, point: Point = [0, 0];
         const measure = (k: number, other: number) => {
-            if (regionMaskAt(region, other) || !defined[other] || covered[other]) return;
+            if (!defined[other] || covered[other]) return;
             const delta = Math.abs(heights[k] - heights[other]);
             if (delta <= untreatedHeightLimit) return;
             count++;
@@ -26,12 +25,18 @@ export function terrainIssues(d: Design, t: Terrain): Issue[] {
                 point = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
             }
         };
-        for (const k of region.cells) {
-            if (!defined[k] || covered[k]) continue;
-            if (k % width > 0) measure(k, k - 1);
-            if (k % width + 1 < width) measure(k, k + 1);
-            if (k >= width) measure(k, k - width);
-            if (k < width * (height - 1)) measure(k, k + width);
+        // A region covering the canvas has no neighbouring cells outside its mask.
+        if (region.cells.length < size) {
+            const { left, top, width: columns, height: rows, cells, mask } = region;
+            for (let index = 0; index < cells.length; index++) {
+                const k = cells[index];
+                if (!defined[k] || covered[k]) continue;
+                const col = k % width, row = Math.floor(k / width), i = col - left, j = row - top, at = j * columns + i;
+                if (col > 0 && (!i || !mask[at - 1])) measure(k, k - 1);
+                if (col + 1 < width && (i + 1 === columns || !mask[at + 1])) measure(k, k + 1);
+                if (row > 0 && (!j || !mask[at - columns])) measure(k, k - width);
+                if (row + 1 < height && (j + 1 === rows || !mask[at + columns])) measure(k, k + width);
+            }
         }
         if (count) issues.push({ kind: "untreated-height", severity: "warning", point, geoNode: n.id, label: n.label,
             message: `未处理高差共 ${count} 处，最大 ${max.toFixed(2)} m（${point.join(", ")}）` });

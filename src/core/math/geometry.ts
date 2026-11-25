@@ -14,6 +14,10 @@ export interface GridSpec {
     step: number;
 }
 export type Grid = ReturnType<typeof createGrid>;
+export function gridSpec({ xMin, xMax, yMin, yMax, step }: Grid): GridSpec {
+    return { xMin, xMax, yMin, yMax, step };
+}
+
 export interface GridFrame { left: number; top: number; width: number; height: number }
 
 export function canvasFrame(grid: Grid): GridFrame {
@@ -174,9 +178,10 @@ export function eachCell(grid: Grid, box: Box, margin: number, visit: (index: nu
 }
 
 // Restrict exact segment-distance work to the band where the caller uses it.
-export function polygonField(grid: Grid, polygon: Point[], reach: number, frame = canvasFrame(grid)) {
+export function polygonField(grid: Grid, polygon: Point[], reach: number, frame = canvasFrame(grid),
+    dist: Float32Array = new Float32Array(frame.width * frame.height)) {
     const { left, top, width, height } = frame;
-    const dist = new Float32Array(width * height).fill(reach);
+    dist.fill(reach);
     for (let i = 0; i < polygon.length; i++) {
         const a = polygon[i],
             b = polygon[(i + 1) % polygon.length];
