@@ -2,13 +2,12 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { createServer } from "vite";
 import { seedId } from "../../src/core/design/defaults.ts";
 import { Project } from "../../src/core/project.ts";
 import { ProjectMap } from "../../src/render/map.ts";
 import { type Point } from "../../src/core/design/v5.ts";
 import { parseDesign, serializeDesign } from "../../src/core/design/model.ts";
-import { startChromium } from "./chromium.ts";
+import { createBrowserServer, startChromium } from "./chromium.ts";
 import { test } from "node:test";
 import { fixtureOptions, readFixture } from "../../configs/read-fixture.ts";
 
@@ -16,7 +15,7 @@ import { syntheticDesign } from "../scenarios.ts";
 import { installPickers, type Probe } from "./filePickers.ts";
 
 async function withFileServer(run: (url: string) => Promise<void>) {
-    const server = await createServer({ configFile: "configs/vite.config.ts", server: { host: "127.0.0.1", port: 0 } });
+    const server = await createBrowserServer();
     try {
         await server.listen();
         await run(server.resolvedUrls!.local[0]);
@@ -33,8 +32,8 @@ test("Chromium leaves directly and reopens the latest browser draft", () => with
 
 async function checkDraftLifecycle(baseUrl: string) {
     const browser = await startChromium(), { cdp, click, closeTab, dialogs, evaluate, key, openTab, wait } = browser;
-    const file = (name: string) => wait(name => document.querySelector("#filename")?.textContent === name &&
-        !document.querySelector(".map-wrap[data-busy=true]"), name);
+    const file = (name: string) => wait(async name => document.querySelector("#filename")?.textContent === name &&
+        await window.editorWorkSettled?.(), name);
     const state = (name: string) => wait(name => document.querySelector("#save-state")?.textContent === name, name);
     const draft = () => evaluate(() => JSON.parse(localStorage.getItem("terrain-editor/unsaved-v1") ?? "null") as
         { filename: string; text: string; unbound?: boolean; dirty?: boolean } | null);
@@ -109,7 +108,7 @@ async function checkDraftLifecycle(baseUrl: string) {
         await cleanProject(original);
         await evaluate(() => window.probe.cancelOpen = true);
         await click("#open");
-        await wait(() => window.probe.opens === 1 && !document.querySelector(".map-wrap[data-busy=true]"));
+        await wait(async () => window.probe.opens === 1 && await window.editorWorkSettled?.());
         assert(!await evaluate(() => document.querySelector<HTMLDialogElement>("#discard-changes")?.open));
         await cleanProject(original);
         await leave("navigate", "未命名");
@@ -204,9 +203,11 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
     const state = () => evaluate(() => document.querySelector("#save-state")?.textContent);
     const draft = () => evaluate(() => JSON.parse(localStorage.getItem("terrain-editor/unsaved-v1") ?? "null") as { filename: string; text: string } | null);
     const unload = () => evaluate(() => !window.dispatchEvent(new Event("beforeunload", { cancelable: true })));
-    const filename = (name: string) => wait(name => document.querySelector("#filename")?.textContent === name && !document.querySelector(".map-wrap[data-busy=true]"), name);
+    const filename = (name: string) => wait(async name => document.querySelector("#filename")?.textContent === name &&
+        await window.editorWorkSettled?.(), name);
     const status = (value: string) => wait(value => document.querySelector("#save-state")?.textContent === value, value);
-    const saved = (count: number) => wait(count => window.probe.writes >= count && !document.querySelector(".map-wrap[data-busy=true]") && document.querySelector("#save-state")?.textContent === "已保存", count);
+    const saved = (count: number) => wait(async count => window.probe.writes >= count && await window.editorWorkSettled?.() &&
+        document.querySelector("#save-state")?.textContent === "已保存", count);
     async function storage() {
         return evaluate(async () => ({ keys: Object.keys(localStorage), databases: (await indexedDB.databases()).map(db => db.name) }));
     }

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createServer } from "vite";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -20,6 +21,14 @@ type Reply<Method extends string> = Method extends keyof Replies ? Replies[Metho
 type Params = Record<string, unknown>;
 
 export type Chromium = Awaited<ReturnType<typeof startChromium>>;
+
+export function createBrowserServer() {
+    return createServer({
+        configFile: "configs/vite.config.ts",
+        // Vite drops a null watch override when it merges the project configuration.
+        server: { host: "127.0.0.1", port: 0, watch: { ignored: /.*/ } }
+    });
+}
 
 export async function startChromium() {
     const paths = [process.env.CHROME_PATH, "C:/Program Files/Google/Chrome/Application/chrome.exe",
@@ -80,8 +89,17 @@ export async function startChromium() {
             if (await evaluate(fn, value)) return;
             await delay(30);
         }
-        throw Error("Timed out waiting for " + fn + " " + JSON.stringify(value) + "\n" + await evaluate(() => document.body.innerText.slice(0, 950)));
+        const page = await evaluate(() => {
+            const navigation = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+            return { url: location.href, navigation: navigation?.type, text: document.body.innerText.slice(0, 950) };
+        });
+        throw Error("Timed out waiting for " + fn + " " + JSON.stringify(value) + "\n" +
+            page.url + " (" + page.navigation + ")\n" + page.text);
     }
+    const idle = () => wait(() => window.editorWorkSettled?.());
+    const saved = () => wait(async () => await window.editorWorkSettled?.() &&
+        document.querySelector("#save-state")?.textContent === "已保存");
+
     async function mouse(type: "mousePressed" | "mouseMoved" | "mouseReleased", x: number, y: number) {
         await cdp("Input.dispatchMouseEvent", { type, x, y, button: "left", buttons: type === "mouseReleased" ? 0 : 1, clickCount: 1 });
     }
@@ -146,7 +164,7 @@ export async function startChromium() {
     try {
         const version = (await send("Browser.getVersion")).product;
         await openTab();
-        return { version, dialogs, cdp, evaluate, wait, click, mouse, key, screenshot, openTab, closeTab, close };
+        return { version, dialogs, cdp, evaluate, wait, idle, saved, click, mouse, key, screenshot, openTab, closeTab, close };
     }
     catch (error) {
         await close();

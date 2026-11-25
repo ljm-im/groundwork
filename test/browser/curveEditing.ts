@@ -49,10 +49,8 @@ async function checkDrawnCurves(url: string) {
     }), label: "坡面" };
     design.geoNodes = [layer("G", rect(-60, -47, 60, 47), { type: "ground", value: 4 }), mountain, slope];
     design.sections = [{ id: "Q", label: "剖面线 Q", points: [[-48, -37], [35, -37]], showLabel: false }];
-    const browser = await startChromium(), { cdp, click, evaluate, key, mouse, wait } = browser;
+    const browser = await startChromium(), { cdp, click, evaluate, key, mouse, wait, saved } = browser;
     const frame = () => evaluate(() => window.curveEditingProbe.frame!);
-    const saved = () => wait(() => !document.querySelector(".map-wrap[data-busy=true]") &&
-        document.querySelector("#save-state")?.textContent === "已保存");
     const paint = () => evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
     const text = (selector: string) => evaluate(s => document.querySelector<HTMLElement>(s)?.innerText.trim() ?? "", selector);
     const disk = () => evaluate(name => window.disk(name), filename);

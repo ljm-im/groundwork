@@ -145,6 +145,10 @@ export class TerrainClient {
         if (reply?.kind === "reading") return reply.value;
     }
 
+    hasPendingRequests() {
+        return this.pending.size > 0;
+    }
+
     clearPreviews() {
         this.channel?.send({ kind: "clearPreviews" });
     }

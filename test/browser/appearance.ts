@@ -110,7 +110,7 @@ export async function checkAppearance(url: string) {
     design.geoNodes.push(layer("F", rect(-36, -36, 36, 36), { type: "ground", value: 2 }, "F"));
     design.geoNodes.push(layer("H", rect(-32, -30, -8, 30), { type: "flat", amount: 4 }, "F"));
     const browser = await startChromium();
-    const { cdp, click, evaluate, key, wait } = browser;
+    const { cdp, click, evaluate, key, wait, saved } = browser;
     const button = "#appearance", menu = ".appearance-menu";
     const emulate = (mode: "light" | "dark") => cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: mode }] });
     const paint = () => evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
@@ -161,9 +161,8 @@ export async function checkAppearance(url: string) {
             const stream = await file.createWritable();
             await stream.write(text); await stream.close();
         }, bytes);
-        await click("#open");
-        await wait(() => document.querySelector(".map-wrap[data-busy=false]") &&
-            document.querySelector("#save-state")?.textContent === "已保存" && !!document.querySelector("#plots canvas"));
+        await click("#open"); await saved();
+        await wait(() => !!document.querySelector("#plots canvas"));
         await wait(() => window.appearanceDraws.terrain > 0 && window.appearanceDraws.map > 0 && window.appearanceDraws.section > 0);
         await paint();
         const light = await evaluate(mapPixels), lightDraws = await drawn();

@@ -113,12 +113,10 @@ function sampleDesign() {
 }
 
 function layeredMap(browser: Chromium, d: Design, filename: string) {
-    const { cdp, click, evaluate, mouse, wait } = browser;
+    const { cdp, click, evaluate, mouse, wait, saved } = browser;
     const panel = (id: string) => click("[data-tab=" + id + "]");
     const property = (id: string) => click("[data-property-tab=" + id + "]");
     const text = (selector: string) => evaluate(s => document.querySelector<HTMLElement>(s)?.innerText.trim() ?? "", selector);
-    const saved = () => wait(() => !document.querySelector(".map-wrap[data-busy=true]") &&
-        document.querySelector("#save-state")?.textContent === "已保存");
     const paint = () => evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
     const disk = () => evaluate(name => window.disk(name), filename);
     const authored = async () => parseDesign(await disk(), true);

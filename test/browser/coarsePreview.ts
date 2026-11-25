@@ -13,7 +13,7 @@ export async function checkCoarsePreview(url: string) {
     const design = syntheticDesign();
     design.grid.step = .2;
     design.geoNodes[0].construction = rect(-60, -60, 60, 60);
-    const browser = await startChromium(), { cdp, click, evaluate, mouse, wait } = browser;
+    const browser = await startChromium(), { cdp, click, evaluate, mouse, wait, idle, saved } = browser;
     try {
         await cdp("Page.addScriptToEvaluateOnNewDocument", { source: "(" + installPickers.toString() + ")()" });
         await cdp("Page.navigate", { url });
@@ -37,7 +37,7 @@ export async function checkCoarsePreview(url: string) {
             await stream.write(bytes);
             await stream.close();
         }, { bytes: serializeDesign(design), url });
-        await click("#open");
+        await click("#open"); await idle();
         await wait(() => document.querySelector<HTMLCanvasElement>("#map")?.dataset.terrainCells === "360000");
         await click("[data-tab=inputs]");
         const [x, y] = await evaluate(() => {
@@ -59,14 +59,13 @@ export async function checkCoarsePreview(url: string) {
             return last;
         });
         await mouse("mouseReleased", x + 48, y);
-        await wait(() => !document.querySelector(".map-wrap[data-busy=true]") &&
-            !document.querySelector("#mode-hint")?.textContent?.includes("间距预览") &&
+        await saved();
+        await wait(() => !document.querySelector("#mode-hint")?.textContent?.includes("间距预览") &&
             document.querySelector<HTMLCanvasElement>("#map")?.dataset.terrainCells === "360000");
         assert.equal(await evaluate(() => document.querySelector<HTMLCanvasElement>("#map")?.dataset.terrainStep), "0.2");
-        await wait(() => document.querySelector("#save-state")?.textContent === "已保存");
-        const saved = parseDesign(await evaluate(() => window.disk("preview.json")));
-        assert.notEqual(saved.inputs.A.value, design.inputs.A.value);
-        const { grid, fields } = new Project(saved).terrain, expected = fields.height.values[grid.index(-14, -8)];
+        const committed = parseDesign(await evaluate(() => window.disk("preview.json")));
+        assert.notEqual(committed.inputs.A.value, design.inputs.A.value);
+        const { grid, fields } = new Project(committed).terrain, expected = fields.height.values[grid.index(-14, -8)];
         assert.equal(lastPreview.height, expected);
         const frames = await evaluate(() => window.previewFrames);
         assert.equal(frames.at(-1)?.height, expected);

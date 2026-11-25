@@ -30,7 +30,7 @@ const digest = (array: Float32Array | Uint8Array) =>
 
 export async function checkWorkerTerrain(url: string) {
     const design = terrainForBrowser(), step = .1;
-    await withCurveMap(url, "worker-terrain", async ({ cdp, click, evaluate, wait, paint }) => {
+    await withCurveMap(url, "worker-terrain", async ({ cdp, click, evaluate, wait, idle, paint }) => {
         const initial = await evaluate(async () => ({ isolated: crossOriginIsolated, ...await window.terrainFieldHashes!() }));
         assert(initial.isolated && initial.helpers > 0);
 
@@ -41,7 +41,8 @@ export async function checkWorkerTerrain(url: string) {
             return editor.mapProject.design.geoNodes.length;
         });
         assert.equal(before, design.geoNodes.length);
-        await wait(() => window.curveMapProbe.editor!.mapProject.design.geoNodes.length === 2);
+        await idle();
+        assert.equal(await evaluate(() => window.curveMapProbe.editor!.mapProject.design.geoNodes.length), 2);
         const value = await evaluate(() => {
             const editor = window.curveMapProbe.editor!;
             const { grid, fields } = editor.mapProject.terrain;
@@ -88,7 +89,7 @@ export async function checkWorkerTerrain(url: string) {
         const panned = await evaluate(() => ({ busy: window.curveMapProbe.editor!.busy, center: window.curveMapProbe.editor!.map.center }));
         assert(panned.busy);
         assert.notDeepEqual(panned.center, changed.center);
-        await evaluate(async () => window.curveMapProbe.editor!.finishWork());
+        await idle();
         await paint();
         const report = await evaluate(() => window.terrainRun.done!);
         assert(report.elapsed > 1000, "Generation took " + report.elapsed + " ms");

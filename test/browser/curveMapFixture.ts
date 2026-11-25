@@ -125,10 +125,8 @@ function sample() {
 }
 
 function curveMap(browser: Chromium, design: Design, name: string, url: string) {
-    const { cdp, click, evaluate, wait } = browser;
+    const { cdp, click, evaluate, wait, saved } = browser;
     const frame = () => evaluate(() => window.curveMapProbe.frame!);
-    const idle = () => wait(() => document.querySelector(".map-wrap[data-busy=false]"));
-    const saved = () => wait(() => document.querySelector(".map-wrap[data-busy=false]") && document.querySelector("#save-state")?.textContent === "已保存");
     const paint = () => evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
     const disk = () => evaluate(name => window.disk(name), name);
     const text = (selector: string) => evaluate(s => document.querySelector<HTMLElement>(s)?.innerText.trim() ?? "", selector);
@@ -207,7 +205,7 @@ function curveMap(browser: Chromium, design: Design, name: string, url: string) 
         await mouse("mouseMoved", center, 0, "none");
         await wait(() => !document.querySelector<HTMLElement>("#position")?.hidden);
     }
-    return { ...browser, frame, idle, saved, paint, disk, text, authored, owner, curve, boundary, undo, penMode, nodeTitles, pixels, tap, drag, tool, open, translated, assertSectionStroke, moveOverMap, pointer: mouse };
+    return { ...browser, frame, paint, disk, text, authored, owner, curve, boundary, undo, penMode, nodeTitles, pixels, tap, drag, tool, open, translated, assertSectionStroke, moveOverMap, pointer: mouse };
 }
 
 export async function withCurveMap(url: string, scene: string, check: (page: ReturnType<typeof curveMap>) => Promise<void>, design = sample()) {

@@ -1,7 +1,10 @@
 import { type ProjectModel } from "./terrainClient.ts";
 
 declare global {
-    interface Window { terrainFieldHashes?: () => ReturnType<typeof terrainFieldHashes> }
+    interface Window {
+        terrainFieldHashes?: () => ReturnType<typeof terrainFieldHashes>;
+        editorWorkSettled?: () => Promise<boolean>;
+    }
 }
 
 async function digest(array: Float32Array | Uint8Array) {

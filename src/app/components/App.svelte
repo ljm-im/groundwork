@@ -6,7 +6,7 @@
 <Tooltip />
 
 <script lang="ts">
-    import { onMount } from "svelte";
+    import { onMount, tick } from "svelte";
     import { terrainFieldHashes } from "../state/terrainHash.ts";
     import { isEditableText } from "../state/pendingInput.ts";
     import { applyTheme, readAppearance, resolveTheme, saveAppearance, systemThemeQuery, type Appearance } from "../state/theme.ts";
@@ -31,14 +31,23 @@
     }
     $effect(() => applyTheme(theme));
     onMount(() => {
-        if (import.meta.env.DEV) window.terrainFieldHashes = () => terrainFieldHashes(editor.project);
+        if (import.meta.env.DEV) {
+            window.terrainFieldHashes = () => terrainFieldHashes(editor.project);
+            window.editorWorkSettled = async () => {
+                await tick();
+                return !editor.workPending();
+            };
+        }
         function changed(event: MediaQueryListEvent) {
             systemDark = event.matches;
         }
         systemTheme.addEventListener("change", changed);
         return () => {
             systemTheme.removeEventListener("change", changed);
-            if (import.meta.env.DEV) delete window.terrainFieldHashes;
+            if (import.meta.env.DEV) {
+                delete window.terrainFieldHashes;
+                delete window.editorWorkSettled;
+            }
         };
     });
 </script>

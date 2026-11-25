@@ -557,6 +557,9 @@ export class Editor {
     finishWork() {
         return this.activeWork;
     }
+    workPending() {
+        return this.busy || !!this.frame || this.previewRunning || this.compute.hasPendingRequests();
+    }
     rememberPendingEdit() {
         if (this.pendingDesign === undefined) return;
         this.files.remember(this.pendingDesign);

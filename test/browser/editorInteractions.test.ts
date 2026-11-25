@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createServer } from "vite";
 import { parseDesign, serializeDesign } from "../../src/core/design/model.ts";
 import { Project } from "../../src/core/project.ts";
 import { ProjectMap } from "../../src/render/map.ts";
@@ -8,7 +7,7 @@ import { mapColors } from "../../src/render/palette.ts";
 import { geoLabelPoint } from "../../src/render/labelLayout.ts";
 import { type Point } from "../../src/core/design/v5.ts";
 import { layer, rect, syntheticDesign } from "../scenarios.ts";
-import { startChromium } from "./chromium.ts";
+import { createBrowserServer, startChromium } from "./chromium.ts";
 import { installPickers } from "./filePickers.ts";
 import { checkAppearance } from "./appearance.ts";
 import { checkStripSelection } from "./stripSelection.ts";
@@ -26,7 +25,7 @@ import { checkCoarsePreview } from "./coarsePreview.ts";
 import { checkWorkerTerrain } from "./workerTerrain.ts";
 
 test("Editor interactions in Chromium", async t => {
-    const server = await createServer({ configFile: "configs/vite.config.ts", server: { host: "127.0.0.1", port: 0 } });
+    const server = await createBrowserServer();
     try {
         await server.listen();
         const url = server.resolvedUrls!.local[0];
@@ -63,7 +62,7 @@ async function checkEditor(url: string) {
     d.geoNodes.push(layer("X", { type: "strip", of: ["missing"], widths: [1, 2] }, { type: "blend" }));
     d.marks.push({ id: "M", label: "比例尺", kind: "scale", point: [94, 120], follow: "screen", length: 10 });
     const browser = await startChromium();
-    const { cdp, click, evaluate, key, wait } = browser;
+    const { cdp, click, evaluate, key, wait, idle, saved } = browser;
     const text = (sel: string) => evaluate(sel => document.querySelector<HTMLElement>(sel)?.innerText.trim() ?? "", sel);
     const hasBuiltinMark = (selector: string) => evaluate(s =>
         !!document.querySelector(s + " svg")!.querySelector("circle[fill=currentColor]"), selector);
@@ -86,8 +85,6 @@ async function checkEditor(url: string) {
         await wait(({ escaped, name }) => document.querySelector("button.choice-face[aria-label=" + escaped + "] span")?.textContent === name, { escaped, name });
         await idle();
     }
-    const idle = () => wait(() => !document.querySelector(".map-wrap[data-busy=true]"));
-    const saved = () => wait(() => document.querySelector(".map-wrap[data-busy=false]") && document.querySelector("#save-state")?.textContent === "已保存");
     const disk = () => evaluate(() => window.disk("editor-interactions.json"));
     async function keyboardStep(selector: string) {
         await evaluate(s => document.querySelector<HTMLButtonElement>(s)!.focus(), selector);
@@ -354,7 +351,7 @@ async function checkEditor(url: string) {
         });
         assert(maxWidth.actual >= maxWidth.minimum, JSON.stringify(maxWidth));
         console.log("Unit width", JSON.stringify(maxWidth));
-        await click("[data-parameter$=\".function.rate\"] button[aria-label=增大径向变化率]");
+        await click("[data-parameter$=\".function.rate\"] button[aria-label=增大径向变化率]"); await idle();
         assert.equal(await text("[data-parameter$=\".function.rate\"] .numeric-face"), "-0.19");
         await choose("坡面形式", "沿路径");
         await saved();
@@ -582,7 +579,7 @@ async function checkEditor(url: string) {
         const triangle = await disk();
         await undo();
         await pen(); await vertices(false);
-        await tap(a); await tap(a, 2);
+        await tap(a); await tap(a, 2); await idle();
         assert.match(await text("#toast"), /至少需要三个节点/);
         assert.match(await text("#mode-hint"), /单击放置节点，按 S 切换尖角和自动平滑/);
         await tap(c); await key("Enter"); await idle(); await saved();
