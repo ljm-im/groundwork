@@ -48,6 +48,8 @@
                 { id: "exclude", name: node.disabled ? "启用" : "禁用", icon: "exclude", selected: !!node.disabled, run: () => editor.toggle(h.id) });
         }
         else if (h.kind === "mark") actions.push({ id: "copy", name: "复制", icon: "copy", run: () => editor.copyMark(h.id) });
+        if (!menu.map && (h.kind === "geoNode" || h.kind === "section" || h.kind === "mark"))
+            actions.unshift({ id: "show-in-view", name: "在视野中显示", icon: "fit", run: () => editor.showInView(h) });
         if (editor.canRemove(h)) actions.push({ id: "delete", name: "删除", icon: "delete", danger: true, run: () => editor.removeElement(h) });
         if (actions.length) result.push({ items: actions });
         return result;

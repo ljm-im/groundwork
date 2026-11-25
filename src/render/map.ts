@@ -207,10 +207,20 @@ export class ProjectMap {
         this.center[1] += before[1] - after[1];
         this.cameraChanged();
     }
-    revealBounds([left, bottom, right, top]: Box) {
+    revealBounds([left, bottom, right, top]: Box, offsets?: Box) {
         if (![left, bottom, right, top].every(Number.isFinite)) return;
         const [x0, y0] = this.screen([left, top]), [x1, y1] = this.screen([right, bottom]);
-        if (x0 > this.width || x1 < 0 || y0 > this.height || y1 < 0) {
+        if (offsets) {
+            const [l, t, r, b] = offsets;
+            if (x0 + l >= 0 && y0 + t >= 0 && x1 + r <= this.width && y1 + b <= this.height) return;
+            const margin = 12, width = right - left, height = top - bottom;
+            this.scale = Math.min(this.scale,
+                width > 0 ? Math.max(1, this.width - (r - l) - margin) / width : Infinity,
+                height > 0 ? Math.max(1, this.height - (b - t) - margin) / height : Infinity);
+            this.center = [(left + right) / 2 + (l + r) / (2 * this.scale), (bottom + top) / 2 - (9 + (t + b) / 2) / this.scale];
+            this.cameraChanged();
+        }
+        else if (x0 > this.width || x1 < 0 || y0 > this.height || y1 < 0) {
             this.center = [(left + right) / 2, (bottom + top) / 2];
             this.cameraChanged();
         }
@@ -461,6 +471,12 @@ export class ProjectMap {
     visibleMarkPoint(mark: Mark<number>): Point {
         if (mark.follow === "map") return this.screen(mark.point);
         return clampMarkPoint(mark.point, this.markLayout(mark).box, this.width, this.height);
+    }
+    revealMark(mark: Mark<number>) {
+        const { box, ruler = 0 } = this.markLayout(mark);
+        const [x, y] = mark.point, [l, t, r, b] = box;
+        const right = mark.kind === "scale" ? x + (mark.length ?? Number(markParameters.scale.default)) : x;
+        this.revealBounds([x, y, right, y], [l, t, r - ruler, b]);
     }
 
     private drawMarks(ctx: Context, view: MapView) {

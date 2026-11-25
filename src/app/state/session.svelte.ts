@@ -6,6 +6,7 @@ import { copyAt, readAt, writeAt, type Address } from "../../core/design/address
 import { readDisplaySettings, saveDisplaySettings } from "./layers.ts";
 import { type GridDisplay } from "../../core/edit/display.ts";
 import { constructionCenter } from "../../core/design/regions.ts";
+import { bounds, type Box } from "../../core/math/geometry.ts";
 import { heightId, isBuiltin } from "../../core/design/defaults.ts";
 import { defaultFollow, type GeoNode, type GeoFunction, type PathNode } from "../../core/design/v5.ts";
 import { geoParameter, slotName, type Slot } from "../../core/design/parameters.ts";
@@ -695,9 +696,30 @@ export class Editor {
             if (box) this.map.revealBounds(box);
         }
         else if (kind === "section") {
-            const [a, b] = this.project.design.sections.find(section => section.id === id)!.points;
-            this.map.revealBounds([Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1])]);
+            this.map.revealBounds(bounds(this.project.design.sections.find(section => section.id === id)!.points));
             this.revealSections?.();
+        }
+    }
+    showInView({ kind, id }: Selection) {
+        const offsets: Box = [-5, -5, 5, 5];
+        if (kind === "geoNode") {
+            const box = this.project.terrain.regions.get(id)?.shape.box;
+            if (box) this.map.revealBounds(box, offsets);
+        }
+        else if (kind === "section") {
+            const section = this.project.design.sections.find(s => s.id === id)!;
+            this.map.revealBounds(bounds(section.points), offsets);
+        }
+        else if (kind === "mark") {
+            const mark = this.project.resolved.marks.find(m => m.id === id)!;
+            if (mark.follow === "map") this.map.revealMark(mark);
+            else {
+                const point = this.map.visibleMarkPoint(mark);
+                if (point[0] !== mark.point[0] || point[1] !== mark.point[1])
+                    return this.edit(d => {
+                        d.marks.find(m => m.id === id)!.point = point;
+                    });
+            }
         }
     }
     private scrollToIssues(issues: Issue[]) {
