@@ -1,8 +1,7 @@
 import { composingKey } from "./numbers.ts";
 import { commitFocusedInput } from "./pendingInput.ts";
 import { defaultFollow } from "../../core/design/v5.ts";
-import { heightId } from "../../core/design/defaults.ts";
-import { distance, onCanvas } from "../../core/math/geometry.ts";
+import { distance } from "../../core/math/geometry.ts";
 import { moveHandle, sectionHandlePoint } from "../../core/edit/controls.ts";
 import { editControl, geometryPath, hitControl, hitPathSegment, type GeoControl } from "../../core/edit/geoControls.ts";
 import { setNodeMode } from "../../core/edit/paths.ts";
@@ -305,8 +304,6 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         if (mark) {
             editor.dragMark = { id: h.id, point: target }; return;
         }
-        const { grid, fields } = editor.project.terrain;
-        if (!onCanvas(grid, fields[heightId].defined, ...target)) return;
         const section = d.sections.find(s => s.id === h.id)!, index = h.index!;
         const point = sectionHandlePoint(section, index, target);
         if (point) editor.dragSection = { id: h.id, index, point };
