@@ -68,7 +68,7 @@ export async function checkRound27(url: string) {
     design.sections = [{ id: "Q", label: "剖面线 Q", points: [[-48, -37], [35, -37]], showLabel: false }];
     const browser = await startChromium(), { cdp, click, evaluate, key, mouse, wait } = browser;
     const frame = () => evaluate(() => window.round27.frame!);
-    const saved = () => wait(() => !!document.querySelector<HTMLElement>("#busy")?.hidden &&
+    const saved = () => wait(() => !document.querySelector(".map-wrap[data-busy=true]") &&
         document.querySelector("#save-state")?.textContent === "已保存");
     const paint = () => evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
     const text = (selector: string) => evaluate(s => document.querySelector<HTMLElement>(s)?.innerText.trim() ?? "", selector);
@@ -182,7 +182,7 @@ export async function checkRound27(url: string) {
         await click("[data-geo-node=M]");
         await click("[data-property-tab=function]");
         await click("button[aria-label=添加山脊]");
-        assert.equal(await text("#mode-hint"), "单击放置尖角节点，按下并拖动放置平滑节点，回车或双击结束，单击首个节点闭合，Esc 取消");
+        assert.equal(await text("#mode-hint"), "单击放置节点，按 S 切换尖角和自动平滑，回车或双击结束，单击首个节点闭合，Esc 取消");
         assert.match(await text(".drawing-status"), /回车或双击结束，单击首个节点闭合/);
         await tap([-36, -12]);
         await drag(await screen([-23, 5]), await screen([-18, 8]));
@@ -190,26 +190,26 @@ export async function checkRound27(url: string) {
         await key("Enter"); await saved(); await paint();
         let line = await ridge();
         assert.equal(line.closed, false);
-        assert.deepEqual(line.nodes.map(v => v.mode), ["corner", "manual", "corner"]);
+        assert.deepEqual(line.nodes.map(v => v.mode), ["auto", "manual", "auto"]);
         assert.match(await text(ridgeInput), /曲线（3 个节点）/);
         assert.equal((await closedCheckbox(0)).checked, false);
         const second = nodeRow(line.nodes[1].id), third = nodeRow(line.nodes[2].id);
-        await click(second + " .subitem-toggle"); await paint();
+        await tap(line.nodes[1].p); await paint();
         assert.equal((await frame()).vertex?.index, 1);
         assert.deepEqual((await frame()).geometry, { kind: "path", index: -1 });
         await screenshot("ridge-node", ".subitem:has(" + ridgeInput + ") > .subitem-heading");
         await screenshot("ridge-handles", undefined, [[-41, 13], [-2, -17]]);
-        await click(second + " .subitem-toggle"); await paint();
-        assert.equal((await frame()).vertex?.index, 1, "Collapsing a node keeps the map selection");
+        assert.equal(await evaluate(s => !!document.querySelector(s + " .subitem-toggle"), second), false, "The selected node is always expanded");
+        assert.equal((await frame()).vertex?.index, 1);
         await evaluate(() => document.querySelector("#property-content")!.scrollTop = 0);
         await tap(line.nodes[2].p);
         await wait(selector => {
-            const row = document.querySelector(selector + " .subitem-toggle"), panel = document.querySelector("#property-content")!.getBoundingClientRect();
+            const row = document.querySelector(selector + " .subitem-heading"), panel = document.querySelector("#property-content")!.getBoundingClientRect();
             const box = row?.getBoundingClientRect();
-            return row?.getAttribute("aria-expanded") === "true" && box && box.top >= panel.top && box.bottom <= panel.bottom;
+            return row && box && box.top >= panel.top && box.bottom <= panel.bottom;
         }, third);
         assert.equal(await evaluate(s => !!document.querySelector(s + " [aria-label=后一段]"), third), false);
-        await click(second + " .subitem-toggle");
+        await tap(line.nodes[1].p);
         const priorHeight = (await frame()).height!;
         await click(second + " button.numeric-face[aria-label=高度]");
         await evaluate(() => document.getSelection()!.selectAllChildren(document.querySelector(".numeric-edit")!));
@@ -231,8 +231,10 @@ export async function checkRound27(url: string) {
         const newStroke = (await strokes())[0];
         for (const [a, b] of [[oldStroke, newStroke], [newStroke, oldStroke]])
             assert(a.every(p => nearest(...p, b).distance < 1), "Rendered samples stay within a pixel of the same ridge");
+        await tap(line.nodes[1].p);
         await click(nodeRow(line.nodes[1].id) + " [aria-label=删除节点]"); await saved();
         line = await ridge();
+        await tap(line.nodes[2].p);
         await click(nodeRow(line.nodes[2].id) + " [aria-label=删除节点]"); await saved();
         line = await ridge();
         assert.equal(line.nodes.length, 2);
@@ -265,16 +267,19 @@ export async function checkRound27(url: string) {
         await undo();
 
         console.log("Round 27: dragging an unselected section or ridge moves the whole line in one undo step");
-        await click("[data-geo-node=G]"); await paint();
+        await click("[data-geo-node=S]"); await paint();
         const originalSection = await section(), sectionStart = await screen(mixPoint(...originalSection, .5));
         const dx = 30 / (await frame()).scale;
         await drag(sectionStart, [sectionStart[0] + 30, sectionStart[1]], async () => {
             await paint();
             assert.equal((await frame()).selected, "Q");
+            assert.equal((await frame()).vertex, undefined);
             assert(distance((await frame()).section![0], [originalSection[0][0] + dx, originalSection[0][1]]) < .02);
             assert.deepEqual(await section(), originalSection);
         });
         await saved();
+        await paint();
+        assert.equal((await frame()).vertex, undefined);
         const movedSection = await section();
         for (const [i, p] of originalSection.entries()) assert(distance(movedSection[i], [p[0] + dx, p[1]]) < .02);
         await click("[data-property-tab=section]");
@@ -282,8 +287,8 @@ export async function checkRound27(url: string) {
         await undo();
         assert.deepEqual(await section(), originalSection);
         await click("[data-tab=layers]"); await click("input[data-layer=geoNodes]");
-        await click("[data-tab=terrain]"); await click("[data-geo-node=G]"); await paint();
-        assert.equal((await frame()).selected, "G");
+        await click("[data-tab=terrain]"); await click("[data-geo-node=S]"); await paint();
+        assert.equal((await frame()).selected, "S");
         const original = await ridge(), moveFrom = splitBezier(pathBezier(original, 0), .5)[0][3];
         const dragStart = await screen(moveFrom);
         await drag(dragStart, [dragStart[0] + 30, dragStart[1]], async () => {
@@ -293,6 +298,8 @@ export async function checkRound27(url: string) {
             assert.deepEqual(await ridge(), original);
         });
         await saved();
+        await paint();
+        assert.equal((await frame()).vertex, undefined);
         const movedRidge = await ridge();
         for (const [i, { p, ...node }] of original.nodes.entries()) {
             const { p: actual, ...attributes } = movedRidge.nodes[i];

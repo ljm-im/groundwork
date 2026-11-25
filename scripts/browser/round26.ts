@@ -123,7 +123,7 @@ export async function checkRound26(url: string) {
     const panel = (id: string) => click("[data-tab=" + id + "]");
     const property = (id: string) => click("[data-property-tab=" + id + "]");
     const text = (selector: string) => evaluate(s => document.querySelector<HTMLElement>(s)?.innerText.trim() ?? "", selector);
-    const saved = () => wait(() => !!document.querySelector<HTMLElement>("#busy")?.hidden &&
+    const saved = () => wait(() => !document.querySelector(".map-wrap[data-busy=true]") &&
         document.querySelector("#save-state")?.textContent === "已保存");
     const paint = () => evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
     const disk = () => evaluate(name => window.disk(name), filename);
@@ -310,7 +310,7 @@ export async function checkRound26(url: string) {
             window.round26.watch = [-36, 2];
             window.round26.drag = [];
         });
-        await click("[data-geo-node=G]"); await paint();
+        await click("[data-geo-node=D]"); await paint();
         await mouse("mousePressed", ...from); await paint();
         await mouse("mouseMoved", ...to); await paint();
         const pre = await evaluate(() => window.round26.drag);
@@ -419,7 +419,7 @@ export async function checkRound26(url: string) {
         console.log("Round 26: boundary controls, confirmation and clipped menu");
         await panel("terrain"); await click(region); await property("region"); await fit();
         assert.doesNotMatch(await text("#properties"), /构造方式/);
-        assert.match(await text("button[aria-label=\"边界 1\"]"), /闭合曲线（4 个节点）/);
+        assert.match(await text("button[aria-label=边界线]"), /闭合曲线（4 个节点）/);
         const deleteBoundary = "button[aria-label=\"删除边界\"]";
         assert.equal(await evaluate(s => document.querySelectorAll(s).length, deleteBoundary), 0);
         await screenshot("b-boundary-one");
@@ -429,7 +429,18 @@ export async function checkRound26(url: string) {
         for (const p of [[-32, 4], [-28, 4], [-30, 9]] as Point[]) await tap(await at(p));
         await key("Enter"); await saved();
         assert.equal(await evaluate(s => document.querySelectorAll(s).length, deleteBoundary), 2);
-        const row2 = ".parameter-row:has(button[aria-label=\"边界 2\"])";
+        const boundaries = await evaluate(() => [...document.querySelectorAll(".subitem-toggle")].map(el => el.textContent?.trim()));
+        assert.deepEqual(boundaries, ["边界 1", "边界 2"]);
+        const row2 = ".subitem:has(> .subitem-heading " + deleteBoundary + "):nth-of-type(2)";
+        const boundary2 = await evaluate(() => [...document.querySelectorAll(".subitem-toggle")]
+            .find(el => el.textContent?.trim() === "边界 2")?.getAttribute("aria-expanded"));
+        assert.equal(boundary2, "true");
+        await tap(await at([-32, 4]));
+        const selectedNode = ".subitem[data-curve-node]";
+        await wait(s => !!document.querySelector(s), selectedNode);
+        assert.equal(await evaluate(s => document.querySelector(s)?.parentElement?.closest(".subitem")
+            ?.querySelector(".subitem-toggle")?.textContent?.trim(), selectedNode), "边界 2");
+        assert.equal(await evaluate(() => [...document.querySelectorAll("#properties h3")].some(h => h.textContent?.trim() === "节点")), false);
         const [rowX, rowY] = await point(row2);
         await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: rowX, y: rowY });
         await wait(s => getComputedStyle(document.querySelector(s)!).opacity === "1", row2 + " " + deleteBoundary);
@@ -476,7 +487,7 @@ export async function checkRound26(url: string) {
         await tap(await at(vertex));
         const heightRow = "[data-parameter$=\".ridges.2.line.nodes.1.h\"]";
         await wait(s => !!document.querySelector(s), heightRow);
-        await click("[data-geo-node=D]");
+        await click("[data-geo-node=A]");
         await drag(await at(vertex), await at([-4, 32.3])); await saved();
         const mountain = (await authored()).geoNodes.find(n => n.id === "C")!.function;
         assert(mountain.type === "mountain" && distance(mountain.ridges[2].line.nodes[1].p, [-4, 32.3]) < .3);
@@ -493,11 +504,14 @@ export async function checkRound26(url: string) {
         await paint();
         assert.equal(await text(".bottom-tabs small"), "高度 / m");
         const heightPlot = await evaluate(() => ({ ...window.round26.plots, terrain: window.round26.terrain }));
-        assert(heightPlot.ticks.includes("3.0") && heightPlot.fills === 1);
+        const heightTicks = heightPlot.ticks.map(Number);
+        assert(Math.min(...heightTicks) < 3 && Math.max(...heightTicks) > 3 && heightPlot.fills === 1);
         await panel("layers"); await pickField("F");
         const fieldPlot = await evaluate(() => ({ ...window.round26.plots, terrain: window.round26.terrain }));
         assert.equal(await text(".bottom-tabs small"), "基质 / %");
-        assert(fieldPlot.ticks.includes("0.47") && fieldPlot.ticks.every(tick => /^0\.\d\d$/.test(tick)));
+        const fieldTicks = fieldPlot.ticks.map(Number);
+        assert(Math.min(...fieldTicks) < .47 && Math.max(...fieldTicks) > .47);
+        assert(fieldPlot.ticks.every(tick => /^0\.\d\d$/.test(tick)));
         assert.equal(fieldPlot.fills, 1);
         assert.equal(fieldPlot.terrain, heightPlot.terrain);
         assert(fieldPlot.clears > heightPlot.clears);

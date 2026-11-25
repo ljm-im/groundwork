@@ -13,6 +13,7 @@ import { installPickers } from "./pickers.ts";
 import { checkAppearance } from "./appearance.ts";
 import { checkRound26 } from "./round26.ts";
 import { checkRound27 } from "./round27.ts";
+import { checkRound28 } from "./round28.ts";
 
 test("Editor interactions in Chromium", async t => {
     const server = await createServer({ configFile: "configs/vite.config.ts", server: { host: "127.0.0.1", port: 0 } });
@@ -23,6 +24,7 @@ test("Editor interactions in Chromium", async t => {
         await t.test("Appearance changes in Chromium", () => checkAppearance(url));
         await t.test("Trial feedback fixes in Chromium", () => checkRound26(url));
         await t.test("Unified curves in Chromium", () => checkRound27(url));
+        await t.test("Deferred selection, pen modes and map overlays in Chromium", () => checkRound28(url));
     }
     finally {
         await server.close();
@@ -63,7 +65,7 @@ async function checkEditor(url: string) {
         await wait(({ escaped, name }) => document.querySelector("button.choice-face[aria-label=" + escaped + "] span")?.textContent === name, { escaped, name });
         await idle();
     }
-    const idle = () => wait(() => !!document.querySelector<HTMLElement>("#busy")?.hidden);
+    const idle = () => wait(() => !document.querySelector(".map-wrap[data-busy=true]"));
     const saved = () => wait(() => document.querySelector("#save-state")?.textContent === "已保存");
     const disk = () => evaluate(() => window.disk("regression.json"));
     async function keyboardStep(selector: string) {
@@ -489,6 +491,7 @@ async function checkEditor(url: string) {
             await click("#undo"); await idle(); await saved();
         }
         async function compareFinish(start: () => Promise<void>, closed: boolean) {
+            await saved();
             const original = await disk();
             await start(); await vertices(closed); await key("Enter"); await idle(); await saved();
             const byEnter = await disk();
@@ -506,15 +509,15 @@ async function checkEditor(url: string) {
         assert.equal(await text(status + " span"), "回车、双击或单击首点结束");
         assert.equal(await evaluate(() => document.querySelector("[aria-label=新建地件]")?.getAttribute("aria-pressed")), "true");
         await vertices(false);
-        assert.deepEqual(await evaluate(() => [...document.querySelectorAll<HTMLButtonElement>(".drawing-status button")]
+        assert.deepEqual(await evaluate(() => [...document.querySelectorAll<HTMLButtonElement>(".drawing-actions button")]
             .map(button => [button.textContent, button.disabled])), [["完成", true], ["取消", false]]);
         const beforeEscape = await disk();
         await key("Escape"); await selected();
         assert.equal(await disk(), beforeEscape);
         assert.equal(await evaluate(() => document.querySelector("[aria-label=新建地件]")?.getAttribute("aria-pressed")), "false");
         await pen(); await tap(a); await tap(b); await tap(c);
-        assert.equal(await evaluate(() => document.querySelector<HTMLButtonElement>(".drawing-status button")?.disabled), false);
-        await click(status + " button:last-child"); await selected();
+        assert.equal(await evaluate(() => document.querySelector<HTMLButtonElement>(".drawing-actions button")?.disabled), false);
+        await click(status + " .drawing-actions button:last-child"); await selected();
         await click("[data-geo-node=G]");
         await pen(); await tap(a);
         await click("[data-geo-node=G]"); await selected();
@@ -560,7 +563,7 @@ async function checkEditor(url: string) {
         await pen(); await vertices(false);
         await tap(a); await tap(a, 2);
         assert.match(await text("#toast"), /至少需要三个节点/);
-        assert.match(await text("#mode-hint"), /单击放置尖角节点/);
+        assert.match(await text("#mode-hint"), /单击放置节点，按 S 切换尖角和自动平滑/);
         await tap(c); await key("Enter"); await idle(); await saved();
         assert(await disk() === triangle, "An incomplete double-click must leave the original vertices and IDs intact");
 

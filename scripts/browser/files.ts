@@ -68,9 +68,9 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
     const state = () => evaluate(() => document.querySelector("#save-state")?.textContent);
     const draft = () => evaluate(() => JSON.parse(localStorage.getItem("terrain-editor/unsaved-v1") ?? "null") as { filename: string; text: string } | null);
     const unload = () => evaluate(() => !window.dispatchEvent(new Event("beforeunload", { cancelable: true })));
-    const filename = (name: string) => wait(name => document.querySelector("#filename")?.textContent === name && document.querySelector<HTMLElement>("#busy")!.hidden, name);
+    const filename = (name: string) => wait(name => document.querySelector("#filename")?.textContent === name && !document.querySelector(".map-wrap[data-busy=true]"), name);
     const status = (value: string) => wait(value => document.querySelector("#save-state")?.textContent === value, value);
-    const saved = (count: number) => wait(count => window.probe.writes >= count && document.querySelector<HTMLElement>("#busy")!.hidden && document.querySelector("#save-state")?.textContent === "已保存", count);
+    const saved = (count: number) => wait(count => window.probe.writes >= count && !document.querySelector(".map-wrap[data-busy=true]") && document.querySelector("#save-state")?.textContent === "已保存", count);
     async function storage() {
         return evaluate(async () => ({ keys: Object.keys(localStorage), databases: (await indexedDB.databases()).map(db => db.name) }));
     }
@@ -332,7 +332,7 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
         report.checks.recover = { originalName: b, suggested: b, newName: c, actualBeforeUnload: true, refreshEmpty: true };
 
         check("Keep an invalid draft available after a failed recovery");
-        const invalid = JSON.stringify({ text: '{"version":4}', filename: "invalid.json" });
+        const invalid = JSON.stringify({ text: "{\"version\":4}", filename: "invalid.json" });
         await evaluate(text => localStorage.setItem("terrain-editor/unsaved-v1", text), invalid);
         await navigate();
         await filename("未打开文件");
