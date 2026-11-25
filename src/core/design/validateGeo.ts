@@ -1,6 +1,6 @@
 import { type ClosedCurve, type Curve, type GeoNode, type Point, type ResolvedDesign } from "./v5.ts";
 import { defaultFieldPrecision, isBuiltin, reserved, seedId, heightId } from "./defaults.ts";
-import { canWrite, expandKeys, functionParameters, functionTable, numericValid } from "./functionTable.ts";
+import { canWrite, expandKeys, functionParameterKeys, functionParameters, functionTable, numericValid } from "./functionTable.ts";
 import { readAt, type Address } from "./address.ts";
 import { check, DesignError, rejectRetired, type DesignProblem, type Location } from "./problems.ts";
 import { hasHandleSide, neighbor } from "./path.ts";
@@ -27,7 +27,7 @@ export function validateCurves(n: GeoNode, index: number) {
         for (const [i, node] of p.nodes.entries()) {
             const pos = [...nodesAt, i], field = (name: string) => at([...pos, name]);
             check(record(node), "无效", at(pos));
-            rejectRetired(node, ["next"], at(pos));
+            rejectRetired(node, ["next", "autoIn", "autoOut"], at(pos));
             check(typeof node.id === "string" && node.id, "无效", field("id"));
             check(!ids.has(node.id), "重复“" + node.id + "”", field("id"));
             ids.add(node.id);
@@ -127,7 +127,7 @@ export function validateGeo(d: ResolvedDesign, allowBrokenReferences = false) {
         upperPaths.set(n.id, c.type === "free" ? c.paths : []);
         if (f.type === "slope") valid(f.kind === "path" || f.kind === "radial", fn(["kind"]));
         for (const p of ps) {
-            for (const key of expandKeys(f, p.key)) {
+            for (const key of functionParameterKeys(f, p)) {
                 const value = readAt(f, key), pos = fn(key);
                 if (p.type !== "geometry") {
                     if (value === undefined && p.profile) continue;

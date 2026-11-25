@@ -12,7 +12,6 @@
     --weight-regular: 400;
     --weight-semibold: 600;
     --font-body: "Inter", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
-    --font-coords: "IBM Plex Mono", Consolas, monospace;
 
     --space-1: 4px;
     --space-2: 8px;
@@ -44,6 +43,7 @@
 
     --bg-app: #f9faf6;
     --bg-panel: #fffefa;
+    --bg-map-chip: color-mix(in srgb, var(--bg-panel) 90%, transparent);
     --bg-sunken: #f2f5ed;
     --bg-hover: #edf2eb;
     --bg-selected: #e2ece4;

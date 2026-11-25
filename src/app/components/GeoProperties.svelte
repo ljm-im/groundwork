@@ -4,7 +4,8 @@
 {#snippet geometry(label: string, kind: GeometryTarget["kind"], index: number, icon: "point" | "curve" | "closedPath", count: number, heightAt?: Address, redraw?: DrawTool, member?: number)}
     {@const active = editor.geometry?.kind === kind && editor.geometry.index === index}
     <GeometryInput {label} {icon} {count} {active} onclick={() => editor.focusGeometry({ kind, index })}
-        redraw={redraw ? () => editor.setTool(redraw, n.id, member) : undefined}
+        onmouseenter={() => hover(kind === "parameter" ? kind : index < 0 ? "curve" : "outline", index)}
+        onmouseleave={clearHover} redraw={redraw ? () => editor.setTool(redraw, n.id, member) : undefined}
         redrawing={redraw && editor.toolActive(redraw, n.id, member)} />
     {#if heightAt && active && vertex?.role === "parameter" && vertex.path === index}
         {@render param([...heightAt, "h"])}
@@ -15,28 +16,38 @@
     <CheckboxRow label="闭合" checked={curve.closed} disabled={curve.nodes.length < 3}
         change={closed => editor.setCurveClosed(n.id, path, closed)} />
 {/snippet}
-{#snippet selectedNode(curve: Curve, path: number, address?: Address)}
-    {#if vertex?.role === "vertex" && vertex.path === path && curve.nodes[vertex.index]}
+{#snippet selectedPart(curve: Curve, path: number, address?: Address)}
+    {#if (vertex?.role === "vertex" || vertex?.role === "segment") && vertex.path === path && curve.nodes[vertex.index]}
         {@const control = vertex}
         {@const index = control.index}
-        <Subitem label={"节点 " + (index + 1)} inset curveNode={curve.nodes[index].id}>
+        {@const segment = control.role === "segment"}
+        {@const name = segment ? "线段" : "节点"}
+        {@const id = curve.nodes[index].id}
+        {@const step = segment ? segmentNeighbor : neighbor}
+        {@const removable = segment ? segmentRemovalIndex(curve, index) !== undefined : canRemoveNode(curve)}
+        <Subitem label={name + " " + (index + 1)} inset curveNode={segment ? undefined : id} curveSegment={segment ? id : undefined}
+            onmouseenter={() => hover(control.role, path, index)} onmouseleave={clearHover}>
             {#snippet actions()}
-                <button class="icon-button" aria-label="上一个节点" data-tip="上一个节点" disabled={neighbor(curve, index, -1) === undefined}
-                    onclick={() => editor.stepVertex(-1)}><Icon name="chevronLeft" /></button>
-                <button class="icon-button" aria-label="下一个节点" data-tip="下一个节点" disabled={neighbor(curve, index, 1) === undefined}
-                    onclick={() => editor.stepVertex(1)}><Icon name="chevronRight" /></button>
-                {#if canRemoveNode(curve)}
-                    <button class="icon-button danger" aria-label="删除节点" data-tip="删除节点" onclick={() => editor.removeGeo(n.id, control)}><Icon name="delete" /></button>
+                <button class="icon-button" aria-label={"上一个" + name} data-tip={"上一个" + name} disabled={step(curve, index, -1) === undefined}
+                    onclick={() => editor.stepCurvePart(-1)}><Icon name="chevronLeft" /></button>
+                <button class="icon-button" aria-label={"下一个" + name} data-tip={"下一个" + name} disabled={step(curve, index, 1) === undefined}
+                    onclick={() => editor.stepCurvePart(1)}><Icon name="chevronRight" /></button>
+                {#if removable}
+                    <button class="icon-button danger" aria-label={"删除" + name} data-tip={"删除" + name}
+                        onclick={() => editor.removeGeo(n.id, control)}><Icon name="delete" /></button>
                 {/if}
             {/snippet}
-            {#if address}{@render param([...address, "nodes", index, "h"])}{/if}
-            <NodeProperties {editor} {curve} {control} />
+            {#if address && !segment}{@render param([...address, "nodes", index, "h"])}{/if}
+            <CurvePartProperties {editor} {curve} {control} />
         </Subitem>
     {/if}
 {/snippet}
-{#snippet memberActions(group: "ridges" | "peaks", label: string, index: number)}
-    <button class="icon-button" aria-label={"复制" + label} data-tip={"复制" + label} onclick={() => editor.changeMember(n.id, group, index, true)}><Icon name="copy" /></button>
-    <button class="icon-button danger" aria-label={"删除" + label} data-tip={"删除" + label} onclick={() => editor.changeMember(n.id, group, index, false)}><Icon name="delete" /></button>
+{#snippet memberActions(group: "ridges" | "peaks", index: number)}
+    {@const name = group === "ridges" ? "山脊" : "山峰"}
+    {@const copy = "复制" + name}
+    {@const remove = "删除" + name}
+    <button class="icon-button" aria-label={copy} data-tip={copy} onclick={() => editor.changeMember(n.id, group, index, true)}><Icon name="copy" /></button>
+    <button class="icon-button danger" aria-label={remove} data-tip={remove} onclick={() => editor.changeMember(n.id, group, index, false)}><Icon name="delete" /></button>
 {/snippet}
 <PropertyPane {editor}>
     {#snippet title()}
@@ -49,22 +60,23 @@
                 setLabelVisibility={visible => editor.editNode(n.id, item => item.showLabel = visible)} />
         {:else if tab === "region"}
             {#if c.type === "free"}
-                <Part title="边界">
-                    {#snippet actions()}<AddButton label="添加边界" active={editor.toolActive("addPath", n.id)} action={() => editor.setTool("addPath", n.id)} />{/snippet}
+                <Part title="区域">
+                    {#snippet actions()}<AddButton label="添加轮廓" active={editor.toolActive("addPath", n.id)} action={() => editor.setTool("addPath", n.id)} />{/snippet}
                     {#each c.paths as path, i (editor.subitemKey(n.id, "paths", i))}
-                        <Subitem label={"边界 " + (i + 1)} open={editor.subitemOpen(n.id, "paths", i)} onclick={() => editor.toggleSubitem(n.id, "paths", i)}>
+                        <Subitem label={"轮廓 " + (i + 1)} open={editor.subitemOpen(n.id, "paths", i)} onclick={() => editor.toggleSubitem(n.id, "paths", i)}
+                            outline={path.nodes[0].id} selected={editor.outline === i} onmouseenter={() => hover("outline", i)} onmouseleave={clearHover}>
                             {#snippet actions()}
                                 {#if c.type === "free" && c.paths.length > 1}
-                                    <button class="icon-button danger" aria-label="删除边界" data-tip="删除边界" onclick={() => editor.removePath(n.id, i)}><Icon name="delete" /></button>
+                                    <button class="icon-button danger" aria-label="删除轮廓" data-tip="删除轮廓" onclick={() => editor.removePath(n.id, i)}><Icon name="delete" /></button>
                                 {/if}
                             {/snippet}
-                            {@render geometry("边界线", "path", i, "closedPath", path.nodes.length)}
-                            {@render selectedNode(path, i)}
+                            {@render geometry("值", "path", i, "closedPath", path.nodes.length)}
+                            {@render selectedPart(path, i)}
                         </Subitem>
                     {/each}
                 </Part>
             {:else if c.type === "strip"}
-                <Part>
+                <Part title="区域">
                     <GeometryInput label="边" icon="curve" summary={stripSummary(c)} active={editor.toolActive("strip", n.id)}
                         onclick={() => editor.setTool("strip", n.id)} />
                     {#each [0, 1] as i (i)}
@@ -87,12 +99,12 @@
                     {#if p.type !== "geometry"}{@render param(p.key)}
                     {:else if f.type === "coast" && p.key[0] === "shore"}
                         {@render geometry(p.label, "path", -1, "closedPath", f.shore.nodes.length, undefined, "shore")}
-                        {@render selectedNode(f.shore, -1)}
+                        {@render selectedPart(f.shore, -1)}
                     {:else if f.type === "coast"}
                         {@render geometry(p.label, "parameter", 0, "point", 1, undefined, "harbor")}
                     {:else if f.type === "slope" && f.kind === "path"}
                         {@render geometry(p.label, "path", -1, f.line.closed ? "closedPath" : "curve", f.line.nodes.length, undefined, "slopeLine")}
-                        {@render selectedNode(f.line, -1, ["line"])}
+                        {@render selectedPart(f.line, -1, ["line"])}
                         <CheckboxRow label="闭合" checked={f.line.closed} disabled={f.line.nodes.length < 3}
                             change={closed => editor.setCurveClosed(n.id, -1, closed)} />
                         {#each functionTable.slope.toggles ?? [] as toggle (toggle.label)}
@@ -110,25 +122,28 @@
                         {#each advancedParameters as p (p.key.join("."))}{@render param(p.key)}{/each}
                     </Subitem>
                 </Part>
-            {:else if f.type === "mountain"}
+            {/if}
+            {#if f.type === "mountain"}
                 <Part title="山脊">
                     {#snippet actions()}<AddButton label="添加山脊" active={editor.toolActive("ridge", n.id)} action={() => editor.setTool("ridge", n.id)} />{/snippet}
                     {#each f.ridges as ridge, j (editor.subitemKey(n.id, "ridges", j))}
-                        <Subitem label={"山脊 " + (j + 1)} open={editor.subitemOpen(n.id, "ridges", j)} onclick={() => editor.toggleSubitem(n.id, "ridges", j)}>
-                            {#snippet actions()}{@render memberActions("ridges", "山脊 " + (j + 1), j)}{/snippet}
+                        <Subitem label={"山脊 " + (j + 1)} open={editor.subitemOpen(n.id, "ridges", j)} onclick={() => editor.toggleSubitem(n.id, "ridges", j)}
+                            onmouseenter={() => hover("curve", -1 - j)} onmouseleave={clearHover}>
+                            {#snippet actions()}{@render memberActions("ridges", j)}{/snippet}
                             {@render curveInput(geoParameter(n, ["function", "ridges", j, "line"])!.label, ridge.line, -1 - j, "ridge", j)}
                             {#each memberParameters("ridges", j) as key (key.join("."))}
                                 {@render param(key)}
                             {/each}
-                            {@render selectedNode(ridge.line, -1 - j, ["ridges", j, "line"])}
+                            {@render selectedPart(ridge.line, -1 - j, ["ridges", j, "line"])}
                         </Subitem>
                     {/each}
                 </Part>
                 <Part title="山峰">
                     {#snippet actions()}<AddButton label="添加山峰" active={editor.toolActive("peak", n.id)} action={() => editor.setTool("peak", n.id)} />{/snippet}
                     {#each f.peaks.keys() as j (editor.subitemKey(n.id, "peaks", j))}
-                        <Subitem label={"山峰 " + (j + 1)} open={editor.subitemOpen(n.id, "peaks", j)} onclick={() => editor.toggleSubitem(n.id, "peaks", j)}>
-                            {#snippet actions()}{@render memberActions("peaks", "山峰 " + (j + 1), j)}{/snippet}
+                        <Subitem label={"山峰 " + (j + 1)} open={editor.subitemOpen(n.id, "peaks", j)} onclick={() => editor.toggleSubitem(n.id, "peaks", j)}
+                            onmouseenter={() => hover("parameter", f.ridges.length + j)} onmouseleave={clearHover}>
+                            {#snippet actions()}{@render memberActions("peaks", j)}{/snippet}
                             {@render geometry(geoParameter(n, ["function", "peaks", j, "at", "p"])!.label, "parameter", f.ridges.length + j, "point", 1, ["peaks", j, "at"], "peak", j)}
                             {#each memberParameters("peaks", j) as key (key.join("."))}
                                 {@render param(key)}
@@ -144,15 +159,15 @@
 <script lang="ts">
     import * as session from "../state/session.svelte.ts";
     import { allowedFunctions } from "../../core/edit/geoNodes.ts";
-    import { canRemoveNode } from "../../core/edit/paths.ts";
-    import { neighbor } from "../../core/design/path.ts";
+    import { canRemoveNode, segmentRemovalIndex } from "../../core/edit/paths.ts";
+    import { neighbor, segmentNeighbor } from "../../core/design/path.ts";
     import { type Curve, type GeoFunction, type Strip } from "../../core/design/v5.ts";
     import { declarationEntries, isBuiltin } from "../../core/design/defaults.ts";
     import { canWrite, functionParameters, functionTable, isBuiltinFunction } from "../../core/design/functionTable.ts";
     import { geoAt } from "../state/geoTools.ts";
     import { type DrawTool } from "../../core/edit/types.ts";
     import { geoParameter, readAt, writeAt, type Address } from "../../core/design/parameters.ts";
-    import { type GeometryTarget } from "../../core/edit/geoControls.ts";
+    import { type GeoControl, type GeometryTarget } from "../../core/edit/geoControls.ts";
     import Icon from "./Icon.svelte";
     import AddButton from "./AddButton.svelte";
     import CheckboxRow from "./CheckboxRow.svelte";
@@ -164,7 +179,7 @@
     import PropertyTitle from "./PropertyTitle.svelte";
     import PropertySelect from "./PropertySelect.svelte";
     import Parameter from "./Parameter.svelte";
-    import NodeProperties from "./NodeProperties.svelte";
+    import CurvePartProperties from "./CurvePartProperties.svelte";
     import Subitem from "./Subitem.svelte";
 
     let { editor }: { editor: session.Editor } = $props();
@@ -177,9 +192,15 @@
     let advancedParameters = $derived(specs.filter(p => p.advanced));
     function memberParameters(group: "ridges" | "peaks", i: number) {
         return specs.filter(p => p.key[0] === group && p.type !== "geometry" && p.key.slice(2).every(part => part !== "*") && p.key.at(-1) !== "h")
-            .map(p => [group, i, ...p.key.slice(2)]);
+            .map(p => [group, i, ...p.key.slice(2)]).filter(key => geoParameter(n, ["function", ...key]));
     }
     let vertex = $derived(editor.vertex);
+    function hover(role: GeoControl["role"], path: number, index = 0) {
+        editor.hoverSelection({ kind: "geoNode", id: n.id }, { role, path, index });
+    }
+    function clearHover() {
+        editor.hoverSelection();
+    }
     function nameOf(id: string) {
         return geoAt(d, id)?.label ?? id;
     }
@@ -187,6 +208,6 @@
         const names = construction.of.map(id => "“" + nameOf(id) + "”");
         const edge = names.length === 2 ? names.join("和") + "的公共边" : names[0] + "的轮廓";
         const range = construction.range;
-        return range ? edge + "，从 " + range.from + " 到 " + range.to : edge;
+        return range ? edge + "，从“" + range.from + "”到“" + range.to + "”" : edge;
     }
 </script>

@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { parseDesign, serializeDesign } from "../../src/core/design/model.ts";
-import { rect, syntheticDesign } from "../../test/scenarios.ts";
+import { rect, syntheticDesign } from "../scenarios.ts";
 import { startChromium } from "./chromium.ts";
-import { installPickers } from "./pickers.ts";
+import { installPickers } from "./filePickers.ts";
 
-export async function checkRound33(url: string) {
+export async function checkCoarsePreview(url: string) {
     const design = syntheticDesign();
     design.grid.step = .2;
     design.geoNodes[0].construction = rect(-60, -60, 60, 60);

@@ -9,7 +9,7 @@
                 select={() => editor.focus("input", id)} onmenu={builtin ? undefined : (x, y) => editor.openMenu({ kind: "input", id }, x, y)}>
                 {#snippet actions()}
                     <div data-input={id}><NumberInput {editor} label={v.label ?? id} address={["inputs", id, "value"]} self={"input:" + id}
-                        range={v.range} step={v.range[2]} compact /></div>
+                        range={v.range} step={v.range[2]} compact namedInput /></div>
                 {/snippet}
             </ListRow>
         {:else}<EmptyState search />{/each}

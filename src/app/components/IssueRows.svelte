@@ -2,7 +2,7 @@
     <ListRow icon="issues" severity={issue.severity} name={issue.label ?? "项目"}
         description={designProblemText(issue, editor.project.design, "property")}
         selected={editor.selectedIssues.includes(issue)} attributes={{ "data-issue": editor.project.issues.indexOf(issue) }}
-        select={() => editor.issueAt(issue, false)} />
+        select={() => editor.issueAt(issue)} onmenu={(x, y) => editor.openIssueMenu(issue, x, y)} />
 {/each}
 
 <script lang="ts">

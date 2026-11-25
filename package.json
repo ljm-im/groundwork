@@ -8,7 +8,7 @@
     "scripts": {
         "dev": "vite --config configs/vite.config.ts",
         "test": "node --test --test-concurrency=1 --test-reporter=./configs/test-reporter.ts test/*.test.ts",
-        "test:browser": "node --test scripts/browser/editor.ts",
+        "test:browser": "node --test test/browser/editorInteractions.test.ts",
         "export": "node scripts/export.ts",
         "perf": "node configs/perf.ts",
         "check": "svelte-check --tsconfig configs/tsconfig.json --config configs/svelte.config.js && eslint --max-warnings 0 --config configs/eslint.config.js .",

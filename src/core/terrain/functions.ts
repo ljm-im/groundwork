@@ -4,11 +4,12 @@ import { fieldExpressions, functionTable } from "../design/functionTable.ts";
 import { type FieldSamples } from "../design/results.ts";
 import { evaluate, fieldValue, sampleValue } from "../design/expression.ts";
 import { type CrossSection, type Region, regionMaskAt, regionMaskIndex, signedBoundaryDistance } from "../design/regions.ts";
-import { nearest, polygonField, sampleDefined, smooth, type Grid, type GridFrame } from "../math/geometry.ts";
-import { fbm, noise, noise1D } from "../math/noise.ts";
+import { clamp, nearest, polygonField, sampleDefined, smooth, type Grid, type GridFrame } from "../math/geometry.ts";
+import { fbm, noise } from "../math/noise.ts";
 import { erodeAtSpacing } from "./erosion.ts";
 import { flattenPath } from "../design/path.ts";
 import { shoreDistance, shoreFrame } from "./shore.ts";
+import { mountainProfile } from "./mountain.ts";
 
 const landRise = .28, landCap = 3.5, seaFall = .09, seaCap = 5;
 const coastDistance = Math.max(landCap / landRise, seaCap / seaFall);
@@ -125,7 +126,26 @@ export function evaluateLayer(n: ResolvedGeoNode, region: Region, state: FieldSt
             }
             case "noise": {
                 const pattern = noise(seed), octaves = f.octaves, weight = featherWeight(f.feather);
-                return (k, x, y) => source[k] + input(f.amplitude, k) * fbm(pattern, x / f.scale, y / f.scale, octaves) * weight(x, y);
+                if (!f.warp && !f.carve)
+                    return (k, x, y) => source[k] + input(f.amplitude, k) * fbm(pattern, x / f.scale, y / f.scale, octaves) * weight(x, y);
+                const warp = noise(seed + 101), gullies = noise(seed + 202);
+                return (k, x, y) => {
+                    const original = source[k], factor = weight(x, y);
+                    if (!factor) return original;
+                    let value = original;
+                    if (f.warp) {
+                        const u = x / f.warpScale, v = y / f.warpScale;
+                        const dx = f.warp * clamp(fbm(warp, u, v, 4), -1, 1);
+                        const dy = f.warp * clamp(fbm(warp, u + 7.3, v - 2.1, 4), -1, 1);
+                        x += dx;
+                        y += dy;
+                        value = sampleDefined(grid, source, mask, x, y) ?? original;
+                    }
+                    const u = x / f.scale, v = y / f.scale;
+                    const detail = input(f.amplitude, k) * fbm(pattern, u, v, octaves);
+                    const carve = f.carve && value > 0 ? value * f.carve / 100 * (1 - clamp(fbm(gullies, u, v, octaves, true))) : 0;
+                    return original + (value - original + detail - carve) * factor;
+                };
             }
             case "coast": {
                 const n1 = noise(seed), n2 = noise(seed + 101);
@@ -150,27 +170,8 @@ export function evaluateLayer(n: ResolvedGeoNode, region: Region, state: FieldSt
                 };
             }
             case "mountain": {
-                const n3 = noise(seed + 202);
-                const floor = f.floor;
-                const ridges = f.ridges.map(r => ({ ...r, profile: numericProfile(r.line, grid.step / 8) }));
-                const peaks = f.peaks.map(p => ({ ...p, h: p.at.h }));
-                return (k, x, y) => {
-                    let h = source[k];
-                    if (h <= floor) return h;
-                    for (const { profile, widths, widthNoise: w, heightNoise: gain } of ridges) {
-                        const hit = nearest(x, y, profile.points), a = profile.points[hit.segment], b = profile.points[hit.segment + 1];
-                        const side = (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]) > 0 ? 0 : 1;
-                        const s = profile.station(hit.segment, hit.t);
-                        const breadth = widths[side] * (1 + w.amount / 100 * noise1D(seed, s / w.wavelength));
-                        const crest = profile.value(s) * (1 + gain.amount / 100 * noise1D(seed + 1, s / gain.wavelength));
-                        h = Math.max(h, crest * Math.exp(-((hit.distance / (breadth || 1e-9)) ** 2)));
-                    }
-                    for (const p of peaks) {
-                        const radius = p.radius + p.noise * n3(x / p.scale, y / p.scale);
-                        h = Math.max(h, p.h * Math.exp(-((Math.hypot(p.at.p[0] - x, p.at.p[1] - y) / (radius || 1e-9)) ** 2)));
-                    }
-                    return h;
-                };
+                const height = mountainProfile(f, grid.step / 8, seed);
+                return (k, x, y) => source[k] <= f.floor ? source[k] : height(x, y, source[k]);
             }
             case "cliff": {
                 const n1 = noise(seed);

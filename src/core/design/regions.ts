@@ -1,7 +1,7 @@
 import { type ResolvedDesign as Design, type Construction, type GeoNode, type ClosedCurve, type Point, type Strip } from "./v5.ts";
 import { bounds, clamp, createGrid, distance, mixPoint, projection, type Box, type Grid } from "../math/geometry.ts";
 import { functionTable } from "./functionTable.ts";
-import { insidePolygon } from "../math/polygon.ts";
+import { insidePolygon, polygonArea } from "../math/polygon.ts";
 import { indexSegments, segmentProjection, type IndexedSegment } from "../math/segmentIndex.ts";
 import { flattenPath, type Segment } from "./path.ts";
 
@@ -12,6 +12,7 @@ export interface RegionShape {
     box: Box;
     contains: (p: Point) => boolean;
     boundary: () => Segment[][];
+    containingOutlines?: (p: Point) => number[];
     spine?: Segment[];
     reach?: number;
     spineIndex?: Pick<ReturnType<typeof indexSegments>, "forRow">;
@@ -191,12 +192,18 @@ export function makeShape(node: GeoNode<number>, below: Map<string, RegionShape>
     if (c.type === "free") {
         const paths = c.paths.map(p => flattenPath(p, tolerance));
         const polygons = paths.map(path => ({ points: path.map(s => s.a) }));
+        const areas: number[] = [];
+        const area = (index: number) => areas[index] ??= polygonArea(polygons[index].points);
         return {
             boundary: () => paths, box: bounds(polygons.flatMap(p => p.points)),
             contains(p) {
                 let inside = false;
                 for (const polygon of polygons) if (insidePolygon(polygon, p)) inside = !inside;
                 return inside;
+            },
+            containingOutlines(p) {
+                const hits = polygons.flatMap((polygon, i) => insidePolygon(polygon, p) ? [i] : []);
+                return hits.sort((a, b) => area(a) - area(b));
             }
         };
     }

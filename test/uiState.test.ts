@@ -3,16 +3,20 @@ import "../configs/register-svelte.ts";
 import assert from "node:assert/strict";
 import { createGrid, distance } from "../src/core/math/geometry.ts";
 import { sectionHandles } from "../src/core/edit/controls.ts";
-import { resolveDesign } from "../src/core/design/parameters.ts";
+import { geoParameterName, resolveDesign } from "../src/core/design/parameters.ts";
 import { History } from "../src/core/edit/history.ts";
+import { editControl, geometryPath, insertCurveNode } from "../src/core/edit/geoControls.ts";
+import { positionReadings, readingRange } from "../src/app/state/mapText.ts";
+import { type Design } from "../src/core/design/v5.ts";
 import { propertyTabs } from "../src/app/state/inspector.ts";
+import { designProblemText } from "../src/app/state/designMessages.ts";
 import { Project } from "../src/core/project.ts";
 import { pixelGridSpacing } from "../src/core/edit/display.ts";
 import { constrainGeoLabel, constrainSectionLabel, geoLabelPoint } from "../src/render/labelLayout.ts";
 import { makeShape, rasterRegion } from "../src/core/design/regions.ts";
 import { clampMarkPoint, nextMapHit, ProjectMap } from "../src/render/map.ts";
 import { render } from "svelte/server";
-import { layer, openCurve, polygon, rect, syntheticDesign } from "./scenarios.ts";
+import { coveredLandformPoints, layer, openCurve, overlappingLandforms, polygon, rect, syntheticDesign } from "./scenarios.ts";
 
 test("Overlapping map objects cycle in paint order, including separate geometries of the same terrain", async () => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
@@ -48,11 +52,43 @@ test("Overlapping map objects cycle in paint order, including separate geometrie
     assert.equal(nextMapHit([], { kind: "geoNode", id: "M" }), undefined);
 });
 
-test("Map focus, hit radius and the selected inspector issue", async () => {
+test("An upper landform face covers lower outlines, vertices and parameter geometry", async () => {
+    const { Editor } = await import("../src/app/state/session.svelte.ts");
+    const project = new Project(overlappingLandforms()), editor = new Editor();
+    const map: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), { width: 1000, height: 700, markBoxes: [] });
+    map.fit(project.terrain, false);
+    Object.assign(editor, { project, map });
+    editor.layers.geoNodes = true;
+    for (const point of coveredLandformPoints) {
+        const screen = map.screen(point), view = editor.mapView!;
+        for (const mode of ["select", "edit", "cycle"] as const)
+            assert.equal(map.objectHits(view, screen, mode).next().value?.selection.id, "B");
+        const next = nextMapHit(map.objectHits(view, screen, "cycle"), { kind: "geoNode", id: "B" });
+        assert.equal(next?.selection.id, "A");
+    }
+    const view = editor.mapView!;
+    const ridge = map.objectHits(view, map.screen([0, 10]), "edit").next().value!;
+    assert.equal(ridge.selection.id, "A");
+    assert.equal(ridge.control?.role, "segment");
+    assert.equal(ridge.control.path, -2);
+    for (const [point, role] of [[[-16, 10], "vertex"], [[-16, 8], "segment"]] as const) {
+        const screen = map.screen([...point]);
+        assert.equal(map.objectHits(view, screen, "select").next().value?.control?.role, "body");
+        assert.equal(map.objectHits(view, screen, "edit").next().value?.control?.role, role);
+    }
+    editor.setSelection({ kind: "geoNode", id: "A" });
+    const atVertex = map.screen(coveredLandformPoints[2]);
+    assert.equal(map.selectedControl(editor.mapView!, atVertex)?.selection.id, "A");
+    assert.equal(map.selectedControl(editor.mapView!, atVertex)?.control?.role, "vertex");
+});
+
+test("Map issue hits keep the view and inspector issues only pan from outside it", async () => {
     const baseline = new Project(syntheticDesign());
     const session = await import("../src/app/state/session.svelte.ts");
     const { default: GeoProperties } = await import("../src/app/components/GeoProperties.svelte");
-    const selected = baseline.issues.find(i => !!i.geoNode)!;
+    const selected = baseline.issues.find(i => i.severity === "warning" && i.geoNode)!;
+    const error = { kind: "test", severity: "error" as const, message: "测试错误", point: selected.point };
+    baseline.issues.push(error);
     const map: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), {
         width: 1000, height: 700, cameraChanged() {}
     });
@@ -60,12 +96,28 @@ test("Map focus, hit radius and the selected inspector issue", async () => {
     const ui = new session.Editor();
     Object.assign(ui, { project: baseline, map, tab: "terrain" });
     ui.setSelection({ kind: "geoNode", id: selected.geoNode! });
+    map.scale *= 1.4;
+    map.center = [selected.point[0] + (map.width / 2 + 6) / map.scale, selected.point[1] + 4];
+    const scale = map.scale, center = [...map.center];
+    const [x, y] = map.screen(selected.point);
+    assert(x < 0 && x > -12);
+    const hits = map.issueHits(ui.mapView!, [x + 11.9, y]);
+    assert(hits.includes(selected) && hits.includes(error));
+    assert(!map.issueHits(ui.mapView!, [x + 12.1, y]).includes(selected));
+    ui.pickMarkers(hits);
+    assert.deepEqual(map.center, center);
+    assert.equal(map.scale, scale);
+    assert.deepEqual(ui.mapView!.selectedIssues, hits);
+    assert.equal(ui.tab, "issues");
     ui.issueAt(selected);
-    assert(distance(map.center, selected.point) < 5);
-    const screen = map.screen(selected.point), view = ui.mapView!;
-    assert(map.issueHits(view, [screen[0] + 11.9, screen[1]]).includes(selected));
-    assert(!map.issueHits(view, [screen[0] + 12.1, screen[1]]).includes(selected));
-    assert.equal(view.issue, selected);
+    assert.deepEqual(map.center, selected.point);
+    assert.equal(map.scale, scale);
+    map.center = [selected.point[0] + 4, selected.point[1]];
+    const visibleCenter = [...map.center];
+    ui.issueAt(error);
+    assert.deepEqual(map.center, visibleCenter);
+    assert.equal(map.scale, scale);
+    ui.issueAt(selected);
     ui.changePropertyTab("issues");
     const { body: markup } = render(GeoProperties, { props: { editor: ui } });
     assert.match(markup, /data-property-tab="issues"[^>]*aria-pressed="true"/);
@@ -74,7 +126,7 @@ test("Map focus, hit radius and the selected inspector issue", async () => {
     ui.changePropertyTab("region");
     const { body: route } = render(GeoProperties, { props: { editor: ui } });
     assert.doesNotMatch(route, /构造方式/);
-    assert.match(route, /边界 1/);
+    assert.match(route, /轮廓 1/);
     assert.doesNotMatch(route, /data-issue=/);
 });
 
@@ -87,6 +139,17 @@ test("Variable preview keeps cached geometry and matches a freshly opened design
     assert.deepEqual(preview.terrain.fields.height.values, full.terrain.fields.height.values);
     assert.deepEqual(preview.terrain.fields.height.defined, full.terrain.fields.height.defined);
     assert.deepEqual(preview.issues, full.issues);
+});
+
+test("A shared strip quotes a side label and a full property path independently", () => {
+    const d = syntheticDesign(), west = { ...d.geoNodes[1], label: "西台" },
+        east = { ...layer("B", rect(-7, -14, 5, -2), { type: "flat", amount: 3 }), label: "东台" };
+    const strip = { ...layer("S", { type: "strip", of: [west.id, east.id], widths: [2, 3] }, { type: "split" }), label: "条带" };
+    d.geoNodes.push(east, strip);
+    d.geoNodes[1] = west;
+    const message = "无效", path = ["construction", "widths", 0];
+    assert.equal(geoParameterName(d, strip, path, false), "“西台”一侧");
+    assert.equal(designProblemText({ location: { kind: "geo", id: strip.id, path }, message }, d), "“条带.西台一侧” 无效");
 });
 
 test("A committed prompt, undo and redo preserve all terrain references", async t => {
@@ -412,6 +475,175 @@ test("Selection history restores edited elements and list tabs preserve the sele
     assert.deepEqual(editor.selection, created);
     await editor.navigate(true);
     assert.equal(editor.selection, null);
+});
+
+test("Selected segments follow their starting node through edits, undo and redo", async t => {
+    const { Editor } = await import("../src/app/state/session.svelte.ts");
+    const editor = new Editor(), d = syntheticDesign();
+    t.mock.method(editor, "reconcileProject", () => {});
+    t.mock.method(editor, "terrainWork", async (_d: Design, fn: () => void) => fn());
+    t.mock.method(editor.files, "remember", () => {});
+    editor.replace(d, true);
+    editor.history = new History(d);
+    editor.select({ kind: "geoNode", id: "T" });
+    editor.selectControl({ role: "segment", path: 0, index: 2, point: [-14, -2] });
+    const selected = () => {
+        const part = editor.vertex!;
+        const owner = editor.project.design.geoNodes[1];
+        return [part.role, part.index, geometryPath(owner, part.path)!.nodes[part.index].id];
+    };
+    assert.deepEqual(selected(), ["segment", 2, "2"]);
+    await editor.edit(doc => {
+        insertCurveNode(doc, doc.geoNodes[1], { role: "segment", path: 0, index: 0, point: [-14, -14] });
+    });
+    assert.deepEqual(selected(), ["segment", 3, "2"]);
+    await editor.removeGeo("T", { role: "vertex", path: 0, index: 0, point: [-21, -14] });
+    assert.deepEqual(selected(), ["segment", 2, "2"]);
+    await editor.navigate(false);
+    assert.deepEqual(selected(), ["segment", 3, "2"]);
+    await editor.navigate(false);
+    assert.deepEqual(selected(), ["segment", 2, "2"]);
+    await editor.navigate(true);
+    assert.deepEqual(selected(), ["segment", 3, "2"]);
+    await editor.navigate(true);
+    assert.deepEqual(selected(), ["segment", 2, "2"]);
+    await editor.removeGeo("T", editor.vertex);
+    assert.deepEqual(selected(), ["vertex", 2, "2"]);
+    await editor.navigate(false);
+    assert.deepEqual(selected(), ["segment", 2, "2"]);
+    await editor.navigate(true);
+    assert.deepEqual(selected(), ["vertex", 2, "2"]);
+});
+
+function islandDesign() {
+    const d = syntheticDesign(), n = d.geoNodes[1], c = rect(-30, -30, 10, 10);
+    for (const [prefix, shape] of [["hole", rect(-22, -22, 4, 4)], ["island", rect(-15, -15, -2, -2)]] as const) {
+        const outline = shape.paths[0];
+        for (const node of outline.nodes) node.id = prefix + node.id;
+        c.paths.push(outline);
+    }
+    n.construction = c;
+    n.function = { type: "slope", kind: "path", line: openCurve([{ p: [-15, -27], h: 2 }, { p: [5, -27], h: 7 }]) };
+    return d;
+}
+
+test("Nested outlines use their own area and expand a selected landform's place in the Alt cycle", async () => {
+    const { Editor } = await import("../src/app/state/session.svelte.ts");
+    const d = islandDesign(), editor = new Editor(), map: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), {
+        width: 1000, height: 700, markBoxes: []
+    });
+    editor.project = new Project(d);
+    map.fit(editor.project.terrain, false);
+    const p: [number, number] = [-10, -10], screen = map.screen(p), shape = editor.project.terrain.regions.get("T")!.shape;
+    assert(shape.contains(p));
+    assert.deepEqual(shape.containingOutlines!(p), [2, 1, 0]);
+    assert(!shape.contains([-20, -20]));
+    assert.deepEqual(shape.containingOutlines!([-20, -20]), [1, 0]);
+    assert.equal(map.objectHits(editor.mapView!, screen, "select").next().value?.control?.role, "body");
+    assert.equal(map.objectHits(editor.mapView!, screen, "edit").next().value?.control?.path, 2);
+    editor.select({ kind: "geoNode", id: "T" });
+    const first = map.objectHits(editor.mapView!, screen, "select").next().value!;
+    assert.equal(first.control?.role, "outline");
+    assert.equal(first.control?.path, 2);
+    editor.selectControl(first.control!);
+    for (const index of [1, 0, undefined]) {
+        const view = editor.mapView!, hits = map.objectHits(view, screen, "cycle");
+        const hit = nextMapHit(hits, view.selection, view.geometry, view.outline)!;
+        assert.equal(hit.selection.id, index === undefined ? "G" : "T");
+        if (index !== undefined) assert.equal(hit.control?.path, index);
+        editor.select(hit.selection);
+        if (hit.control) editor.selectControl(hit.control);
+    }
+
+    const crossed = rect(-10, -10, 10, 10), bow = polygon([[-14, -14], [14, 14], [-14, 14], [14, -14]]);
+    const small = rect(-4, -6, 4, 6).paths[0];
+    crossed.paths.push(bow, small);
+    const overlapping = makeShape({ id: "X", label: "X", field: "height", construction: crossed,
+        function: { type: "ground", value: 1 } }, new Map(), .1);
+    assert.deepEqual(overlapping.containingOutlines!([0, 5]), [2, 1, 0]);
+});
+
+test("Dragging an outline shifts its nodes alone and preserves the selected ID through deletion and history", async t => {
+    const { Editor } = await import("../src/app/state/session.svelte.ts");
+    const d = islandDesign(), editor = new Editor();
+    t.mock.method(editor, "reconcileProject", () => {});
+    t.mock.method(editor, "terrainWork", async (_d: Design, fn: () => void) => fn());
+    t.mock.method(editor.files, "remember", () => {});
+    editor.replace(d, true);
+    editor.history = new History(d);
+    editor.select({ kind: "geoNode", id: "T" });
+    const control = { role: "outline" as const, path: 2, index: 0, point: [-10, -10] as [number, number] };
+    editor.selectControl(control);
+    assert.equal(editor.outline, 2);
+    assert.equal(editor.vertex, undefined);
+    const original = structuredClone(d.geoNodes[1]);
+    await editor.editNode("T", n => editControl(n, control, [-8, -13], false));
+    const moved = editor.project.design.geoNodes[1];
+    assert.deepEqual(moved.function, original.function);
+    for (const i of [0, 1]) assert.deepEqual(geometryPath(moved, i), geometryPath(original, i));
+    assert.deepEqual(geometryPath(moved, 2)?.nodes.map(node => node.p), geometryPath(original, 2)?.nodes.map(({ p: [x, y] }) => [x + 2, y - 3]));
+    editor.removePath("T", 1);
+    editor.removal?.perform?.();
+    editor.removal = null;
+    assert.equal(editor.outline, 1);
+    assert.equal(geometryPath(editor.project.design.geoNodes[1], 1)?.nodes[0].id, "island0");
+    await editor.navigate(false);
+    assert.equal(editor.outline, 2);
+    await editor.navigate(false);
+    assert.equal(editor.outline, 2);
+    assert.deepEqual(editor.project.design.geoNodes[1], original);
+    await editor.navigate(true);
+    assert.equal(editor.outline, 2);
+    await editor.navigate(true);
+    assert.equal(editor.outline, 1);
+    const removal = () => editor.removal;
+    editor.removeSelected();
+    assert.equal(removal()?.action, "删除轮廓");
+    removal()?.perform?.();
+    editor.removal = null;
+    assert.equal(editor.outline, undefined);
+    await editor.navigate(false);
+    assert.equal(editor.outline, 1);
+    await editor.navigate(true);
+    assert.equal(editor.outline, undefined);
+    editor.focusGeometry({ kind: "path", index: 0 });
+    editor.removeSelected();
+    assert.equal(editor.removal, null);
+    assert.equal(editor.outline, 0);
+});
+
+test("Coordinate slots format camera and sample ranges independently of the current reading", () => {
+    const range = readingRange({ values: Float32Array.of(-2345, 123, 800000), defined: Uint8Array.of(1, 1, 0) });
+    assert.deepEqual(range, [-2345, 123]);
+    const field = { label: "高度", unit: "m", precision: .1 }, viewport = [-499.96, -15, 305.1, 130.1] as const;
+    const readings = positionReadings({ point: [9, 29] }, field, [...viewport], range);
+    assert.deepEqual(readings, [
+        { label: "X", min: "-500.0 m", max: "305.1 m", value: "9.0 m" },
+        { label: "Y", min: "-15.0 m", max: "130.1 m", value: "29.0 m" },
+        { label: "高度", min: "-2345.0 m", max: "123.0 m", value: "–" }
+    ]);
+});
+
+test("Removing a segment asks before leaving a strip reference to its removed endpoint", async t => {
+    const { Editor } = await import("../src/app/state/session.svelte.ts");
+    const editor = new Editor(), d = syntheticDesign();
+    d.geoNodes.push(layer("S", { type: "strip", of: ["T"], widths: [1, 1], range: { from: "0", to: "1" } }, { type: "flat", amount: 1 }));
+    t.mock.method(editor, "reconcileProject", () => {});
+    t.mock.method(editor, "terrainWork", async (_d: Design, fn: () => void) => fn());
+    t.mock.method(editor.files, "remember", () => {});
+    editor.replace(d, true);
+    editor.history = new History(d);
+    editor.select({ kind: "geoNode", id: "T" });
+    editor.selectControl({ role: "segment", path: 0, index: 0, point: [-14, -14] });
+    editor.removeSelected();
+    assert.equal(editor.removal?.title, "删除线段？");
+    assert.equal(editor.removal?.items?.length, 1);
+    assert.equal(editor.canUndo, false);
+    editor.removal?.perform?.();
+    const path = geometryPath(editor.project.design.geoNodes[1], 0)!;
+    assert.deepEqual(path.nodes.map(n => n.id), ["0", "2", "3"]);
+    assert.equal(editor.vertex?.role, "vertex");
+    assert.equal(editor.project.issues.find(issue => issue.geoNode === "S")?.kind, "geo-reference");
 });
 
 test("Screen marks retain their anchors and clamp their full drawing to each viewport", () => {

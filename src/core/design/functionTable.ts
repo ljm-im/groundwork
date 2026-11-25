@@ -1,10 +1,10 @@
 import { type Address, readAt, writeAt } from "./address.ts";
 import { fieldPrecision, heightId, seedId } from "./defaults.ts";
-import { type Expression, type FieldDeclaration, type GeoFunction } from "./v5.ts";
+import { type Expression, type FieldDeclaration, type GeoFunction, type Ridge } from "./v5.ts";
 import { shiftDecimal } from "../math/interval.ts";
 
 type Unit = "" | "m" | "m/m" | "%" | "px" | "field" | "field/m";
-type Constraint = "positive" | "nonnegative" | "positive-integer" | "nonnegative-integer";
+type Constraint = "positive" | "nonnegative" | "positive-integer" | "nonnegative-integer" | "percentage";
 type ParameterStep = number | "field";
 interface ParameterBase {
     key: Address;
@@ -20,6 +20,7 @@ export interface NumericParameter extends ParameterBase {
     constraint?: Constraint;
     create?: Expression;
     profile?: true;
+    ridge?: "legacy" | "slope";
 }
 type GeometryDefault = "boundary" | "center" | "axis" | "draw-line" | "draw-point" | "empty";
 interface GeometryParameter extends ParameterBase { type: "geometry"; default: GeometryDefault }
@@ -37,7 +38,7 @@ interface FunctionSpec {
 
 const asKey = (key: string): Address => key.split(".").map(part => /^\d+$/.test(part) ? Number(part) : part);
 function number<S extends ParameterStep, D extends NumericParameter["default"]>(key: string, label: string, unit: Unit, step: S, value: D,
-    options: Partial<Pick<NumericParameter, "type" | "constraint" | "advanced" | "variant" | "create" | "profile">> = {}): NumericParameter & { step: S; default: D } {
+    options: Partial<Pick<NumericParameter, "type" | "constraint" | "advanced" | "variant" | "create" | "profile" | "ridge">> = {}): NumericParameter & { step: S; default: D } {
     return { key: asKey(key), label, unit, step, default: value, type: "number", advanced: false, ...options };
 }
 function geometry(key: string, label: string, value: GeometryDefault, variant?: GeometryParameter["variant"]): GeometryParameter {
@@ -48,10 +49,15 @@ const floor = number("floor", "作用下限", "m", 1, -1000);
 const sea = number("seaLevel", "海平面", "m", .1, 0);
 const feather = number("feather", "羽化宽度", "m", .1, 0, { constraint: "nonnegative" });
 const advanced = { advanced: true, constraint: "nonnegative" } as const;
+const legacy = { ridge: "legacy" } as const;
 const ridgeNoise = (key: string, label: string) => [
-    number("ridges.*." + key + ".amount", label + "幅度", "%", 1, 0),
-    number("ridges.*." + key + ".wavelength", label + "波长", "m", 1, 20, { constraint: "positive" })
+    number("ridges.*." + key + ".amount", label + "幅度", "%", 1, 0, legacy),
+    number("ridges.*." + key + ".wavelength", label + "波长", "m", 1, 20, { ...legacy, constraint: "positive" })
 ];
+
+export function legacyRidge(r: Ridge<Expression> | undefined) {
+    return r !== undefined && r.slope === undefined && (r.widths !== undefined || r.widthNoise !== undefined || r.heightNoise !== undefined);
+}
 
 export const slopeEndpointValues = [0, 2] as const;
 export const functionTable: Record<GeoFunction["type"], FunctionSpec> = {
@@ -67,10 +73,14 @@ export const functionTable: Record<GeoFunction["type"], FunctionSpec> = {
     ] },
     mountain: { initial: false, writes: "height", reading: "point", parameters: [
         floor, seed, geometry("ridges", "山脊", "empty"), geometry("peaks", "山峰", "empty"),
+        number("crestRound", "山顶圆角半径", "m", .1, 4, advanced),
+        number("footRound", "山脚过渡高度", "m", .1, 5, advanced),
+        number("blend", "山脊融合高度", "m", .1, 5, advanced),
         geometry("ridges.*.line", "山脊线", "draw-line"),
         number("ridges.*.line.nodes.*.h", "高度", "field", "field", 0, { profile: true }),
-        number("ridges.*.widths.0", "左侧宽度", "m", .1, 5, { constraint: "positive" }),
-        number("ridges.*.widths.1", "右侧宽度", "m", .1, 5, { constraint: "positive" }),
+        number("ridges.*.slope", "坡度", "m/m", .01, .75, { constraint: "positive", ridge: "slope" }),
+        number("ridges.*.widths.0", "左侧宽度", "m", .1, 5, { ...legacy, constraint: "positive" }),
+        number("ridges.*.widths.1", "右侧宽度", "m", .1, 5, { ...legacy, constraint: "positive" }),
         ...ridgeNoise("widthNoise", "宽度起伏"), ...ridgeNoise("heightNoise", "高度起伏"),
         geometry("peaks.*.at.p", "位置", "draw-point"),
         number("peaks.*.at.h", "高度", "field", "field", 0),
@@ -114,7 +124,10 @@ export const functionTable: Record<GeoFunction["type"], FunctionSpec> = {
     noise: { initial: false, writes: "any", reading: "point", parameters: [
         number("amplitude", "振幅", "field", "field", 1, { type: "field" }),
         number("scale", "噪声尺度", "m", 1, 24, { constraint: "positive" }),
-        number("octaves", "倍频数", "", 1, 5, { constraint: "positive-integer" }), feather, seed
+        number("octaves", "倍频数", "", 1, 5, { constraint: "positive-integer" }), feather, seed,
+        number("warp", "取样扭曲", "m", .1, 0, advanced),
+        number("warpScale", "扭曲尺度", "m", 1, 60, { advanced: true, constraint: "positive" }),
+        number("carve", "沟谷深度", "%", 1, 0, { advanced: true, constraint: "percentage" })
     ] },
     blend: { initial: false, writes: "any", reading: "neighborhood", construction: "strip", parameters: [] },
     split: { initial: false, writes: "any", reading: "neighborhood", construction: "strip", parameters: [] },
@@ -176,12 +189,22 @@ export function expandKeys(root: object, key: Address): Address[] {
     return paths;
 }
 
+export function functionParameterApplies(f: GeoFunction, p: ParameterSpec, key: Address) {
+    if (p.type === "geometry" || !p.ridge || f.type !== "mountain") return true;
+    const ridge = f.ridges?.[Number(key[1])];
+    return !!ridge && (p.ridge === "legacy" ? legacyRidge(ridge) || readAt(f, key) !== undefined : !legacyRidge(ridge));
+}
+
+export function functionParameterKeys(f: GeoFunction, p: ParameterSpec) {
+    return expandKeys(f, p.key).filter(key => functionParameterApplies(f, p, key));
+}
+
 export function fillFunctionParameters(f: GeoFunction, prefix: Address = []) {
     for (const p of functionParameters(f)) {
         if (p.type === "geometry") {
             if (!prefix.length && p.default === "empty" && readAt(f, p.key) === undefined) writeAt(f, p.key, []);
         }
-        else if (!p.profile && typeof p.default !== "function") for (const key of expandKeys(f, p.key))
+        else if (!p.profile && typeof p.default !== "function") for (const key of functionParameterKeys(f, p))
             if (prefix.every((part, i) => key[i] === part) && readAt(f, key) === undefined) writeAt(f, key, p.create ?? p.default);
     }
     return f;
@@ -192,6 +215,7 @@ export function numericValid(p: NumericParameter, value: unknown) {
     if (typeof value !== "number" || !Number.isFinite(value)) return false;
     if (p.type === "seed" && !Number.isSafeInteger(value)) return false;
     if (!p.constraint) return true;
+    if (p.constraint === "percentage") return value >= 0 && value <= 100;
     if (p.constraint.endsWith("-integer") && !Number.isSafeInteger(value)) return false;
     return p.constraint.startsWith("nonnegative") ? value >= 0 : value > 0;
 }

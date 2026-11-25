@@ -3,6 +3,8 @@ import { fieldPrecision } from "../../core/design/defaults.ts";
 import { displaySteps, gridStep } from "../../core/design/functionTable.ts";
 import { type GeoDraft } from "../../core/edit/types.ts";
 import { type FieldDeclaration, type Point } from "../../core/design/v5.ts";
+import { type FieldSamples } from "../../core/design/results.ts";
+import { type Box } from "../../core/math/geometry.ts";
 import { type Tool } from "../types.ts";
 
 const lineEnd = "回车或双击结束，单击首个节点闭合";
@@ -11,7 +13,7 @@ const closedPenHint = penHint + "回车、双击或单击首点闭合";
 const lineHint = penHint + lineEnd;
 
 const hints: Record<Tool, string> = {
-    select: "单击选择，Alt 单击选择下层，中键平移，滚轮缩放",
+    select: "单击选择，Alt 单击选择下层，中键或按住空格拖动平移，滚轮缩放",
     pen: closedPenHint,
     rect: "拖动或单击矩形的两个对角",
     circle: "拖出半径或单击圆心和圆周",
@@ -38,7 +40,7 @@ export function drawingStatus(mode: Exclude<Tool, "select">, name: string, owner
         sector: ["新建地件（扇形）", "单击圆心和圆周，再单击终止角", false],
         strip: owner ? ["重选" + label + "的边", "单击起止节点，Tab 交换，回车确认", true] :
             ["新建地件（条带）", names.length ? "沿" + names.map(name => "“" + name + "”").join("、") + "，回车确认" : "单击要沿的地件", true],
-        addPath: ["给" + label + "添加边界", pen, true],
+        addPath: ["给" + label + "添加轮廓", pen, true],
         shore: ["重画" + label + "的海岸线", pen, true],
         ridge: [member === undefined ? "给" + label + "添加山脊" : "重画" + label + "的山脊线", lineEnd, true],
         peak: [member === undefined ? "给" + label + "添加山峰" : "移动" + label + "的山峰", point, false],
@@ -73,10 +75,25 @@ export function numberPreviewHint(step: number) {
     return "拖动中按 " + spacing + " " + gridStep.unit + " 间距预览";
 }
 
-export function positionText(cursor: { point: Point; sample?: number } | undefined, field?: FieldDeclaration) {
-    if (!cursor || !field) return "";
-    const { point: [x, y], sample } = cursor;
-    const coordinate = (value: number) => displayReading(value, displaySteps.coordinates, displaySteps.coordinateUnit);
-    return "X " + coordinate(x) + "  Y " + coordinate(y) + "  " + field.label + " " +
-        displayReading(sample, fieldPrecision(field), field.unit);
+export function readingRange(samples?: FieldSamples): [number, number] | undefined {
+    if (!samples) return;
+    let min = Infinity, max = -Infinity;
+    for (const [i, value] of samples.values.entries()) {
+        if (!samples.defined[i] || !Number.isFinite(value)) continue;
+        min = Math.min(min, value);
+        max = Math.max(max, value);
+    }
+    if (min <= max) return [min, max];
+}
+
+export function positionReadings(cursor: { point: Point; sample?: number } | undefined, field: FieldDeclaration | undefined,
+    viewport?: Box, range?: [number, number]) {
+    if (!field) return [];
+    const coord = (value?: number) => displayReading(value, displaySteps.coordinates, displaySteps.coordinateUnit);
+    const sample = (value?: number) => displayReading(value, fieldPrecision(field), field.unit);
+    return [
+        { label: "X", min: coord(viewport?.[0]), max: coord(viewport?.[2]), value: coord(cursor?.point[0]) },
+        { label: "Y", min: coord(viewport?.[1]), max: coord(viewport?.[3]), value: coord(cursor?.point[1]) },
+        { label: field.label, min: sample(range?.[0]), max: sample(range?.[1]), value: sample(cursor?.sample) }
+    ];
 }

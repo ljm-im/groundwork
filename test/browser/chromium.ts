@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { type Readable, type Writable } from "node:stream";
@@ -12,11 +12,14 @@ interface Replies {
     "Browser.getVersion": { product: string };
     "Target.createTarget": { targetId: string };
     "Target.attachToTarget": { sessionId: string };
+    "Target.getTargets": { targetInfos: { targetId: string }[] };
     "Runtime.evaluate": { result: { value?: unknown }; exceptionDetails?: ExceptionDetails };
     "Page.captureScreenshot": { data: string };
 }
 type Reply<Method extends string> = Method extends keyof Replies ? Replies[Method] : unknown;
 type Params = Record<string, unknown>;
+
+export type Chromium = Awaited<ReturnType<typeof startChromium>>;
 
 export async function startChromium() {
     const paths = [process.env.CHROME_PATH, "C:/Program Files/Google/Chrome/Application/chrome.exe",
@@ -28,7 +31,7 @@ export async function startChromium() {
     const child = spawn(executable, ["--headless", "--remote-debugging-pipe", "--no-first-run", "--no-default-browser-check",
         "--disable-background-timer-throttling", "--user-data-dir=" + profile, "about:blank"],
     { windowsHide: true, stdio: ["ignore", "ignore", "ignore", "pipe", "pipe"] });
-    let id = 0, sessionId: string | undefined, buffer = Buffer.alloc(0);
+    let id = 0, sessionId: string | undefined, targetId: string | undefined, buffer = Buffer.alloc(0);
     const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
     const errors: string[] = [], dialogs: string[] = [];
     const input = child.stdio[3] as Writable, output = child.stdio[4] as Readable;
@@ -101,6 +104,33 @@ export async function startChromium() {
             type, key, code, modifiers, windowsVirtualKeyCode, ...(type === "keyDown" && key === "Enter" && { text: "\r" })
         });
     }
+    async function screenshot(name: string, clip?: { x: number; y: number; width: number; height: number }) {
+        const dir = process.env.GROUNDWORK_BROWSER_OUTPUT;
+        if (!dir) return;
+        await mkdir(dir, { recursive: true });
+        const { data } = await cdp("Page.captureScreenshot", { format: "png", ...(clip && { clip: { ...clip, scale: 1 } }) });
+        await writeFile(join(dir, name + ".png"), Buffer.from(data, "base64"));
+    }
+    async function openTab() {
+        ({ targetId } = await send("Target.createTarget", { url: "about:blank" }));
+        sessionId = (await send("Target.attachToTarget", { targetId, flatten: true })).sessionId;
+        await cdp("Page.enable");
+        await cdp("Runtime.enable");
+        await cdp("Emulation.setDeviceMetricsOverride", { width: 1440, height: 960, deviceScaleFactor: 1, mobile: false });
+    }
+    async function closeTab() {
+        const closing = targetId;
+        await cdp("Page.close");
+        for (let i = 0; i < 200; i++) {
+            const { targetInfos } = await send("Target.getTargets");
+            if (targetInfos.every(target => target.targetId !== closing)) {
+                targetId = sessionId = undefined;
+                return;
+            }
+            await delay(30);
+        }
+        throw Error("Timed out waiting for Chromium to close the test tab");
+    }
     async function close() {
         try {
             if (child.exitCode === null) await send("Browser.close");
@@ -115,12 +145,8 @@ export async function startChromium() {
     }
     try {
         const version = (await send("Browser.getVersion")).product;
-        const { targetId } = await send("Target.createTarget", { url: "about:blank" });
-        sessionId = (await send("Target.attachToTarget", { targetId, flatten: true })).sessionId;
-        await cdp("Page.enable");
-        await cdp("Runtime.enable");
-        await cdp("Emulation.setDeviceMetricsOverride", { width: 1440, height: 960, deviceScaleFactor: 1, mobile: false });
-        return { version, dialogs, cdp, evaluate, wait, click, mouse, key, close };
+        await openTab();
+        return { version, dialogs, cdp, evaluate, wait, click, mouse, key, screenshot, openTab, closeTab, close };
     }
     catch (error) {
         await close();

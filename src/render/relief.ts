@@ -4,6 +4,19 @@ import { clamp, gradient, smooth } from "../core/math/geometry.ts";
 
 import { baseMap, type Theme } from "./palette.ts";
 
+export const maxReliefLight = 1.13;
+
+function slopeLight(nx: number, ny: number) {
+    return clamp(.45 + .6 * (-nx * .5 + ny * .5 + .7) / Math.sqrt((nx * nx + ny * ny + 1) * .99), .6, maxReliefLight);
+}
+
+const flatLight = slopeLight(0, 0);
+
+export function reliefLight(nx: number, ny: number, shadowGain: number) {
+    const light = slopeLight(nx, ny);
+    return shadowGain !== 1 && light < flatLight ? Math.max(0, flatLight - (flatLight - light) * shadowGain) : light;
+}
+
 const colors = baseMap.elevation;
 const palette = Array.from({ length: 641 }, (_, i) => {
     const h = i / 20,
@@ -20,7 +33,7 @@ export function relief(t: Terrain, theme: Theme) {
     const cache = charts[theme], cached = cache.get(t);
     if (cached) return cached;
     const { grid } = t, { values: h, defined } = t.fields[heightId], { width, height } = grid;
-    const { rasterDim } = baseMap[theme];
+    const { rasterDim, shadowGain } = baseMap[theme];
     const raster = new OffscreenCanvas(width, height);
     const ctx = raster.getContext("2d")!, pixels = ctx.createImageData(width, height), data = pixels.data;
     for (let j = 0; j < height; j++)
@@ -42,10 +55,12 @@ export function relief(t: Terrain, theme: Theme) {
                 const sand = v < 1.6 && slope < .3 && Math.abs(t.shore[k]) <= 5 ? smooth(1.6 - v) : 0;
                 const nx = -dx * 1.7,
                     ny = -dy * 1.7;
-                const light = clamp(.45 + .6 * (-nx * .5 + ny * .5 + .7) / Math.sqrt((nx * nx + ny * ny + 1) * .99), .6, 1.13);
+                const light = reliefLight(nx, ny, shadowGain);
                 const base = palette[clamp(Math.round(v * 20), 0, 640)];
-                for (let channel = 0; channel < 3; channel++)
-                    data[at + channel] = ((base[channel] * (1 - rockMix) + baseMap.rock[channel] * rockMix) * (1 - sand) + baseMap.sand[channel] * sand) * light * rasterDim;
+                for (let channel = 0; channel < 3; channel++) {
+                    const color = (base[channel] * (1 - rockMix) + baseMap.rock[channel] * rockMix) * (1 - sand) + baseMap.sand[channel] * sand;
+                    data[at + channel] = Math.min(255, color * light) * rasterDim;
+                }
             }
             data[at + 3] = 255;
         }

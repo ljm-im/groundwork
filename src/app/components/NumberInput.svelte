@@ -23,14 +23,14 @@
         }}></div></div>
 {/snippet}
 {#snippet variableMenuButton()}
-    {#if kind !== "literal"}<button class="reference-toggle" data-tip="插入变量" aria-label={"为" + label + "插入变量"} aria-expanded={opened}
+    {#if kind !== "literal"}<button class="reference-toggle" data-tip="插入变量" aria-label={"为" + actionLabel + "插入变量"} aria-expanded={opened}
         onpointerdown={e => e.preventDefault()} onclick={() => {
             if (opened) closeMenu(); else showMenu();
         }}><Icon name="collapse" /></button>{/if}
 {/snippet}
 {#snippet control()}
     <div class="number-box input-box" class:danger={!!error} class:invalid={!!error} class:warning={outside} bind:this={box}>
-        <button class="step" aria-label={"减小" + label} data-tip="减小" onpointerdown={e => beginGesture(e, -1)} onclick={e => keyboardStep(e, -1)}><Icon name="chevronLeft" /></button>
+        <button class="step" aria-label={"减小" + actionLabel} data-tip="减小" onpointerdown={e => beginGesture(e, -1)} onclick={e => keyboardStep(e, -1)}><Icon name="chevronLeft" /></button>
         {#if editing && !expanded}
             {@render editControl()}
         {:else}
@@ -44,7 +44,7 @@
                 </span>
             </button>
         {/if}
-        <button class="step" aria-label={"增大" + label} data-tip="增大" onpointerdown={e => beginGesture(e, 1)} onclick={e => keyboardStep(e, 1)}><Icon name="chevronRight" /></button>
+        <button class="step" aria-label={"增大" + actionLabel} data-tip="增大" onpointerdown={e => beginGesture(e, 1)} onclick={e => keyboardStep(e, 1)}><Icon name="chevronRight" /></button>
         {#if !expanded}{@render variableMenuButton()}
 {:else if kind !== "literal"}<span class="menu-spacer"></span>{/if}
     </div>
@@ -58,7 +58,7 @@
     {/if}
     {#if editing}<div hidden bind:this={mirror}>{@render formatted(draft, false)}</div>{/if}
     {#if editing && expanded}
-        <div class="expanded-edit popup" role="group" aria-label={"编辑" + label} popover="manual" bind:this={expandedBox}
+        <div class="expanded-edit popup" role="group" aria-label={"编辑" + actionLabel} popover="manual" bind:this={expandedBox}
             use:placePopup={{ anchor: box, close: () => finish(true), expanded: true }}>
             <div class="expanded-line number-box input-box" class:danger={!!error} class:invalid={!!error}>{@render editControl()}{@render variableMenuButton()}</div>
             {#if error}<div class="number-error danger" role="alert">{error}</div>{/if}
@@ -141,11 +141,12 @@
     import FieldRow from "./FieldRow.svelte";
     import Menu from "./Menu.svelte";
     let { editor, address, setting, label, kind = "number", step = .1, range, unit = "", self, owner, compact = false,
-        inputStep = false, fallback = 0, attributes }: {
+        inputStep = false, fallback = 0, attributes, namedInput = false }: {
         editor: session.Editor; label: string; kind?: "number" | "field" | "literal"; step?: number;
         range?: Range; unit?: string; self?: string; owner?: string; compact?: boolean; inputStep?: boolean; fallback?: number;
-        attributes?: Record<string, string>;
+        attributes?: Record<string, string>; namedInput?: boolean;
     } & ({ address: Address; setting?: never } | { address?: never; setting: { value: number; change: (n: number) => void; validate: (n: number) => void } }) = $props();
+    let actionLabel = $derived(namedInput ? "“" + label + "”" : label);
     let face = $state<HTMLButtonElement>(), expandedBox = $state<HTMLElement>();
     let box = $state<HTMLElement>(null!), input = $state<HTMLElement>(null!), mirror = $state<HTMLElement>(null!);
     let base = $derived(editor.project.design), authored = $derived(address ? readAt(base, address) as Expression | undefined : undefined);

@@ -182,8 +182,10 @@ test("Copies regenerate paths and preserve references, geometry moves together a
 
 test("Function defaults preserve construction and drawn geometry retains its authored heights", () => {
     const d = syntheticDesign(), n = d.geoNodes[1], construction = structuredClone(n.construction), t = generateTerrain(d);
-    const defaults: GeoFunction[] = [{ type: "ground", value: 0 }, { type: "mountain", peaks: [], ridges: [], floor: -1000 }, { type: "cliff", factor: .6, seaLevel: 0 },
-        { type: "islets", density: .5, reach: 12, threshold: .45, seaLevel: 0 }, { type: "flat", amount: 1, feather: 0 }, { type: "noise", amplitude: 1, scale: 24, octaves: 5, feather: 0 }];
+    const defaults: GeoFunction[] = [{ type: "ground", value: 0 },
+        { type: "mountain", peaks: [], ridges: [], floor: -1000, crestRound: 4, footRound: 5, blend: 5 }, { type: "cliff", factor: .6, seaLevel: 0 },
+        { type: "islets", density: .5, reach: 12, threshold: .45, seaLevel: 0 }, { type: "flat", amount: 1, feather: 0 },
+        { type: "noise", amplitude: 1, scale: 24, octaves: 5, feather: 0, warp: 0, warpScale: 60, carve: 0 }];
     for (const f of defaults) historyEdit(d, () => {
         n.function = defaultFunction(f.type)!; assert.deepEqual(n.function, ["mountain", "cliff", "islets", "noise"].includes(f.type) ? { ...f, seed: "{input:seed}" } : f); assert.deepEqual(n.construction, construction);
     });

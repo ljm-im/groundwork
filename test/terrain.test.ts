@@ -8,6 +8,7 @@ import { regionMaskAt, signedBoundaryDistance } from "../src/core/design/regions
 import { shapePath } from "../src/core/edit/paths.ts";
 import { flattenPath } from "../src/core/design/path.ts";
 import { evaluateStack, generateTerrain } from "../src/core/terrain/terrain.ts";
+import { mountainProfile } from "../src/core/terrain/mountain.ts";
 import { terrainIssues } from "../src/core/checks/terrain.ts";
 import { terrainSurface } from "../src/core/terrain/surface.ts";
 import { Project } from "../src/core/project.ts";
@@ -277,6 +278,50 @@ test("Ridge variation follows distance, wavelength and seed independently of col
         assert.notDeepEqual(samples(y), long);
         line.nodes.splice(1, 1); ridge[key].amount = 0;
     }
+});
+
+test("Slope ridges round the crown and foot, interpolate heights and merge at the saddle", () => {
+    const area = rect(-50, -50, 50, 50), line = openCurve([
+        { p: [-20, 0], h: 24 }, { p: [-10, 0] }, { p: [0, 0], h: 28 }, { p: [20, 0], h: 29 }
+    ]);
+    const d = design([layer("A", area, { type: "ground", value: 0 }),
+        layer("B", area, { type: "mountain", ridges: [{ line, slope: "{input:A} / 10 + .05" }], peaks: [] })], .5);
+    const project = new Project(parseDesign(d)), f = project.resolved.geoNodes[1].function;
+    assert(f.type === "mountain");
+    assert.equal(f.ridges[0].line.nodes[1].h, undefined);
+    assert.equal(f.ridges[0].widths, undefined);
+    const height = mountainProfile(f, .0625, 0);
+    assert.equal(height(-10, 0, 0), 26);
+    assert.equal(height(0, 0, 0), 28);
+    assert(28 - height(0, .001, 0) < .000001);
+    assert(28 - height(-.001, 0, 0) < .000001 && height(.001, 0, 0) - 28 < .000001);
+    assert(Math.abs(height(0, 6, 0) - height(0, 7, 0) - .75) < 1e-9);
+    const terrain = project.terrain, k = terrain.grid.index(0, -6), [x, y] = terrain.grid.point(k);
+    assert.equal(terrain.fields.height.values[k], Math.fround(height(x, y, 0)));
+
+    const foot = 6 + height(0, 6, 0) / .75;
+    assert(Math.abs(height(0, foot, 0) - 1.25) < 1e-9);
+    assert(Math.abs((height(0, foot - .001, 0) - height(0, foot, 0)) -
+        (height(0, foot, 0) - height(0, foot + .001, 0))) < 1e-6);
+    assert.equal(height(0, 100, 4), 4);
+
+    const second = { slope: .75, line: openCurve([{ p: [-20, 20], h: 28 }, { p: [20, 20], h: 28 }]) };
+    const merged = mountainProfile({ ...f, ridges: [...f.ridges, second] }, .0625, 0);
+    assert(Math.abs(merged(0, 10, 0) - height(0, 10, 0) - 1.25) < 1e-9);
+});
+
+test("Noise gullies cut a bounded proportion of positive heights and leave the sea floor unchanged", () => {
+    const area = rect(-16, -16, 16, 16);
+    const run = (value: number, carve: number) => generateTerrain(design([
+        layer("A", area, { type: "ground", value }),
+        layer("B", area, { type: "noise", amplitude: 0, scale: 9, carve })
+    ])).fields.height.values;
+    const low = run(8, 20), high = run(16, 20);
+    assert(low.some(h => h < 8));
+    assert(low.every(h => h >= 6.4 - 1e-6 && h <= 8));
+    assert(high.every((h, i) => h === 2 * low[i]));
+    assert.deepEqual(run(-4, 20), run(-4, 0));
+    assert.deepEqual(run(0, 20), run(0, 0));
 });
 
 test("Omitted mountain and erosion floors preserve cells at and below minus one thousand", () => {

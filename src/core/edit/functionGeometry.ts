@@ -47,7 +47,7 @@ export function functionGeometry(c: Construction, shape: RegionShape, step: numb
     const outline = shape.boundary();
     const rings = c.type === "free" ? outline.map(path => path.map(e => e.a)) : closedContours(outline.flat(), step * 1e-6);
     const largest = rings.flatMap((ring, i) => ring.length < 3 ? [] : [{ ring, i, ...measure(ring) }]).sort((a, b) => b.area - a.area)[0];
-    if (!largest?.area) throw Error("地件没有可用的区域边界");
+    if (!largest?.area) throw Error("地件的区域没有面积");
     const { center } = largest;
     return { center,
         shore(): ClosedCurve {

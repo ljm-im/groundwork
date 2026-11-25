@@ -1,7 +1,7 @@
-<div class="subitem" class:inset data-curve-node={curveNode}>
-    <Heading kind="subitem-heading" {actions}>
+<div class="subitem" class:inset class:selected data-outline={outline} data-curve-node={curveNode} data-curve-segment={curveSegment}>
+    <Heading kind="subitem-heading" {actions} {onmouseenter} {onmouseleave}>
         {#if onclick}
-            <button class="subitem-toggle" aria-expanded={open} {onclick}>
+            <button class="subitem-toggle" aria-expanded={open} aria-current={selected || undefined} {onclick}>
                 <Icon name={open ? "collapse" : "expand"} /><span>{label}</span>
             </button>
         {:else}<span class="subitem-label">{label}</span>{/if}
@@ -17,6 +17,7 @@
         background: var(--bg-sunken);
     }
     .subitem > :global(.subitem-heading:hover) { background: var(--bg-hover); }
+    .selected > :global(.subitem-heading) { background: var(--bg-selected); }
     .inset > :global(.subitem-heading) { margin-inline: 0; padding-inline-end: 0; }
     .subitem-label { padding-inline: var(--space-3); }
     .subitem :global(.row-actions) { gap: var(--space-1); }
@@ -43,7 +44,8 @@
     import { type Snippet } from "svelte";
     import Icon from "./Icon.svelte";
     import Heading from "./Heading.svelte";
-    let { label, open = true, onclick, children, actions, inset = false, curveNode }: {
-        label: string; open?: boolean; onclick?: () => void; children: Snippet; actions?: Snippet; inset?: boolean; curveNode?: string;
+    let { label, open = true, onclick, children, actions, inset = false, selected = false, outline, curveNode, curveSegment, onmouseenter, onmouseleave }: {
+        label: string; open?: boolean; onclick?: () => void; children: Snippet; actions?: Snippet; inset?: boolean; selected?: boolean;
+        outline?: string; curveNode?: string; curveSegment?: string; onmouseenter?: () => void; onmouseleave?: () => void;
     } = $props();
 </script>

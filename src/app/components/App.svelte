@@ -1,3 +1,5 @@
+<svelte:window oncontextmenu={contextMenu} />
+
 <TopBar {editor} {appearance} {chooseAppearance} />
 <Workspace {editor} {theme} />
 <Dialogs {editor} />
@@ -5,6 +7,7 @@
 
 <script lang="ts">
     import { onMount } from "svelte";
+    import { isEditableText } from "../state/pendingInput.ts";
     import { applyTheme, readAppearance, resolveTheme, saveAppearance, systemThemeQuery, type Appearance } from "../state/theme.ts";
     import * as session from "../state/session.svelte.ts";
     import Tooltip from "./Tooltip.svelte";
@@ -18,6 +21,9 @@
     let systemDark = $state(systemTheme.matches);
     let theme = $derived(resolveTheme(appearance, systemDark));
 
+    function contextMenu(event: MouseEvent) {
+        if (!isEditableText(event.target)) event.preventDefault();
+    }
     function chooseAppearance(value: Appearance) {
         appearance = value;
         saveAppearance(value);
