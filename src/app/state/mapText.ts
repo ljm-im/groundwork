@@ -3,6 +3,8 @@ import { fieldPrecision } from "../../core/design/defaults.ts";
 import { displaySteps } from "../../core/design/functionTable.ts";
 import { type GeoDraft } from "../../core/edit/types.ts";
 import { type FieldDeclaration, type Point } from "../../core/design/v5.ts";
+import { type FieldSamples } from "../../core/design/results.ts";
+import { type Box } from "../../core/math/geometry.ts";
 import { type Tool } from "../types.ts";
 
 const lineEnd = "回车或双击结束，单击首个节点闭合";
@@ -68,10 +70,25 @@ export function drawingHint(tool: Tool, draft?: GeoDraft, finish?: string) {
     return hint + "，Esc 取消";
 }
 
-export function positionText(cursor: { point: Point; sample?: number } | undefined, field?: FieldDeclaration) {
-    if (!cursor || !field) return "";
-    const { point: [x, y], sample } = cursor;
-    const coordinate = (value: number) => displayReading(value, displaySteps.coordinates, displaySteps.coordinateUnit);
-    return "X " + coordinate(x) + "  Y " + coordinate(y) + "  " + field.label + " " +
-        displayReading(sample, fieldPrecision(field), field.unit);
+export function readingRange(samples?: FieldSamples): [number, number] | undefined {
+    if (!samples) return;
+    let min = Infinity, max = -Infinity;
+    for (const [i, value] of samples.values.entries()) {
+        if (!samples.defined[i] || !Number.isFinite(value)) continue;
+        min = Math.min(min, value);
+        max = Math.max(max, value);
+    }
+    if (min <= max) return [min, max];
+}
+
+export function positionReadings(cursor: { point: Point; sample?: number } | undefined, field: FieldDeclaration | undefined,
+    viewport?: Box, range?: [number, number]) {
+    if (!field) return [];
+    const coord = (value?: number) => displayReading(value, displaySteps.coordinates, displaySteps.coordinateUnit);
+    const sample = (value?: number) => displayReading(value, fieldPrecision(field), field.unit);
+    return [
+        { label: "X", min: coord(viewport?.[0]), max: coord(viewport?.[2]), value: coord(cursor?.point[0]) },
+        { label: "Y", min: coord(viewport?.[1]), max: coord(viewport?.[3]), value: coord(cursor?.point[1]) },
+        { label: field.label, min: sample(range?.[0]), max: sample(range?.[1]), value: sample(cursor?.sample) }
+    ];
 }

@@ -37,7 +37,10 @@
                 <button class="icon-button" id="plus" aria-label="放大" data-tip="放大" onclick={() => editor.map.zoomAt(1.4)}><Icon name="plus" /></button>
                 <button class="icon-button" id="fit" aria-label="适应" data-tip="适应" onclick={() => editor.map.fit(editor.project.terrain)}><Icon name="fit" /></button>
             </div>
-            <output id="position" class="map-chip" bind:this={positionChip} hidden={!position}>{position}</output>
+            <output id="position" class="map-chip" bind:this={positionChip} hidden={!editor.cursor || !field}>
+                {#each readings as reading, i (i)}{i ? "  " : ""}{reading.label + " "}<span class="reading"
+                    data-min={reading.min} data-max={reading.max}>{reading.value}</span>{/each}
+            </output>
         </div>
         <div id="mode-hint" class="map-chip" bind:this={hintChip} data-tip={hint}>{hint}</div>
     {/if}
@@ -126,7 +129,11 @@
             text-overflow: ellipsis;
         }
         #mode-hint { grid-area: 3 / 1; justify-self: start; white-space: nowrap; }
-        #position { font-family: var(--font-coords); width: 40ch; white-space: pre; }
+        #position { width: max-content; font-variant-numeric: tabular-nums; white-space: pre; }
+        #position .reading { display: inline-block; text-align: right; vertical-align: top; }
+        #position .reading::before, #position .reading::after { display: block; height: 0; overflow: hidden; visibility: hidden; }
+        #position .reading::before { content: attr(data-min); }
+        #position .reading::after { content: attr(data-max); }
         #position[hidden] { display: block; visibility: hidden; }
         @container map-column (max-width: 680px) {
             .map-wrap {
@@ -146,7 +153,7 @@
     import { displayReading } from "../../core/design/display.ts";
     import { type Box } from "../../core/math/geometry.ts";
     import { type Theme } from "../../render/palette.ts";
-    import { drawingHint, positionText } from "../state/mapText.ts";
+    import { drawingHint, positionReadings, readingRange } from "../state/mapText.ts";
     import { attachController } from "../state/controller.ts";
     import { nodeModes } from "../state/inspector.ts";
     import * as session from "../state/session.svelte.ts";
@@ -157,7 +164,10 @@
     const penModes = [nodeModes[0], nodeModes[1]];
     let drawView = $derived(editor.mapView && { view: editor.mapView, theme });
     let hint = $derived(drawingHint(editor.tool, editor.geoDraft, editor.drawing?.end));
-    let position = $derived(positionText(editor.cursor, editor.project?.design.fields[editor.displayField]));
+    let field = $derived(editor.project?.design.fields[editor.displayField]);
+    let range = $derived(readingRange(editor.mapProject?.terrain.fields[editor.displayField]));
+    let readingBounds = $state.raw<Box>();
+    let readings = $derived(positionReadings(editor.cursor, field, readingBounds, range));
     let canvas: HTMLCanvasElement;
     let hintChip = $state<HTMLDivElement>(), positionChip = $state<HTMLOutputElement>(), zoomChip = $state<HTMLDivElement>();
     let chips = $derived([hintChip, positionChip, zoomChip].filter(el => el !== undefined));
@@ -187,15 +197,23 @@
         for (const chip of chips) observer.observe(chip);
         return () => observer.disconnect();
     });
+    function updateReadingBounds() {
+        const { map } = editor;
+        if (!map.center) return;
+        const [left, bottom] = map.world(0, map.height), [right, top] = map.world(map.width, 0);
+        readingBounds = [left, bottom, right, top];
+    }
     onMount(() => {
         editor.attach(canvas, () => {
             zoom = editor.map.zoomFactor();
+            updateReadingBounds();
             requestDraw();
         });
         const detach = attachController(editor, canvas);
         function resize() {
             const { width, height } = canvas.getBoundingClientRect();
             if (!editor.map.resize(width, height, window.devicePixelRatio || 1)) return;
+            updateReadingBounds();
             cancelAnimationFrame(frame);
             draw();
         }

@@ -6,6 +6,7 @@ import { sectionHandles } from "../src/core/edit/controls.ts";
 import { geoParameterName, resolveDesign } from "../src/core/design/parameters.ts";
 import { History } from "../src/core/edit/history.ts";
 import { editControl, geometryPath, insertCurveNode } from "../src/core/edit/geoControls.ts";
+import { positionReadings, readingRange } from "../src/app/state/mapText.ts";
 import { type Design } from "../src/core/design/v5.ts";
 import { propertyTabs } from "../src/app/state/inspector.ts";
 import { designProblemText } from "../src/app/state/designMessages.ts";
@@ -579,6 +580,18 @@ test("Dragging an outline shifts its nodes alone and preserves the selected ID t
     editor.removeSelected();
     assert.equal(editor.removal, null);
     assert.equal(editor.outline, 0);
+});
+
+test("Coordinate slots format camera and sample ranges independently of the current reading", () => {
+    const range = readingRange({ values: Float32Array.of(-2345, 123, 800000), defined: Uint8Array.of(1, 1, 0) });
+    assert.deepEqual(range, [-2345, 123]);
+    const field = { label: "高度", unit: "m", precision: .1 }, viewport = [-499.96, -15, 305.1, 130.1] as const;
+    const readings = positionReadings({ point: [9, 29] }, field, [...viewport], range);
+    assert.deepEqual(readings, [
+        { label: "X", min: "-500.0 m", max: "305.1 m", value: "9.0 m" },
+        { label: "Y", min: "-15.0 m", max: "130.1 m", value: "29.0 m" },
+        { label: "高度", min: "-2345.0 m", max: "123.0 m", value: "–" }
+    ]);
 });
 
 test("Removing a segment asks before leaving a strip reference to its removed endpoint", async t => {
