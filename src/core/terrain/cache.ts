@@ -39,6 +39,8 @@ export class TerrainCache {
     private designKey = "";
     recomputed: string[] = [];
     timings = new Map<string, number>();
+    layerTimings = new Map<string, number>();
+    makeShapeTime = 0;
 
     clear() {
         this.geometry.clear();
@@ -46,6 +48,8 @@ export class TerrainCache {
         this.designKey = this.gridKey = "";
         this.recomputed = [];
         this.timings.clear();
+        this.layerTimings.clear();
+        this.makeShapeTime = 0;
     }
 
     missing(d: Design) {
@@ -93,18 +97,23 @@ export class TerrainCache {
 
     generateResolved(d: ResolvedDesign) {
         const shapes = new Map<string, RegionShape>(), current = new Map<string, Geometry>();
-        const regions = new Map<string, Region>(), times = new Map<string, number>();
+        const regions = new Map<string, Region>(), times = new Map<string, number>(), layerTimes = new Map<string, number>();
+        let makeShapeTime = 0;
         for (const n of d.geoNodes) {
             const start = performance.now(), c = n.construction;
             const refs = c.type === "strip" ? [...current].filter(([id]) => c.of.some(ref => ref === id)).map(([id, g]) => [id, g.revision]) : [];
             const key = JSON.stringify([d.grid.step, c, refs]);
             const old = this.geometry.get(n.id);
+            const shapeStart = performance.now();
             const entry = old?.key === key ? old : { key, shape: makeShape(n, shapes, d.grid.step / 8), revision: ++this.serial };
+            makeShapeTime += performance.now() - shapeStart;
             current.set(n.id, entry);
             shapes.set(n.id, entry.shape);
             times.set(n.id, performance.now() - start);
         }
-        const grid = canvasGrid(d, shapes), gridKey = JSON.stringify([grid.xMin, grid.yMax, grid.width, grid.height, grid.step]);
+        const gridStart = performance.now(), grid = canvasGrid(d, shapes);
+        makeShapeTime += performance.now() - gridStart;
+        const gridKey = JSON.stringify([grid.xMin, grid.yMax, grid.width, grid.height, grid.step]);
         for (const [id, g] of current) {
             const start = performance.now();
             if (!g.region || gridKey !== this.gridKey) g.region = rasterRegion(grid, g.shape);
@@ -131,7 +140,9 @@ export class TerrainCache {
             if (layer.output.residual) batterResiduals.set(n.id, layer.output.residual);
             writers.push({ id: n.id, field, box: g.shape.box, revision: layer.revision });
             layers.set(n.id, layer);
-            times.set(n.id, times.get(n.id)! + performance.now() - start);
+            const elapsed = performance.now() - start;
+            layerTimes.set(n.id, elapsed);
+            times.set(n.id, times.get(n.id)! + elapsed);
         }
         this.layers = layers;
         this.geometry = current;
@@ -139,6 +150,8 @@ export class TerrainCache {
         this.designKey = this.terrainKey(d);
         this.recomputed = recomputed;
         this.timings = times;
+        this.layerTimings = layerTimes;
+        this.makeShapeTime = makeShapeTime;
         return finishTerrain({ ...state, regions, batterResiduals });
     }
 }
