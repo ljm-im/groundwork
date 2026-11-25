@@ -71,6 +71,7 @@ export class NumberDrag {
             this.skipMove = false;
             return 0;
         }
+        if (Math.abs(dx) > 64 || Math.abs(dy) > 64) return 0;
         this.x += dx; this.y += dy;
         this.pixels += dx * (shift ? .1 : 1) * (ctrl ? 10 : 1);
         this.moved ||= Math.hypot(this.x, this.y) > 3;

@@ -72,6 +72,33 @@ test("Offsetting an expression without numeric literals removes the added term a
     assert.equal(adjustNumber("{input:A} * 2 + 1", -1, 1), "{input:A} * 2 + 0");
 });
 
+test("Large drag events do not accumulate before, during or after pointer lock", () => {
+    const drag = new NumberDrag();
+    let value = 2.3;
+    function move(dx: number, dy = 0) {
+        const steps = drag.move(dx, dy, false, false);
+        value = adjustNumber(value, steps, .1) as number;
+        return steps;
+    }
+    assert.equal(move(-544), 0);
+    assert.equal(value, 2.3);
+    assert.equal(drag.moved, false);
+    assert.equal(move(8), 2);
+    drag.lockChanged();
+    assert.equal(move(3), 0);
+    assert.equal(move(544), 0);
+    assert.equal(value, 2.5);
+    assert.equal(move(8), 2);
+    drag.lockChanged();
+    assert.equal(move(3), 0);
+    assert.equal(move(-300), 0);
+    assert.equal(move(8, -300), 0);
+    assert.equal(value, 2.7);
+    assert.equal(move(8), 2);
+    for (let i = 0; i < 20; i++) assert.equal(move(60), 15);
+    assert.equal(value, 32.9);
+});
+
 test("Dragging and repeating preview several values but release records one history entry", async t => {
     const jitter = new NumberDrag();
     for (const dx of [2, -2, 2, -2]) assert.equal(jitter.move(dx, 0, false, false), 0);
