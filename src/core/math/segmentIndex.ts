@@ -7,11 +7,13 @@ export interface IndexedSegment<T extends Segment> {
     dx: number;
     dy: number;
     denominator: number;
+    length: number;
     padding: number;
 }
 type Metric<T extends Segment> = (x: number, y: number, entry: IndexedSegment<T>) => number;
 interface BucketRow<T extends Segment> {
     columns: Map<number, IndexedSegment<T>[]>;
+    entries: IndexedSegment<T>[];
 }
 
 export function segmentProjection(x: number, y: number, entry: IndexedSegment<Segment>) {
@@ -34,7 +36,7 @@ export function indexSegments<T extends Segment>(segments: readonly T[], radius:
     const entries = segments.map((segment, order): IndexedSegment<T> => {
         const { a, b } = segment, dx = b[0] - a[0], dy = b[1] - a[1];
         const padding = 8 * Number.EPSILON * Math.max(1, radius, Math.abs(a[0]), Math.abs(a[1]), Math.abs(b[0]), Math.abs(b[1]));
-        return { segment, order, dx, dy, denominator: dx * dx + dy * dy || 1, padding };
+        return { segment, order, dx, dy, denominator: dx * dx + dy * dy || 1, length: Math.hypot(dx, dy), padding };
     });
 
     for (const entry of entries) {
@@ -48,7 +50,8 @@ export function indexSegments<T extends Segment>(segments: readonly T[], radius:
         }
         for (let j = bottom; j <= top; j++) {
             let row = rows.get(j);
-            if (!row) rows.set(j, row = { columns: new Map() });
+            if (!row) rows.set(j, row = { columns: new Map(), entries: [] });
+            row.entries.push(entry);
             for (let i = left; i <= right; i++) {
                 const bucket = row.columns.get(i);
                 if (bucket) bucket.push(entry);
@@ -75,7 +78,37 @@ export function indexSegments<T extends Segment>(segments: readonly T[], radius:
         return hit;
     }
 
+    const seen = new Set<number>();
+    function forRow(y: number, margin: number, visit: (entry: IndexedSegment<T>) => void) {
+        const bottom = bin(y - margin), top = bin(y + margin);
+        if (!Number.isSafeInteger(bottom) || !Number.isSafeInteger(top)) {
+            for (const edge of entries) visit(edge);
+            return;
+        }
+        if (bottom === top) {
+            for (const edge of rows.get(bottom)?.entries ?? empty) visit(edge);
+        }
+        else {
+            seen.clear();
+            function visitRow(row: BucketRow<T> | undefined) {
+                for (const edge of row?.entries ?? empty) {
+                    if (seen.has(edge.order)) continue;
+                    seen.add(edge.order);
+                    visit(edge);
+                }
+            }
+            if (top - bottom + 1 <= rows.size) {
+                for (let j = bottom; j <= top; j++) visitRow(rows.get(j));
+            }
+            else for (const [j, row] of rows) {
+                if (j >= bottom && j <= top) visitRow(row);
+            }
+        }
+        for (const edge of overflow) visit(edge);
+    }
+
     return {
+        forRow,
         nearest: (x: number, y: number, limit = radius * radius, metric: Metric<T> = segmentSquaredDistance) => find(x, y, limit, metric, false),
         within: (x: number, y: number, limit: number) => !!find(x, y, limit, segmentSquaredDistance, true)
     };

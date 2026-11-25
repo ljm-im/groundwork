@@ -13,6 +13,8 @@ export interface RegionShape {
     contains: (p: Point) => boolean;
     boundary: () => Segment[][];
     spine?: Segment[];
+    reach?: number;
+    spineIndex?: Pick<ReturnType<typeof indexSegments>, "forRow">;
     cross?: (p: Point) => CrossSection | undefined;
 }
 export interface Region { shape: RegionShape; cells: number[]; mask: Uint8Array }
@@ -61,9 +63,57 @@ function commonEdge(segment: Segment, lower: RegionShape, lowerEdges: Segment[],
     return edges;
 }
 
+type ColumnRange = { start: number; end: number };
+
+// Intersect the capsule around a segment with the current scanline.
+function traceColumns(entry: IndexedSegment<Segment>, reach: number, y: number, xMin: number, step: number, nx: number, ranges: ColumnRange[]) {
+    const { segment: { a, b }, dx, dy, length, padding } = entry, radius = reach + step + padding;
+    if (y < Math.min(a[1], b[1]) - radius || y > Math.max(a[1], b[1]) + radius) return;
+    const previous = ranges[ranges.length - 1];
+    if (previous && xMin + previous.start * step <= Math.min(a[0], b[0]) - radius &&
+        xMin + previous.end * step >= Math.max(a[0], b[0]) + radius) return;
+    let left = Infinity, right = -Infinity;
+    const ra = radius ** 2 - (y - a[1]) ** 2, rb = radius ** 2 - (y - b[1]) ** 2;
+    if (ra >= 0) {
+        const span = Math.sqrt(ra);
+        left = a[0] - span; right = a[0] + span;
+    }
+    if (rb >= 0) {
+        const span = Math.sqrt(rb);
+        left = Math.min(left, b[0] - span); right = Math.max(right, b[0] + span);
+    }
+    if (dy) {
+        const offsetX = -dy / length * radius, offsetY = dx / length * radius;
+        for (let sign = -1; sign <= 1; sign += 2) {
+            const ay = a[1] + sign * offsetY, by = b[1] + sign * offsetY;
+            if (y < Math.min(ay, by) || y > Math.max(ay, by)) continue;
+            const x = a[0] + sign * offsetX + dx * ((y - ay) / dy);
+            left = Math.min(left, x); right = Math.max(right, x);
+        }
+    }
+    const start = Math.max(0, Math.floor((left - xMin) / step)), end = Math.min(nx, Math.ceil((right - xMin) / step));
+    if (!(start <= end)) return;
+    if (previous && start <= previous.end + 1 && end >= previous.start - 1) {
+        previous.start = Math.min(previous.start, start);
+        previous.end = Math.max(previous.end, end);
+    }
+    else ranges.push({ start, end });
+}
+
+function mergeColumns(ranges: ColumnRange[]) {
+    ranges.sort((a, b) => a.start - b.start);
+    let length = 0;
+    for (const range of ranges) {
+        const previous = ranges[length - 1];
+        if (previous && range.start <= previous.end + 1) previous.end = Math.max(previous.end, range.end);
+        else ranges[length++] = range;
+    }
+    ranges.length = length;
+}
+
 // Trace implicit strip boundaries only when another construction needs their contour.
 // Every traced segment fits inside one square of diagonal at most the flattening tolerance.
-function trace(shape: RegionShape, tolerance: number, clip?: Box) {
+export function trace(shape: RegionShape, tolerance: number, clip?: Box) {
     if (!shape.box.every(Number.isFinite)) return [];
     const step = tolerance / Math.SQRT2, box = expand(shape.box, step), segments: Segment[] = [];
     if (clip) {
@@ -72,23 +122,52 @@ function trace(shape: RegionShape, tolerance: number, clip?: Box) {
         box[2] = Math.min(box[2], clip[2]); box[3] = Math.min(box[3], clip[3]);
     }
     const nx = Math.ceil((box[2] - box[0]) / step), ny = Math.ceil((box[3] - box[1]) / step);
-    const point: Point = [0, 0], hits: Point[] = [];
-    let previous = new Uint8Array(nx + 1);
+    const { spine, reach } = shape, index = spine && reach !== undefined ? shape.spineIndex ?? indexSegments(spine, reach) : undefined;
+    const full = [{ start: 0, end: nx }], point: Point = [0, 0], hits: Point[] = [];
+    let previous = new Uint8Array(nx + 1), row = new Uint8Array(nx + 1);
+    let previousRanges: ColumnRange[] = [], ranges: ColumnRange[] = [];
     for (let j = 0; j <= ny; j++) {
-        const row = new Uint8Array(nx + 1), y = box[1] + j * step;
-        for (let i = 0; i <= nx; i++) {
-            const x = box[0] + i * step;
-            point[0] = x; point[1] = y;
-            row[i] = +shape.contains(point);
-            if (!i || !j) continue;
-            hits.length = 0;
-            if (previous[i - 1] !== previous[i]) hits.push([x - step / 2, y - step]);
-            if (previous[i] !== row[i]) hits.push([x, y - step / 2]);
-            if (row[i] !== row[i - 1]) hits.push([x - step / 2, y]);
-            if (row[i - 1] !== previous[i - 1]) hits.push([x - step, y - step / 2]);
-            for (let k = 1; k < hits.length; k += 2) segments.push({ a: hits[k - 1], b: hits[k] });
+        const y = box[1] + j * step;
+        if (index) {
+            ranges.length = 0;
+            index.forRow(y, step, edge => traceColumns(edge, reach!, y, box[0], step, nx, ranges));
+            mergeColumns(ranges);
         }
-        previous = row;
+        else ranges = full;
+        row.fill(0);
+        point[1] = y;
+        for (const { start, end } of ranges) {
+            for (let i = start; i <= end; i++) {
+                point[0] = box[0] + i * step;
+                row[i] = +shape.contains(point);
+            }
+        }
+
+        // A square can cross the contour if either row visits one of its two columns.
+        if (j) {
+            let current = 0, last = 0, visited = 0;
+            while (current < ranges.length || last < previousRanges.length) {
+                const a = ranges[current], b = previousRanges[last];
+                const range = !b || a && a.start <= b.start ? ranges[current++] : previousRanges[last++];
+                const end = Math.min(nx, range.end + 1);
+                for (let i = Math.max(1, range.start, visited + 1); i <= end; i++) {
+                    const tl = previous[i - 1], tr = previous[i], bl = row[i - 1], br = row[i];
+                    if (tl === tr && tr === br && br === bl) continue;
+                    const x = box[0] + i * step;
+                    hits.length = 0;
+                    if (tl !== tr) hits.push([x - step / 2, y - step]);
+                    if (tr !== br) hits.push([x, y - step / 2]);
+                    if (br !== bl) hits.push([x - step / 2, y]);
+                    if (bl !== tl) hits.push([x - step, y - step / 2]);
+                    for (let k = 1; k < hits.length; k += 2) segments.push({ a: hits[k - 1], b: hits[k] });
+                }
+                visited = Math.max(visited, end);
+            }
+        }
+
+        const next = previous, nextRanges = previousRanges;
+        previous = row; row = next;
+        previousRanges = ranges; ranges = nextRanges;
     }
     return [segments];
 }
@@ -151,7 +230,7 @@ export function makeShape(node: GeoNode<number>, below: Map<string, RegionShape>
     }
     let contour: Segment[][] | undefined;
     const shape: RegionShape = { box: expand(bounds(edges.flatMap(e => [e.a, e.b])), reach),
-        spine: edges, cross, contains, boundary: () => contour ??= trace(shape, tolerance) };
+        spine: edges, reach, spineIndex: index, cross, contains, boundary: () => contour ??= trace(shape, tolerance) };
     return shape;
 }
 

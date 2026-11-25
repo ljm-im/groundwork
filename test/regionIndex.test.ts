@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { makeShape, type RegionShape, type Segment } from "../src/core/design/regions.ts";
-import { type Construction, type Point } from "../src/core/design/v5.ts";
+import { makeShape, trace, type RegionShape, type Segment } from "../src/core/design/regions.ts";
+import { type Construction, type Point, type Strip } from "../src/core/design/v5.ts";
 import { clamp, distance, mixPoint, projection } from "../src/core/math/geometry.ts";
 import { indexSegments } from "../src/core/math/segmentIndex.ts";
 import { random } from "../src/core/math/noise.ts";
-import { rect } from "./scenarios.ts";
+import { polygon, rect } from "./scenarios.ts";
 
 function scan(p: Point, edges: Segment[], radius: number) {
     let best = Infinity, index = -1, at: Point | undefined;
@@ -63,5 +63,21 @@ test("Strip cross sections preserve the projected point and normal at equal dist
             s: clamp((reach + sign * dist) / (reach + reach)), first, at,
             normal: dist > 1e-9 ? [sign * (p[0] - at[0]) / dist, sign * (p[1] - at[1]) / dist] : [orientation * nx, orientation * ny]
         }, p.join(","));
+    }
+});
+
+test("Nested strips trace the same ordered segments as a full scan", () => {
+    const a = shape("A", { type: "free", paths: [polygon([[-8, -4], [2, -7], [8, 3], [-3, 9]])] });
+    const b = shape("B", rect(-7, -8, 10, 10));
+    const c = shape("C", { type: "strip", of: ["A"], widths: [1, 2] }, new Map([["A", a]]));
+    const dense = (region: RegionShape) => ({ ...region, reach: undefined, boundary: () => trace({ ...region, reach: undefined }, tolerance) });
+    assert.deepEqual(c.boundary(), dense(c).boundary());
+    for (const references of [["C"], ["B", "C"]] satisfies Strip<number>["of"][]) {
+        const construction: Construction<number> = { type: "strip", of: references, widths: [.5, 1.5] };
+        const d = shape("D", construction, new Map([["B", b], ["C", c]]));
+        const e = shape("D", construction, new Map([["B", b], ["C", dense(c)]]));
+        assert(d.spine!.length > 0);
+        assert.deepEqual(d.boundary(), dense(e).boundary());
+        assert.deepEqual(trace(d, tolerance, [-4, -2, 3, 4]), trace(dense(e), tolerance, [-4, -2, 3, 4]));
     }
 });
