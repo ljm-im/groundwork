@@ -10,9 +10,43 @@ import { Project } from "../src/core/project.ts";
 import { pixelGridSpacing } from "../src/core/edit/display.ts";
 import { constrainGeoLabel, constrainSectionLabel, geoLabelPoint } from "../src/render/labelLayout.ts";
 import { makeShape, rasterRegion } from "../src/core/design/regions.ts";
-import { clampMarkPoint, ProjectMap } from "../src/render/map.ts";
+import { clampMarkPoint, nextMapHit, ProjectMap } from "../src/render/map.ts";
 import { render } from "svelte/server";
-import { polygon, rect, syntheticDesign } from "./scenarios.ts";
+import { layer, openCurve, polygon, rect, syntheticDesign } from "./scenarios.ts";
+
+test("Overlapping map objects cycle in paint order, including separate geometries of the same terrain", async () => {
+    const { Editor } = await import("../src/app/state/session.svelte.ts");
+    const design = syntheticDesign(), point: [number, number] = [-14, -8];
+    design.geoNodes.push(layer("M", rect(-25, -17, 5, 3), {
+        type: "mountain", peaks: [{ at: { p: point, h: 12 }, radius: 20, noise: 0, scale: 1 }],
+        ridges: [{ line: openCurve([{ p: [-23, -8] }, { p: [-4, -8] }]), widths: [10, 10],
+            widthNoise: { amount: 0, wavelength: 10 }, heightNoise: { amount: 0, wavelength: 10 } }]
+    }));
+    design.sections = [{ id: "Q", label: "Q", points: [[-24, -8], [1, -8]] }];
+    const project = new Project(design), map: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), { width: 1000, height: 700 });
+    map.fit(project.terrain, false);
+    const screen = map.screen(point), [x, y] = screen;
+    const marks = ["A", "B"].map(id => ({ mark: { kind: "mark", id, role: "body", point }, box: [x - 5, y - 5, x + 5, y + 5] }));
+    Object.assign(map, { markBoxes: marks });
+    const editor = new Editor();
+    Object.assign(editor, { project, map });
+    editor.layers.geoNodes = editor.layers.sections = true;
+    const hits = [...map.objectHits(editor.mapView!, screen)];
+    assert.deepEqual(hits.map(h => [h.selection.id, h.control?.role, h.control?.path]), [
+        ["B", undefined, undefined], ["A", undefined, undefined], ["Q", undefined, undefined],
+        ["M", "parameter", 1], ["M", "segment", -1], ["M", "body", 0], ["T", "body", 0], ["G", "body", 0]
+    ]);
+    assert.equal(nextMapHit(hits, null), hits[0]);
+    assert.equal(nextMapHit(hits, { kind: "geoNode", id: "other" }), hits[0]);
+    for (const [i, hit] of hits.entries()) {
+        const geometry = i === 3 ? { kind: "parameter" as const, index: 1 } :
+            i === 4 ? { kind: "path" as const, index: -1 } : undefined;
+        assert.equal(nextMapHit(hits, hit.selection, geometry), hits[(i + 1) % hits.length]);
+    }
+    editor.layers.geoNodes = false;
+    assert.deepEqual([...map.objectHits(editor.mapView!, screen)].map(h => h.selection.id), ["B", "A", "Q", "M", "T", "G"]);
+    assert.equal(nextMapHit([], { kind: "geoNode", id: "M" }), undefined);
+});
 
 test("Map focus, hit radius and the selected inspector issue", async () => {
     const baseline = new Project(syntheticDesign());

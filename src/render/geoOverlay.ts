@@ -19,33 +19,42 @@ export function showsParameterGeometry(view: MapView, node: GeoNode) {
     return view.selection?.kind === "geoNode" && view.selection.id === node.id || view.layers.geoNodes && !node.disabled;
 }
 
-export function drawGeoOverlay(map: ProjectMap, view: MapView) {
-    const ctx = map.ctx, scale = map.scale, d = view.project.design, draft = view.draft;
-    const edges = (segments: Segment[], color: string, width: number, dashed = false) => {
-        ctx.strokeStyle = color;
-        ctx.lineWidth = width;
-        ctx.setLineDash(dashed ? [...overlay.dash] : []);
-        ctx.beginPath();
-        let last: Point | undefined;
-        for (const { a, b } of segments) {
-            if (!last || a[0] !== last[0] || a[1] !== last[1]) ctx.moveTo(...map.screen(a));
-            ctx.lineTo(...map.screen(b));
-            last = b;
-        }
-        ctx.stroke();
-        ctx.setLineDash([]);
-    };
-    const dot = (point: Point, active = false, control = false) => drawHandle(ctx, ...map.screen(point), active, control);
+function strokeEdges(map: ProjectMap, segments: Segment[], color: string, width: number, dashed = false) {
+    const ctx = map.ctx;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.setLineDash(dashed ? [...overlay.dash] : []);
+    ctx.beginPath();
+    let last: Point | undefined;
+    for (const { a, b } of segments) {
+        if (!last || a[0] !== last[0] || a[1] !== last[1]) ctx.moveTo(...map.screen(a));
+        ctx.lineTo(...map.screen(b));
+        last = b;
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+}
+
+export function drawParameterGeometry(map: ProjectMap, view: MapView) {
+    const ctx = map.ctx, scale = map.scale, d = view.project.design;
     const tolerance = displayCurveTolerance(d.grid.step / 8, scale);
-    function controls(n: GeoNode, numeric: GeoNode<number>, selected: boolean) {
+    ctx.save();
+    for (const owner of d.geoNodes) {
+        if (!showsParameterGeometry(view, owner) || view.draft && view.draft.owner !== owner.id) continue;
+        const drag = view.dragNode?.id === owner.id ? view.dragNode : undefined;
+        const n = drag ?? owner;
+        const hovered = view.hovered?.kind === "geoNode" && view.hovered.id === n.id ? view.hoverGeometry : undefined;
+        const origin = !drag || view.dragCurve === undefined || view.dragCommitting ? undefined : geometryPath(owner, view.dragCurve);
+        if (origin) strokeEdges(map, flattenPath(origin, tolerance), mapColors.dragOrigin, overlay.parameterWidth, true);
         for (const [i, path] of pathEntries(n)) {
-            if (i < 0) edges(flattenPath(path, tolerance), mapColors.parameterGeometry, overlay.parameterWidth, true);
-            else if (selected && (view.dragNode && view.dragCurve === undefined || draft?.owner === n.id))
-                edges(flattenPath(path, .6 / scale), mapColors.accent, overlay.selectedWidth);
+            if (i >= 0) continue;
+            const color = hovered?.kind === "path" && hovered.index === i ? mapColors.accent : mapColors.parameterGeometry;
+            strokeEdges(map, flattenPath(path, tolerance), color, overlay.parameterWidth, true);
         }
-        for (const [, point] of parameterPoints(n)) dot(point);
-        if (n.function.type === "coast" && numeric.function.type === "coast" && numeric.function.harbor.radius > 0) {
-            const { center } = n.function.harbor, { radius } = numeric.function.harbor;
+        for (const [i, point] of parameterPoints(n))
+            drawHandle(ctx, ...map.screen(point), hovered?.kind === "parameter" && hovered.index === i);
+        if (n.function.type === "coast" && owner.function.type === "coast" && owner.function.harbor.radius > 0) {
+            const { center } = n.function.harbor, { radius } = owner.function.harbor;
             ctx.beginPath();
             ctx.arc(...map.screen(center), radius * scale, 0, Math.PI * 2);
             ctx.strokeStyle = mapColors.parameterGeometry;
@@ -54,26 +63,31 @@ export function drawGeoOverlay(map: ProjectMap, view: MapView) {
             ctx.stroke();
             ctx.setLineDash([]);
         }
-        if (draft || !selected) return;
-        for (const c of geoControls(n, view.geometry)) {
+    }
+    ctx.restore();
+}
+
+export function drawGeoOverlay(map: ProjectMap, view: MapView) {
+    const ctx = map.ctx, scale = map.scale, d = view.project.design, draft = view.draft;
+    const dot = (point: Point, active = false, control = false) => drawHandle(ctx, ...map.screen(point), active, control);
+    ctx.save();
+    const owner = view.selection?.kind === "geoNode" ? d.geoNodes.find(n => n.id === view.selection!.id) : undefined;
+    if (owner && (!draft || draft.owner === owner.id)) {
+        const n = view.dragNode ?? owner;
+        if (n.construction.type === "free" && (view.dragNode && view.dragCurve === undefined || draft))
+            for (const path of n.construction.paths)
+                strokeEdges(map, flattenPath(path, .6 / scale), mapColors.accent, overlay.selectedWidth);
+        if (!draft) for (const c of geoControls(n, view.geometry)) {
             const tangent = c.role === "in" || c.role === "out";
-            if (tangent) edges([{ a: geometryPath(n, c.path)!.nodes[c.index].p, b: c.point }], mapColors.accent, overlay.controlLine);
+            if (tangent)
+                strokeEdges(map, [{ a: geometryPath(n, c.path)!.nodes[c.index].p, b: c.point }], mapColors.accent, overlay.controlLine);
             const active = view.vertex && (["path", "role", "index"] as (keyof GeoControl)[]).every(k => view.vertex![k] === c[k]);
             dot(c.point, !!active, tangent);
         }
     }
-    ctx.save();
-    const owner = view.selection?.kind === "geoNode" ? d.geoNodes.find(n => n.id === view.selection!.id) : undefined;
-    if (!draft) for (const node of d.geoNodes) if (node !== owner && showsParameterGeometry(view, node))
-        controls(node, node, false);
-    if (owner && (!draft || draft.owner === owner.id)) {
-        const origin = view.dragCurve === undefined || view.dragCommitting ? undefined : geometryPath(owner, view.dragCurve);
-        if (origin) edges(flattenPath(origin, tolerance), mapColors.dragOrigin, overlay.parameterWidth, true);
-        controls(view.dragNode ?? owner, owner, true);
-    }
     if (draft) {
         if (draft.tool === "strip") {
-            edges(draft.spine ?? [], mapColors.accent, overlay.selectedWidth);
+            strokeEdges(map, draft.spine ?? [], mapColors.accent, overlay.selectedWidth);
             const upper = d.geoNodes.findLast(n => draft.ids.includes(n.id));
             if (upper?.construction.type === "free") for (const path of upper.construction.paths) for (const v of path.nodes)
                 dot(v.p, draft.anchors.includes(v.id));
@@ -82,10 +96,10 @@ export function drawGeoOverlay(map: ProjectMap, view: MapView) {
             if (["peak", "center", "harbor"].includes(draft.tool)) {
                 if (!draft.nodes.length && draft.cursor) dot(draft.cursor);
             }
-            else if (draft.path) edges(flattenPath(draft.path, .5 / scale), mapColors.accent, overlay.selectedWidth, true);
+            else if (draft.path) strokeEdges(map, flattenPath(draft.path, .5 / scale), mapColors.accent, overlay.selectedWidth, true);
             else {
                 const points = [...(draft.start ? [draft.start] : []), ...draft.nodes.map(v => v.p), ...(draft.cursor ? [draft.cursor] : [])];
-                edges(points.slice(1).map((b, i) => ({ a: points[i], b })), mapColors.parameterGeometry, overlay.parameterWidth, true);
+                strokeEdges(map, points.slice(1).map((b, i) => ({ a: points[i], b })), mapColors.parameterGeometry, overlay.parameterWidth, true);
             }
             for (const v of draft.nodes) dot(v.p);
         }

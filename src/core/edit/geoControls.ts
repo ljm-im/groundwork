@@ -11,6 +11,11 @@ export interface GeoControl {
     path: number; index: number; point: Point;
 }
 
+export function parameterTarget(control: GeoControl): GeometryTarget | undefined {
+    if (control.path < 0) return { kind: "path", index: control.path };
+    if (control.role === "parameter") return { kind: "parameter", index: control.path };
+}
+
 export function geometryPath(n: GeoNode, index: number): Curve | undefined {
     if (index >= 0) return n.construction.type === "free" ? n.construction.paths[index] : undefined;
     const f = n.function;
@@ -85,13 +90,20 @@ function hitSegments(paths: [number, Curve][], p: Point, scale: number, toleranc
 }
 
 export function hitControl(n: GeoNode, p: Point, scale: number, tolerance: number, target?: GeometryTarget) {
-    return hitGeoHandle(geoControls(n, target), p, scale) ?? hitPathSegment(n, p, scale, tolerance, target);
+    return hitGeoControl(n, p, scale, target) ?? hitPathSegment(n, p, scale, tolerance, target);
 }
-export function hitParameterGeometry(n: GeoNode, p: Point, scale: number, tolerance: number) {
-    const paths = pathEntries(n).filter(([i]) => i < 0);
-    const controls = paths.flatMap(([path, curve]) => curve.nodes.map((v, i) => vertexControl(path, i, v.p)));
-    controls.push(...parameterPoints(n).map(([index, point]) => pointControl(index, point)));
-    return hitGeoHandle(controls, p, scale) ?? hitSegments(paths, p, scale, tolerance);
+export function hitGeoControl(n: GeoNode, p: Point, scale: number, target?: GeometryTarget) {
+    return hitGeoHandle(geoControls(n, target), p, scale);
+}
+export function* hitParameterGeometries(n: GeoNode, p: Point, scale: number, tolerance: number) {
+    for (const [index, point] of parameterPoints(n).reverse())
+        if (distance(p, point) * scale <= handleRadius) yield pointControl(index, point);
+    for (const [path, curve] of pathEntries(n).reverse()) {
+        if (path >= 0) continue;
+        const vertices = curve.nodes.map((v, i) => vertexControl(path, i, v.p));
+        const hit = hitGeoHandle(vertices, p, scale) ?? hitSegments([[path, curve]], p, scale, tolerance);
+        if (hit) yield hit;
+    }
 }
 export function hitPathSegment(n: GeoNode, p: Point, scale: number, tolerance: number, target?: GeometryTarget) {
     return hitSegments(editablePaths(n, target), p, scale, tolerance);

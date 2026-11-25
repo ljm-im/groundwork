@@ -68,6 +68,7 @@ export class Editor {
     hoverRefs = $state.raw<string[]>([]);
     displayField = $state(heightId);
     hovered = $state.raw<Selection>();
+    hoverGeometry = $state.raw<GeometryTarget>();
     geometry = $state.raw<GeometryTarget>();
     objectGeometry = $state.raw<Selection>();
     vertex = $state.raw<GeoControl>();
@@ -122,7 +123,7 @@ export class Editor {
         const draft = this.geoDraft;
         return {
             project: { ...this.mapProject, design: this.mapDesign! }, selection: this.selection, hovered: this.hovered,
-            geometry: this.geometry, objectGeometry: this.objectGeometry, vertex: this.vertex,
+            geometry: this.geometry, objectGeometry: this.objectGeometry, vertex: this.vertex, hoverGeometry: this.hoverGeometry,
             draft: draft && { ...draft, nodes: [...draft.nodes], ids: [...draft.ids], anchors: [...draft.anchors] },
             dragNode: this.dragNode, dragCurve: this.dragCurve, dragCommitting: this.dragCommitting, dragMark: this.dragMark, dragLabel: this.dragLabel,
             displayField: this.displayField,
@@ -285,7 +286,7 @@ export class Editor {
         }
         if (this.viewport && !this.project.design.geoNodes.some(n => n.id === this.viewport)) this.viewport = null;
         if (!Object.hasOwn(this.project.design.fields, this.displayField)) this.displayField = heightId;
-        this.hovered = undefined;
+        this.hoverSelection();
         this.map.frame(this.project.terrain, reset);
     }
     focusObjectGeometry(target: Selection) {
@@ -532,8 +533,9 @@ export class Editor {
                 type === "slope" ? { kind: "parameter", index: 0 } : undefined;
         });
     }
-    hoverSelection(selection?: Selection) {
+    hoverSelection(selection?: Selection, geometry?: GeometryTarget) {
         if (selection?.kind !== this.hovered?.kind || selection?.id !== this.hovered?.id) this.hovered = selection;
+        if (geometry?.kind !== this.hoverGeometry?.kind || geometry?.index !== this.hoverGeometry?.index) this.hoverGeometry = geometry;
     }
     hover(ids: string[]) {
         this.hoverRefs = ids;
@@ -579,7 +581,7 @@ export class Editor {
             this.changePropertyTab("region");
         }
     }
-    readPosition(point: Point) {
+    readPosition(point?: Point) {
         this.pointerPosition = point;
     }
     private referenceItem(slot: Slot): RemovalItem {

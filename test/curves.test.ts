@@ -125,11 +125,19 @@ test("The open pen and handle drags only store usable handles", () => {
         { id: "C", p: [10, 0], mode: "corner", in: [-2, 1] }
     ]);
     setNodeMode(path, 1, "auto");
-    const incoming = autoHandle(path, 1, "in");
+    const regular = structuredClone(path);
+    moveHandle(regular, 1, "out", [6, 2], false);
     moveHandle(path, 1, "out", [6, 2], true);
+    assert.deepEqual(path, regular);
+    assert.equal(path.nodes[1].mode, "manual");
+    const incoming = path.nodes[1].in;
+    moveHandle(path, 1, "out", [7, 1], true);
     assert.deepEqual(path.nodes[1].in, incoming);
     assert.equal(path.nodes[1].mode, "corner");
-    moveHandle(path, 1, "out", [7, 1], false);
+    const corner = structuredClone(path);
+    moveHandle(corner, 1, "out", [8, 1], true);
+    moveHandle(path, 1, "out", [8, 1], false);
+    assert.deepEqual(path, corner);
     assert.equal(path.nodes[1].mode, "manual");
     moveHandle(path, 0, "out", [3, 1], false);
     assert.equal(path.nodes[0].mode, "corner");

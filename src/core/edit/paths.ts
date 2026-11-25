@@ -76,12 +76,16 @@ export function setNodeMode(path: Curve, i: number, mode: CurveNode["mode"]) {
 export function moveHandle(path: Curve, i: number, side: Side, target: Point, independent: boolean) {
     if (!hasHandleSide(path, i, side)) return;
     const v = path.nodes[i], other = side === "in" ? "out" : "in";
-    const current = handleOffset(path, i, other), length = Math.hypot(...(current ?? [0, 0]));
     const delta = offset(target, v.p), size = Math.hypot(...delta);
-    v.mode = independent || !canSetManual(path, i) ? "corner" : "manual";
+    if (independent && v.mode === "manual") {
+        v.mode = "corner";
+        v[side] = delta;
+        return;
+    }
+    const current = handleOffset(path, i, other), length = Math.hypot(...(current ?? [0, 0]));
+    v.mode = canSetManual(path, i) ? "manual" : "corner";
     if (hasHandleSide(path, i, other)) {
-        if (!independent) v[other] = scale(delta, -length / (size || 1));
-        else if (current) v[other] = current;
+        v[other] = scale(delta, -length / (size || 1));
     }
     v[side] = delta;
 }
