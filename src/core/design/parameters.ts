@@ -60,6 +60,7 @@ export function parameters(d: Design, geoIndex?: number) {
             if (p.type === "geometry") continue;
             for (const key of expandKeys(f, p.key)) {
                 let fallback = p.default, virtual = false;
+                if (f.type === "erosion" && p.derived) fallback = "{geo:" + n.id + ".radius} / 2";
                 if (p.profile && readAt(f, key) === undefined) {
                     const lineKey = key.slice(0, -3), line = readAt(f, lineKey) as Curve;
                     const index = Number(key.at(-2)), ease = f.type === "slope" && f.kind === "path" && f.ease;

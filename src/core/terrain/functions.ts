@@ -6,7 +6,7 @@ import { evaluate, fieldValue, sampleValue } from "../design/expression.ts";
 import { type CrossSection, type Region, regionMaskAt, regionMaskIndex, signedBoundaryDistance } from "../design/regions.ts";
 import { nearest, polygonField, sampleDefined, smooth, type Grid } from "../math/geometry.ts";
 import { fbm, noise, noise1D } from "../math/noise.ts";
-import { erode } from "./erosion.ts";
+import { erodeAtSpacing } from "./erosion.ts";
 import { flattenPath } from "../design/path.ts";
 import { shoreDistance } from "./shore.ts";
 
@@ -158,8 +158,8 @@ export function evaluateLayer(n: ResolvedGeoNode, region: Region, state: FieldSt
                 const eligible = new Uint8Array(grid.size);
                 for (const k of region.cells)
                     if (regionMaskAt(region, k) && readable[bindingIndex(k)] && source[k] > floor) eligible[k] = 1;
-                const delta = erode(grid, eligible, source, f, seed);
-                return k => source[k] + delta[k] * input(f.strength, k);
+                const delta = erodeAtSpacing(grid, eligible, source, f, seed, region.cells);
+                return (k, x, y) => source[k] + delta(k, x, y) * input(f.strength, k);
             }
             case "islets": {
                 const n3 = noise(seed + 202);

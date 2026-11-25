@@ -1,5 +1,5 @@
 import { type Erosion } from "../design/v5.ts";
-import { type Grid } from "../math/geometry.ts";
+import { createGrid, sample, type Grid } from "../math/geometry.ts";
 import { random } from "../math/noise.ts";
 
 export function erode(grid: Grid, eligible: Uint8Array, surface: Float32Array, config: Erosion, seed: number) {
@@ -89,4 +89,35 @@ export function erode(grid: Grid, eligible: Uint8Array, surface: Float32Array, c
     for (let k = 0; k < size; k++)
         if (eligible[k]) delta[k] = Math.max(-7, Math.min(3, scaled[k] * 30 - surface[k]));
     return delta;
+}
+
+export function erodeAtSpacing(grid: Grid, eligible: Uint8Array, surface: Float32Array, config: Erosion & { spacing: number },
+    seed: number, cells: Int32Array) {
+    const m = Math.max(1, Math.round(config.spacing / grid.step));
+    if (m === 1) {
+        const delta = erode(grid, eligible, surface, config, seed);
+        return (k: number) => delta[k];
+    }
+    if (!Number.isFinite(m * grid.step)) return () => 0;
+
+    const width = Math.ceil(grid.width / m), height = Math.ceil(grid.height / m), step = m * grid.step;
+    const coarse = createGrid({
+        xMin: grid.xMin, yMax: grid.yMax, xMax: grid.xMin + width * step, yMin: grid.yMax - height * step, step
+    });
+    const sums = new Float64Array(coarse.size), counts = new Uint32Array(coarse.size);
+    // Region cells arrive in canvas order, which also preserves the order within each block.
+    for (const k of cells) {
+        if (!eligible[k]) continue;
+        const i = Math.floor((k % grid.width) / m), j = Math.floor(Math.floor(k / grid.width) / m);
+        const at = j * coarse.width + i;
+        sums[at] += surface[k];
+        counts[at]++;
+    }
+    const heights = new Float32Array(coarse.size), mask = new Uint8Array(coarse.size);
+    for (let k = 0; k < coarse.size; k++) if (counts[k]) {
+        mask[k] = 1;
+        heights[k] = sums[k] / counts[k];
+    }
+    const delta = erode(coarse, mask, heights, config, seed);
+    return (k: number, x: number, y: number) => eligible[k] ? sample(coarse, delta, x, y) : 0;
 }
