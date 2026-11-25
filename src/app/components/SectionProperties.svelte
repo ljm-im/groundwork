@@ -1,6 +1,6 @@
 <PropertyPane {editor}>
     {#snippet title()}
-        <PropertyTitle name={section.label} icon="section" rename={label => editor.edit(d => {
+        <PropertyTitle name={section.label} icon="sectionMark" rename={label => editor.edit(d => {
             d.sections.find(s => s.id === section.id)!.label = label;
         })} remove={() => editor.removeSelected()} />
     {/snippet}
@@ -11,7 +11,7 @@
                     d.sections.find(s => s.id === section.id)!.showLabel = visible;
                 })} />
         {:else}
-            <GeometryInput label="剖面线" icon="polyline" count={section.points.length} active={editor.objectGeometry?.kind === "section"}
+            <GeometryInput label="剖面线" icon="section" count={section.points.length} active={editor.objectGeometry?.kind === "section"}
                 onclick={() => editor.focusObjectGeometry({ kind: "section", id: section.id })} />
         {/if}
     {/snippet}

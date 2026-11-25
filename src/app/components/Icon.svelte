@@ -34,6 +34,7 @@
         chevronRight: "m7 4 5 5-5 5",
         textMark: "M11 12h6.5M14.25 12v5.5",
         scaleMark: "M10.5 12.5h7v4.5h-7z M13 12.5v2M15.5 12.5v2",
+        sectionMark: "M10.5 12v5M10.5 14.5h7M17.5 12v5",
         display: "M2 3h14v10H2z M6 16h6m-3-3v3",
         copy: "M6 6h9v10H6z M3 12H2V2h9v1",
         delete: "M2 5h14M6 5V3h6v2M4 5l1 11h8l1-11M7 8v5m4-5v5",
@@ -69,5 +70,5 @@
 <script lang="ts">
     const id = $props.id();
     let { name, builtin = false }: { name: IconName; builtin?: boolean } = $props();
-    let subtype = $derived(name === "textMark" || name === "scaleMark");
+    let subtype = $derived(name === "textMark" || name === "scaleMark" || name === "sectionMark");
 </script>

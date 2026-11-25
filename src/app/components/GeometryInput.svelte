@@ -5,7 +5,7 @@
     <div class="geometry-control">
         <button {id} class="input-box geometry-box" aria-label={label} aria-pressed={active} data-tip={summary} {onclick}>
             <Icon name={icon} />
-            <span>{summary ?? (icon === "point" ? "点" : icon === "polyline" ? "折线（" + count + " 个顶点）" : "闭合曲线（" + count + " 个节点）")}</span>
+            <span>{summary ?? (icon === "point" ? "点" : (icon === "polyline" || icon === "section") ? "折线（" + count + " 个顶点）" : "闭合曲线（" + count + " 个节点）")}</span>
         </button>
         {#if redraw}
             <button class="icon-button geometry-redraw" data-tip={"重画" + label} aria-label={"重画" + label}

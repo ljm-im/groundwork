@@ -111,7 +111,7 @@
     const geoTools = [{ id: "pen", name: "钢笔", icon: "pen" }, { id: "rect", name: "矩形", icon: "rect" },
         { id: "circle", name: "圆", icon: "circle" }, { id: "sector", name: "扇形", icon: "sector" }, { id: "strip", name: "条带", icon: "strip" }] as const;
     const markTools = [{ id: "textMark", name: "文字标记", icon: "textMark" }, { id: "scaleMark", name: "比例尺", icon: "scaleMark" },
-        { id: "section", name: "剖面线", icon: "section" }] as const;
+        { id: "section", name: "剖面线", icon: "sectionMark" }] as const;
     const searches = {
         terrain: { id: "terrain-search", label: "查找地件", key: "terrainFilter" },
         inputs: { id: "variable-search", label: "查找变量", key: "variableFilter" },
