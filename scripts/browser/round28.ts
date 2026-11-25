@@ -189,7 +189,7 @@ export async function checkRound28(url: string) {
     async function assertSectionStroke() {
         const f = await frame(), endpoints = f.section!.map(p => pixels(f, p, true));
         const strokes = await evaluate(() => window.round28.strokes);
-        const lines = strokes.filter(s => s.points.length === 2 && s.color === mapColors.accent && s.width === overlay.selectedWidth &&
+        const lines = strokes.filter(s => s.points.length === 2 && s.color === mapColors.light.accent && s.width === overlay.selectedWidth &&
             s.points.every((p, i) => distance(p, endpoints[i]) < .01));
         assert.equal(lines.length, 1, "The section body is one stroke at its current position");
         assert.deepEqual(lines[0].dash, []);
@@ -250,7 +250,7 @@ export async function checkRound28(url: string) {
             const { editor, frame } = window.round28, ctx = editor!.map.ctx;
             const [x, y] = frame!.localOrigin, scale = frame!.scale;
             return [...ctx.getImageData(Math.round(x - 46 * scale), Math.round(y - 18 * scale), 1, 1).data].slice(0, 3);
-        }).then(c => c.map(n => n.toString(16).padStart(2, "0")).join("")), mapColors.bgPanel.slice(1));
+        }).then(c => c.map(n => n.toString(16).padStart(2, "0")).join("")), mapColors.light.bgPanel.slice(1));
 
         await tap(original.sections[0].points[0]);
         assert.equal((await frame()).selection?.index, 0);

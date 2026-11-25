@@ -185,7 +185,8 @@ export function checkDesignTokens() {
     }
     for (const key of ["bgPanel", "bgSelected", "text", "borderRegion", "accent", "warning", "danger"] as const) {
         const token = tokenName(key);
-        assert.equal(mapColors[key], light.get(token), "Map overlay " + token);
+        assert.equal(mapColors.light[key], light.get(token), "Light map overlay " + token);
+        assert.equal(mapColors.dark[key], dark.get(token), "Dark map overlay " + token);
     }
 
     const html = readFileSync(resolve(root, "index.html"), "utf8");

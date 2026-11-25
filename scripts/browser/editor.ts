@@ -701,7 +701,9 @@ async function checkEditor(url: string) {
         await wait(id => document.querySelector<HTMLElement>("[data-geo-node][aria-pressed=true]")?.dataset.geoNode === id, circle.id);
         await click("[data-property-tab=region]");
         assert.equal(await text("#property-content .geometry-box"), "闭合曲线（4 个节点）");
-        const handleColor = mapColors.bgPanel.slice(1).match(/../g)!.map(channel => Number.parseInt(channel, 16));
+        const theme = await evaluate(() => document.documentElement.dataset.theme);
+        assert(theme === "light" || theme === "dark");
+        const handleColor = mapColors[theme].bgPanel.slice(1).match(/../g)!.map(channel => Number.parseInt(channel, 16));
         for (const { p } of circleBoundary.nodes) assert.deepEqual(await pixel(...at(p)), handleColor);
         await undo();
         assert.equal(await disk(), beforeCircle);

@@ -12,7 +12,7 @@ import { hitGeoControl, hitParameterGeometries, hitPathSegment, parameterTarget,
 import { contourLabels, fieldContours } from "./fieldContours.ts";
 import { constrainGeoLabel, constrainSectionLabel, geoLabelPoint } from "./labelLayout.ts";
 import { drawGeoOverlay, drawHandle, drawParameterGeometry, showsParameterGeometry } from "./geoOverlay.ts";
-import { baseMap, canvasText, contourStyle, interfaceColors, mapColors, overlay, type Theme } from "./palette.ts";
+import { baseMap, canvasText, contourStyle, interfaceColors, mapColors, overlay, type MapColors, type Theme } from "./palette.ts";
 import { displayReading, displayValue } from "../core/design/display.ts";
 import { sectionHandles } from "../core/edit/controls.ts";
 import { relief } from "./relief.ts";
@@ -70,7 +70,7 @@ export type MapView = Readonly<{
 }>;
 
 const labelFont = (bold = false) => (bold ? canvasText.semibold : canvasText.regular) + " " + canvasText.sm + "px " + canvasText.font;
-const issueColor = (issue: Issue) => issue.severity === "error" ? mapColors.danger : mapColors.warning;
+const issueColor = (colors: MapColors, issue: Issue) => issue.severity === "error" ? colors.danger : colors.warning;
 const line = (ctx: Context, points: Point[], closed = false) => {
     ctx.beginPath();
     ctx.moveTo(...points[0]);
@@ -144,13 +144,13 @@ function circle(ctx: Context, x: number, y: number, r: number, fill: string | nu
     }
 }
 
-function mapText(ctx: Context, text: string, x: number, y: number, bold = false, color: string = mapColors.text, maxWidth?: number) {
+function mapText(ctx: Context, colors: MapColors, text: string, x: number, y: number, bold = false, maxWidth?: number) {
     ctx.font = labelFont(bold);
     ctx.lineJoin = "round";
     ctx.lineWidth = overlay.labelHalo;
-    ctx.strokeStyle = mapColors.bgPanel;
+    ctx.strokeStyle = colors.bgPanel;
     ctx.strokeText(text, x, y, maxWidth);
-    ctx.fillStyle = color;
+    ctx.fillStyle = colors.text;
     ctx.fillText(text, x, y, maxWidth);
 }
 
@@ -272,23 +272,23 @@ export class ProjectMap {
         return view.layers.issues ? view.project.issues.filter(i => distance(this.screen(i.point), screen) <= 12)
             .sort((a, b) => distance(this.screen(a.point), screen) - distance(this.screen(b.point), screen)) : [];
     }
-    private drawIssueShapes(ctx: Context, view: MapView) {
+    private drawIssueShapes(ctx: Context, view: MapView, colors: MapColors) {
         const chosen = view.issue && view.project.issues.includes(view.issue) ? view.issue : undefined, scale = this.scale;
         const related = objectIssues(view.project, view.selection);
         for (const issue of [...related.filter(i => i !== chosen), ...(chosen ? [chosen] : [])]) {
             const active = issue === chosen, elapsed = performance.now() - (view.issueStart ?? 0);
             ctx.save();
             ctx.globalAlpha = active ? (elapsed < 1500 ? .72 + .28 * Math.cos(elapsed * Math.PI / 250) : 1) : .42;
-            circle(ctx, ...issue.point, 8 / scale, null, issueColor(issue), 2 / scale);
+            circle(ctx, ...issue.point, 8 / scale, null, issueColor(colors, issue), 2 / scale);
             ctx.restore();
         }
     }
-    private outlineStyle(view: MapView, kind: string, id: string) {
+    private outlineStyle(view: MapView, kind: string, id: string, colors: MapColors) {
         const selected = view.selection?.id === id && view.selection.kind === kind;
         const stripSource = kind === "geoNode" && view.draft?.tool === "strip" && view.draft.ids.includes(id);
-        if (selected || stripSource) return { color: mapColors.accent, width: overlay.selectedWidth / this.scale };
+        if (selected || stripSource) return { color: colors.accent, width: overlay.selectedWidth / this.scale };
         if (view.hovered?.kind === kind && view.hovered.id === id && !view.hoverGeometry || kind === "geoNode" && view.referencedGeo.includes(id))
-            return { color: mapColors.accentHover, width: overlay.hoverWidth / this.scale };
+            return { color: colors.accentHover, width: overlay.hoverWidth / this.scale };
     }
     *objectHits(view: MapView, screen: Point, edit = false): Generator<MapHit> {
         for (const h of this.markHits(...screen)) yield { selection: h, handle: h };
@@ -366,6 +366,7 @@ export class ProjectMap {
     }
     draw(view: MapView, theme: Theme) {
         if (!this.width || !this.center) return;
+        const colors = mapColors[theme], base = baseMap[theme], contourColors = contourStyle[theme];
         const ctx = this.ctx,
             { terrain: t, design: d } = view.project,
             g = t.grid,
@@ -380,7 +381,7 @@ export class ProjectMap {
         ctx.lineCap = "round";
         ctx.lineJoin = "round";
         const samples = Object.hasOwn(t.fields, view.displayField) && t.fields[view.displayField];
-        const raster = view.displayField === heightId ? relief(t) : samples && fieldFill(g, samples);
+        const raster = view.displayField === heightId ? relief(t, theme) : samples && fieldFill(g, samples, theme);
         if (raster) {
             ctx.save();
             ctx.translate(g.xMin, g.yMax);
@@ -388,7 +389,7 @@ export class ProjectMap {
             ctx.drawImage(raster, 0, 0, g.xMax - g.xMin, g.yMax - g.yMin);
             ctx.restore();
         }
-        if (view.layers.grid) this.drawGrid(ctx, view, scale);
+        if (view.layers.grid) this.drawGrid(ctx, view, scale, base);
         const draggedRegionId = view.dragCurve === undefined && view.dragNode?.construction.type === "free" ? view.dragNode.id : undefined;
         for (const n of d.geoNodes) {
             if (n.disabled && !empty) continue;
@@ -398,7 +399,7 @@ export class ProjectMap {
                 ctx.fillStyle = n.fill; ctx.fill(paths.area, "evenodd");
             }
             if (n.id !== draggedRegionId && (empty || n.outline || view.layers.geoNodes)) {
-                ctx.strokeStyle = baseMap.boundary;
+                ctx.strokeStyle = base.boundary;
                 ctx.lineWidth = .6 / scale;
                 ctx.stroke(paths.outline);
             }
@@ -406,47 +407,48 @@ export class ProjectMap {
         const contours = view.layers.contours && samples ? fieldContours(g, samples, fieldPrecision(d.fields[view.displayField]), scale) : undefined;
         contours?.paths.forEach((path, rank) => {
             if (!path) return;
-            const style = contourStyle.lines[rank] ?? contourStyle.zero;
-            ctx.strokeStyle = style.color; ctx.lineWidth = style.width / scale; ctx.stroke(path);
+            ctx.strokeStyle = contourColors.lines[rank] ?? contourColors.zero;
+            ctx.lineWidth = (contourStyle.lines[rank]?.width ?? contourStyle.zeroWidth) / scale;
+            ctx.stroke(path);
         });
         const outlined = new Set(view.referencedGeo);
         if (view.selection?.kind === "geoNode") outlined.add(view.selection.id);
         if (view.draft?.tool === "strip") for (const id of view.draft.ids) outlined.add(id);
         if (view.hovered?.kind === "geoNode") outlined.add(view.hovered.id);
         for (const id of outlined) {
-            const r = t.regions.get(id), outline = this.outlineStyle(view, "geoNode", id);
+            const r = t.regions.get(id), outline = this.outlineStyle(view, "geoNode", id, colors);
             if (!r || !outline || view.dragCommitting && id === draggedRegionId) continue;
             const paths = regionPaths(r, g);
             if (r.shape.spine) {
-                ctx.fillStyle = mapColors.stripArea;
+                ctx.fillStyle = colors.stripArea;
                 ctx.fill(paths.area, "evenodd");
                 for (const edge of r.shape.spine) stroke(ctx, [edge.a, edge.b], outline.color, outline.width);
             }
-            ctx.strokeStyle = id === draggedRegionId ? mapColors.dragOrigin : outline.color;
+            ctx.strokeStyle = id === draggedRegionId ? colors.dragOrigin : outline.color;
             ctx.lineWidth = outline.width; ctx.stroke(paths.outline);
         }
-        this.drawIssueShapes(ctx, view);
+        this.drawIssueShapes(ctx, view, colors);
         ctx.restore();
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        drawParameterGeometry(this, view);
+        drawParameterGeometry(this, view, colors);
         if (view.layers.sections) {
             ctx.save();
             ctx.lineCap = "round";
             for (const sec of d.sections) {
-                const points = sec.points.map(p => this.screen(p)), outline = this.outlineStyle(view, "section", sec.id);
+                const points = sec.points.map(p => this.screen(p)), outline = this.outlineStyle(view, "section", sec.id, colors);
                 if (outline) stroke(ctx, points, outline.color, outline.width * scale);
-                else stroke(ctx, points, baseMap.sectionLine, .85, [...overlay.dash]);
+                else stroke(ctx, points, base.sectionLine, .85, [...overlay.dash]);
             }
             ctx.restore();
         }
-        this.drawOverlays(view);
-        drawGeoOverlay(this, view);
-        this.drawLabels(ctx, view);
-        this.drawMarks(ctx, view);
-        if (contours && view.layers.contourLabels) this.drawContourLabels(ctx, contours);
+        this.drawOverlays(view, colors);
+        drawGeoOverlay(this, view, colors);
+        this.drawLabels(ctx, view, colors);
+        this.drawMarks(ctx, view, colors);
+        if (contours && view.layers.contourLabels) this.drawContourLabels(ctx, contours, colors);
     }
-    private drawContourLabels(ctx: Context, contours: ReturnType<typeof fieldContours>) {
+    private drawContourLabels(ctx: Context, contours: ReturnType<typeof fieldContours>, colors: MapColors) {
         const { base, lines } = contours, camera = [...this.center, this.width, this.height] as const;
         if (this.contourText?.contours !== contours || !this.contourText.camera.every((value, i) => value === camera[i])) {
             ctx.font = labelFont();
@@ -456,9 +458,9 @@ export class ProjectMap {
             });
             this.contourText = { contours, camera: [...camera], placed };
         }
-        for (const { point, value } of this.contourText.placed) mapText(ctx, displayReading(value, base), ...point);
+        for (const { point, value } of this.contourText.placed) mapText(ctx, colors, displayReading(value, base), ...point);
     }
-    private drawGrid(ctx: Context, view: MapView, scale: number) {
+    private drawGrid(ctx: Context, view: MapView, scale: number, colors: typeof baseMap[Theme]) {
         const { mode, meters, pixels } = view.grid;
         const step = mode === "meters" ? meters : pixelGridSpacing(scale, pixels);
         const [left, bottom] = this.world(0, this.height), [right, top] = this.world(this.width, 0);
@@ -483,10 +485,10 @@ export class ProjectMap {
             ctx.strokeStyle = color;
             ctx.stroke();
         };
-        if (view.layers.fineGrid) lines(step / 5, baseMap.fineGrid, true);
-        lines(step, baseMap.mainGrid);
+        if (view.layers.fineGrid) lines(step / 5, colors.fineGrid, true);
+        lines(step, colors.mainGrid);
     }
-    private drawLabels(ctx: Context, view: MapView) {
+    private drawLabels(ctx: Context, view: MapView, colors: MapColors) {
         const { design: d, terrain } = view.project;
         this.labelBoxes = [];
         const draw = (target: LabelTarget, name: string, point: Point) => {
@@ -495,7 +497,7 @@ export class ProjectMap {
             const section = target.kind === "section", left = section ? x + 7 : x, middle = section ? y - 8 : y;
             ctx.save();
             ctx.textAlign = section ? "left" : "center";
-            mapText(ctx, name, left, middle);
+            mapText(ctx, colors, name, left, middle);
             const width = ctx.measureText(name).width, start = section ? left : left - width / 2;
             const half = canvasText.sm / 2;
             this.labelBoxes.push({ ...target, point, box: [start - 2, middle - half - 2, start + width + 2, middle + half + 2] });
@@ -563,7 +565,7 @@ export class ProjectMap {
         this.revealBounds([x, y, right, y], [l, t, r - ruler, b]);
     }
 
-    private drawMarks(ctx: Context, view: MapView) {
+    private drawMarks(ctx: Context, view: MapView, colors: MapColors) {
         this.markBoxes = [];
         if (!view.layers.marks) return;
         for (const mark of view.project.design.marks) {
@@ -577,21 +579,21 @@ export class ProjectMap {
             ctx.save();
             ctx.textAlign = "left";
             if (ruler !== undefined) {
-                const right = x + ruler, color = selected ? mapColors.accent : hovered ? mapColors.accentHover : mapColors.text;
-                stroke(ctx, [[x, y - 4], [x, y], [right, y], [right, y - 4]], mapColors.bgPanel, 4);
+                const right = x + ruler, color = selected ? colors.accent : hovered ? colors.accentHover : colors.text;
+                stroke(ctx, [[x, y - 4], [x, y], [right, y], [right, y - 4]], colors.bgPanel, 4);
                 stroke(ctx, [[x, y - 4], [x, y], [right, y], [right, y - 4]], color, selected ? overlay.selectedWidth : 1.7);
-                mapText(ctx, text, right + 6, y - 2, false, mapColors.text, width);
-                if (selected) drawHandle(ctx, x, y, true);
+                mapText(ctx, colors, text, right + 6, y - 2, false, width);
+                if (selected) drawHandle(ctx, colors, x, y, true);
             }
             else {
                 const left = x - width / 2;
                 if (selected || hovered) {
-                    ctx.fillStyle = mapColors.bgSelected;
+                    ctx.fillStyle = colors.bgSelected;
                     ctx.beginPath();
                     ctx.roundRect(left - 4, y - 9, width + 8, 18, 3);
                     ctx.fill();
                 }
-                mapText(ctx, text, left, y, true, mapColors.text, width);
+                mapText(ctx, colors, text, left, y, true, width);
             }
             const [l, t, r, b] = box;
             this.markBoxes.push({ mark: handle, box: [x + l, y + t, x + r, y + b] });
@@ -602,7 +604,7 @@ export class ProjectMap {
         for (const { mark, box: [l, t, r, b] } of this.markBoxes.toReversed())
             if (x >= l && x <= r && y >= t && y <= b) yield mark;
     }
-    private drawOverlays(view: MapView) {
+    private drawOverlays(view: MapView, colors: MapColors) {
         const ctx = this.ctx, active = view.selection;
         if (view.layers.issues)
             for (const problem of view.project.issues) {
@@ -610,7 +612,7 @@ export class ProjectMap {
                 ctx.save();
                 ctx.translate(x, y);
                 ctx.rotate(Math.PI / 4);
-                ctx.fillStyle = ctx.strokeStyle = issueColor(problem);
+                ctx.fillStyle = ctx.strokeStyle = issueColor(colors, problem);
                 ctx.lineWidth = 1.3;
                 ctx.fillRect(-2.8, -2.8, 5.6, 5.6);
                 ctx.strokeRect(-2.8, -2.8, 5.6, 5.6);
@@ -621,11 +623,11 @@ export class ProjectMap {
             if (x < -12 || y < -12 || x > this.width + 12 || y > this.height + 12) continue;
             const selected = active?.kind === h.kind && active.id === h.id && active.index === h.index &&
                 active.role === h.role;
-            drawHandle(ctx, x, y, selected);
+            drawHandle(ctx, colors, x, y, selected);
         }
         if (view.issue && view.project.issues.includes(view.issue)) {
             const [x, y] = this.screen(view.issue.point);
-            circle(ctx, x, y, 10, null, issueColor(view.issue), overlay.selectedWidth);
+            circle(ctx, x, y, 10, null, issueColor(colors, view.issue), overlay.selectedWidth);
         }
     }
     private sectionControls(view: MapView) {

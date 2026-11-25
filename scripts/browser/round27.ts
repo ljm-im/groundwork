@@ -25,6 +25,7 @@ async function observeRound27() {
     const mapModule = "/src/render/map.ts", paletteModule = "/src/render/palette.ts", terrainModule = "/src/core/design/results.ts";
     const { ProjectMap } = await import(mapModule) as typeof import("../../src/render/map.ts");
     const { mapColors } = await import(paletteModule) as typeof import("../../src/render/palette.ts");
+    const colors = mapColors[document.documentElement.dataset.theme === "dark" ? "dark" : "light"];
     const { sampleField } = await import(terrainModule) as typeof import("../../src/core/design/results.ts");
     const draw = ProjectMap.prototype.draw, ctx = CanvasRenderingContext2D.prototype;
     const { beginPath, moveTo, lineTo, stroke } = ctx;
@@ -42,7 +43,7 @@ async function observeRound27() {
         lineTo.call(this, x, y);
     };
     ctx.stroke = function (...args: [Path2D?]) {
-        if (this.canvas.id === "map" && this.strokeStyle === mapColors.parameterGeometry && points.length > 1)
+        if (this.canvas.id === "map" && this.strokeStyle === colors.parameterGeometry && points.length > 1)
             probe.strokes.push(points.slice());
         Reflect.apply(stroke, this, args);
     };

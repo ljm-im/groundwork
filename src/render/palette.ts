@@ -6,18 +6,35 @@ export const interfaceColors = {
 export type Theme = keyof typeof interfaceColors;
 
 export const mapColors = {
-    bgPanel: "#fffefa",
-    bgSelected: "#e2ece4",
-    text: "#233d37",
-    borderRegion: "#c4ccc1",
-    accent: "#226659",
-    accentHover: "rgb(34 102 89 / 50%)",
-    dragOrigin: "rgb(34 102 89 / 30%)",
-    stripArea: "rgb(34 102 89 / 10%)",
-    warning: "#ad771c",
-    danger: "#a34839",
-    parameterGeometry: "#8b4f9a"
+    light: {
+        bgPanel: "#fffefa",
+        bgSelected: "#e2ece4",
+        text: "#233d37",
+        borderRegion: "#c4ccc1",
+        accent: "#226659",
+        accentHover: "rgb(34 102 89 / 50%)",
+        dragOrigin: "rgb(34 102 89 / 30%)",
+        stripArea: "rgb(34 102 89 / 10%)",
+        warning: "#ad771c",
+        danger: "#a34839",
+        parameterGeometry: "#8b4f9a"
+    },
+    dark: {
+        bgPanel: "#1d2422",
+        bgSelected: "#2d3c37",
+        text: "#dde6e1",
+        borderRegion: "#404c48",
+        accent: "#62b3a0",
+        accentHover: "rgb(98 179 160 / 50%)",
+        dragOrigin: "rgb(98 179 160 / 30%)",
+        stripArea: "rgb(98 179 160 / 10%)",
+        warning: "#cf9c45",
+        danger: "#e5816f",
+        parameterGeometry: "#c08fd0"
+    }
 } as const;
+
+export type MapColors = typeof mapColors[Theme];
 
 export const canvasText = {
     xs: 12,
@@ -39,7 +56,8 @@ export const overlay = {
     dash: [6, 4]
 } as const;
 
-// These are the existing terrain and surface colors.
+const fieldRamp = { light: [238, 242, 230], dark: [104, 140, 128] } as const;
+
 export const baseMap = {
     elevation: [
         [0, 226, 231, 200],
@@ -54,12 +72,32 @@ export const baseMap = {
     waterDepthDelta: [36, 26, 18],
     rock: [163, 157, 143],
     sand: [232, 222, 190],
-    fieldRamp: { light: [238, 242, 230], dark: [104, 140, 128] },
-    boundary: "#806d50",
-    sectionLine: "rgba(40,75,74,.6)",
-    fineGrid: "rgba(54,99,104,.10)",
-    mainGrid: "rgba(54,99,104,.23)"
+    light: {
+        rasterDim: 1,
+        fieldRamp: { low: fieldRamp.light, high: fieldRamp.dark },
+        boundary: "#806d50",
+        sectionLine: "rgb(38 71 70 / 60%)",
+        fineGrid: "rgba(54,99,104,.10)",
+        mainGrid: "rgba(54,99,104,.23)"
+    },
+    dark: {
+        rasterDim: .32,
+        fieldRamp: { low: fieldRamp.dark, high: fieldRamp.light },
+        boundary: "#d4c29f",
+        sectionLine: "rgb(214 230 224 / 60%)",
+        fineGrid: "rgb(200 225 220 / 8%)",
+        mainGrid: "rgb(200 225 220 / 18%)"
+    }
 } as const;
+
+const contourLines = [
+    { opacity: 16, width: .9 },
+    { opacity: 26, width: 1.1 },
+    { opacity: 42, width: 1.5 },
+    { opacity: 48, width: 1.8 },
+    { opacity: 54, width: 2.2 }
+] as const;
+const contourLineColors = (rgb: string) => contourLines.map(({ opacity }) => `rgb(${rgb} / ${opacity}%)`);
 
 export const contourStyle = {
     minSpacing: 5,
@@ -67,14 +105,10 @@ export const contourStyle = {
     labelLength: 80,
     labelInset: 40,
     labelRank: 2,
-    lines: [
-        { color: "rgb(16 28 28 / 16%)", width: .9 },
-        { color: "rgb(16 28 28 / 26%)", width: 1.1 },
-        { color: "rgb(16 28 28 / 42%)", width: 1.5 },
-        { color: "rgb(16 28 28 / 48%)", width: 1.8 },
-        { color: "rgb(16 28 28 / 54%)", width: 2.2 }
-    ],
-    zero: { color: "#64909a", width: 1.4 }
+    lines: contourLines,
+    zeroWidth: 1.4,
+    light: { lines: contourLineColors("16 28 28"), zero: "#64909a" },
+    dark: { lines: contourLineColors("226 236 231"), zero: "#7fb3be" }
 } as const;
 
 export const sectionColors = {

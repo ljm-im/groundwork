@@ -2,7 +2,7 @@ import { heightId } from "../core/design/defaults.ts";
 import { type Terrain } from "../core/design/results.ts";
 import { clamp, gradient, smooth } from "../core/math/geometry.ts";
 
-import { baseMap } from "./palette.ts";
+import { baseMap, type Theme } from "./palette.ts";
 
 const colors = baseMap.elevation;
 const palette = Array.from({ length: 641 }, (_, i) => {
@@ -14,12 +14,13 @@ const palette = Array.from({ length: 641 }, (_, i) => {
     return [1, 2, 3].map(k => a[k] + (b[k] - a[k]) * t);
 });
 
-const charts = new WeakMap<Terrain, OffscreenCanvas>();
+const charts = { light: new WeakMap<Terrain, OffscreenCanvas>(), dark: new WeakMap<Terrain, OffscreenCanvas>() };
 
-export function relief(t: Terrain) {
-    const cached = charts.get(t);
+export function relief(t: Terrain, theme: Theme) {
+    const cache = charts[theme], cached = cache.get(t);
     if (cached) return cached;
     const { grid } = t, { values: h, defined } = t.fields[heightId], { width, height } = grid;
+    const { rasterDim } = baseMap[theme];
     const raster = new OffscreenCanvas(width, height);
     const ctx = raster.getContext("2d")!, pixels = ctx.createImageData(width, height), data = pixels.data;
     for (let j = 0; j < height; j++)
@@ -33,7 +34,7 @@ export function relief(t: Terrain) {
             if (v < 0) {
                 const depth = clamp(-t.shore[k] * .09 / 5);
                 for (let channel = 0; channel < 3; channel++)
-                    data[at + channel] = baseMap.waterShallow[channel] - baseMap.waterDepthDelta[channel] * depth;
+                    data[at + channel] = (baseMap.waterShallow[channel] - baseMap.waterDepthDelta[channel] * depth) * rasterDim;
             }
             else {
                 const [dx, dy] = gradient(grid, h, defined, k), slope = Math.hypot(dx, dy);
@@ -44,11 +45,11 @@ export function relief(t: Terrain) {
                 const light = clamp(.45 + .6 * (-nx * .5 + ny * .5 + .7) / Math.sqrt((nx * nx + ny * ny + 1) * .99), .6, 1.13);
                 const base = palette[clamp(Math.round(v * 20), 0, 640)];
                 for (let channel = 0; channel < 3; channel++)
-                    data[at + channel] = ((base[channel] * (1 - rockMix) + baseMap.rock[channel] * rockMix) * (1 - sand) + baseMap.sand[channel] * sand) * light;
+                    data[at + channel] = ((base[channel] * (1 - rockMix) + baseMap.rock[channel] * rockMix) * (1 - sand) + baseMap.sand[channel] * sand) * light * rasterDim;
             }
             data[at + 3] = 255;
         }
     ctx.putImageData(pixels, 0, 0);
-    charts.set(t, raster);
+    cache.set(t, raster);
     return raster;
 }

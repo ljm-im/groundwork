@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { Project } from "../src/core/project.ts";
 import { gridDefaults, layerDefaults } from "../src/core/edit/display.ts";
 import { ProjectMap, type MapView } from "../src/render/map.ts";
+import { mapColors } from "../src/render/palette.ts";
 import { syntheticDesign } from "./scenarios.ts";
 
 const view = (project: Project, layers: Partial<MapView["layers"]>): MapView => ({
@@ -21,7 +22,7 @@ test("Text marks show the resolved authored elevation when enabled", () => {
         fillText: (value: string) => text.push(value) } as unknown as CanvasRenderingContext2D;
     const map: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), { markScreen: () => [0, 0] });
     function draw() {
-        map["drawMarks"](ctx, view(project, { marks: true }));
+        map["drawMarks"](ctx, view(project, { marks: true }), mapColors.light);
         return text.at(-1);
     }
     assert.equal(draw(), "A 9.0 m");
@@ -46,7 +47,7 @@ test("Groundwork names and section names follow separate map switches", () => {
     const map = Object.assign(Object.create(ProjectMap.prototype) as ProjectMap, { screen: () => [0, 0] });
     for (const [labels, sections, expected] of [[true, true, ["G", "A"]], [false, true, ["A"]], [true, false, ["G"]], [false, false, []]] as const) {
         names.length = 0;
-        map["drawLabels"](ctx, view(project, { labels, sections }));
+        map["drawLabels"](ctx, view(project, { labels, sections }), mapColors.light);
         assert.deepEqual(names, expected);
     }
 });
