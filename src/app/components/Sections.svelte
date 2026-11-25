@@ -3,7 +3,7 @@
         {#each sections as section (section.id)}
             <div class="plot">
                 <div class="plot-title"><b>{section.id}—{section.id}′</b><span>{section.label}</span></div>
-                <canvas use:plot={{ section, terrain: editor.mapProject.terrain, theme }}></canvas>
+                <canvas use:plot={{ section, terrain: editor.mapProject.terrain, field: editor.displayField, precision, theme }}></canvas>
             </div>
         {/each}
     </div>
@@ -22,6 +22,7 @@
 
 <script lang="ts">
     import { type Section } from "../../core/design/v5.ts";
+    import { fieldPrecision } from "../../core/design/defaults.ts";
     import { type Terrain } from "../../core/design/results.ts";
     import { drawSection } from "../../render/sections.ts";
     import { type Theme } from "../../render/palette.ts";
@@ -29,7 +30,9 @@
     let { editor, theme }: { editor: session.Editor; theme: Theme } = $props();
     let sections = $derived(editor.mapDesign?.sections.filter(section => editor.selection?.kind !== "section" || section.id === editor.selection.id) ?? []);
 
-    function plot(canvas: HTMLCanvasElement, data: { section: Section; terrain: Terrain; theme: Theme }) {
+    let precision = $derived(fieldPrecision(editor.project?.design.fields[editor.displayField]));
+
+    function plot(canvas: HTMLCanvasElement, data: { section: Section; terrain: Terrain; field: string; precision: number; theme: Theme }) {
         const ctx = canvas.getContext("2d")!;
         let frame = 0;
         function draw() {
@@ -39,7 +42,7 @@
             if (canvas.width !== Math.round(w * dpr)) canvas.width = Math.round(w * dpr);
             if (canvas.height !== Math.round(h * dpr)) canvas.height = Math.round(h * dpr);
             ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-            drawSection(ctx, w, h, data.section, data.terrain, data.theme);
+            drawSection(ctx, w, h, data.section, data.terrain, data.field, data.precision, data.theme);
         }
         const observer = new ResizeObserver(() => {
             cancelAnimationFrame(frame);
@@ -49,7 +52,8 @@
         frame = requestAnimationFrame(draw);
         return {
             update(next: typeof data) {
-                if (next.section === data.section && next.terrain === data.terrain && next.theme === data.theme) return;
+                if (next.section === data.section && next.terrain === data.terrain && next.field === data.field &&
+                    next.precision === data.precision && next.theme === data.theme) return;
                 data = next;
                 frame ||= requestAnimationFrame(draw);
             },

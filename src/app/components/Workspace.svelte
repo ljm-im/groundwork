@@ -7,7 +7,7 @@
             <nav class="bottom-tabs" aria-label="剖面类型">
                 <Heading kind="bottom-heading">
                     <span class="bottom-tab" data-bottom-tab="sections" aria-current="true">剖面</span>
-                    {#snippet actions()}<small>海拔 / m</small>{/snippet}
+                    {#snippet actions()}{#if field}<small>{field.label}{field.unit ? " / " + field.unit : ""}</small>{/if}{/snippet}
                 </Heading>
             </nav>
             <div class="plot-pane"><Sections {editor} {theme} /></div>
@@ -83,6 +83,7 @@
     import Heading from "./Heading.svelte";
 
     let { editor, theme }: { editor: session.Editor; theme: Theme } = $props();
+    let field = $derived(editor.project?.design.fields[editor.displayField]);
     let main: HTMLElement;
     let layout = $state(readLayout());
     type Split = "bottom" | "upper" | "right";

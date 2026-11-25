@@ -1,5 +1,5 @@
 import { type Section, type Point } from "../core/design/v5.ts";
-import { heightId } from "../core/design/defaults.ts";
+import { pixelGridSpacing } from "../core/edit/display.ts";
 import { sampleField, type Terrain } from "../core/design/results.ts";
 import { distance, mixPoint } from "../core/math/geometry.ts";
 import { canvasText, interfaceColors, sectionColors, type Theme } from "./palette.ts";
@@ -18,25 +18,33 @@ function sectionCut(section: Section) {
     return cut;
 }
 
-export function drawSection(ctx: CanvasRenderingContext2D, w: number, h: number, section: Section, terrain: Terrain, theme: Theme) {
+export function drawSection(ctx: CanvasRenderingContext2D, w: number, h: number, section: Section, terrain: Terrain,
+    field: string, precision: number, theme: Theme) {
     const colors = interfaceColors[theme];
     ctx.clearRect(0, 0, w, h);
     const { len, n, stations } = sectionCut(section);
-    const ground = stations.map(p => sampleField(terrain, heightId, p));
-    const left = 17,
-        right = w - 5,
-        base = h - 15,
-        ys = Math.min((h - 27) / Math.max(28, ...ground.filter(v => v !== undefined)), 3.4);
-    const sx = (v: number) => left + v / len * (right - left),
-        sy = (v: number) => base - v * ys;
+    const values = stations.map(p => sampleField(terrain, field, p));
+    let min = Infinity, max = -Infinity;
+    for (const value of values) if (value !== undefined) {
+        min = Math.min(min, value); max = Math.max(max, value);
+    }
+    if (min === Infinity) min = max = 0;
+    const rows = Math.max(2, Math.min(6, Math.floor((h - 22) / 26)));
+    const span = Math.max(precision, max - min, Math.max(Math.abs(min), Math.abs(max)) * Number.EPSILON * rows * 8);
+    const step = Math.max(precision, pixelGridSpacing(rows / span, 1));
+    const first = Math.ceil(min / step) - 1, last = Math.max(first + 2, Math.ceil(max / step));
+    const ticks = Array.from({ length: last - first + 1 }, (_, i) => displayReading((first + i) * step, precision));
     ctx.font = canvasText.xs + "px " + canvasText.font;
+    const left = Math.min(w / 2, Math.ceil(Math.max(...ticks.map(text => ctx.measureText(text).width))) + 5);
+    const right = w - 5, base = h - 17;
+    const sx = (v: number) => left + v / (len || 1) * (right - left);
+    const sy = (v: number) => base - (v / step - first) / (last - first) * (base - 7);
     ctx.textAlign = "right";
     ctx.textBaseline = "middle";
-    for (const level of [0, 10, 20, 30]) {
-        const y = sy(level);
-        if (y < 4) continue;
+    for (const [i, text] of ticks.entries()) {
+        const y = base - i / (last - first) * (base - 7);
         ctx.fillStyle = colors.textSecondary;
-        ctx.fillText(String(level), left - 3, y);
+        ctx.fillText(text, left - 3, y, left - 3);
         ctx.beginPath();
         ctx.moveTo(left, y);
         ctx.lineTo(right, y);
@@ -45,15 +53,15 @@ export function drawSection(ctx: CanvasRenderingContext2D, w: number, h: number,
         ctx.stroke();
     }
     for (let i = 0; i <= n;) {
-        if (ground[i] === undefined) {
+        if (values[i] === undefined) {
             i++; continue;
         }
         const start = i;
         ctx.beginPath();
-        ctx.moveTo(sx(len * i / n), sy(Math.max(ground[i]!, -3)));
-        while (++i <= n && ground[i] !== undefined) ctx.lineTo(sx(len * i / n), sy(Math.max(ground[i]!, -3)));
-        ctx.lineTo(sx(len * (i - 1) / n), base + 6);
-        ctx.lineTo(sx(len * start / n), base + 6);
+        ctx.moveTo(sx(len * i / n), sy(values[i]!));
+        while (++i <= n && values[i] !== undefined) ctx.lineTo(sx(len * i / n), sy(values[i]!));
+        ctx.lineTo(sx(len * (i - 1) / n), base);
+        ctx.lineTo(sx(len * start / n), base);
         ctx.closePath();
         ctx.fillStyle = sectionColors.ground;
         ctx.fill();
