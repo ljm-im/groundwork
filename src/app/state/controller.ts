@@ -1,5 +1,5 @@
 import { composingKey } from "./numbers.ts";
-import { commitFocusedInput } from "./pendingInput.ts";
+import { commitFocusedInput, isEditableText } from "./pendingInput.ts";
 import { defaultFollow } from "../../core/design/v5.ts";
 import { distance } from "../../core/math/geometry.ts";
 import { moveHandle, sectionHandlePoint } from "../../core/edit/controls.ts";
@@ -28,6 +28,8 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
     let lastWheel = -Infinity, wheelMode = "pan", pinchScale = 0;
     const dragThreshold = 3;
     let hoverFrame = 0, hoverPoint: Point | undefined, hoverAlternate = false;
+    let pointerInside = false, spaceHeld = false;
+    canvas.addEventListener("pointerenter", () => pointerInside = true, { signal });
     canvas.addEventListener("wheel", ev => {
         ev.preventDefault();
         if (!editor.project || pinchScale) return;
@@ -66,10 +68,18 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         pinchScale = 0;
     }, { signal });
 
-    function beginPan(ev: PointerEvent, screen: Point, click?: () => void) {
+    function beginPan(ev: PointerEvent, screen: Point, pan: "middle" | "space" | "stationary", click?: () => void) {
         ev.preventDefault();
         editor.hoverSelection();
-        editor.gesture = { pan: true, middle: ev.button === 1, screen, center: map.center.slice(), pointer: ev.pointerId, click };
+        editor.gesture = { pan, screen, center: map.center.slice(), pointer: ev.pointerId, click };
+    }
+    function stopSpacePan() {
+        if (!spaceHeld) return;
+        spaceHeld = false;
+        const gesture = editor.gesture;
+        if (gesture && "pan" in gesture && gesture.pan === "space") gesture.pan = "stationary";
+        if (!gesture || !("pan" in gesture) || gesture.pan !== "middle") canvas.style.cursor = "";
+        if (hoverPoint) hoverFrame ||= requestAnimationFrame(updateHover);
     }
 
     function pick(screen: Point, mode?: "edit" | "menu"): MapHit | { issues: Issue[] } | undefined {
@@ -95,7 +105,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
     function updateHover() {
         hoverFrame = 0;
         const view = editor.mapView;
-        if (!view || !hoverPoint || editor.tool !== "select" || editor.gesture || editor.busy) return;
+        if (!view || !hoverPoint || editor.tool !== "select" || editor.gesture || editor.busy || spaceHeld) return;
         const clicked = hoverAlternate ? alternateHit(hoverPoint) : pick(hoverPoint);
         if (clicked && "issues" in clicked) return editor.hoverSelection();
         const part = clicked && clickControl(view, clicked, hoverAlternate);
@@ -119,7 +129,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
     function beginPointer(ev: PointerEvent) {
         const screen = localPoint(ev), p = map.world(...screen);
         if (ev.button === 1) {
-            beginPan(ev, screen);
+            beginPan(ev, screen, "middle");
             return;
         }
         if (editor.geoDraft) {
@@ -135,7 +145,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         if (editor.tool === "textMark" || editor.tool === "scaleMark") {
             const tool = editor.tool, kind = tool === "scaleMark" ? "scale" : "text";
             const point = map.markCoordinate(screen, defaultFollow(kind));
-            beginPan(ev, screen, () => {
+            beginPan(ev, screen, "stationary", () => {
                 if (editor.tool === tool) void editor.addMark(kind, point);
             });
             return;
@@ -186,14 +196,20 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
     }
 
     type DrawingClick = { draft: GeoDraft; nodeCount: number };
-    type Press = { down: PointerEvent; drawing?: DrawingClick; selectFrom?: Point; dragged?: boolean;
+    type Press = { down: PointerEvent; drawing?: DrawingClick; selectFrom?: Point; dragged?: boolean; spacePan?: boolean;
         state: "active" | "pending" | "double"; up?: PointerEvent };
-    let firstClick: DrawingClick | undefined;
+    let firstClick: DrawingClick | undefined, spaceClick = false;
     let press: Press | undefined;
     canvas.addEventListener("pointerdown", ev => {
         if (!editor.project || editor.busy || editor.gesture || (ev.button !== 0 && ev.button !== 1)) return;
         canvas.focus({ preventScroll: true });
         canvas.setPointerCapture(ev.pointerId);
+        if (spaceHeld && ev.button === 0) {
+            firstClick = undefined;
+            press = { down: ev, state: "active", spacePan: true };
+            beginPan(ev, localPoint(ev), "space");
+            return;
+        }
         const draft = editor.geoDraft;
         const drawing = ev.button === 0 && draft && doubleClickTools.includes(draft.tool) ? { draft, nodeCount: draft.nodes.length } : undefined;
         // The first click may already have closed the path and switched tools.
@@ -215,6 +231,11 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
     canvas.addEventListener("click", ev => {
         const current = press;
         press = undefined;
+        if (current?.spacePan) {
+            spaceClick = true;
+            return;
+        }
+        if (ev.detail === 1) spaceClick = false;
         if (ev.detail === 2 && firstClick) return;
         firstClick = ev.detail === 1 ? current?.drawing : undefined;
         if (current?.up && editor.project && !editor.busy) {
@@ -225,7 +246,8 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
     canvas.addEventListener("dblclick", ev => {
         const first = firstClick;
         firstClick = undefined;
-        if (!editor.project || editor.busy || ev.button !== 0) return;
+        // Chrome can count a Space-pan click as one of the clicks in a double-click.
+        if (spaceHeld || spaceClick || !editor.project || editor.busy || ev.button !== 0) return;
         const draft = first?.draft ?? editor.geoDraft;
         if (draft && doubleClickTools.includes(draft.tool)) {
             ev.preventDefault();
@@ -252,8 +274,12 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
     canvas.addEventListener("pointermove", ev => {
         if (!editor.project) return;
         const screen = localPoint(ev), p = map.world(...screen);
-        const inside = screen[0] >= 0 && screen[0] < map.width && screen[1] >= 0 && screen[1] < map.height;
-        editor.readPosition(inside ? p : undefined);
+        pointerInside = screen[0] >= 0 && screen[0] < map.width && screen[1] >= 0 && screen[1] < map.height;
+        editor.readPosition(pointerInside ? p : undefined);
+        if (editor.tool === "select" && pointerInside) {
+            hoverPoint = screen; hoverAlternate = ev.altKey;
+        }
+        if (spaceHeld && !editor.gesture) return;
         if (press && press.state !== "active" && press.down.pointerId === ev.pointerId && !press.up) {
             if (press.state === "double" || distance(screen, localPoint(press.down)) <= 3) return;
             press.state = "active";
@@ -277,11 +303,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             }
         }
         if (!editor.gesture) {
-            canvas.style.cursor = editor.tool === "select" ? "default" : "crosshair";
-            if (editor.tool === "select" && inside) {
-                hoverPoint = screen; hoverAlternate = ev.altKey;
-                hoverFrame ||= requestAnimationFrame(updateHover);
-            }
+            if (editor.tool === "select" && pointerInside) hoverFrame ||= requestAnimationFrame(updateHover);
             return;
         }
         moveGesture(ev, screen, p);
@@ -292,7 +314,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         if ("pan" in editor.gesture) {
             if (!editor.gesture.changed && distance(screen, editor.gesture.screen) < 3) return;
             editor.gesture.changed = true;
-            if (!editor.gesture.middle) return;
+            if (editor.gesture.pan === "stationary") return;
             canvas.style.cursor = "grabbing";
             map.panTo([editor.gesture.center[0] - (screen[0] - editor.gesture.screen[0]) / map.scale,
                 editor.gesture.center[1] + (screen[1] - editor.gesture.screen[1]) / map.scale]);
@@ -341,6 +363,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
     }
 
     canvas.addEventListener("pointerleave", () => {
+        pointerInside = false;
         cancelAnimationFrame(hoverFrame); hoverFrame = 0;
         hoverPoint = undefined;
         editor.readPosition();
@@ -363,8 +386,9 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         const g = editor.gesture;
         editor.gesture = null;
         if (canvas.hasPointerCapture(ev.pointerId)) canvas.releasePointerCapture(ev.pointerId);
-        canvas.style.cursor = "";
+        canvas.style.cursor = spaceHeld ? "grab" : "";
         if ("pan" in g) {
+            if (pointerInside && hoverPoint) hoverFrame ||= requestAnimationFrame(updateHover);
             if (!g.changed && ev.type === "pointerup") g.click?.();
             return;
         }
@@ -422,18 +446,34 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         releasePointer(ev);
     }, { signal });
     canvas.addEventListener("pointercancel", ev => {
+        const spacePan = press?.spacePan;
         press = undefined; firstClick = undefined;
-        if (editor.tool !== "select") editor.cancelDrawing();
+        if (!spacePan && editor.tool !== "select") editor.cancelDrawing();
         void finishGesture(ev);
     }, { signal });
     canvas.addEventListener("auxclick", ev => ev.preventDefault(), { signal });
     document.addEventListener("keydown", hoverModifier, { signal });
     document.addEventListener("keyup", hoverModifier, { signal });
+    document.addEventListener("keyup", ev => {
+        if (ev.key === " ") stopSpacePan();
+    }, { signal });
+    window.addEventListener("blur", stopSpacePan, { signal });
     document.addEventListener("keydown", ev => {
         if (composingKey(ev) || ev.defaultPrevented && !(ev.key === "Escape" && editor.tool !== "select")) return;
         const save = (ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "s";
         if (save) ev.preventDefault();
         if (!editor.project || editor.busy || editor.fileRequest || editor.removal) return;
+        if (ev.key === " " && !isEditableText(ev.target)) {
+            if (!spaceHeld) {
+                if (!pointerInside || editor.gesture || press && canvas.hasPointerCapture(press.down.pointerId) ||
+                    ev.repeat || ev.altKey || ev.ctrlKey || ev.metaKey) return;
+                spaceHeld = true;
+                canvas.style.cursor = "grab";
+                editor.hoverSelection();
+            }
+            ev.preventDefault();
+            return;
+        }
         const input = ev.target instanceof Element && ev.target.closest("input, select, textarea, [contenteditable=true]");
         if (save) {
             void editor.files.save();

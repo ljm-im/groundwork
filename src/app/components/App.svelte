@@ -7,6 +7,7 @@
 
 <script lang="ts">
     import { onMount } from "svelte";
+    import { isEditableText } from "../state/pendingInput.ts";
     import { applyTheme, readAppearance, resolveTheme, saveAppearance, systemThemeQuery, type Appearance } from "../state/theme.ts";
     import * as session from "../state/session.svelte.ts";
     import Tooltip from "./Tooltip.svelte";
@@ -21,12 +22,7 @@
     let theme = $derived(resolveTheme(appearance, systemDark));
 
     function contextMenu(event: MouseEvent) {
-        const target = event.target;
-        if (target instanceof HTMLElement && target.isContentEditable) return;
-        if (target instanceof HTMLTextAreaElement && !target.disabled && !target.readOnly) return;
-        if (target instanceof HTMLInputElement && !target.disabled && !target.readOnly &&
-            ["text", "search", "email", "url", "tel", "password", "number"].includes(target.type)) return;
-        event.preventDefault();
+        if (!isEditableText(event.target)) event.preventDefault();
     }
     function chooseAppearance(value: Appearance) {
         appearance = value;

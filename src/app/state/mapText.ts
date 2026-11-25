@@ -13,7 +13,7 @@ const closedPenHint = penHint + "回车、双击或单击首点闭合";
 const lineHint = penHint + lineEnd;
 
 const hints: Record<Tool, string> = {
-    select: "单击选择，Alt 单击选择下层，中键平移，滚轮缩放",
+    select: "单击选择，Alt 单击选择下层，中键或按住空格拖动平移，滚轮缩放",
     pen: closedPenHint,
     rect: "拖动或单击矩形的两个对角",
     circle: "拖出半径或单击圆心和圆周",

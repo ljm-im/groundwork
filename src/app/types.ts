@@ -20,7 +20,7 @@ export type Gesture = GestureStart & (
   { geo: GeoNode; control: GeoControl } |
   { label: LabelTarget; offset: Point } |
   { section: Section } |
-  { pan: true; middle?: boolean; center: number[]; click?: () => void } |
+  { pan: "middle" | "space" | "stationary"; center: number[]; click?: () => void } |
   { handle: Handle; offset: Point }
 );
 export const errorText = (error: unknown) => error instanceof Error ? error.message : String(error);
