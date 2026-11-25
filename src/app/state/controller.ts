@@ -477,13 +477,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         }
     }, { signal });
 
-    window.addEventListener("beforeunload", ev => {
-        commitFocusedInput();
-        if (editor.dirty || editor.busy) {
-            ev.preventDefault();
-            ev.returnValue = true;
-        }
-    }, { signal });
+    window.addEventListener("beforeunload", commitFocusedInput, { signal });
     return () => {
         cancelAnimationFrame(hoverFrame);
         listeners.abort();

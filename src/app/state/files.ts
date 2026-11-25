@@ -1,13 +1,13 @@
 import { flushSync } from "svelte";
 import { History } from "../../core/edit/history.ts";
 import { parseDesign, serializeDesign } from "../../core/design/model.ts";
+import { newDesign } from "../../core/design/newDesign.ts";
 import { type Design, errorText } from "../types.ts";
 import { FileWrites, type WriteHandle } from "./fileWrites.ts";
 import { commitFocusedInput } from "./pendingInput.ts";
 import * as session from "./session.svelte.ts";
 
 const draftKey = "terrain-editor/unsaved-v1";
-import { newDesign } from "../../core/design/newDesign.ts";
 const types = [{ description: "项目设计 JSON", accept: { "application/json": [".json"] } }];
 const permissionWarning = "未获得写入权限，修改不会写入文件";
 
@@ -36,6 +36,7 @@ export class DesignFiles {
     private handle: DesignHandle | null = null;
     private writable = false;
     private original: string | null = null;
+    private unbound = false;
     private suggestedName = "project.json";
     private choosingSaveFor: History | null = null;
     private writes = new FileWrites();
@@ -58,20 +59,25 @@ export class DesignFiles {
             if (!draft || typeof draft !== "object" || !("text" in draft) || typeof draft.text !== "string")
                 throw Error("缺少项目设计");
             const filename = "filename" in draft && typeof draft.filename === "string" && draft.filename || "project.json";
-            await this.restore(draft.text, filename);
+            const unbound = "unbound" in draft && draft.unbound === true;
+            const dirty = !unbound || !("dirty" in draft) || draft.dirty !== false;
+            await this.restore(draft.text, filename, unbound, dirty);
         }
         catch (error) {
             this.editor.message("草稿无法恢复：" + errorText(error));
         }
     }
     remember() {
-        const e = this.editor;
+        const e = this.editor, keep = this.unbound || e.dirty;
         try {
-            if (e.dirty) localStorage.setItem(draftKey, JSON.stringify({ text: e.history.states[e.history.index], date: new Date().toISOString(), filename: e.filename }));
+            if (keep) localStorage.setItem(draftKey, JSON.stringify({
+                text: e.history.states[e.history.index], date: new Date().toISOString(), filename: e.filename,
+                ...(this.unbound && { unbound: true, dirty: e.history.dirty })
+            }));
             else localStorage.removeItem(draftKey);
         }
         catch {
-            if (e.dirty) e.message("浏览器草稿空间不可用，请保存到文件");
+            if (keep) e.message("浏览器草稿空间不可用，请保存到文件");
         }
     }
     private status(state: SaveState) {
@@ -92,11 +98,11 @@ export class DesignFiles {
         if (e.saveState === "正在保存" || !changed && e.saveState === "保存失败") this.status(e.saveState);
         else this.status(e.history.dirty || this.handle && !this.writable ? "未保存" : "已保存");
     }
-    private restore(text: string, filename: string) {
+    private restore(text: string, filename: string, unbound: boolean, dirty: boolean) {
         const e = this.editor, design = parseDesign(text, true);
         return e.working("正在恢复草稿…", () => {
             try {
-                this.install(design, filename, { recovered: true });
+                this.install(design, filename, { unbound, recovered: dirty ? "dirty" : "clean" });
             }
             catch (error) {
                 e.message("草稿无法恢复：" + errorText(error));
@@ -105,16 +111,19 @@ export class DesignFiles {
             e.message("已恢复未保存的草稿");
         });
     }
-    private install(design: Design, filename: string, source: { handle?: DesignHandle; writable?: boolean; original?: string | null; recovered?: boolean } = {}) {
+    private install(design: Design, filename: string, source: {
+        handle?: DesignHandle; writable?: boolean; original?: string | null; unbound?: boolean; recovered?: "clean" | "dirty";
+    } = {}) {
         const e = this.editor, history = new History(design);
-        if (source.recovered) history.saved = "";
+        if (source.recovered === "dirty") history.saved = "";
         session.timed("terrain-editor:first", () => {
             e.replace(design, true);
             this.writes.reset();
             this.handle = source.handle ?? null;
             this.writable = source.writable ?? false;
             this.original = source.original ?? null;
-            this.suggestedName = source.recovered ? filename : "project.json";
+            this.unbound = source.unbound ?? false;
+            this.suggestedName = source.recovered && !this.unbound ? filename : "project.json";
             this.choosingSaveFor = null;
             e.history = history;
             e.filename = filename;
@@ -127,7 +136,7 @@ export class DesignFiles {
         const e = this.editor;
         if (!this.supported || e.busy || e.gesture) return;
         commitFocusedInput();
-        if (e.dirty && !confirmed) {
+        if (e.history?.dirty && !confirmed) {
             e.fileRequest = action;
             return;
         }
@@ -135,7 +144,7 @@ export class DesignFiles {
         try {
             if (action === "new") {
                 const box = e.map?.canvas?.getBoundingClientRect();
-                this.install(newDesign(box && [box.width * .1, box.height * .9]), "未命名");
+                this.install(newDesign(box && [box.width * .1, box.height * .9]), "未命名", { unbound: true });
                 e.message("已新建设计");
             }
             else {
@@ -185,6 +194,7 @@ export class DesignFiles {
             if (!handle) {
                 this.handle = target;
                 this.writable = true;
+                this.unbound = false;
                 e.filename = target.name;
             }
             history.saved = canonical;
