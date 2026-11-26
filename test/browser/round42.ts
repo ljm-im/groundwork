@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { type Design, type Point } from "../../src/core/design/v5.ts";
+import { mapColors } from "../../src/render/palette.ts";
 import { fixtureMark, literalCurve, syntheticDesign } from "../scenarios.ts";
 import { withCurveMap } from "./curveMapFixture.ts";
 
@@ -8,7 +9,7 @@ export function checkGeometryObjects(url: string) {
     const position: Point = [-20, 22];
     design.marks.push(fixtureMark(design, { id: "A", label: "测点 A", kind: "text", point: position, follow: "map" }));
     return withCurveMap(url, "round42-geometry", async page => {
-        const { authored, click, evaluate, frame, key, paint, saved, tap, text, tool, wait } = page;
+        const { authored, click, evaluate, frame, key, paint, saved, screenshot, tap, text, tool, wait } = page;
         const row = "#properties .geometry-box[aria-label=曲线]";
         const region = "[data-property-tab=region]", geometry = "[data-property-tab=geometry]";
         const list = (id: string) => "[data-select-geometry=" + JSON.stringify(id) + "]";
@@ -93,6 +94,16 @@ export function checkGeometryObjects(url: string) {
         assert(await visible(geometry));
         assert(await visible("[data-property-tab=general][aria-label=文字标记]"));
         await click("[data-property-tab=general]");
+        const clip = await evaluate(({ position, light, dark }) => {
+            const map = window.curveMapProbe.editor!.map, [x, y] = map.screen(position);
+            const bounds = map.canvas.getBoundingClientRect(), { dpr } = map;
+            const color = document.documentElement.dataset.theme === "dark" ? dark : light;
+            const found = [...map.ctx.getImageData(Math.floor(x * dpr), Math.floor(y * dpr), 1, 1).data].slice(0, 3);
+            return { found, color, x: Math.floor(bounds.left + x - 14), y: Math.floor(bounds.top + y - 17), width: 91, height: 34 };
+        }, { position, light: mapColors.light.text, dark: mapColors.dark.text });
+        const { found, color, ...box } = clip;
+        assert.deepEqual(found, color.slice(1).match(/../g)!.map(s => Number.parseInt(s, 16)));
+        await screenshot("round42-text-mark", box);
 
         await click("[data-tab=inputs]");
         await click("[data-add=geometry]");

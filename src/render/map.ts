@@ -681,9 +681,9 @@ export class ProjectMap {
             return { text, width, ruler, box: [-5, -12, ruler + 10 + width, 7] };
         }
         const text = markReading(mark), measured = Math.max(10, ctx.measureText(text).width);
-        const width = screen ? Math.min(measured, Math.max(1, this.width - 10)) : measured;
+        const width = screen ? Math.min(measured, Math.max(1, this.width - 18)) : measured;
         ctx.restore();
-        return { text, width, box: [-width / 2 - 5, -10, width / 2 + 5, 10] };
+        return { text, width, box: [-5, -10, 13 + width, 10] };
     }
     private markHandoffs?: Map<string, Point>;
 
@@ -728,14 +728,14 @@ export class ProjectMap {
                 if (selected) drawHandle(ctx, colors, x, y, "selected");
             }
             else {
-                const left = x - width / 2;
                 if (selected || hovered) {
                     ctx.fillStyle = colors.bgSelected;
                     ctx.beginPath();
-                    ctx.roundRect(left - 4, y - 9, width + 8, 18, 3);
+                    ctx.roundRect(x + box[0], y - 9, box[2] - box[0], 18, 3);
                     ctx.fill();
                 }
-                mapText(ctx, colors, text, left, y, true, width);
+                circle(ctx, x, y, 4, colors.text, colors.bgPanel, 2);
+                mapText(ctx, colors, text, x + 8, y, true, width);
             }
             const [l, t, r, b] = box;
             if (view.layers.marks) this.markBoxes.push({ mark: handle, box: [x + l, y + t, x + r, y + b] });

@@ -18,7 +18,7 @@ test("Text marks show the resolved authored elevation when enabled", () => {
     const project = new Project(d), mark = project.resolved.marks[0];
     assert(mark.kind === "text");
     const text: string[] = [];
-    const ctx = { save() {}, restore() {}, strokeText() {}, measureText: () => ({ width: 15 }),
+    const ctx = { save() {}, restore() {}, beginPath() {}, arc() {}, fill() {}, stroke() {}, strokeText() {}, measureText: () => ({ width: 15 }),
         fillText: (value: string) => text.push(value) } as unknown as CanvasRenderingContext2D;
     const map: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), { markScreen: () => [0, 0] });
     function draw() {
