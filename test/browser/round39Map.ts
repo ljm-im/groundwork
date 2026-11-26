@@ -55,16 +55,18 @@ export function checkSegmentDragAndGuides(url: string) {
             return region?.type === "outline" ? region.outlines[0].nodes.map(node => node.p) : [];
         });
         assertPositions(await preview(), 44, 26, true);
-        const modifier = (pressed: boolean) => cdp("Input.dispatchKeyEvent", {
-            type: pressed ? "keyDown" : "keyUp", key: "Shift", code: "ShiftLeft", windowsVirtualKeyCode: 16, modifiers: ctrl | (pressed ? shift : 0)
+        const modifier = (key: "Shift" | "Control", pressed: boolean, modifiers: number) => cdp("Input.dispatchKeyEvent", {
+            type: pressed ? "keyDown" : "keyUp", key, code: key + "Left", windowsVirtualKeyCode: key === "Shift" ? 16 : 17, modifiers
         });
-        await modifier(true);
-        assertPositions(await preview(), 35, 35, true);
-        await modifier(false);
+        await modifier("Shift", true, ctrl | shift);
         assertPositions(await preview(), 44, 26, true);
-        await modifier(true);
-        await pointer("mouseReleased", to, ctrl | shift);
-        await modifier(false);
+        await modifier("Control", false, shift);
+        assertPositions(await preview(), 35, 35, true);
+        await modifier("Control", true, ctrl | shift);
+        assertPositions(await preview(), 44, 26, true);
+        await modifier("Control", false, shift);
+        await pointer("mouseReleased", to, shift);
+        await modifier("Shift", false, 0);
         await saved();
         await paint();
         assertPositions(await points(), 35, 35, true);
@@ -73,36 +75,47 @@ export function checkSegmentDragAndGuides(url: string) {
         assert.deepEqual(await points(), before);
 
         await tap(middle, ctrl);
-        const nearGuides = pixels(await frame(), [middle[0] - 7.65, middle[1] + 3]);
+        const nearGuides = pixels(await frame(), [middle[0] + 5, middle[1] + 11.6]);
         await pointer("mousePressed", from);
         await pointer("mouseMoved", nearGuides);
         await pointer("mouseReleased", nearGuides);
         await saved();
-        assertPositions(await points(), -7.4 * f.scale, 3 * f.scale, true);
+        assertPositions(await points(), 5 * f.scale, 12 * f.scale, true);
         await undo();
 
         await tap(before[0], ctrl);
-        const view = await frame(), start = pixels(view, before[0]), near = pixels(view, [-28.65, -7.4]);
+        const view = await frame(), start = pixels(view, before[0]);
+        const unrelated = pixels(view, [-28, -7.4]), related = pixels(view, [-31, -2.4]);
+        const checkPoint = (actual: Point, expected: Point) => assert(distance(actual, expected) < .001, JSON.stringify({ actual, expected }));
         await pointer("mousePressed", start);
-        await pointer("mouseMoved", near);
-        await wait(() => window.curveMapProbe.editor?.snapGuides?.length === 2);
+        await pointer("mouseMoved", unrelated);
+        await paint();
+        checkPoint((await preview())[0], [-28, -7.4]);
+        assert.equal(await evaluate(() => window.curveMapProbe.editor?.snapGuides?.length), undefined);
+        await pointer("mouseMoved", related);
+        await wait(() => window.curveMapProbe.editor?.snapGuides?.length === 1);
         await paint();
         const visible = () => evaluate(accent => window.curveMapProbe.strokes.filter(stroke =>
             stroke.color === accent && stroke.width === 1 && stroke.dash.join(",") === "4,4"), mapColors.light.accent);
-        assert.equal((await visible()).length, 2);
-        assert.deepEqual((await preview())[0], [-29, -7]);
-        await mapScreenshot(page, "round39-alignment-guides");
-        await pointer("mouseReleased", near);
+        assert.equal((await visible()).length, 1);
+        checkPoint((await preview())[0], [-31, -2]);
+        await mapScreenshot(page, "round40-related-alignment");
+        await modifier("Shift", true, shift);
+        await paint();
+        checkPoint((await preview())[0], [-31.8, -3.2]);
+        assert.equal((await visible()).length, 0);
+        await modifier("Shift", false, 0);
+        await pointer("mouseReleased", related);
         await saved();
         await paint();
-        assert.deepEqual((await points())[0], [-29, -7]);
+        checkPoint((await points())[0], [-31, -2]);
         assert.equal((await visible()).length, 0);
     }, d);
 }
 
 export function checkDrawingConstraints(url: string) {
     return withCurveMap(url, "round39-shift-drawing", async page => {
-        const { authored, boundary, frame, key, paint, pixels, pointer, saved, tap, tool, undo } = page;
+        const { authored, boundary, frame, key, paint, pixels, pointer, saved, tap, text, tool, undo } = page;
         const latest = async () => {
             const d = await authored();
             return boundary(d, d.geoNodes.find(n => n.id.startsWith("geo-"))!.id).nodes;
@@ -110,19 +123,28 @@ export function checkDrawingConstraints(url: string) {
         const checkPoint = (actual: Point, expected: Point) => assert(distance(actual, expected) < 1e-7, JSON.stringify({ actual, expected }));
 
         await tool("地件", "rect");
+        assert.match(await text("#mode-hint"), /按住 Shift 画正方形，按住 Ctrl 不吸附/);
         const f = await frame(), start = pixels(f, [9, 13]), end = pixels(f, [22, 20]);
-        await pointer("mousePressed", start, ctrl | shift);
-        await pointer("mouseMoved", end, ctrl | shift);
-        await pointer("mouseReleased", end, ctrl | shift);
+        await pointer("mousePressed", start, shift);
+        await pointer("mouseMoved", end, shift);
+        await pointer("mouseReleased", end, shift);
         await saved();
         const box = await latest();
         checkPoint(box[2].p, [22, 26]);
         await undo();
 
+        await tool("地件", "rect");
+        await pointer("mousePressed", start, ctrl | shift);
+        await pointer("mouseMoved", end, ctrl | shift);
+        await pointer("mouseReleased", end, ctrl | shift);
+        await saved();
+        checkPoint((await latest())[2].p, [22, 20]);
+        await undo();
+
         await tool("地件", "sector");
-        await tap([10, 14], ctrl | shift);
-        await tap([19, 16], ctrl | shift);
-        await tap([15, 23], ctrl | shift);
+        await tap([10, 14], shift);
+        await tap([19, 16], shift);
+        await tap([15, 23], shift);
         await saved();
         const sector = await latest();
         checkPoint(sector[1].p, [19, 14]);
@@ -130,12 +152,13 @@ export function checkDrawingConstraints(url: string) {
         await undo();
 
         await tool("地件", "pen");
-        await tap([4, 12], ctrl | shift);
+        assert.match(await text("#mode-hint"), /按住 Shift 约束方向，按住 Ctrl 不吸附/);
+        await tap([4, 12], shift);
         const penView = await frame(), node = pixels(penView, [16, 21]), handle = pixels(penView, [21, 22]);
-        await pointer("mousePressed", node, ctrl | shift);
-        await pointer("mouseMoved", handle, ctrl | shift);
-        await pointer("mouseReleased", handle, ctrl | shift);
-        await tap([27, 10], ctrl | shift);
+        await pointer("mousePressed", node, shift);
+        await pointer("mouseMoved", handle, shift);
+        await pointer("mouseReleased", handle, shift);
+        await tap([27, 10], shift);
         await key("Enter");
         await saved();
         await paint();
@@ -146,12 +169,22 @@ export function checkDrawingConstraints(url: string) {
         checkPoint(pen[2].p, [27, 10]);
 
         await tool("标记", "section");
-        await tap([-22, 20], ctrl | shift);
-        await tap([-13, 27], ctrl | shift);
+        await tap([-22, 20], shift);
+        await tap([-13, 27], shift);
         await saved();
         const [section] = (await authored()).sections;
         checkPoint(section.points[0], [-22, 20]);
         checkPoint(section.points[1], [-14, 28]);
+
+        const sectionView = await frame(), endpoint = pixels(sectionView, section.points[1]), moved = pixels(sectionView, [-6, 31]);
+        for (const [modifiers, expected] of [[shift, [-6, 28]], [ctrl | shift, [-6, 31]]] as const) {
+            await pointer("mousePressed", endpoint, modifiers);
+            await pointer("mouseMoved", moved, modifiers);
+            await pointer("mouseReleased", moved, modifiers);
+            await saved();
+            checkPoint((await authored()).sections[0].points[1], [...expected]);
+            await undo();
+        }
     }, syntheticDesign());
 }
 

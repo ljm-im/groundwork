@@ -11,8 +11,7 @@ import { addSharedCurve, createOutline, createStrip, defaultFunction, nodeIds, s
 import { distance } from "../../core/math/geometry.ts";
 import { constructionCenter, makeShape } from "../../core/design/regions.ts";
 import { sampleField, type Terrain } from "../../core/design/results.ts";
-import { directionRay, squareCorner } from "../../core/edit/snapping.ts";
-import { mapSnapTargets, parameterSnapGroup, type SnapModifiers } from "./mapSnaps.ts";
+import { mapSnapTargets, modifiedSnapPoint, parameterSnapGroup, type SnapModifiers } from "./mapSnaps.ts";
 type Editor = import("./session.svelte.ts").Editor;
 
 export const drawingTools: DrawTool[] = ["pen", "rect", "circle", "sector", "strip", "addOutline", "shore", "ridge", "peak", "slopeLine", "center", "harbor", "section", "sharedCurve", "redrawCurve", "continueCurve"];
@@ -123,21 +122,25 @@ function drawingSnap(e: Editor, draft: GeoDraft) {
         tool === "peak" && f?.type === "mountain" && member !== undefined ? f.ridges.length + member : undefined;
     const exclude = source ? { group: source.key, indices: curve?.endpoint === undefined ? undefined : [curve.endpoint] } :
         owner && index !== undefined ? { group: parameterSnapGroup(owner), indices: [index] } : undefined;
-    return (point: Point, ev: SnapModifiers, origin?: Point) =>
-        snap(point, e.map.scale, { disabled: ev.ctrlKey, ray: ev.shiftKey && origin ? directionRay(origin, point) : undefined, exclude });
+    return (point: Point, alignmentPoints: readonly Point[]) => snap(point, e.map.scale, { alignmentPoints, exclude });
 }
 
 const draftSnaps = new WeakMap<GeoDraft, ReturnType<typeof drawingSnap>>();
 function snapDraft(e: Editor, draft: GeoDraft, raw: Point, draggingHandle: boolean, ev: SnapModifiers) {
-    if (draft.tool === "strip") return { point: raw };
+    const { tool, down, nodes, curve, start } = draft;
+    if (tool === "strip") return { point: raw };
+    const pen = doubleClickTools.includes(tool);
+    const extending = curve?.endpoint !== undefined;
+    const previous = nodes.at(-1)?.p ?? (extending ? curve.original.nodes[curve.endpoint!].p : undefined);
+    const origin = draggingHandle ? down : tool === "rect" || tool === "sector" ? start : tool === "section" || pen ? previous : undefined;
+    const modified = modifiedSnapPoint(raw, ev, origin, tool === "rect");
+    if (modified) return { point: modified };
+
+    const first = extending ? curve.original.nodes.at(curve.endpoint === 0 ? -1 : 0)?.p : nodes[0]?.p;
+    const alignmentPoints = (draggingHandle ? [down] : pen ? [previous, first] : []).filter(p => p !== undefined);
     let snap = draftSnaps.get(draft);
     if (!snap) draftSnaps.set(draft, snap = drawingSnap(e, draft));
-    const { tool, down, nodes, curve, start } = draft;
-    const previous = nodes.at(-1)?.p ?? (curve?.endpoint !== undefined ? curve.original.nodes[curve.endpoint].p : undefined);
-    const origin = draggingHandle ? down : tool === "rect" || tool === "sector" ? start :
-        tool === "section" || doubleClickTools.includes(tool) ? previous : undefined;
-    const point = tool === "rect" && origin && ev.shiftKey ? squareCorner(origin, raw) : raw;
-    return snap(point, ev, origin);
+    return snap(raw, alignmentPoints);
 }
 
 export function finishCurveDraft(d: Design, draft: GeoDraft) {

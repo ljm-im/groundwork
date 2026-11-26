@@ -8,7 +8,7 @@ import { type GridSpec } from "../../core/math/geometry.ts";
 import { type Tool } from "../types.ts";
 
 const lineEnd = "回车或双击结束，单击首个节点闭合";
-const penHint = "单击放置节点，按 S 切换尖角和自动平滑，按住 Shift 约束方向，";
+const penHint = "单击放置节点，按 S 切换尖角和自动平滑，按住 Shift 约束方向，按住 Ctrl 不吸附，";
 const closedPenHint = penHint + "回车、双击或单击首点闭合";
 const lineHint = penHint + lineEnd;
 const continueEnd = "回车或双击完成，单击另一端闭合";
@@ -16,7 +16,7 @@ const continueEnd = "回车或双击完成，单击另一端闭合";
 const hints: Record<Tool, string> = {
     select: "单击选择，Alt 单击选择下层，中键或按住空格拖动平移，滚轮缩放",
     pen: closedPenHint,
-    rect: "拖动或单击矩形的两个对角，按住 Shift 画正方形",
+    rect: "拖动或单击矩形的两个对角，按住 Shift 画正方形，按住 Ctrl 不吸附",
     circle: "拖出半径或单击圆心和圆周",
     sector: "拖出半径或单击圆心和圆周，再单击确定终止角",
     strip: "单击要沿的地件，按住 Alt 单击可选被遮住的地件",
@@ -65,7 +65,7 @@ export function drawingStatus(mode: Exclude<Tool, "select">, name: string, owner
 export function drawingHint(tool: Tool, draft?: GeoDraft, finish?: string) {
     if (tool === "select") return hints.select;
     if (draft?.radius) return "单击确定终止角，Esc 取消";
-    if (draft?.sizing) return tool === "rect" ? "单击确定对角，按住 Shift 画正方形，Esc 取消" : "单击确定半径，Esc 取消";
+    if (draft?.sizing) return tool === "rect" ? "单击确定对角，按住 Shift 画正方形，按住 Ctrl 不吸附，Esc 取消" : "单击确定半径，Esc 取消";
     let hint = tool === "redrawCurve" && draft?.curve?.requiredClosed ? closedPenHint : hints[tool];
     if (tool === "strip" && draft) {
         if (draft.anchors.length === 1) hint = "单击终止节点";

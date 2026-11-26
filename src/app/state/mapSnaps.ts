@@ -3,7 +3,7 @@ import { flattenPath, neighbor } from "../../core/design/path.ts";
 import { type Curve, type Point } from "../../core/design/v5.ts";
 import { displayCurveTolerance, geometryPath, parameterPoints, pathEntries, type GeoControl } from "../../core/edit/geoControls.ts";
 import { type Handle, type Selection } from "../../core/edit/types.ts";
-import { directionRay, indexSnapTargets, projectToRay, snapPixels, type SnapLine, type SnapPoint, type SnapResult } from "../../core/edit/snapping.ts";
+import { directionRay, indexSnapTargets, projectToRay, snapPixels, squareCorner, type SnapLine, type SnapPoint, type SnapResult } from "../../core/edit/snapping.ts";
 import { distance } from "../../core/math/geometry.ts";
 import { showsParameterGeometry } from "../../render/geoOverlay.ts";
 import { hasSamples } from "../../render/map.ts";
@@ -11,6 +11,13 @@ type Editor = import("./session.svelte.ts").Editor;
 
 export type SnapModifiers = Pick<PointerEvent, "ctrlKey" | "shiftKey">;
 export type DragSnap = (pointer: Point, modifiers: SnapModifiers) => SnapResult;
+
+export function modifiedSnapPoint(pointer: Point, { ctrlKey, shiftKey }: SnapModifiers, origin?: Point, square = false) {
+    if (ctrlKey) return pointer;
+    if (!shiftKey) return;
+    if (!origin) return pointer;
+    return square ? squareCorner(origin, pointer) : projectToRay(directionRay(origin, pointer), pointer);
+}
 
 const placement = (kind: string, id: string, path: number) => kind + ":" + id + "." + path;
 export const parameterSnapGroup = (id: string) => "parameter:" + id;
@@ -66,10 +73,6 @@ export function mapSnapTargets(editor: Editor) {
     return { snap: indexSnapTargets(points, lines, map.scale), curveGroup };
 }
 
-function adjacentIndices(curve: Curve, indices: number[]) {
-    return indices.flatMap(i => [neighbor(curve, i, -1), i, neighbor(curve, i, 1)]).filter(i => i !== undefined);
-}
-
 export function controlSnap(editor: Editor, selection: Selection, control: GeoControl): DragSnap | undefined {
     const { role, point, index, path } = control, { kind, id } = selection;
     if (role === "body" || role === "outline" || role === "curve" || role === "arc") return;
@@ -77,7 +80,10 @@ export function controlSnap(editor: Editor, selection: Selection, control: GeoCo
     const { snap, curveGroup } = mapSnapTargets(editor);
     if (role === "parameter") {
         const exclude = { group: parameterSnapGroup(id), indices: [path] };
-        return (pointer, ev) => snap(pointer, editor.map.scale, { disabled: ev.ctrlKey, ray: ev.shiftKey ? directionRay(point, pointer) : undefined, exclude });
+        return (pointer, ev) => {
+            const modified = modifiedSnapPoint(pointer, ev, point);
+            return modified ? { point: modified } : snap(pointer, editor.map.scale, { exclude });
+        };
     }
 
     const design = editor.project.resolved, owner = kind === "curve" ? design.curves[id] : design.geoNodes.find(n => n.id === id)!;
@@ -85,18 +91,21 @@ export function controlSnap(editor: Editor, selection: Selection, control: GeoCo
     const group = curveGroup(kind, id, path);
     if (role === "segment") {
         const next = neighbor(curve, index, 1)!;
-        const endpoints = [curve.nodes[index].p, curve.nodes[next].p], exclude = { group, indices: adjacentIndices(curve, [index, next]) };
+        const before = neighbor(curve, index, -1), after = neighbor(curve, next, 1);
+        const endpoints = [{ p: curve.nodes[index].p, adjacent: before }, { p: curve.nodes[next].p, adjacent: after }];
+        const exclude = { group, indices: [before, index, next, after].filter(i => i !== undefined) };
         return (pointer, ev) => {
-            const ray = ev.shiftKey ? directionRay(point, pointer) : undefined, at = ray ? projectToRay(ray, pointer) : pointer;
-            if (ev.ctrlKey) return { point: at };
-            const dx = at[0] - point[0], dy = at[1] - point[1];
-            let best: SnapResult = { point: at }, gap = Infinity;
-            for (const p of endpoints) {
+            const modified = modifiedSnapPoint(pointer, ev, point);
+            if (modified) return { point: modified };
+            const dx = pointer[0] - point[0], dy = pointer[1] - point[1];
+            let best: SnapResult = { point: pointer }, gap = Infinity;
+            for (const { p, adjacent } of endpoints) {
                 const target: Point = [p[0] + dx, p[1] + dy];
-                const result = snap(target, editor.map.scale, { ray: ray && { ...ray, origin: p }, exclude });
+                const alignmentPoints = adjacent === undefined ? [] : [curve.nodes[adjacent].p];
+                const result = snap(target, editor.map.scale, { alignmentPoints, exclude });
                 const correction = distance(target, result.point);
                 if (!result.snapped || correction >= gap) continue;
-                best = { ...result, point: [at[0] + (result.point[0] - target[0]), at[1] + (result.point[1] - target[1])] };
+                best = { ...result, point: [pointer[0] + (result.point[0] - target[0]), pointer[1] + (result.point[1] - target[1])] };
                 gap = correction;
             }
             return best;
@@ -104,14 +113,20 @@ export function controlSnap(editor: Editor, selection: Selection, control: GeoCo
     }
 
     const origin = curve.nodes[index].p;
-    const exclude = { group, indices: adjacentIndices(curve, [index]) };
-    return (pointer, ev) => snap(pointer, editor.map.scale, { disabled: ev.ctrlKey, ray: ev.shiftKey ? directionRay(origin, pointer) : undefined, exclude });
+    const adjacent = [neighbor(curve, index, -1), neighbor(curve, index, 1)].filter(i => i !== undefined);
+    const exclude = { group, indices: [index, ...adjacent] };
+    const alignmentPoints = role === "vertex" ? adjacent.map(i => curve.nodes[i].p) : [origin];
+    return (pointer, ev) => {
+        const modified = modifiedSnapPoint(pointer, ev, origin);
+        return modified ? { point: modified } : snap(pointer, editor.map.scale, { alignmentPoints, exclude });
+    };
 }
 
 export function sectionSnap(editor: Editor, handle: Handle): DragSnap | undefined {
     if (handle.kind !== "section") return;
     const { snap } = mapSnapTargets(editor), exclude = { group: sectionSnapGroup(handle.id), indices: [0, 1] };
-    return (pointer, ev) => snap(pointer, editor.map.scale, {
-        disabled: ev.ctrlKey, ray: ev.shiftKey ? directionRay(handle.point, pointer) : undefined, exclude
-    });
+    return (pointer, ev) => {
+        const modified = modifiedSnapPoint(pointer, ev, handle.point);
+        return modified ? { point: modified } : snap(pointer, editor.map.scale, { exclude });
+    };
 }

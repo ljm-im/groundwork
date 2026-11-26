@@ -373,7 +373,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         }
         const section = d.sections.find(s => s.id === h.id)!, index = h.index!;
         const result = editor.gesture.snap?.(target, ev);
-        const point = sectionHandlePoint(section, index, result?.point ?? target, ev.shiftKey || !!result?.snapped);
+        const point = sectionHandlePoint(section, index, result?.point ?? target, ev.shiftKey && !ev.ctrlKey || !!result?.snapped);
         editor.snapGuides = point ? result?.guides : undefined;
         if (point) {
             const points = [...section.points] as typeof section.points;

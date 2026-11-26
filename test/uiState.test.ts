@@ -1,13 +1,15 @@
 import { test } from "node:test";
 import "../configs/register-svelte.ts";
 import assert from "node:assert/strict";
-import { createGrid, distance } from "../src/core/math/geometry.ts";
+import { createGrid, distance, type Point } from "../src/core/math/geometry.ts";
 import { sectionHandles } from "../src/core/edit/controls.ts";
 import { geoParameterName, resolveDesign } from "../src/core/design/parameters.ts";
 import { History } from "../src/core/edit/history.ts";
 import { commitControl, geometryPath, insertCurveNode } from "../src/core/edit/geoControls.ts";
 import { parseDesign } from "../src/core/design/model.ts";
 import { positionReadings, readingRange } from "../src/app/state/mapText.ts";
+import { controlSnap, sectionSnap } from "../src/app/state/mapSnaps.ts";
+import { draftPointer } from "../src/app/state/geoTools.ts";
 import { propertyTabs } from "../src/app/state/inspector.ts";
 import { designProblemText } from "../src/app/state/designMessages.ts";
 import { Project } from "../src/core/project.ts";
@@ -80,6 +82,59 @@ test("An upper landform face covers lower outlines, vertices and parameter geome
     const atVertex = map.screen(coveredLandformPoints[2]);
     assert.equal(map.selectedControl(editor.mapView!, atVertex)?.selection.id, "A");
     assert.equal(map.selectedControl(editor.mapView!, atVertex)?.control?.role, "vertex");
+});
+
+test("Map gestures use only related alignment points and Shift and Ctrl bypass nearby snaps", async () => {
+    const { Editor } = await import("../src/app/state/session.svelte.ts");
+    const design = syntheticDesign(), nodes: Point[] = [[-28, 6], [-14, 16], [2, 23], [25, 30]];
+    const line = openCurve(nodes.map((p, i) => ({ p, h: 4 + i })));
+    line.nodes[1].out = [3, 0];
+    design.geoNodes.push(layer("M", rect(-39, 0, 36, 38), {
+        type: "mountain", ridges: [{ curve: line, slope: 1 }], peaks: [{ at: [0, 28], height: 5, radius: 8, noise: 0, scale: 1 }]
+    }), layer("A", rect(10, 40, 20, 45), { type: "flat", amount: 1 }), layer("B", rect(40, 16, 44, 24), { type: "flat", amount: 1 }));
+    design.sections.push({ id: "Q", label: "Q", points: [[-28, 30], [-16, 29]] });
+    const project = new Project(design), editor = new Editor(testTerrainClient());
+    const map: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), { width: 1000, height: 700 });
+    map.fit(project.terrain, false);
+    map.scale = 4;
+    Object.assign(editor, { project: testProjectModel(project), map });
+    editor.layers.geoNodes = true;
+    const selection = { kind: "geoNode" as const, id: "M" };
+    const plain = { ctrlKey: false, shiftKey: false }, shift = { ...plain, shiftKey: true }, ctrl = { ...plain, ctrlKey: true };
+    const guide = (from: Point, to: Point) => ({ kind: "align", from, to });
+    const vertex = controlSnap(editor, selection, { role: "vertex", path: -1, index: 1, point: nodes[1] })!;
+    assert.deepEqual(vertex([30, 5.2], plain), { point: [30, 6], snapped: true, guides: [guide(nodes[0], [30, 6])] });
+    assert.deepEqual(vertex([30, 16.2], plain), { point: [30, 16.2] });
+    assert.deepEqual(vertex([10, 41], plain), { point: [10, 40], snapped: true, guides: [{ kind: "point", point: [10, 40] }] });
+    assert.deepEqual(vertex([14, 41], plain), { point: [14, 40], snapped: true });
+    assert.deepEqual(vertex([10, 41], shift), { point: [10.5, 40.5] });
+    assert.deepEqual(vertex([14, 41], shift), { point: [12.5, 42.5] });
+    assert.deepEqual(vertex([10, 41], ctrl), { point: [10, 41] });
+    assert.deepEqual(vertex([10, 41], { ...ctrl, shiftKey: true }), { point: [10, 41] });
+
+    const handle = controlSnap(editor, selection, { role: "out", path: -1, index: 1, point: [-11, 16] })!;
+    assert.deepEqual(handle([30, 16.2], plain), { point: [30, 16], snapped: true, guides: [guide(nodes[1], [30, 16])] });
+    assert.deepEqual(handle([30, 5.2], plain), { point: [30, 5.2] });
+    const segment = controlSnap(editor, selection, { role: "segment", path: -1, index: 1, point: [-6, 19.5] })!;
+    assert.deepEqual(segment([-1, 10.25], plain), { point: [-1, 9.5], snapped: true, guides: [guide(nodes[0], [-9, 6])] });
+    assert.deepEqual(segment([-1, 26], plain), { point: [-1, 26.5], snapped: true, guides: [guide(nodes[3], [7, 30])] });
+    const peak = controlSnap(editor, selection, { role: "parameter", path: 1, index: 1, point: [0, 28] })!;
+    const section = sectionSnap(editor, { kind: "section", id: "Q", role: "vertex", index: 0, point: [-28, 30] })!;
+    for (const snap of [peak, section]) assert.deepEqual(snap([30, 16.2], plain), { point: [30, 16.2] });
+
+    editor.setTool("pen");
+    const first: Point = [-26, 6], middle: Point = [-20, 18], last: Point = [-6, 13];
+    editor.geoDraft!.nodes.push(...[first, middle, last].map(p => ({ id: "", p, mode: "corner" as const })));
+    const move = (point: Point) => draftPointer(editor, "move", point, { ...plain, altKey: false });
+    move([30, 6.3]);
+    assert.deepEqual(editor.snapGuides, [guide(first, [30, 6])]);
+    move([30, 13.3]);
+    assert.deepEqual(editor.snapGuides, [guide(last, [30, 13])]);
+    move([30, 18.3]);
+    assert.equal(editor.snapGuides, undefined);
+    editor.setTool("rect");
+    move([30, 16.2]);
+    assert.equal(editor.snapGuides, undefined);
 });
 
 test("Map issue hits keep the view and inspector issues only pan from outside it", async () => {
