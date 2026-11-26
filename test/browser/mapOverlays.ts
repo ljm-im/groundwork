@@ -1,5 +1,7 @@
+import { placedPoint } from "../../src/core/design/curveReferences.ts";
 import assert from "node:assert/strict";
-import { type Mark, type Point } from "../../src/core/design/v5.ts";
+import { fixtureMark } from "../scenarios.ts";
+import { type Mark, type Point, type Design } from "../../src/core/design/v5.ts";
 import { distance, type Box } from "../../src/core/math/geometry.ts";
 import { withLayeredMap } from "./layeredMapFixture.ts";
 import { withCurveMap } from "./curveMapFixture.ts";
@@ -10,7 +12,7 @@ export async function checkMapOverlays(url: string) {
         const screenMark = "[data-mark=R]";
         console.log("shorter canvas, mark bounds and list reveal");
         const markBefore = (await frame()).marks.find(m => m.id === "R")!;
-        assert.deepEqual(markBefore.point, d.marks[0].point);
+        assert.deepEqual(markBefore.point, d.marks[0].screen);
         await evaluate(() => window.layeredMapProbe.resized = []);
         const split = await point("[data-split=bottom]");
         await mouse("mousePressed", ...split);
@@ -35,7 +37,7 @@ export async function checkMapOverlays(url: string) {
         await tap(markClient);
         assert.equal(await evaluate(() => document.querySelector("[data-mark=R]")?.getAttribute("aria-pressed")), "true");
         await drag(markClient, [markClient[0] + 10, markClient[1] - 28]); await saved();
-        assert(distance((await authored()).marks[0].point, [clipped.point[0] + 10, clipped.point[1] - 28]) < .01);
+        assert(distance((await authored()).marks[0].screen, [clipped.point[0] + 10, clipped.point[1] - 28]) < .01);
         await undo();
         await show(screenMark);
         assert.deepEqual((await authored()).marks[0].point, d.marks[0].point);
@@ -156,7 +158,7 @@ async function checkOverlayPointers(url: string) {
         }
         const mark = async (id: string) => (await frame()).marks.find(m => m.id === id)!;
         const selected = () => evaluate(() => document.querySelector<HTMLElement>("[data-mark][aria-pressed=true]")?.dataset.mark);
-        const authored = (name: string) => evaluate(async name => JSON.parse(await window.disk(name)) as { marks: Mark[] }, name);
+        const authored = (name: string) => evaluate(async name => JSON.parse(await window.disk(name)) as Design, name);
         async function uncovered(id: string) {
             const [l, t, r, b] = (await mark(id)).box;
             for (const [a, c, x, y] of (await layout()).boxes)
@@ -172,15 +174,15 @@ async function checkOverlayPointers(url: string) {
                 camera.center[1] - (y - b - height / 2 - 9) / camera.scale
             ];
             const targets = await Promise.all(passThrough.map(s => point(s)));
-            const [hint, , zoom] = boxes, home: Point = [a + 22, b + 75];
+            const [hint,, zoom] = boxes, home: Point = [a + 22, b + 75];
             const screenMarks: Mark[] = [
-                { kind: "scale", id: "hint-ruler", label: "提示比例尺", point: [hint[0] + 7, (hint[1] + hint[3]) / 2], follow: "screen" },
-                { kind: "scale", id: "zoom-ruler", label: "工具栏比例尺", point: [zoom[0] - 14, (zoom[1] + zoom[3]) / 2], follow: "screen" },
-                { kind: "text", id: "screen-text", label: "屏幕文字".repeat(20), point: [camera.width / 2, height - 20], follow: "screen" }
+                fixtureMark(d, { kind: "scale", id: "hint-ruler", label: "提示比例尺", point: [hint[0] + 7, (hint[1] + hint[3]) / 2], follow: "screen" }),
+                fixtureMark(d, { kind: "scale", id: "zoom-ruler", label: "工具栏比例尺", point: [zoom[0] - 14, (zoom[1] + zoom[3]) / 2], follow: "screen" }),
+                fixtureMark(d, { kind: "text", id: "screen-text", label: "屏幕文字".repeat(20), point: [camera.width / 2, height - 20], follow: "screen" })
             ];
-            const mapMarks: Mark[] = [...targets, await point("#fit")].map((at, i) => ({
+            const mapMarks: Mark[] = [...targets, await point("#fit")].map((at, i) => (fixtureMark(d, {
                 kind: "text", id: "map-" + i, label: String.fromCharCode(65 + i), point: toWorld(at), follow: "map"
-            }));
+            })));
             const design = { ...d, marks: [...screenMarks, ...mapMarks] };
             await openDesign(name, design); await park();
             assert.deepEqual((await authored(name)).marks.map(m => m.point), design.marks.map(m => m.point));
@@ -198,7 +200,7 @@ async function checkOverlayPointers(url: string) {
                 const { point: [x, y] } = await mark(m.id), from: Point = [a + x + 12, b + y];
                 await drag(from, [home[0] + i * 125, home[1] + 25]); await saved();
                 assert.equal(await selected(), m.id);
-                assert(distance((await authored(name)).marks[i].point, m.point) > 25);
+                assert(distance((await authored(name)).marks[i].screen, m.screen) > 25);
             }
 
             for (const [i, target] of targets.entries()) {
@@ -211,7 +213,8 @@ async function checkOverlayPointers(url: string) {
                     assert(!await evaluate(() => !!document.querySelector(".tooltip:popover-open")));
                 });
                 await saved();
-                assert(distance((await authored(name)).marks.find(m => m.id === "map-" + i)!.point, mapMarks[i].point) > 1);
+                const edited = await authored(name);
+                assert(distance(placedPoint(edited, edited.marks.find(m => m.id === "map-" + i)!.point), placedPoint(d, mapMarks[i].point)) > 1);
                 const before = (await frame()).scale;
                 await cdp("Input.dispatchMouseEvent", { type: "mouseWheel", x: target[0], y: target[1], deltaX: 0, deltaY: -120 });
                 await paint();
@@ -237,7 +240,7 @@ async function checkOverlayPointers(url: string) {
                 preview = (await mark(dragged)).point;
             });
             await saved();
-            const placed = (await authored(name)).marks.find(m => m.id === dragged)!.point;
+            const placed = (await authored(name)).marks.find(m => m.id === dragged)!.screen;
             assert(preview && distance(placed, preview) < .02 && distance(placed, beforeDrag) > 3);
             assert.equal((await frame()).scale, before.scale, "Release over the zoom button finishes the canvas drag");
             assert.equal(await selected(), dragged);

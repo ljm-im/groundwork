@@ -3,7 +3,7 @@ import { defaultFunction } from "../../src/core/edit/geoNodes.ts";
 import { type Box } from "../../src/core/math/geometry.ts";
 import { type Design, type Point } from "../../src/core/design/v5.ts";
 import { parseDesign, serializeDesign } from "../../src/core/design/model.ts";
-import { withNodeSlope, layer, rect, syntheticDesign, openCurve } from "../scenarios.ts";
+import { fixtureSection, fixtureMark, withNodeSlope, addLayer, rect, syntheticDesign, openCurve, fixtureCurve } from "../scenarios.ts";
 import { startChromium, type Chromium } from "./chromium.ts";
 import { installPickers } from "./filePickers.ts";
 
@@ -89,24 +89,24 @@ function sampleDesign() {
     d.inputs.B = { label: "长表达式", value: "{input:A}" + " + 1".repeat(28), range: [-100, 100, .1] };
     d.fields.F = { label: "基质", unit: "%", precision: .01 };
     d.fields.U = { label: "场 U" };
-    const mountain = defaultFunction("mountain");
+    const mountain = defaultFunction(d, "mountain");
     assert(mountain.type === "mountain");
     for (const y of [23, 27, 31]) {
-        mountain.ridges.push({ curve: withNodeSlope(openCurve([{ p: [-33, y], h: 5 }, { p: [-7, y], h: 5 }, { p: [18, y], h: 5 }], "corner", "ridge-" + y + "-"), 2) });
+        mountain.ridges.push(fixtureCurve(d, { curve: withNodeSlope(openCurve([{ p: [-33, y], h: 5 }, { p: [-7, y], h: 5 }, { p: [18, y], h: 5 }], "corner", "ridge-" + y + "-"), 2) }, ["h", "slope"]));
     }
     d.geoNodes = [
-        layer("G", rect(-60, -38, 60, 38), { type: "ground", value: 3 }),
-        { ...layer("A", rect(-36, -18, 18, 16), { type: "flat", amount: .8 }), label: "台地 A", showLabel: true },
-        { ...layer("B", rect(-17, -12, 32, 20), { type: "flat", amount: .4 }), label: "台地 B" },
-        layer("C", rect(-44, 19, 45, 35), mountain),
-        layer("D", rect(-18, 21, 30, 34), { type: "flat", amount: .1 }),
-        layer("F", rect(-48, -33, 48, -22), { type: "ground", value: .47 }, "F")
+        addLayer(d, "G", rect(-60, -38, 60, 38), { type: "ground", value: 3 }),
+        { ...addLayer(d, "A", rect(-36, -18, 18, 16), { type: "flat", amount: .8 }), label: "台地 A", showLabel: true },
+        { ...addLayer(d, "B", rect(-17, -12, 32, 20), { type: "flat", amount: .4 }), label: "台地 B" },
+        addLayer(d, "C", rect(-44, 19, 45, 35), mountain),
+        addLayer(d, "D", rect(-18, 21, 30, 34), { type: "flat", amount: .1 }),
+        addLayer(d, "F", rect(-48, -33, 48, -22), { type: "ground", value: .47 }, "F")
     ];
-    d.sections = [{ id: "S", label: "剖面线 A", points: [[-56, -27], [56, -27]], showLabel: false }];
+    d.sections = [fixtureSection(d, { id: "S", label: "剖面线 A", points: [[-56, -27], [56, -27]], showLabel: false })];
     d.marks = [
-        { id: "R", kind: "scale", label: "屏幕比例尺", point: [92, 560], follow: "screen" },
-        { id: "M", kind: "scale", label: "地图比例尺", point: [160, 53], length: 75, follow: "map" },
-        { id: "T", kind: "text", label: "标记 A", point: [-54, 31], follow: "map" }
+        fixtureMark(d, { id: "R", kind: "scale", label: "屏幕比例尺", point: [92, 560], follow: "screen" }),
+        fixtureMark(d, { id: "M", kind: "scale", label: "地图比例尺", point: [160, 53], length: 75, follow: "map" }),
+        fixtureMark(d, { id: "T", kind: "text", label: "标记 A", point: [-54, 31], follow: "map" })
     ];
     return d;
 }

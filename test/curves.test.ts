@@ -5,13 +5,13 @@ import { resolveDesign } from "../src/core/design/parameters.ts";
 import { DesignError } from "../src/core/design/problems.ts";
 import { autoHandle, bulgeFromDegrees, defaultArcBulge, degreesFromBulge, flattenPath, pathBezier, segmentType, splitBezier, type Bezier } from "../src/core/design/path.ts";
 import { numericProfile } from "../src/core/design/polyline.ts";
-import { type ClosedCurve, type Curve, type Point } from "../src/core/design/v5.ts";
-import { defaultFunction, curvesOf } from "../src/core/edit/geoNodes.ts";
+import { type ClosedCurve, type Curve, type Point, type ProfileCurve } from "../src/core/design/v5.ts";
+import { defaultFunction } from "../src/core/edit/geoNodes.ts";
 import { copyGeometryItem, insertCurveNode, removeCurveNode, removeCurveSegment } from "../src/core/edit/geoControls.ts";
 import { arcHandle, editWholeCurve, insertPathNode, moveHandle, penNode, penPath, removePathSegment, retractHandle, segmentRemovalIndex,
     setNodeMode, setSegment } from "../src/core/edit/paths.ts";
 import { distance, mixPoint, spline, stations } from "../src/core/math/geometry.ts";
-import { withNodeSlope, literalCurve, openCurve, syntheticDesign } from "./scenarios.ts";
+import { fixtureCurve, fixtureFunction, withNodeSlope, literalCurve, openCurve, syntheticDesign } from "./scenarios.ts";
 
 const at = (curve: Bezier, t: number) => splitBezier(curve, t)[0][3];
 const points: Point[] = [[1, 2], [5, 8], [10, 0], [14, 4], [22, 1]];
@@ -158,14 +158,14 @@ test("Insertion keeps automatic and mixed endpoints and splits arcs without hand
 test("Closed segment removal uses the length midpoint and keeps the types of the neighboring segments", () => {
     const d = syntheticDesign(), owner = d.geoNodes[1];
     assert(owner.construction.type === "outline");
-    const path = literalCurve(owner.construction.outlines[0]);
+    const path = literalCurve(d, owner.construction.outlines[0]);
     const [a, b, c, last] = path.nodes;
     assert.deepEqual(removePathSegment(path, 0), { id: a.id, p: [-14, -14], mode: "corner" });
     assert.deepEqual(path.nodes.map(n => n.id), [a.id, c.id, last.id]);
     assert.deepEqual(path.nodes.map((_, i) => segmentType(path, i)), ["line", "line", "line"]);
     const reopened = parseDesign(serializeDesign(d)).geoNodes[1].construction;
     assert(reopened.type === "outline");
-    assert.deepEqual(reopened.outlines[0], { curve: path });
+    assert.deepEqual(literalCurve(parseDesign(serializeDesign(d)), reopened.outlines[0]), path);
     assert.equal(removePathSegment(path, 0), undefined);
     setSegment(path, 0, "curve");
     assert.equal(segmentType(path, 0), "curve");
@@ -253,25 +253,26 @@ test("Only the two end segments of an open path can be removed above its node li
     assert.equal(removePathSegment(original, 0), undefined);
 });
 
-test("Segment removal averages heights and shifts references like node removal", () => {
-    const d = syntheticDesign(), n = d.geoNodes[1], f = defaultFunction("mountain");
+test("Segment removal averages heights and preserves references to surviving nodes", () => {
+    const d = syntheticDesign(), n = d.geoNodes[1], f = defaultFunction(d, "mountain");
     assert(f.type === "mountain");
     n.function = f;
     const path = line();
     path.closed = true;
+    path.nodes[0].h = 2;
     path.nodes[1].h = "{input:A} * 2";
     path.nodes[2].h = 6;
     path.nodes[3].h = 10;
-    f.ridges.push({ curve: withNodeSlope(path, 1) });
+    f.ridges.push(fixtureCurve(d, { curve: withNodeSlope(path, 1) }, ["h", "slope"]));
     const control = { role: "segment" as const, path: -1, index: 1, point: path.nodes[1].p };
-    f.floor = "{geo:T.ridges.0.curve.nodes.2.h}";
+    f.floor = "{geo:T.ridges.0.h.node-2}";
     const before = structuredClone(path);
     assert.throws(() => removeCurveSegment(d, n, control), /仍被引用/);
     assert.deepEqual(path, before);
-    f.floor = "{geo:T.ridges.0.curve.nodes.3.h}";
+    f.floor = "{geo:T.ridges.0.h.node-3}";
     const merged = removeCurveSegment(d, n, control)!;
     assert.equal(merged.id, before.nodes[1].id);
-    assert.equal(f.floor, "{geo:T.ridges.0.curve.nodes.2.h}");
+    assert.equal(f.floor, "{geo:T.ridges.0.h.node-3}");
     delete f.floor;
     const resolved = resolveDesign(d).geoNodes[1].function;
     assert(resolved.type === "mountain");
@@ -287,9 +288,10 @@ test("Merging a closed slope segment includes its interpolated increment", () =>
     const path = openCurve([{ p: [0, 0], h: 0 }, { p: [2, 0] }, { p: [6, 0], h: 27 },
         { p: [6, 6], h: 7 }, { p: [0, 6], h: 1 }]);
     path.closed = true;
-    n.function = { type: "slope", kind: "path", lines: [{ curve: path, ease: true }], center: [0, 0], radius: 5, value: 2, rate: -.2 };
+    n.function = fixtureFunction(d, { type: "slope", kind: "path", lines: [{ curve: path, ease: true }], center: [0, 0], radius: 5, value: 2, rate: -.2 });
     const merged = removeCurveSegment(d, n, { role: "segment", path: -1, index: 0, point: [1, 0] })!;
-    assert.equal(merged.h, 3.5);
+    assert(n.function.type === "slope" && "curve" in n.function.lines[0]);
+    assert.equal(n.function.lines[0].h?.[merged.id], 3.5);
     assert.doesNotThrow(() => parseDesign(serializeDesign(d)));
 });
 
@@ -368,7 +370,7 @@ test("Retracting one Bézier handle freezes the opposite segment and leaves a co
 });
 
 test("Whole-curve operations preserve nodes and report when no edit is needed", () => {
-    const curve: Curve = {
+    const curve: ProfileCurve = {
         closed: true, nodes: [
             { id: "A", p: [0, 0], h: 4, mode: "manual", in: [-1, 0], out: [2, 0] },
             { id: "B", p: [6, 0], h: 5, mode: "corner", bulge: .4 },
@@ -424,45 +426,49 @@ const invalid: Invalid[] = [
 test("Curve validation reports the precise field for missing and invalid data", () => {
     for (const [path, message, change] of invalid) {
         const d = syntheticDesign(), curve = line();
-        d.geoNodes[1].function = { type: "slope", kind: "path", lines: [{ curve: curve }], center: [0, 0], radius: 5, value: 2, rate: -.2 };
-        change(curve);
-        assert.throws(() => parseDesign(d), { message: "geoNodes[1].function.lines[0].curve." + path + " " + message });
+        const holder = fixtureCurve(d, { curve });
+        assert("curve" in holder);
+        change(literalCurve(d, holder));
+        assert.throws(() => parseDesign(d), { message: "geometry." + holder.curve + ".curve." + path + " " + message });
     }
     const d = syntheticDesign(), n = d.geoNodes[1];
     assert(n.construction.type === "outline");
-    const path = literalCurve<ClosedCurve>(n.construction.outlines[0]);
+    const holder = n.construction.outlines[0];
+    assert("curve" in holder);
+    const path = literalCurve(d, holder);
     Object.assign(path.nodes[0], { h: 9 });
-    assert.throws(() => parseDesign(d), { message: "geoNodes[1].construction.outlines[0].curve.nodes[0].h 这里的节点不能有高度" });
-    delete path.nodes[0].h;
-    const shore = structuredClone(path);
+    assert.throws(() => parseDesign(d), { message: "geometry." + holder.curve + ".curve.nodes[0].h 退役键" });
+    Reflect.deleteProperty(path.nodes[0], "h");
+    const shore = structuredClone(path) as ClosedCurve;
     shore.nodes.forEach(v => v.id += "-shore");
-    n.function = defaultFunction("coast", { shore, center: [0, 0] });
+    n.function = defaultFunction(d, "coast", { shore, center: [0, 0] });
+    assert(n.function.type === "coast" && "curve" in n.function.shore);
     Object.assign(shore.nodes[0], { h: 9 });
-    assert.throws(() => parseDesign(d), { message: "geoNodes[1].function.shore.curve.nodes[0].h 这里的节点不能有高度" });
+    assert.throws(() => parseDesign(d), { message: "geometry." + n.function.shore.curve + ".curve.nodes[0].h 退役键" });
 });
 
-test("Curve node IDs and positional height references survive insertion, removal and ridge copies", () => {
+test("Curve node IDs and height references survive insertion, removal and ridge copies", () => {
     const d = syntheticDesign(), n = d.geoNodes[1];
     const ridge = withNodeSlope(openCurve([{ p: [-20, -7], h: 2 }, { p: [-15, -8], h: 3 }, { p: [-10, -9], h: 5 }]), 2);
-    const f = defaultFunction("mountain");
+    const f = defaultFunction(d, "mountain");
     assert(f.type === "mountain" && n.construction.type === "outline");
     n.function = f;
-    f.ridges.push({ curve: ridge });
-    const id = ridge.nodes[0].id;
-    ridge.nodes[0].id = ridge.nodes[1].id;
+    f.ridges.push(fixtureCurve(d, { curve: ridge }, ["h", "slope"]));
+    const shape = literalCurve(d, f.ridges[0]), id = shape.nodes[0].id;
+    shape.nodes[0].id = shape.nodes[1].id;
     assert.throws(() => parseDesign(d), error => error instanceof DesignError &&
-        error.problems[0].location?.path.join(".") === "function.ridges.0.curve.nodes.1.id");
-    ridge.nodes[0].id = id;
-    ridge.closed = true;
+        error.problems[0].location?.path.join(".") === "curve.nodes.1.id");
+    shape.nodes[0].id = id;
+    shape.closed = true;
     assert.doesNotThrow(() => parseDesign(d));
-    ridge.closed = false;
-    n.function.floor = "{geo:T.ridges.0.curve.nodes.2.h}";
+    shape.closed = false;
+    n.function.floor = "{geo:T.ridges.0.h.node-2}";
     const added = insertCurveNode(d, n, { role: "segment", path: -1, index: 0, point: [-17.5, -7.5] })!;
-    assert.equal(n.function.floor, "{geo:T.ridges.0.curve.nodes.3.h}");
+    assert.equal(n.function.floor, "{geo:T.ridges.0.h.node-2}");
     removeCurveNode(d, n, { role: "vertex", path: -1, index: 1, point: added.p });
-    assert.equal(n.function.floor, "{geo:T.ridges.0.curve.nodes.2.h}");
+    assert.equal(n.function.floor, "{geo:T.ridges.0.h.node-2}");
     copyGeometryItem(d, n, ["ridges"], 0);
-    const ids = curvesOf(n).flatMap(path => literalCurve(path).nodes.map(v => v.id));
-    assert.equal(new Set(ids).size, ids.length);
+    assert.notDeepEqual(f.ridges[0], f.ridges[1]);
+    assert.deepEqual(literalCurve(d, f.ridges[0]), literalCurve(d, f.ridges[1]));
     assert.doesNotThrow(() => parseDesign(d));
 });

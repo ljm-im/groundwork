@@ -5,7 +5,7 @@ import { parseDesign } from "../src/core/design/model.ts";
 import { type Design } from "../src/core/design/v5.ts";
 import { TerrainCache } from "../src/core/terrain/cache.ts";
 import { generateTerrain } from "../src/core/terrain/terrain.ts";
-import { literalCurve, syntheticDesign, rect, layer } from "./scenarios.ts";
+import { literalCurve, syntheticDesign, rect, addLayer, fixtureConstruction } from "./scenarios.ts";
 
 function compare(cache: TerrainCache, d: Design) {
     const actual = cache.generate(d), expected = generateTerrain(d);
@@ -22,8 +22,8 @@ function compare(cache: TerrainCache, d: Design) {
 
 test("Noise position warp invalidates samples read just outside its region", () => {
     const d = syntheticDesign(), cache = new TerrainCache();
-    const source = layer("A", rect(-18, -18, 0, 18), { type: "flat", amount: 4 });
-    const warp = layer("B", rect(1, -18, 18, 18), { type: "noise", amplitude: 0, scale: 8, warp: 14, warpScale: 12 });
+    const source = addLayer(d, "A", rect(-18, -18, 0, 18), { type: "flat", amount: 4 });
+    const warp = addLayer(d, "B", rect(1, -18, 18, 18), { type: "noise", amplitude: 0, scale: 8, warp: 14, warpScale: 12 });
     d.geoNodes = [d.geoNodes[0], source, warp];
     const before = compare(cache, d);
     assert(source.function.type === "flat");
@@ -63,7 +63,7 @@ test("Incremental layers match a fresh stack byte for byte after every fixture e
         }
         const moved = d.geoNodes.find(n => n.id === rule.move)!.construction;
         assert(moved.type === "outline");
-        for (const path of moved.outlines) for (const v of literalCurve(path).nodes) v.p[0] += 3;
+        for (const path of moved.outlines) for (const v of literalCurve(d, path).nodes) v.p[0] += 3;
         check();
         assert(erosion.function.type === "erosion");
         erosion.function.droplets = Number(erosion.function.droplets) + 123;
@@ -89,9 +89,9 @@ test("Incremental layers match a fresh stack byte for byte after every fixture e
 test("Cached noise follows its amplitude field and the order of a flat terrace", () => {
     const d = syntheticDesign(), area = rect(2, 0, 18, 14), cache = new TerrainCache();
     d.fields.A = { label: "A" };
-    const amplitude = layer("F", area, { type: "ground", value: 3 }, "A");
-    const detail = layer("N", area, { type: "noise", amplitude: "{field:A}", scale: 9 });
-    const terrace = layer("P", area, { type: "flat", amount: 4 });
+    const amplitude = addLayer(d, "F", area, { type: "ground", value: 3 }, "A");
+    const detail = addLayer(d, "N", area, { type: "noise", amplitude: "{field:A}", scale: 9 });
+    const terrace = addLayer(d, "P", area, { type: "flat", amount: 4 });
     d.geoNodes = [d.geoNodes[0], amplitude, detail];
     const original = compare(cache, d);
     d.geoNodes.push(terrace);
@@ -109,8 +109,8 @@ test("Cached noise follows its amplitude field and the order of a flat terrace",
 test("Moved, deleted and reordered writes restore old cells and keep earlier Project snapshots isolated", () => {
     const d = syntheticDesign(), cache = new TerrainCache(), first = compare(cache, d);
     const saved = first.fields.height.values.slice();
-    d.geoNodes.push(layer("B", rect(-13, -12, 3, 1), { type: "flat", amount: 12 }),
-        layer("C", rect(-20, -18, 10, 9), { type: "flat", amount: -1, feather: 2 }));
+    d.geoNodes.push(addLayer(d, "B", rect(-13, -12, 3, 1), { type: "flat", amount: 12 }),
+        addLayer(d, "C", rect(-20, -18, 10, 9), { type: "flat", amount: -1, feather: 2 }));
     compare(cache, d);
     [d.geoNodes[1], d.geoNodes[2]] = [d.geoNodes[2], d.geoNodes[1]];
     compare(cache, d);
@@ -119,7 +119,7 @@ test("Moved, deleted and reordered writes restore old cells and keep earlier Pro
     assert.deepEqual(first.fields.height.values, saved);
     compare(cache, structuredClone(d));
     assert.deepEqual(cache.recomputed, []);
-    d.geoNodes[0].construction = rect(-50, -33, 52, 34);
+    d.geoNodes[0].construction = fixtureConstruction(d, rect(-50, -33, 52, 34));
     compare(cache, d);
     d.grid.step = .5;
     compare(cache, d);

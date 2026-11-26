@@ -4,9 +4,9 @@ import { parseDesign, serializeDesign } from "../../src/core/design/model.ts";
 import { flattenPath, pathBezier, segmentType, splitBezier } from "../../src/core/design/path.ts";
 import { geometryPath, type GeoControl, type GeometryTarget } from "../../src/core/edit/geoControls.ts";
 import { defaultFunction } from "../../src/core/edit/geoNodes.ts";
-import { type Curve, type Point, type Section } from "../../src/core/design/v5.ts";
+import { type Curve, type Point, type ProfileCurve, type Section } from "../../src/core/design/v5.ts";
 import { distance, mixPoint } from "../../src/core/math/geometry.ts";
-import { literalCurve, layer, openCurve, rect, syntheticDesign } from "../scenarios.ts";
+import { fixtureSection, addLayer, openCurve, rect, syntheticDesign } from "../scenarios.ts";
 import { startChromium } from "./chromium.ts";
 import { installPickers } from "./filePickers.ts";
 import { checkLineDragging } from "./mapSelection.ts";
@@ -17,7 +17,7 @@ import { overlay } from "../../src/render/palette.ts";
 
 interface Frame {
     origin: Point; scale: number; selected?: string; geometry?: GeometryTarget; vertex?: GeoControl;
-    ridgePreview?: Curve; section?: Section["points"]; height?: number;
+    ridgePreview?: Curve; section?: Section<"resolved">["points"]; height?: number;
 }
 interface Probe { frame?: Frame }
 declare global {
@@ -44,12 +44,12 @@ async function observeCurveEditing() {
 
 async function checkDrawnCurves(url: string) {
     const design = syntheticDesign(), filename = "drawn-curve-editing.json";
-    const mountain = { ...layer("M", rect(-45, -33, 12, 30), defaultFunction("mountain")), label: "山" };
-    const slope = { ...layer("S", rect(17, -24, 53, 24), {
+    const mountain = { ...addLayer(design, "M", rect(-45, -33, 12, 30), defaultFunction(design, "mountain")), label: "山" };
+    const slope = { ...addLayer(design, "S", rect(17, -24, 53, 24), {
         type: "slope", kind: "path", lines: [{ curve: openCurve([{ p: [20, -18], h: 0 }, { p: [49, -18], h: 2 }]) }], center: [0, 0], radius: 5, value: 2, rate: -.2
     }), label: "坡面" };
-    design.geoNodes = [layer("G", rect(-60, -47, 60, 47), { type: "ground", value: 4 }), mountain, slope];
-    design.sections = [{ id: "Q", label: "剖面线 Q", points: [[-48, -37], [35, -37]], showLabel: false }];
+    design.geoNodes = [addLayer(design, "G", rect(-60, -47, 60, 47), { type: "ground", value: 4 }), mountain, slope];
+    design.sections = [fixtureSection(design, { id: "Q", label: "剖面线 Q", points: [[-48, -37], [35, -37]], showLabel: false })];
     const browser = await startChromium(), { cdp, click, evaluate, key, mouse, wait, saved } = browser;
     const frame = () => evaluate(() => window.curveEditingProbe.frame!);
     const paint = () => evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
@@ -99,7 +99,7 @@ async function checkDrawnCurves(url: string) {
         const n = resolveDesign(await authored()).geoNodes.find(n => n.id === "M")!;
         return geometryPath(n, -1 - i)!;
     };
-    const section = async () => (await authored()).sections[0].points;
+    const section = async () => resolveDesign(await authored()).sections[0].points;
     const ridgeInput = "button.geometry-box[aria-label=山脊线]";
     async function closedCheckbox(index: number) {
         return await evaluate(({ index, selector }) => {
@@ -170,7 +170,7 @@ async function checkDrawnCurves(url: string) {
         let line = await ridge();
         assert.equal(line.closed, false);
         assert.deepEqual(line.nodes.map(v => v.mode), ["auto", "manual", "auto"]);
-        assert.match(await text(ridgeInput), /曲线（3 个节点）/);
+        assert.match(await text(ridgeInput), /^曲线 \d+$/);
         assert.equal((await closedCheckbox(0)).checked, false);
         const second = nodeRow(line.nodes[1].id), third = nodeRow(line.nodes[2].id);
         await tap(line.nodes[1].p); await paint();
@@ -196,7 +196,7 @@ async function checkDrawnCurves(url: string) {
         await cdp("Input.insertText", { text: "14" });
         await key("Enter"); await saved(); await paint();
         line = await ridge();
-        assert.equal(line.nodes[1].h, 14);
+        assert.equal((line as ProfileCurve).nodes[1].h, 14);
         assert((await frame()).height! > priorHeight + 2);
 
         console.log("insertion keeps ridge endpoint modes and deletion stops at two nodes");
@@ -232,7 +232,7 @@ async function checkDrawnCurves(url: string) {
         assert.equal(closed.closed, true);
         assert.equal(checkbox.checked, true);
         const summary = await evaluate(s => [...document.querySelectorAll(s)].map(el => el.textContent?.trim()), ridgeInput);
-        assert(summary.includes("闭合曲线（3 个节点）"));
+        assert(summary.some(label => /^曲线 \d+$/.test(label ?? "")));
         await screenshot("closed-ridge", ".subitem:has(input[id=" + JSON.stringify(checkbox.id) + "]) > .subitem-heading");
         await click("input[id=" + JSON.stringify(checkbox.id) + "]"); await saved();
         const reopened = await ridge(1);
@@ -257,7 +257,7 @@ export async function checkCurveEditing(url: string) {
         console.log("boundary controls, confirmation and clipped menu");
         await panel("terrain"); await click(region); await property("region"); await fit();
         assert.doesNotMatch(await text("#properties"), /构造方式/);
-        assert.match(await text("button[aria-label=曲线]"), /闭合曲线（4 个节点）/);
+        assert.match(await text("button[aria-label=曲线]"), /^曲线 \d+$/);
         const deleteBoundary = "button[aria-label=\"删除轮廓\"]";
         assert.equal(await evaluate(s => document.querySelectorAll(s).length, deleteBoundary), 0);
         await screenshot("boundary-one");
@@ -325,14 +325,14 @@ export async function checkCurveEditing(url: string) {
         assert.equal(await evaluate(() => document.querySelector("[data-property-tab=function]")?.getAttribute("aria-pressed")), "true");
         assert.deepEqual(await evaluate(() => [...document.querySelectorAll(".subitem-toggle[aria-expanded=true]")].map(el => el.textContent?.trim())), ["山脊 3"]);
         await tap(await at(vertex));
-        const heightRow = "[data-parameter$=\".ridges.2.curve.nodes.1.h\"]";
+        const heightRow = "[data-parameter*=\".ridges.2.h.\"]";
         await wait(s => !!document.querySelector(s), heightRow);
         await click("[data-geo-node=A]");
         await tap(await at(vertex));
         await tap(await at(vertex), 1);
         await drag(await at(vertex), await at([-4, 32.3])); await saved();
         const mountain = resolveDesign(await authored()).geoNodes.find(n => n.id === "C")!.function;
-        assert(mountain.type === "mountain" && distance(literalCurve(mountain.ridges[2]).nodes[1].p, [-4, 32.3]) < .3);
+        assert(mountain.type === "mountain" && distance(mountain.ridges[2].curve.nodes[1].p, [-4, 32.3]) < .3);
         await undo();
     });
     await withCurveMap(url, "curve-controls", async ({ authored, boundary, click, curve, disk, drag, evaluate, frame, key, nodeTitles, paint, pixels, saved, screenshot, tap, text, undo }) => {

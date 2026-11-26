@@ -1,3 +1,4 @@
+import { placedPoint } from "../src/core/design/curveReferences.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { undeclaredDesignField } from "../configs/fixtureSchema.ts";
@@ -8,10 +9,10 @@ import { newDesign } from "../src/core/design/newDesign.ts";
 import { fieldPrecision } from "../src/core/design/defaults.ts";
 import { isBuiltinFunction } from "../src/core/design/functionTable.ts";
 import { resolveDesign } from "../src/core/design/parameters.ts";
-import { removeDeclaration } from "../src/core/edit/geoNodes.ts";
+import { removeDeclaration, holdPoint } from "../src/core/edit/geoNodes.ts";
 import { DesignError } from "../src/core/design/problems.ts";
 import { generateTerrain } from "../src/core/terrain/terrain.ts";
-import { syntheticDesign, rect, layer, polygon, literalCurve } from "./scenarios.ts";
+import { fixtureMark, fixtureSection, syntheticDesign, rect, addLayer, polygon, literalCurve, fixtureCurve } from "./scenarios.ts";
 
 test("Version five opens atomically and older formats have a common version error", () => {
     const d = syntheticDesign(), bytes = serializeDesign(d);
@@ -29,7 +30,8 @@ test("Every installed top-level design matches the version five declaration", fi
 });
 
 test("Geo references report their location and reject invalid field writers", () => {
-    const d = syntheticDesign(), p = rect(0, 0, 4, 4), n = layer("N", p, { type: "flat", amount: 1 });
+    const d = syntheticDesign(), n = addLayer(d, "N", rect(0, 0, 4, 4), { type: "flat", amount: 1 }), p = n.construction;
+    assert(p.type === "outline");
     d.geoNodes.push(n);
     n.field = "missing";
     assert.throws(() => parseDesign(d), /geoNodes\[2\].*field.*找不到/);
@@ -41,15 +43,15 @@ test("Geo references report their location and reject invalid field writers", ()
     n.function = { type: "flat", amount: 1 }; n.construction = { type: "strip", of: ["N"], widths: [1, 1] };
     assert.throws(() => parseDesign(d), /of.*找不到下方/);
     n.construction = p;
-    literalCurve(p.outlines[0]).nodes.push(structuredClone(literalCurve(p.outlines[0]).nodes[0]));
+    literalCurve(d, p.outlines[0]).nodes.push(structuredClone(literalCurve(d, p.outlines[0]).nodes[0]));
     assert.throws(() => parseDesign(d), /nodes\[4\].id 重复/);
-    literalCurve(p.outlines[0]).nodes.pop(); n.id = d.geoNodes[0].id;
+    literalCurve(d, p.outlines[0]).nodes.pop(); n.id = d.geoNodes[0].id;
     assert.throws(() => parseDesign(d), /geoNodes\[2\].id/);
 });
 
 test("Peak height has its own numeric address and its position is a coordinate", () => {
     const d: Design = syntheticDesign(), n = d.geoNodes[1], at = [-18, -10] satisfies [number, number];
-    n.function = { type: "mountain", valleys: [], ridges: [], peaks: [{ at, height: "{input:A} + 10", radius: 3, scale: 1, noise: 0 }] };
+    n.function = { type: "mountain", valleys: [], ridges: [], peaks: [{ at: holdPoint(d, at), height: "{input:A} + 10", radius: 3, scale: 1, noise: 0 }] };
     d.inputs.B = { value: "{geo:T.peaks.0.height}", range: [0, 30, 1] };
     const parsed = parseDesign(serializeDesign(d)), resolved = resolveDesign(parsed);
     const mountain = resolved.geoNodes[1].function;
@@ -62,7 +64,7 @@ test("Peak height has its own numeric address and its position is a coordinate",
     assert.throws(() => parseDesign(d), /peaks\.0\.at\.h/);
     d.inputs.B.value = "{geo:T.peaks.0.height}";
     Object.assign(n.function.peaks[0], { at: { p: at, h: 17 } });
-    assert.throws(() => parseDesign(d), /function\.peaks\[0\]\.at 无效/);
+    assert.throws(() => parseDesign(d), /function\.peaks\[0\]\.at\.point 无效/);
 });
 
 test("Noise validates its inputs", () => {
@@ -78,15 +80,15 @@ test("Noise validates its inputs", () => {
 test("Removing a referenced custom input lists every layer and mark location", () => {
     const d = syntheticDesign();
     delete d.inputs.A;
-    d.marks = [{ id: "B", label: "B", kind: "text", point: [1, 1], follow: "map", elevation: "{input:A}", showElevation: true }];
-    d.geoNodes.push(layer("C", rect(2, 2, 5, 5), { type: "flat", amount: "{input:A}", feather: 0 }));
+    d.marks = [fixtureMark(d, { id: "B", label: "B", kind: "text", point: [1, 1], follow: "map", elevation: "{input:A}", showElevation: true })];
+    d.geoNodes.push(addLayer(d, "C", rect(2, 2, 5, 5), { type: "flat", amount: "{input:A}", feather: 0 }));
     assert.throws(() => parseDesign(d), error => error instanceof Error &&
         ["geoNodes[1].function.amount", "geoNodes[2].function.amount", "marks[0].elevation"].every(p => error.message.includes(p)));
 });
 
 test("Supported owners preserve optional prompts, whitespace and empty prompt omission", () => {
     const d = syntheticDesign();
-    d.sections.push({ id: "S", label: "S", points: [[0, 0], [1, 1]] });
+    d.sections.push(fixtureSection(d, { id: "S", label: "S", points: [[0, 0], [1, 1]] }));
     const before = serializeDesign(d), owners = [d, d.geoNodes[0], d.sections[0]];
     for (const owner of owners) {
         Object.assign(owner, { prompt: null });
@@ -106,9 +108,9 @@ test("Expressions reject unsupported reference namespaces", () => {
 
 test("Labels omit their defaults and marks round-trip with expressions and anchors", () => {
     const d: Design = syntheticDesign();
-    d.sections.push({ id: "S", label: "S", points: [[0, 0], [1, 1]] });
-    d.marks.push({ id: "M", kind: "scale", label: "M", point: [1, 1], follow: "screen", length: "{input:A} + 3" },
-        { id: "T", kind: "text", label: "T", point: [3, 2], follow: "map", elevation: "{geo:G.value}", showElevation: true });
+    d.sections.push(fixtureSection(d, { id: "S", label: "S", points: [[0, 0], [1, 1]] }));
+    d.marks.push(fixtureMark(d, { id: "M", kind: "scale", label: "M", point: [1, 1], follow: "screen", length: "{input:A} + 3" }),
+        fixtureMark(d, { id: "T", kind: "text", label: "T", point: [3, 2], follow: "map", elevation: "{geo:G.value}", showElevation: true }));
     const others = [...d.sections, ...d.marks];
     // Unset and explicit defaults produce identical bytes for every kind.
     const defaults = serializeDesign(d);
@@ -127,7 +129,9 @@ test("Labels omit their defaults and marks round-trip with expressions and ancho
     assert.equal(scale.length, 10);
     assert.equal(text.elevation, 4);
     assert.deepEqual(text.point, [3, 2]);
-    assert.deepEqual(newDesign([48, 72]).marks, [{ id: "mark-1", kind: "scale", label: "比例尺", point: [48, 72], follow: "screen", length: 10 }]);
+    const initial = newDesign([48, 72]);
+    assert.deepEqual(initial.marks[0].screen, [48, 72]);
+    assert.deepEqual(placedPoint(initial, initial.marks[0].point), [0, 0]);
     assert.equal(scale.follow, "screen"); assert.equal(text.follow, "map");
     assert(!bytes.includes("\"follow\""));
     saved.marks[0].follow = "map"; saved.marks[1].follow = "screen";
@@ -140,7 +144,7 @@ test("Labels omit their defaults and marks round-trip with expressions and ancho
 
 test("Map names save and validate finite two-coordinate offsets", () => {
     const d = syntheticDesign();
-    d.sections.push({ id: "S", label: "S", points: [[0, 0], [1, 1]], labelOffset: [0, 0] });
+    d.sections.push(fixtureSection(d, { id: "S", label: "S", points: [[0, 0], [1, 1]], labelOffset: [0, 0] }));
     d.geoNodes[0].labelOffset = [0, 0];
     const saved = serializeDesign(d);
     assert(!saved.includes("labelOffset"));
@@ -159,24 +163,28 @@ test("Map names save and validate finite two-coordinate offsets", () => {
 });
 
 test("Built-in seed and ranges materialize while zero-radius harbor parameters survive a save", () => {
-    const d = syntheticDesign(), raw = JSON.parse(serializeDesign(d));
+    const d = syntheticDesign(), shore = polygon([[0, 0], [1, 0], [1, 1], [0, 1]]);
+    for (const node of shore.nodes) node.id = "s" + node.id;
+    const coast = addLayer(d, "C", rect(0, 0, 10, 8), { type: "flat", amount: 1 });
+    Object.assign(coast, { function: { type: "coast", shore: fixtureCurve(d, { curve: shore }), roughness: 4,
+        harbor: { center: holdPoint(d, [5, 4]) }, seed: "{input:seed}" } });
+    d.geoNodes.push(coast);
+    const raw = JSON.parse(serializeDesign(d));
     delete raw.inputs.seed;
     delete raw.inputs.A.range;
-    raw.geoNodes.push({ ...layer("C", rect(0, 0, 10, 8), { type: "flat", amount: 1 }),
-        function: { type: "coast", shore: { curve: polygon([[0, 0], [1, 0], [1, 1], [0, 1]]) }, roughness: 4, seed: "{input:seed}" } });
-    for (const node of raw.geoNodes.at(-1).function.shore.curve.nodes) node.id = "s" + node.id;
     const hydrated = parseDesign(raw), f = hydrated.geoNodes.at(-1)!.function;
     assert.deepEqual(hydrated.inputs.seed, { label: "种子", value: 1, range: [-10000, 10000, 1] });
     assert.deepEqual(hydrated.inputs.A.range, [-10000, 10000, .1]);
     assert(f.type === "coast");
-    assert.deepEqual(f.harbor, { center: [5, 4], radius: 0, span: 3 });
+    assert.deepEqual({ ...f.harbor, center: placedPoint(hydrated, f.harbor.center) }, { center: [5, 4], radius: 0, span: 3 });
     const bytes = serializeDesign(hydrated);
     assert.doesNotMatch(bytes, /"range"/);
     assert.match(bytes, /"harbor"/);
     assert.equal(serializeDesign(parseDesign(bytes)), bytes);
     assert.deepEqual(parseDesign(bytes), hydrated);
     const disabled = generateTerrain(hydrated).fields.height.values;
-    f.harbor.center = [2, 2]; f.harbor.span = 20;
+    Object.assign(hydrated.geometry[f.harbor.center.point], { point: [2, 2] });
+    f.harbor.span = 20;
     assert.deepEqual(generateTerrain(hydrated).fields.height.values, disabled);
     f.harbor.radius = 5;
     assert.match(serializeDesign(hydrated), /"harbor"/);
@@ -206,7 +214,7 @@ test("Built-in height is hydrated and reserved declaration metadata is protected
         assert.throws(() => parseDesign({ ...d, fields }), new RegExp("fields.height." + key));
     }
     assert.throws(() => removeDeclaration(parsed, "field", "height"), /内置场/);
-    assert.throws(() => parseDesign({ ...d, marks: [{ id: "A", label: "A", kind: "text", point: [0, 0], follow: "ground" }] }),
+    assert.throws(() => parseDesign({ ...d, marks: [{ ...fixtureMark(d, { id: "A", label: "A", kind: "text", point: [0, 0], follow: "map" }), follow: "ground" }] }),
         /marks\[0\].follow/);
     assert.throws(() => parseDesign({ ...d, geoNodes: [d.geoNodes[0], { ...d.geoNodes[1], function: { type: "add", amount: 1 } }] }),
         /geoNodes\[1\].function.type/);

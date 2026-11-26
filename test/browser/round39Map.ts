@@ -1,8 +1,9 @@
+import { resolveDesign } from "../../src/core/design/parameters.ts";
 import assert from "node:assert/strict";
 import { type Design, type Point } from "../../src/core/design/v5.ts";
 import { distance } from "../../src/core/math/geometry.ts";
 import { mapColors } from "../../src/render/palette.ts";
-import { layer, openCurve, rect, syntheticDesign } from "../scenarios.ts";
+import { addLayer, openCurve, rect, syntheticDesign } from "../scenarios.ts";
 import { withCurveMap } from "./curveMapFixture.ts";
 
 type Page = Parameters<Parameters<typeof withCurveMap>[2]>[0];
@@ -18,8 +19,8 @@ async function mapScreenshot(page: Page, name: string) {
 
 export function checkSegmentDragAndGuides(url: string) {
     const d: Design = syntheticDesign();
-    d.geoNodes.push(layer("A", rect(-29, 17, -14.4, 28), { type: "flat", amount: 1 }),
-        layer("B", rect(10, -20, 32, -7), { type: "flat", amount: 1 }));
+    d.geoNodes.push(addLayer(d, "A", rect(-29, 17, -14.4, 28), { type: "flat", amount: 1 }),
+        addLayer(d, "B", rect(10, -20, 32, -7), { type: "flat", amount: 1 }));
     return withCurveMap(url, "round39-segment-drag", async page => {
         const { authored, boundary, cdp, click, evaluate, frame, paint, pixels, pointer, saved, tap, undo, wait } = page;
         await click("[data-tab=layers]");
@@ -172,7 +173,7 @@ export function checkDrawingConstraints(url: string) {
         await tap([-22, 20], shift);
         await tap([-13, 27], shift);
         await saved();
-        const [section] = (await authored()).sections;
+        const [section] = resolveDesign(await authored()).sections;
         checkPoint(section.points[0], [-22, 20]);
         checkPoint(section.points[1], [-14, 28]);
 
@@ -182,7 +183,7 @@ export function checkDrawingConstraints(url: string) {
             await pointer("mouseMoved", moved, modifiers);
             await pointer("mouseReleased", moved, modifiers);
             await saved();
-            checkPoint((await authored()).sections[0].points[1], [...expected]);
+            checkPoint(resolveDesign(await authored()).sections[0].points[1], [...expected]);
             await undo();
         }
     }, syntheticDesign());
@@ -192,8 +193,8 @@ export function checkContourScales(url: string) {
     const d: Design = syntheticDesign();
     const area = rect(-40, -28, 40, 28);
     d.grid.step = .5;
-    d.geoNodes = [layer("G", area, { type: "ground", value: 0 }),
-        layer("S", structuredClone(area), { type: "slope", kind: "path",
+    d.geoNodes = [addLayer(d, "G", area, { type: "ground", value: 0 }),
+        addLayer(d, "S", structuredClone(area), { type: "slope", kind: "path",
             lines: [{ curve: openCurve([{ p: [-40, 0], h: -66 }, { p: [40, 0], h: 94 }]) }], center: [0, 0], radius: 5, value: 2, rate: -.2 })];
     return withCurveMap(url, "round39-contour-scales", async page => {
         const { cdp, click, evaluate, key, paint, text, wait } = page;

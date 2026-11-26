@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { serializeDesign } from "../../src/core/design/model.ts";
-import { layer, rect, syntheticDesign } from "../scenarios.ts";
+import { fixtureSection, addLayer, rect, syntheticDesign } from "../scenarios.ts";
 import { startChromium } from "./chromium.ts";
 import { installPickers } from "./filePickers.ts";
 
@@ -105,10 +105,10 @@ function colorsOutsideTokens() {
 
 export async function checkAppearance(url: string) {
     const design = syntheticDesign();
-    design.sections.push({ id: "A", label: "剖面线 1", points: [[-36, 0], [36, 0]] });
+    design.sections.push(fixtureSection(design, { id: "A", label: "剖面线 1", points: [[-36, 0], [36, 0]] }));
     design.fields.F = { label: "场 F", unit: "m" };
-    design.geoNodes.push(layer("F", rect(-36, -36, 36, 36), { type: "ground", value: 2 }, "F"));
-    design.geoNodes.push(layer("H", rect(-32, -30, -8, 30), { type: "flat", amount: 4 }, "F"));
+    design.geoNodes.push(addLayer(design, "F", rect(-36, -36, 36, 36), { type: "ground", value: 2 }, "F"));
+    design.geoNodes.push(addLayer(design, "H", rect(-32, -30, -8, 30), { type: "flat", amount: 4 }, "F"));
     const browser = await startChromium();
     const { cdp, click, evaluate, key, wait, saved } = browser;
     const button = "#appearance", menu = ".appearance-menu";

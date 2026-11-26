@@ -2,16 +2,16 @@ import assert from "node:assert/strict";
 import { type Point } from "../../src/core/design/v5.ts";
 import { parseDesign } from "../../src/core/design/model.ts";
 import { Project } from "../../src/core/project.ts";
-import { layer, rect } from "../scenarios.ts";
+import { addLayer, rect } from "../scenarios.ts";
 import { withLayeredMap } from "./layeredMapFixture.ts";
 
 export async function checkMapIssues(url: string) {
     await withLayeredMap(url, "map-issues", async ({ at, cdp, click, d, evaluate, fit, frame, menuFor, openDesign, paint, panel, point, property, tap, text }) => {
         const design = { ...d, sections: [], marks: [], geoNodes: [
-            layer("G", rect(-60, -38, 60, 38), { type: "ground", value: 3 }),
-            layer("A", rect(-32, -13, -12, 12), { type: "flat", amount: 4 }),
-            layer("B", rect(18, -16, 40, 14), { type: "flat", amount: 0 }),
-            ...["X", "Y"].map(id => layer(id, { type: "strip", of: ["missing", "B"], widths: [3, 3] }, { type: "split" }))
+            addLayer(d, "G", rect(-60, -38, 60, 38), { type: "ground", value: 3 }),
+            addLayer(d, "A", rect(-32, -13, -12, 12), { type: "flat", amount: 4 }),
+            addLayer(d, "B", rect(18, -16, 40, 14), { type: "flat", amount: 0 }),
+            ...["X", "Y"].map(id => addLayer(d, id, { type: "strip", of: ["missing", "B"], widths: [3, 3] }, { type: "split" }))
         ] };
         const { issues } = new Project(parseDesign(design, true));
         const warning = issues.find(i => i.severity === "warning")!, errors = issues.filter(i => i.severity === "error");

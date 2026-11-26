@@ -8,7 +8,7 @@ import { random } from "../src/core/math/noise.ts";
 import { applyLayer, evaluateLayer } from "../src/core/terrain/functions.ts";
 import { shoreDistance, shoreFrame } from "../src/core/terrain/shore.ts";
 import { initialFields, layout } from "../src/core/terrain/terrain.ts";
-import { layer, rect, syntheticDesign } from "./scenarios.ts";
+import { addLayer, rect, syntheticDesign } from "./scenarios.ts";
 
 function canvasIndex(grid: Grid, frame: GridFrame, at: number) {
     return (frame.top + Math.floor(at / frame.width)) * grid.width + frame.left + at % frame.width;
@@ -85,9 +85,9 @@ test("Cropped coast, cliff and islets match the full-canvas stack bit for bit", 
     const design = syntheticDesign(), canvas = rect(-169, -106, 169, 106);
     design.fields.B = { label: "B" };
     design.geoNodes = [
-        layer("A", canvas, { type: "ground", value: -2 }),
-        layer("B", canvas, { type: "ground", value: 1 }, "B"),
-        layer("H", rect(-3, -3, 3, 3), { type: "ground", value: 4 }, "B")
+        addLayer(design, "A", canvas, { type: "ground", value: -2 }),
+        addLayer(design, "B", canvas, { type: "ground", value: 1 }, "B"),
+        addLayer(design, "H", rect(-3, -3, 3, 3), { type: "ground", value: 4 }, "B")
     ];
     const islands: Point[] = [[-123, -62], [0, 62], [123, -48]];
     for (const [i, [x, y]] of islands.entries()) {
@@ -95,14 +95,14 @@ test("Cropped coast, cliff and islets match the full-canvas stack bit for bit", 
         const inner = rect(x - 8, y - 8, x + 8, y + 8);
         const path = inner.outlines[0].curve, shore = { ...path, nodes: path.nodes.map(node => ({ ...node, id: "shore-" + node.id })) };
         design.geoNodes.push(
-            layer("G" + i, inner, { type: "ground", value: 5 + i }),
-            layer("N" + i, rect(x - 13, y - 13, x - 3, y + 13), { type: "ground", value: 0 }, "B"),
-            layer("P" + i, rect(x + 3, y - 13, x + 13, y + 13), { type: "ground", value: 2 }, "B"),
-            layer("C" + i, region, { type: "coast", shore: { curve: shore }, roughness: "{field:B} * 3",
+            addLayer(design, "G" + i, inner, { type: "ground", value: 5 + i }),
+            addLayer(design, "N" + i, rect(x - 13, y - 13, x - 3, y + 13), { type: "ground", value: 0 }, "B"),
+            addLayer(design, "P" + i, rect(x + 3, y - 13, x + 13, y + 13), { type: "ground", value: 2 }, "B"),
+            addLayer(design, "C" + i, region, { type: "coast", shore: { curve: shore }, roughness: "{field:B} * 3",
                 harbor: { center: [x, y], radius: 2, span: 4 }, seed: 23 + i }),
-            layer("L" + i, rect(x - 6, y - 2, x + 6, y), { type: "ground", value: .25 }),
-            layer("D" + i, region, { type: "cliff", factor: "{field:B} - 1", seaLevel: .1, seed: 31 + i }),
-            layer("I" + i, region, { type: "islets", reach: 8 + i, density: .85, threshold: .1, seed: 41 + i })
+            addLayer(design, "L" + i, rect(x - 6, y - 2, x + 6, y), { type: "ground", value: .25 }),
+            addLayer(design, "D" + i, region, { type: "cliff", factor: "{field:B} - 1", seaLevel: .1, seed: 31 + i }),
+            addLayer(design, "I" + i, region, { type: "islets", reach: 8 + i, density: .85, threshold: .1, seed: 41 + i })
         );
     }
     const resolved = resolveDesign(parseDesign(design)), { grid, regions } = layout(resolved);

@@ -1,4 +1,5 @@
-import { type PlacedGeoNode, type SharedCurve, type Mark, type TextMark, type Point } from "../core/design/v5.ts";
+import { type PlacedGeoNode, type Curve, type GeometryObject, type Mark, type TextMark, type Point } from "../core/design/v5.ts";
+import { geometryAt } from "../core/design/curveReferences.ts";
 import { displaySteps, markParameters } from "../core/design/functionTable.ts";
 import { fieldPrecision, heightId } from "../core/design/defaults.ts";
 import { type Issue, type Terrain } from "../core/design/results.ts";
@@ -74,10 +75,12 @@ export type MapView = Readonly<{
     referencedGeo: readonly string[];
     geometry?: GeometryTarget;
     objectGeometry?: Selection;
+    holderGeometry?: { id: string; target?: GeometryTarget; index?: number };
+    referenceCurves?: readonly Curve[];
     vertex?: GeoControl;
     draft?: Readonly<GeoDraft>;
     dragNode?: PlacedGeoNode;
-    dragShared?: SharedCurve;
+    dragGeometry?: GeometryObject;
     dragNodes?: ControlPreview["nodes"];
     dragCurve?: number;
     dragCommitting?: boolean;
@@ -268,10 +271,12 @@ export class ProjectMap {
         this.cameraChanged = cameraChanged;
     }
     frame(terrain: Terrain, reset = false) {
+        if (reset) this.markHandoffs?.clear();
         if (reset || !this.center) this.fit(terrain);
     }
     resize(width: number, height: number, dpr: number) {
         if (width === this.width && height === this.height && dpr === this.dpr) return false;
+        this.markHandoffs?.clear();
         this.width = width;
         this.height = height;
         this.dpr = dpr;
@@ -376,9 +381,9 @@ export class ProjectMap {
                 yield { selection: { kind: "section", id: s.id } };
         }
         const empty = !hasSamples(terrain), tolerance = grid.step / 8;
-        if (view.selection?.kind === "curve") {
-            const curve = design.curves[view.selection.id];
-            const control = curve && hitPathSegment(curve, p, scale, tolerance, view.geometry);
+        if (view.selection?.kind === "geometry") {
+            const item = geometryAt(design, view.selection.id);
+            const control = item && "curve" in item && hitPathSegment(item, p, scale, tolerance, view.geometry);
             if (control) yield { selection: view.selection, control };
         }
         for (let i = geoNodes.length - 1; i >= 0; i--) {
@@ -419,17 +424,21 @@ export class ProjectMap {
             const h = this.hitSectionHandle(view, screen, selection.id);
             if (h) return { selection: h, handle: h };
         }
-        if (selection?.kind === "geoNode" || selection?.kind === "curve") {
-            const design = view.project.design;
-            const node = selection.kind === "geoNode" ? design.geoNodes.find(n => n.id === selection.id) : design.curves[selection.id];
-            const control = node && hitGeoControl(node, this.world(...screen), this.scale, view.geometry);
+        if (selection?.kind === "geoNode" || selection?.kind === "geometry") {
+            const design = view.project.design, p = this.world(...screen);
+            const item = selection.kind === "geometry" ? geometryAt(design, selection.id) : undefined;
+            if (item && "point" in item && distance(p, item.point) * this.scale <= 7)
+                return { selection, control: { role: "parameter", path: 0, index: 0, point: item.point } };
+            const owner = selection.kind === "geoNode" ? design.geoNodes.find(n => n.id === selection.id) : item && "curve" in item ? item : undefined;
+            const control = owner && hitGeoControl(owner, p, this.scale, view.geometry);
             if (control) return selection.kind === "geoNode" ? geoHit(selection.id, control) : { selection, control };
         }
     }
     selectedSegment(view: MapView, screen: Point): MapHit | undefined {
         const { selection, vertex, project: { design } } = view;
         if (vertex?.role !== "segment" || !selection) return;
-        const owner = selection.kind === "curve" ? design.curves[selection.id] : design.geoNodes.find(n => n.id === selection.id);
+        const item = selection.kind === "geometry" ? geometryAt(design, selection.id) : undefined;
+        const owner = item && "curve" in item ? item : design.geoNodes.find(n => n.id === selection.id);
         const control = owner && hitSelectedSegment(owner, vertex, this.world(...screen), this.scale, design.grid.step / 8);
         if (control) return { selection, control };
     }
@@ -446,9 +455,9 @@ export class ProjectMap {
             if (section && nearest(...p, section.points).distance * this.scale <= sectionHitRadius)
                 return { selection: { kind: "section", id: selection.id } };
         }
-        if (selection.kind === "curve") {
-            const curve = project.design.curves[selection.id];
-            const control = curve && hitPathSegment(curve, p, this.scale, project.design.grid.step / 8, geometry);
+        if (selection.kind === "geometry") {
+            const item = geometryAt(project.design, selection.id);
+            const control = item && "curve" in item && hitPathSegment(item, p, this.scale, project.design.grid.step / 8, geometry);
             if (control) return { selection, control };
         }
         if (selection.kind === "geoNode") {
@@ -651,7 +660,7 @@ export class ProjectMap {
         if (origin) return { ...target, offset: [at[0] - origin[0], at[1] - origin[1]] };
     }
 
-    markScreen(mark: Pick<Mark, "point" | "follow">): Point {
+    markScreen(mark: Pick<Mark<number, "resolved">, "point" | "follow">): Point {
         return mark.follow === "screen" ? mark.point : this.screen(mark.point);
     }
 
@@ -659,7 +668,7 @@ export class ProjectMap {
         return follow === "screen" ? screen : this.world(...screen);
     }
 
-    private markLayout(mark: Mark<number>, ctx = this.ctx): { text: string; width: number; ruler?: number; box: Box } {
+    private markLayout(mark: Mark<number, "resolved">, ctx = this.ctx): { text: string; width: number; ruler?: number; box: Box } {
         const screen = mark.follow === "screen";
         ctx.save();
         ctx.font = labelFont(mark.kind === "text");
@@ -676,11 +685,18 @@ export class ProjectMap {
         ctx.restore();
         return { text, width, box: [-width / 2 - 5, -10, width / 2 + 5, 10] };
     }
-    visibleMarkPoint(mark: Mark<number>, point = mark.point, box?: Box): Point {
+    private markHandoffs?: Map<string, Point>;
+
+    keepMarkScreenPosition(id: string, point: Point) {
+        (this.markHandoffs ??= new Map()).set(id, point);
+    }
+    visibleMarkPoint(mark: Mark<number, "resolved">, point = mark.point, box?: Box): Point {
         if (mark.follow === "map") return this.markScreen({ point, follow: mark.follow });
+        const handoff = this.markHandoffs?.get(mark.id);
+        if (handoff && distance(point, handoff) === 0) return point;
         return clampMarkPoint(point, box ?? this.markLayout(mark).box, this.width, this.height, this.markObstacles);
     }
-    revealMark(mark: Mark<number>) {
+    revealMark(mark: Mark<number, "resolved">) {
         const { box, ruler = 0 } = this.markLayout(mark);
         const [x, y] = mark.point, [l, t, r, b] = box;
         const right = mark.kind === "scale" ? x + (mark.length ?? Number(markParameters.scale.default)) : x;
@@ -689,6 +705,10 @@ export class ProjectMap {
 
     private drawMarks(ctx: Context, view: MapView, colors: MapColors) {
         this.markBoxes = [];
+        for (const [id, point] of this.markHandoffs ?? []) {
+            const mark = view.project.design.marks.find(m => m.id === id);
+            if (mark?.follow !== "screen" || distance(mark.point, point) !== 0) this.markHandoffs!.delete(id);
+        }
         for (const mark of view.project.design.marks) {
             const hovered = view.hovered?.kind === "mark" && view.hovered.id === mark.id;
             if (!view.layers.marks && !hovered) continue;
@@ -745,7 +765,8 @@ export class ProjectMap {
             if (x < -12 || y < -12 || x > this.width + 12 || y > this.height + 12) continue;
             const matches = (selection: Selection | null | undefined) =>
                 selection?.kind === h.kind && selection.id === h.id && selection.index === h.index && selection.role === h.role;
-            drawHandle(ctx, colors, x, y, matches(active) ? "selected" : matches(view.hovered) ? "hovered" : "normal");
+            const holder = view.objectGeometry?.kind === "section" && view.objectGeometry.id === h.id && view.objectGeometry.index === h.index;
+            drawHandle(ctx, colors, x, y, matches(active) || holder ? "selected" : matches(view.hovered) ? "hovered" : "normal");
         }
         for (const issue of view.selectedIssues ?? []) {
             if (!view.project.issues.includes(issue)) continue;
@@ -755,7 +776,7 @@ export class ProjectMap {
     }
     private sectionControls(view: MapView) {
         const editingGeometry = view.geometry && view.selection?.kind === "geoNode" && view.outline === undefined;
-        return editingGeometry ? [] : sectionHandles(view.project.design, view.layers.sections, view.objectGeometry);
+        return editingGeometry ? [] : sectionHandles(view.project.design, view.layers.sections, view.objectGeometry?.kind === "section" ? view.objectGeometry : undefined);
     }
     private hitSectionHandle(view: MapView, screen: Point, id: string) {
         let best: Handle | undefined, min = endpointHitRadius;
@@ -775,6 +796,6 @@ function addOffset([x, y]: Point, [dx, dy]: Point): Point {
     return [x + dx, y + dy];
 }
 
-function markReading(mark: TextMark<number>) {
+function markReading(mark: TextMark<number, "resolved">) {
     return mark.showElevation ? [mark.label, displayValue(mark.elevation, markParameters.text.step, markParameters.text.unit)].filter(Boolean).join(" ") : mark.label;
 }

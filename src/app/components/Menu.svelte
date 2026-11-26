@@ -21,7 +21,8 @@
                                 aria-checked={kind === "menu" ? item.selected : undefined}
                                 class:danger={item.danger} disabled={item.disabled} data-option={item.id} onmouseenter={() => {
                                     if (inputNavigation) active = item.id;
-                                }} onclick={() => choose(item.id)}>
+                                    hover?.(item.id);
+                                }} onmouseleave={() => hover?.()} onclick={() => choose(item.id)}>
                                 {#if item.icon}<Icon name={item.icon} builtin={item.builtin} />{/if}
                                 {item.name}
                                 {#if item.reading}<small class="menu-reading">{item.reading}</small>{/if}
@@ -64,11 +65,11 @@
     import EmptyState from "./EmptyState.svelte";
 
     let { label, groups = [], columns, choose, close, variant, kind = "menu", anchor, point, surface, viewport = false, keyboardTarget,
-        back, searching = false, openingKey, pointerOpened = false, empty = "没有可用的变量" }: {
+        back, searching = false, openingKey, pointerOpened = false, hover, empty = "没有可用的变量" }: {
         label: string; groups?: MenuGroup[]; columns?: MenuGroup[][]; choose: (id: string) => void; close: (focus?: boolean, event?: KeyboardEvent) => void;
         variant: string; kind?: "menu" | "listbox"; anchor?: HTMLElement; point?: { x: number; y: number }; surface?: HTMLElement;
         viewport?: boolean; keyboardTarget?: HTMLElement; back?: () => void; searching?: boolean; openingKey?: string;
-        pointerOpened?: boolean; empty?: string;
+        pointerOpened?: boolean; hover?: (id?: string) => void; empty?: string;
     } = $props();
     let menu: HTMLElement;
     let placement = $derived(point ? { point, close, surface } : { anchor: anchor!, close, viewport });

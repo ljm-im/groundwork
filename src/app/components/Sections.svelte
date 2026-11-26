@@ -31,7 +31,7 @@
 
     let precision = $derived(fieldPrecision(editor.project?.design.fields[editor.displayField]));
 
-    function plot(canvas: HTMLCanvasElement, data: { section: Section; terrain: Terrain; field: string; precision: number; theme: Theme }) {
+    function plot(canvas: HTMLCanvasElement, data: { section: Section<"resolved">; terrain: Terrain; field: string; precision: number; theme: Theme }) {
         const ctx = canvas.getContext("2d")!;
         let frame = 0;
         function draw() {

@@ -9,7 +9,7 @@ import { Project } from "../src/core/project.ts";
 import { writeReliefPixels } from "../src/core/terrain/relief.ts";
 import { surfaceRules, terrainSurface } from "../src/core/terrain/surface.ts";
 import { exportProject, type GroundworkExport } from "../src/core/export.ts";
-import { layer, polygon, rect, syntheticDesign } from "./scenarios.ts";
+import { fixtureMark, addLayer, polygon, rect, syntheticDesign, fixtureCurve } from "./scenarios.ts";
 import { decodePreview, readNpy, readProject, readZip } from "./exportFiles.ts";
 
 const commit = "a".repeat(40), text = new TextDecoder();
@@ -24,19 +24,19 @@ async function loadExample() {
     design.prompt = prompt;
     design.grid.step = 1.00049;
     design.fields.F = { label: "F" };
-    design.marks.push({ id: "A", label: "A", kind: "text", point: [2, 3], follow: "map", elevation: "{input:A}" },
-        { id: "B", label: "B", kind: "scale", point: [5, 6], follow: "map", length: 10 },
-        { id: "C", label: "C", kind: "text", point: [2, 3], follow: "screen" },
-        { id: "D", label: "D", kind: "text", point: [9, 8], follow: "map" });
+    design.marks.push(fixtureMark(design, { id: "A", label: "A", kind: "text", point: [2, 3], follow: "map", elevation: "{input:A}" }),
+        fixtureMark(design, { id: "B", label: "B", kind: "scale", point: [5, 6], follow: "map", length: 10 }),
+        fixtureMark(design, { id: "C", label: "C", kind: "text", point: [2, 3], follow: "screen" }),
+        fixtureMark(design, { id: "D", label: "D", kind: "text", point: [9, 8], follow: "map" }));
     const base = design.geoNodes[0].construction;
     assert(base.type === "outline");
     const hole = polygon([[6, 5], [12, 5], [12, 10], [6, 10]]);
     for (const node of hole.nodes) node.id = "H" + node.id;
-    base.outlines.push({ curve: hole });
-    design.geoNodes.push(layer("S", rect(-40, 6, -20, 10), { type: "flat", amount: -5 }),
-        layer("B", rect(-40, 10, -20, 18), { type: "flat", amount: -3 }),
-        layer("F", rect(-30, -6, 30, 8), { type: "ground", value: .123456 }, "F"),
-        layer("X", { type: "strip", of: ["missing"], widths: [1, 2] }, { type: "blend" }));
+    base.outlines.push(fixtureCurve(design, { curve: hole }));
+    design.geoNodes.push(addLayer(design, "S", rect(-40, 6, -20, 10), { type: "flat", amount: -5 }),
+        addLayer(design, "B", rect(-40, 10, -20, 18), { type: "flat", amount: -3 }),
+        addLayer(design, "F", rect(-30, -6, 30, 8), { type: "ground", value: .123456 }, "F"),
+        addLayer(design, "X", { type: "strip", of: ["missing"], widths: [1, 2] }, { type: "blend" }));
     const project = new Project(parseDesign(design, true)), zip = await exportProject(project, commit), files = readZip(zip);
     return { project, zip, files, info: readProject(files) };
 }
@@ -128,7 +128,7 @@ function ground([x, y]: Point, info: GroundworkExport, heights: DataView) {
 test("Placement can be reproduced on triangle interiors, shared edges, holes and the outer boundary", async () => {
     const design = syntheticDesign();
     const points: Point[] = [[.2504, 2.7503], [1, 1.75], [1.75, 2.75], [1.25, 2.25], [3.1, 1], [3, 0]];
-    design.marks = points.map((point, i) => ({ kind: "text", id: String.fromCharCode(65 + i), label: "标记 " + i, follow: "map", point }));
+    design.marks = points.map((point, i) => (fixtureMark(design, { kind: "text", id: String.fromCharCode(65 + i), label: "标记 " + i, follow: "map", point })));
     const project = new Project(parseDesign(design)), grid = createGrid({ xMin: -.5, xMax: 3.5, yMin: -.5, yMax: 3.5, step: 1 });
     const values = Float32Array.of(1, 5, 0, 2, 7, 9, 13, 11, 0, 1, 2, 3, 4, 6, 8, 15);
     const defined = new Uint8Array(grid.size).fill(1);
@@ -149,7 +149,7 @@ test("Placement can be reproduced on triangle interiors, shared edges, holes and
 
 test("A point on the diagonal needs only the northwest and southeast heights", async () => {
     const design = syntheticDesign(), point: Point = [.25, .75];
-    design.marks.push({ id: "A", label: "A", kind: "text", follow: "map", point });
+    design.marks.push(fixtureMark(design, { id: "A", label: "A", kind: "text", follow: "map", point }));
     const project = new Project(parseDesign(design)), grid = createGrid({ xMin: -.5, xMax: 1.5, yMin: -.5, yMax: 1.5, step: 1 });
     const values = Float32Array.of(1.25, 21, 10, 9.25);
     const issues: Issue[] = [{ point, kind: "geo-reference", severity: "error", message: "问题" }];
@@ -217,7 +217,7 @@ test("PNG preview matches the light map relief both at full resolution and when 
     const base = rect(-1025, -3, 1025, 3), hole = rect(-12, -2, 11, 2).outlines[0].curve;
     for (const node of hole.nodes) node.id = "H" + node.id;
     base.outlines.push({ curve: hole });
-    design.geoNodes = [layer("A", base, { type: "ground", value: -1 }), layer("B", rect(-991, -2, 1021, 2), { type: "flat", amount: 3 })];
+    design.geoNodes = [addLayer(design, "A", base, { type: "ground", value: -1 }), addLayer(design, "B", rect(-991, -2, 1021, 2), { type: "flat", amount: 3 })];
     const wide = new Project(parseDesign(design));
     checkPreview(wide, readZip(await exportProject(wide, commit)), 2);
 });

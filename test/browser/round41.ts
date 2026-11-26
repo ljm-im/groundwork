@@ -2,20 +2,20 @@ import assert from "node:assert/strict";
 import { type Design, type Point } from "../../src/core/design/v5.ts";
 import { defaultFunction } from "../../src/core/edit/geoNodes.ts";
 import { distance } from "../../src/core/math/geometry.ts";
-import { layer, literalCurve, openCurve, rect, syntheticDesign } from "../scenarios.ts";
+import { fixtureMark, addLayer, literalCurve, openCurve, rect, syntheticDesign, fixtureCurve } from "../scenarios.ts";
 import { withCurveMap } from "./curveMapFixture.ts";
 
 export function checkProfilesAndLabels(url: string) {
     const d: Design = syntheticDesign();
     const ridge: Point[] = [[-34, 12], [-24, 12], [-14, 12]];
-    const mountain = defaultFunction("mountain"), slope = defaultFunction("slope", { center: [0, -14] });
+    const mountain = defaultFunction(d, "mountain"), slope = defaultFunction(d, "slope", { center: [0, -14] });
     assert(mountain.type === "mountain" && slope.type === "slope");
-    mountain.ridges.push({ curve: openCurve(ridge.map((p, i) => ({ p, h: i === 1 ? 20 : 8, slope: 1 })), "corner", "ridge-") });
+    mountain.ridges.push(fixtureCurve(d, { curve: openCurve(ridge.map((p, i) => ({ p, h: i === 1 ? 20 : 8, slope: 1 })), "corner", "ridge-") }, ["h", "slope"]));
     d.geoNodes.splice(1, 1,
-        { ...layer("M", rect(-39, -4, 23, 28), mountain), label: "山体 A" },
-        { ...layer("S", rect(-38, -31, 26, -7), slope), label: "坡道 A" },
-        layer("F", rect(30, 18, 36, 22), { type: "flat", amount: "{geo:M.ridges.0.curve.nodes.1.h}" }));
-    d.marks.push({ id: "R", kind: "scale", label: "比例尺 A", follow: "screen", point: [18, 42], length: 25 });
+        { ...addLayer(d, "M", rect(-39, -4, 23, 28), mountain), label: "山体 A" },
+        { ...addLayer(d, "S", rect(-38, -31, 26, -7), slope), label: "坡道 A" },
+        addLayer(d, "F", rect(30, 18, 36, 22), { type: "flat", amount: "{geo:M.ridges.0.h.ridge-1}" }));
+    d.marks.push(fixtureMark(d, { id: "R", kind: "scale", label: "比例尺 A", follow: "screen", point: [18, 42], length: 25 }));
     return withCurveMap(url, "round41-profiles-and-labels", async page => {
         const { authored, click, evaluate, frame, key, paint, pixels, saved, screenshot, tap, text, undo, wait } = page;
         const search = async (value: string) => {
@@ -48,8 +48,7 @@ export function checkProfilesAndLabels(url: string) {
         await key("Escape");
 
         await click(".part:has([aria-label=添加山脊]) .subitem-toggle");
-        await click(".geometry-box[aria-label=山脊线]");
-        await tap(ridge[1]);
+        await tap(ridge[1]); await tap(ridge[1]);
         const input = "#properties [data-curve-node] .numeric-face[aria-label=高度]";
         const output = "#properties [data-curve-node] [data-output-value]";
         const checkbox = "#properties [data-curve-node] label";
@@ -74,21 +73,20 @@ export function checkProfilesAndLabels(url: string) {
         await screenshot("round41-output-value", nodeClip);
 
         await inspect("F");
-        const token = "#properties .ref-chip[data-ref='geo:M.ridges.0.curve.nodes.1.h'] svg path";
+        const token = "#properties .ref-chip[data-ref='geo:M.ridges.0.h.ridge-1'] svg path";
         const chipIcon = async () => evaluate(s => document.querySelector(s)?.getAttribute("d"), token);
         assert.equal(await chipIcon(), outputIcon);
         const option = (id: string) => ".reference-menu[aria-label=可用变量] [data-option=" + JSON.stringify(id) + "]";
         await click("button[aria-label=为增量插入变量]");
         assert.equal(await evaluate(s => !!document.querySelector(s), option("mark:R")), false);
         await click(option("geo:M"));
-        const middle = option("geo:M.ridges.0.curve.nodes.1.h");
+        const middle = option("geo:M.ridges.0.h.ridge-1");
         assert.equal(await text(middle + " .menu-reading"), "8.0 m");
         assert.equal(await evaluate(s => document.querySelector(s + " svg path")?.getAttribute("d"), middle), outputIcon);
         await key("Escape");
 
         await inspect("M");
-        await click(".geometry-box[aria-label=山脊线]");
-        await tap(ridge[1]);
+        await tap(ridge[1]); await tap(ridge[1]);
         await override();
         assert.equal(await text(input), "20.0");
         await inspect("F");
@@ -107,12 +105,13 @@ export function checkProfilesAndLabels(url: string) {
         for (const [a, b] of endpoints)
             assert(strokes.some(s => distance(s.points[0], a) < 1 && distance(s.points.at(-1)!, b) < 1), "Both slope lines are visible");
         await click(".geometry-box[aria-label=坡线]");
+        await click("[data-property-tab=function]");
         assert.equal((await frame()).geometry?.kind, "curve");
         assert.equal((await frame()).vertex, undefined);
         await key("Delete"); await saved(); await paint();
         const remaining = (await authored()).geoNodes.find(n => n.id === "S")!.function;
         assert(remaining.type === "slope" && remaining.lines.length === 1);
-        assert(literalCurve(remaining.lines[0]).nodes[0].p[1] > -14);
+        assert(literalCurve(await authored(), remaining.lines[0]).nodes[0].p[1] > -14);
 
         await inspect("M");
         const at: Point = [10.5, 8.5];

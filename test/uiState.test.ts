@@ -19,16 +19,16 @@ import { makeShape, rasterRegion, regionMaskAt } from "../src/core/design/region
 import { clampMarkPoint, nextMapHit, ProjectMap } from "../src/render/map.ts";
 import { testProjectModel, testTerrainClient } from "./computeFixture.ts";
 import { render } from "svelte/server";
-import { withNodeSlope, coveredLandformPoints, layer, openCurve, overlappingLandforms, polygon, rect, resolvedRect, syntheticDesign } from "./scenarios.ts";
+import { fixtureConstruction, fixtureFunction, fixtureSection, withNodeSlope, coveredLandformPoints, addLayer, openCurve, overlappingLandforms, polygon, rect, resolvedRect, syntheticDesign } from "./scenarios.ts";
 
 test("Overlapping map objects cycle in paint order, including separate geometries of the same terrain", async () => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
     const design = syntheticDesign(), point: [number, number] = [-14, -8];
-    design.geoNodes.push(layer("M", rect(-25, -17, 5, 3), {
+    design.geoNodes.push(addLayer(design, "M", rect(-25, -17, 5, 3), {
         type: "mountain", valleys: [], peaks: [{ at: point, height: 12, radius: 20, noise: 0, scale: 1 }],
         ridges: [{ curve: withNodeSlope(openCurve([{ p: [-23, -8] }, { p: [-4, -8] }]), 2) }]
     }));
-    design.sections = [{ id: "Q", label: "Q", points: [[-24, -8], [1, -8]] }];
+    design.sections = [fixtureSection(design, { id: "Q", label: "Q", points: [[-24, -8], [1, -8]] })];
     const project = new Project(design), map: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), { width: 1000, height: 700 });
     map.fit(project.terrain, false);
     const screen = map.screen(point), [x, y] = screen;
@@ -89,7 +89,7 @@ test("Map face hits include holes while the terrain raster uses even-odd coverag
     const design = syntheticDesign(), outline = rect(-20, -18, 20, 18), hole = rect(-8, -7, 8, 7).outlines[0];
     for (const node of hole.curve.nodes) node.id = "hole-" + node.id;
     outline.outlines.push(hole);
-    design.geoNodes[1].construction = outline;
+    design.geoNodes[1].construction = fixtureConstruction(design, outline);
     const project = new Project(design), editor = new Editor(testTerrainClient());
     const map: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), { width: 1000, height: 700, markBoxes: [] });
     map.fit(project.terrain, false);
@@ -115,10 +115,10 @@ test("Map gestures use only related alignment points and Shift and Ctrl bypass n
     const design = syntheticDesign(), nodes: Point[] = [[-28, 6], [-14, 16], [2, 23], [25, 30]];
     const line = openCurve(nodes.map((p, i) => ({ p, h: 4 + i })));
     line.nodes[1].out = [3, 0];
-    design.geoNodes.push(layer("M", rect(-39, 0, 36, 38), {
+    design.geoNodes.push(addLayer(design, "M", rect(-39, 0, 36, 38), {
         type: "mountain", valleys: [], ridges: [{ curve: withNodeSlope(line, 1) }], peaks: [{ at: [0, 28], height: 5, radius: 8, noise: 0, scale: 1 }]
-    }), layer("A", rect(10, 40, 20, 45), { type: "flat", amount: 1 }), layer("B", rect(40, 16, 44, 24), { type: "flat", amount: 1 }));
-    design.sections.push({ id: "Q", label: "Q", points: [[-28, 30], [-16, 29]] });
+    }), addLayer(design, "A", rect(10, 40, 20, 45), { type: "flat", amount: 1 }), addLayer(design, "B", rect(40, 16, 44, 24), { type: "flat", amount: 1 }));
+    design.sections.push(fixtureSection(design, { id: "Q", label: "Q", points: [[-28, 30], [-16, 29]] }));
     const project = new Project(design), editor = new Editor(testTerrainClient());
     const map: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), { width: 1000, height: 700 });
     map.fit(project.terrain, false);
@@ -224,8 +224,8 @@ test("Variable preview keeps cached geometry and matches a freshly opened design
 
 test("A shared strip quotes a side label and a full property path independently", () => {
     const d = syntheticDesign(), west = { ...d.geoNodes[1], label: "西台" },
-        east = { ...layer("B", rect(-7, -14, 5, -2), { type: "flat", amount: 3 }), label: "东台" };
-    const strip = { ...layer("S", { type: "strip", of: [west.id, east.id], widths: [2, 3] }, { type: "split" }), label: "条带" };
+        east = { ...addLayer(d, "B", rect(-7, -14, 5, -2), { type: "flat", amount: 3 }), label: "东台" };
+    const strip = { ...addLayer(d, "S", { type: "strip", of: [west.id, east.id], widths: [2, 3] }, { type: "split" }), label: "条带" };
     d.geoNodes.push(east, strip);
     d.geoNodes[1] = west;
     const message = "无效", path = ["construction", "widths", 0];
@@ -419,8 +419,8 @@ test("Drawing or canceling a parameter keeps its owner and activates only the co
 
 test("Isolating a section exposes only its own map handles", () => {
     const d = syntheticDesign();
-    d.sections = [{ id: "S", label: "S", points: [[0, 0], [0, 5]] },
-        { id: "T", label: "T", points: [[1, 0], [1, 5]] }];
+    d.sections = [fixtureSection(d, { id: "S", label: "S", points: [[0, 0], [0, 5]] }),
+        fixtureSection(d, { id: "T", label: "T", points: [[1, 0], [1, 5]] })];
     const design = resolveDesign(d);
     assert.deepEqual(sectionHandles(design, false, { kind: "section", id: "S" }).map(h => [h.kind, h.id, h.role, h.index]),
         [["section", "S", "vertex", 0], ["section", "S", "vertex", 1]]);
@@ -534,7 +534,7 @@ test("Expanding and collapsing inspector subitems leaves the authored design and
 test("Selection history restores edited elements and list tabs preserve the selection", async t => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
     const d = syntheticDesign(), editor = new Editor(testTerrainClient());
-    Object.assign(editor, { map: { draw() {}, clearIssue() {} } });
+    Object.assign(editor, { map: { draw() {}, clearIssue() {}, world: (x: number, y: number) => [x, y] } });
     t.mock.method(editor, "reconcileProject", () => {});
     t.mock.method(editor.files, "remember", () => {});
     await editor.replace(d, true);
@@ -603,8 +603,8 @@ function islandDesign() {
         for (const node of outline.curve.nodes) node.id = prefix + node.id;
         c.outlines.push(outline);
     }
-    n.construction = c;
-    n.function = { type: "slope", kind: "path", lines: [{ curve: openCurve([{ p: [-15, -27], h: 2 }, { p: [5, -27], h: 7 }]) }], center: [0, 0], radius: 5, value: 2, rate: -.2 };
+    n.construction = fixtureConstruction(d, c);
+    n.function = fixtureFunction(d, { type: "slope", kind: "path", lines: [{ curve: openCurve([{ p: [-15, -27], h: 2 }, { p: [5, -27], h: 7 }]) }], center: [0, 0], radius: 5, value: 2, rate: -.2 });
     return d;
 }
 
@@ -650,12 +650,12 @@ test("Dragging nested outlines moves only their own geometry and preserves selec
     const ridges = [
         [[-14, -12], [-5, -8]], [[-26, -12], [-5, -12]], [[-28, -27], [8, -27]], [[-28, -25], [14, -25]]
     ] as [number, number][][];
-    design.geoNodes[1].function = {
+    design.geoNodes[1].function = fixtureFunction(design, {
         type: "mountain", valleys: [],
         ridges: ridges.map((points, i) => ({ curve: withNodeSlope(openCurve(points.map((p, j) => ({ p, h: 5 + j })), "corner", i + "-ridge-"), 1) })),
         peaks: [{ at: [-8, -7], height: 12, radius: 8, noise: 0, scale: 1 },
             { at: [0, -28], height: 9, radius: 6, noise: 0, scale: 1 }]
-    };
+    });
     const d = parseDesign(design, true);
     t.mock.method(editor, "reconcileProject", () => {});
     t.mock.method(editor.files, "remember", () => {});
@@ -744,7 +744,7 @@ test("Coordinate slots use design grid and sample bounds while longer readings s
 test("Removing a segment asks before leaving a strip reference to its removed endpoint", async t => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
     const editor = new Editor(testTerrainClient()), d = syntheticDesign();
-    d.geoNodes.push(layer("S", { type: "strip", of: ["T"], widths: [1, 1], range: { from: "0", to: "1" } }, { type: "flat", amount: 1 }));
+    d.geoNodes.push(addLayer(d, "S", { type: "strip", of: ["T"], widths: [1, 1], range: { from: "0", to: "1" } }, { type: "flat", amount: 1 }));
     t.mock.method(editor, "reconcileProject", () => {});
     t.mock.method(editor.files, "remember", () => {});
     await editor.replace(d, true);
@@ -782,15 +782,21 @@ test("Mark follow changes preserve the displayed anchor and screen coordinates i
     await editor.replace(d, true);
     editor.history = new History(d);
     await editor.addMark("scale", [64, 80]);
-    const id = editor.selection!.id, anchor = editor.project.design.marks[0].point;
-    assert.deepEqual(map.markScreen(editor.project.design.marks[0]), anchor);
+    const id = editor.selection!.id, anchor = editor.project.design.marks[0].screen;
+    assert.deepEqual(map.markScreen(editor.project.resolved.marks[0]), anchor);
     map.zoomAt(2);
     map.center = [16, 18]; map.width = 1900;
-    assert.deepEqual(map.markScreen(editor.project.design.marks[0]), anchor);
+    assert.deepEqual(map.markScreen(editor.project.resolved.marks[0]), anchor);
     await editor.setMarkFollow(id, "map");
-    const mark = editor.project.design.marks[0];
+    const mark = editor.project.resolved.marks[0];
     assert.notDeepEqual(mark.point, anchor);
     assert(distance(map.markScreen(mark), anchor) < 1e-9);
     await editor.setMarkFollow(id, "screen");
-    assert(distance(editor.project.design.marks[0].point, anchor) < 1e-9);
+    assert(distance(editor.project.design.marks[0].screen, anchor) < 1e-9);
+
+    await editor.addMark("text", [1, 45]);
+    const text = editor.project.resolved.marks.at(-1)!;
+    const itsAnchor = map.visibleMarkPoint(text);
+    await editor.setMarkFollow(text.id, "screen");
+    assert.deepEqual(map.visibleMarkPoint(editor.project.resolved.marks.at(-1)!), itsAnchor);
 });

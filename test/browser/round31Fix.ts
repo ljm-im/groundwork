@@ -1,10 +1,11 @@
+import { resolveDesign } from "../../src/core/design/parameters.ts";
 import assert from "node:assert/strict";
 import { geometryPath } from "../../src/core/edit/geoControls.ts";
 import { pathHandle } from "../../src/core/design/path.ts";
 import { type PlacedGeoNode, type Point } from "../../src/core/design/v5.ts";
 import { distance, mixPoint } from "../../src/core/math/geometry.ts";
 import { mapColors, overlay, type Theme } from "../../src/render/palette.ts";
-import { withNodeSlope, layer, openCurve, rect, syntheticDesign } from "../scenarios.ts";
+import { fixtureMark, fixtureSection, withNodeSlope, addLayer, openCurve, rect, syntheticDesign } from "../scenarios.ts";
 import { withCurveMap } from "./curveMapFixture.ts";
 
 function scene() {
@@ -17,8 +18,8 @@ function scene() {
     const ridge = openCurve([{ p: [-43, 25], h: 12 }, { p: [-26, 28], h: 14 }, { p: [-9, 27], h: 7 }]);
     Object.assign(ridge.nodes[1], { mode: "manual", in: [-3, -9 / 17], out: [3, 9 / 17] });
     design.geoNodes = [
-        layer("G", rect(-57, -45, 57, 45), { type: "ground", value: 3 }),
-        layer("A", outlines, {
+        addLayer(design, "G", rect(-57, -45, 57, 45), { type: "ground", value: 3 }),
+        addLayer(design, "A", outlines, {
             type: "mountain", valleys: [],
             ridges: [
                 { curve: withNodeSlope(openCurve([{ p: [-38, -19], h: 4 }, { p: [-13, -18], h: 15 }], "corner", "outer-ridge-"), 1) },
@@ -28,15 +29,15 @@ function scene() {
             peaks: [{ at: [-22, 1], height: 11, radius: 8, noise: 0, scale: 1 },
                 { at: [-40, 9], height: 12, radius: 9, noise: 0, scale: 1 }]
         }),
-        layer("M", rect(-48, 19, 31, 40), {
+        addLayer(design, "M", rect(-48, 19, 31, 40), {
             type: "mountain", valleys: [],
             ridges: [{ curve: withNodeSlope(ridge, 1) }],
             peaks: [{ at: [20, 31], height: 17, radius: 12, noise: 0, scale: 1 }]
         }),
-        { ...layer("D", rect(23, -28, 43, -15), { type: "flat", amount: 3 }), disabled: true }
+        { ...addLayer(design, "D", rect(23, -28, 43, -15), { type: "flat", amount: 3 }), disabled: true }
     ];
-    design.marks = [{ id: "N", kind: "text", label: "标记 A", follow: "map", point: [25, -6] }];
-    design.sections = [{ id: "Q", label: "剖面线 A", points: [[-18, -32], [41, -32]] }];
+    design.marks = [fixtureMark(design, { id: "N", kind: "text", label: "标记 A", follow: "map", point: [25, -6] })];
+    design.sections = [fixtureSection(design, { id: "Q", label: "剖面线 A", points: [[-18, -32], [41, -32]] })];
     return design;
 }
 
@@ -270,7 +271,7 @@ export async function checkRound31Fix(url: string) {
         const outlines = await evaluate(() => window.curveMapProbe.pathStrokes);
         assert(outlines.some(s => s.color === accent && Math.abs(s.width - overlay.selectedWidth) < .001));
 
-        const [start, end] = original.sections[0].points;
+        const [start, end] = resolveDesign(original).sections[0].points;
         await assertHandle(start, "normal");
         await moveMap(start);
         assert.equal((await frame()).hovered?.index, 0);

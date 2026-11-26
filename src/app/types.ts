@@ -19,8 +19,8 @@ interface GestureStart { screen: Point; pointer: number; changed?: boolean }
 export type Gesture = GestureStart & (
   { preview: (at: Point) => ControlPreview; selection: Selection; control: GeoControl; independent: boolean; origin: Point; snap?: DragSnap; target?: Point } |
   { label: LabelTarget; offset: Point } |
-  { section: Section } |
+  { section: Section<"resolved"> } |
   { pan: "middle" | "space" | "stationary"; center: number[]; click?: () => void } |
-  { handle: Handle; offset: Point; snap?: DragSnap }
+  { handle: Handle; offset: Point; snap?: DragSnap; pointPreview?: (at: Point) => ControlPreview }
 );
 export const errorText = (error: unknown) => error instanceof Error ? error.message : String(error);

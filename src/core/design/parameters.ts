@@ -1,6 +1,6 @@
 import { readAt, writeAt, type Address } from "./address.ts";
 import { expandKeys, functionParameters, functionTable, markParameters, matchesKey, parameterDefault, stripWidths, type NumericParameter } from "./functionTable.ts";
-import { curveGraph, curveParameterName, isCurveRef, nodeQuantityPath, resolvedCurvePath, type HolderSlot } from "./curveReferences.ts";
+import { curveGraph, curveParameterName, nodeQuantityPath, placedPoint, pointHolderSlots, resolvedCurvePath, type HolderSlot } from "./curveReferences.ts";
 import { interpolates, lineProfile, profileMix } from "./polyline.ts";
 import { evaluate, fieldValue, references, type Value } from "./expression.ts";
 import { check, DesignError, quotedLocation, type DesignProblem, type Location } from "./problems.ts";
@@ -76,8 +76,8 @@ export function parameters(d: Design, geoIndex?: number, curves = curveGraph(d),
                 const owned = curves.holder(slot.holder);
                 if (owned !== slot.holder) continue;
                 const ease = owned.kind === "line" ? !!owned.value.ease : true;
-                const referenced = isCurveRef(curves.value(slot)), line = curves.materialize(slot);
-                const keyFor = (j: number): Address => [...lineKey, ...nodeQuantityPath(j, line.nodes[j].id, quantity, referenced)];
+                const line = curves.materialize(slot);
+                const keyFor = (j: number): Address => [...lineKey.slice(0, -1), ...nodeQuantityPath(line.nodes[j].id, quantity)];
                 let profile: ReturnType<typeof lineProfile> | undefined;
                 for (const [j, v] of line.nodes.entries()) {
                     const key = keyFor(j), resolvedAt = [...resolvedCurvePath(slot).slice(2), "nodes", j, quantity];
@@ -239,11 +239,19 @@ export function resolveDesign(source: Design, slots?: Map<string, Slot>, curves 
         else for (const p of functionTable.slope.parameters) if (p.variant === "radial" && p.type === "number")
             replace(["geoNodes", i, "function", ...p.key], parameterDefault(p, source.geoNodes[i].id));
     }
+    for (const slot of pointHolderSlots(source)) {
+        const point = placedPoint(source, slot.value, slot.location);
+        if (slot.location.kind === "mark") {
+            const { screen, ...mark } = source.marks[slot.location.index!];
+            replace(slot.path.slice(0, -1), { ...mark, point: mark.follow === "screen" ? [...screen] : point });
+        }
+        else replace(slot.path, point);
+    }
     for (const [i, mark] of source.marks.entries()) if (mark.kind === "scale" && mark.follow === "screen")
         replace(["marks", i, "length"], markParameters.scale.default);
     for (const slot of all.values()) if (slot.output) for (const path of resolvedPaths(slot))
         if (readAt(design, path) !== undefined) replace(path, undefined);
     for (const [slot, result] of resolveParameterValues(all.values(), get)) for (const path of resolvedPaths(slot))
         if (result !== readAt(design, path)) replace(path, result);
-    return design as ResolvedDesign;
+    return design as unknown as ResolvedDesign;
 }

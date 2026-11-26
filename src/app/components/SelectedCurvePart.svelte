@@ -5,7 +5,7 @@
     {@const id = curve.nodes[index].id}
     {@const step = segment ? segmentNeighbor : neighbor}
     {@const removable = segment ? segmentRemovalIndex(curve, index) !== undefined : canRemoveNode(curve)}
-    <Subitem label={name + " " + (index + 1)} inset curveNode={segment ? undefined : id} curveSegment={segment ? id : undefined}
+    <Subitem label={name + " " + (index + 1)} {inset} flush={!inset} curveNode={segment ? undefined : id} curveSegment={segment ? id : undefined}
         onmouseenter={() => editor.hoverSelection(editor.selection ?? undefined, control)} onmouseleave={() => editor.hoverSelection()}>
         {#snippet actions()}
             {#if !segment && isEndpoint(curve, index)}
@@ -34,6 +34,6 @@
     import CurvePartProperties from "./CurvePartProperties.svelte";
     import Icon from "./Icon.svelte";
     import Subitem from "./Subitem.svelte";
-    let { editor, curve, path, values }: { editor: session.Editor; curve: Curve; path: number; values?: Snippet<[number, string]> } = $props();
+    let { editor, curve, path, values, inset = true }: { editor: session.Editor; curve: Curve; path: number; inset?: boolean; values?: Snippet<[number, string]> } = $props();
     let control = $derived(editor.vertex);
 </script>

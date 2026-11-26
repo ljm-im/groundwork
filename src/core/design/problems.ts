@@ -1,7 +1,7 @@
 
 import { jsonPath, type Address } from "./address.ts";
 
-const collections = { geo: "geoNodes", input: "inputs", field: "fields", curve: "curves", mark: "marks", section: "sections" } as const;
+const collections = { geo: "geoNodes", input: "inputs", field: "fields", geometry: "geometry", mark: "marks", section: "sections" } as const;
 export type Location = { kind: keyof typeof collections; id: string; index?: number; path: Address } | { kind: "project"; path: Address };
 export type DesignProblem = { message: string; location?: Location };
 

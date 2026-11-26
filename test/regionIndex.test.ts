@@ -7,7 +7,7 @@ import { type Construction, type Point, type Strip } from "../src/core/design/v5
 import { clamp, createGrid, distance, eachCell, mixPoint, projection } from "../src/core/math/geometry.ts";
 import { indexSegments } from "../src/core/math/segmentIndex.ts";
 import { random } from "../src/core/math/noise.ts";
-import { layer, polygon, rect, resolvedRect, syntheticDesign } from "./scenarios.ts";
+import { addLayer, polygon, rect, resolvedRect, syntheticDesign } from "./scenarios.ts";
 
 function scan(p: Point, edges: Segment[], radius: number) {
     let best = Infinity, index = -1, at: Point | undefined;
@@ -70,18 +70,20 @@ test("Strip cross sections preserve the projected point and normal at equal dist
 
 test("A strip range takes the first outline containing both of its node IDs", () => {
     const d = syntheticDesign();
-    d.curves.A = { label: "A", curve: rect(0, 0, 6, 3).outlines[0].curve };
-    const first = { curve: { ref: "{curve:A}" }, offset: [-12, 4] as Point }, second = { curve: { ref: "{curve:A}" }, offset: [8, -9] as Point };
+    d.geometry.A = { label: "A", listed: true, curve: rect(0, 0, 6, 3).outlines[0].curve };
+    const first = { curve: "A", offset: [-12, 4] as Point }, second = { curve: "A", offset: [8, -9] as Point };
     const outlines = [first, second];
-    d.geoNodes.push(layer("A", { type: "outline", outlines }, { type: "flat", amount: 1 }),
-        layer("B", { type: "strip", of: ["A"], widths: [1, 2], range: { from: "0", to: "1" } }, { type: "blend" }));
+    d.geoNodes.push(addLayer(d, "A", { type: "outline", outlines }, { type: "flat", amount: 1 }),
+        addLayer(d, "B", { type: "strip", of: ["A"], widths: [1, 2], range: { from: "0", to: "1" } }, { type: "blend" }));
     const spine = () => {
         const [source, strip] = resolveDesign(parseDesign(d)).geoNodes.slice(-2);
         const upper = makeShape(source, new Map(), tolerance);
         return makeShape(strip, new Map([["A", upper]]), tolerance).spine!.map(({ a, b }) => [a, b]);
     };
     assert.deepEqual(spine(), [[[-12, 4], [-6, 4]]]);
-    outlines.reverse();
+    const source = d.geoNodes.at(-2)!;
+    assert(source.construction.type === "outline");
+    source.construction.outlines.reverse();
     assert.deepEqual(spine(), [[[8, -9], [14, -9]]]);
 });
 

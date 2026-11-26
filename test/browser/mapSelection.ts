@@ -1,3 +1,4 @@
+import { resolveDesign } from "../../src/core/design/parameters.ts";
 import assert from "node:assert/strict";
 import { type Design, type Point } from "../../src/core/design/v5.ts";
 import { distance, mixPoint } from "../../src/core/math/geometry.ts";
@@ -79,7 +80,7 @@ export async function checkMapSelection(url: string) {
         await key("Escape");
         await panel("marks");
         await show(section);
-        for (const p of d.sections[0].points) assert(await inMap(p));
+        for (const p of resolveDesign(d).sections[0].points) assert(await inMap(p));
         await show(mapMark);
         const mapShown = await frame(), ruler = mapShown.marks.find(m => m.id === "M")!;
         assert(ruler.box[0] >= 0 && ruler.box[1] >= 0 && ruler.box[2] <= mapShown.width && ruler.box[3] <= mapShown.height);
@@ -149,7 +150,7 @@ export async function checkMapSelection(url: string) {
             assert.equal(f.geometry?.index, index);
         }
         await tap([-35, 25]); assert.equal((await frame()).geometry?.index, -1);
-        assert.equal(await text(".geometry-box[aria-label=山脊线][aria-pressed=true]"), "曲线（8 个节点）");
+        assert.match(await text(".geometry-box[aria-label=山脊线][aria-pressed=true]"), /^曲线 \d+$/);
         await tap([30, 37]);
         assert.equal((await frame()).selection?.id, "M");
         assert.deepEqual((await frame()).geometry, { kind: "outline", index: 0 });
@@ -161,11 +162,11 @@ export async function checkMapSelection(url: string) {
             return [...ctx.getImageData(Math.round(x - 46 * scale), Math.round(y - 18 * scale), 1, 1).data].slice(0, 3);
         }).then(c => c.map(n => n.toString(16).padStart(2, "0")).join("")), mapColors.light.bgPanel.slice(1));
 
-        await tap(original.sections[0].points[0]);
+        await tap(resolveDesign(original).sections[0].points[0]);
         assert.equal((await frame()).selection?.index, 0);
         await drag(intersection, 0, assertSectionStroke);
         assert.deepEqual((await frame()).selection, { kind: "section", id: "Q" });
-        translated(original.sections[0].points, (await authored()).sections[0].points, dx);
+        translated(resolveDesign(original).sections[0].points, resolveDesign(await authored()).sections[0].points, dx);
         await assertSectionStroke();
         await undo();
         const originalLine = await curve();
@@ -184,13 +185,13 @@ export async function checkMapSelection(url: string) {
 interface LineDragFixture extends Pick<Chromium, "click"> {
     authored: () => Promise<Design>;
     drag: (a: Point, b: Point, preview?: () => Promise<void>) => Promise<void>;
-    frame: () => Promise<{ scale: number; section?: Section["points"]; selected?: string; vertex?: unknown; ridgePreview?: Curve }>;
+    frame: () => Promise<{ scale: number; section?: Section<"resolved">["points"]; selected?: string; vertex?: unknown; ridgePreview?: Curve }>;
     mountain: GeoNode;
     paint: () => Promise<void>;
     ridge: () => Promise<Curve>;
     saved: () => Promise<void>;
     screen: (point: Point) => Promise<Point>;
-    section: () => Promise<Section["points"]>;
+    section: () => Promise<Section<"resolved">["points"]>;
     text: (selector: string) => Promise<string>;
     undo: () => Promise<void>;
 }

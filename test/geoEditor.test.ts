@@ -1,16 +1,17 @@
+import { placedPoint } from "../src/core/design/curveReferences.ts";
 import { testTerrainClient } from "./computeFixture.ts";
 import { test } from "node:test";
 import { bindField, bindHeight, resolved } from "./expressionHelpers.ts";
 import assert from "node:assert/strict";
 import { fixtureOptions, readFixture } from "../configs/read-fixture.ts";
-import { literalCurve, syntheticDesign, rect, layer } from "./scenarios.ts";
+import { fixtureMark, literalCurve, syntheticDesign, rect, addLayer } from "./scenarios.ts";
 import { type Design, type GeoFunction, type Point } from "../src/core/design/v5.ts";
 import { resolveDesign } from "../src/core/design/parameters.ts";
 import { parseDesign, serializeDesign } from "../src/core/design/model.ts";
 import { defaultInputRange } from "../src/core/design/defaults.ts";
 import { History } from "../src/core/edit/history.ts";
 import { addField, addInput, copyGeo, createStrip, removalUses, removalUseName, defaultFunction, deleteGeo, stripUsers, enableGeo,
-    nodeIds, rangeUsers, removeDeclaration, reorderGeo, stripRange } from "../src/core/edit/geoNodes.ts";
+    nodeIds, rangeUsers, removeDeclaration, reorderGeo, stripRange, holdPoint, removeUnusedGeometry } from "../src/core/edit/geoNodes.ts";
 import { arcHandle, insertPathNode, moveHandle, penNode, setNodeMode, setSegment, shapePath } from "../src/core/edit/paths.ts";
 import { defaultArcBulge, flattenPath, segmentType } from "../src/core/design/path.ts";
 import { copyGeometryItem, geoControls, commitControl, removeGeometryItem } from "../src/core/edit/geoControls.ts";
@@ -24,8 +25,9 @@ import { readProject, readZip } from "./exportFiles.ts";
 import { distance, mixPoint } from "../src/core/math/geometry.ts";
 
 function historyEdit(d: Design, edit: () => void) {
-    const before = serializeDesign(d), history = new History(d);
+    const original = structuredClone(d), before = serializeDesign(d), history = new History(d);
     edit();
+    removeUnusedGeometry(original, d);
     const after = serializeDesign(d);
     assert(history.record(d), "one changed state");
     assert.equal(serializeDesign(history.step(false)), before);
@@ -41,7 +43,7 @@ test("Closed tools add one unit to height and insert above the selection with on
         const t = generateTerrain(d), make = draft(tool, { ids: [ground.id], start: [2, 2], radius: [5, 4], cursor: [2, 6] });
         make.nodes = [penNode("", [1, 1]), penNode("", [5, 1], [6, 2]), penNode("", [4, 6])];
         historyEdit(d, () => {
-            const n = finishDraft(d, t, make), path = (n.construction.type === "outline" ? literalCurve(n.construction.outlines[0]) : undefined)!;
+            const n = finishDraft(d, t, make), path = (n.construction.type === "outline" ? literalCurve(d, n.construction.outlines[0]) : undefined)!;
             assert.deepEqual(d.geoNodes, [ground, n, terrace]);
             assert.equal(n.field, "height"); assert.deepEqual(n.function, { type: "flat", amount: 1, feather: 0 });
             assert(path.closed);
@@ -116,7 +118,7 @@ test("Declarations report all writers, nested inputs and marks, and bindings ret
     historyEdit(d, () => {
         field = addField(d);
     });
-    const n = d.geoNodes[1], fieldBase = layer("F", d.geoNodes[0].construction, { type: "ground", value: 3 }, field);
+    const n = d.geoNodes[1], fieldBase = addLayer(d, "F", d.geoNodes[0].construction, { type: "ground", value: 3 }, field);
     d.geoNodes.unshift(fieldBase);
     historyEdit(d, () => {
         n.function = { type: "flat", amount: bindHeight(variable) };
@@ -135,7 +137,7 @@ test("Declarations report all writers, nested inputs and marks, and bindings ret
     historyEdit(d, () => {
         assert(n.function.type === "noise"); n.function.amplitude = bindField(field, .5, 2);
     });
-    const cover = layer("Q", rect(-5, -5, 5, 5), { type: "flat", amount: 17 }); cover.field = field;
+    const cover = addLayer(d, "Q", rect(-5, -5, 5, 5), { type: "flat", amount: 17 }); cover.field = field;
     d.geoNodes.push(cover);
     assert.equal(new Project(d).terrain.fields[field].values.includes(20), true);
     historyEdit(d, () => {
@@ -143,8 +145,8 @@ test("Declarations report all writers, nested inputs and marks, and bindings ret
     });
     d.geoNodes.pop();
     d.geoNodes.shift();
-    d.geoNodes.push(layer("B", rect(1, 1, 8, 8), { type: "mountain", valleys: [], ridges: [], peaks: [{ at: [2, 2], height: bindHeight(variable), radius: 3, scale: 1, noise: 0 }], floor: bindHeight(variable) }));
-    d.marks.push({ id: "C", label: "C", kind: "text", point: [2, 2], follow: "map", elevation: bindHeight(variable), showElevation: true });
+    d.geoNodes.push(addLayer(d, "B", rect(1, 1, 8, 8), { type: "mountain", valleys: [], ridges: [], peaks: [{ at: [2, 2], height: bindHeight(variable), radius: 3, scale: 1, noise: 0 }], floor: bindHeight(variable) }));
+    d.marks.push(fixtureMark(d, { id: "C", label: "C", kind: "text", point: [2, 2], follow: "map", elevation: bindHeight(variable), showElevation: true }));
     n.function = { type: "noise", amplitude: bindField(field), scale: 3 }; n.field = field;
     for (const [kind, id, count] of [["input", variable, 3], ["field", field, 2]] as const) {
         const uses = removalUses(d, kind, id).map(removalUseName), before = serializeDesign(d);
@@ -157,13 +159,16 @@ test("Declarations report all writers, nested inputs and marks, and bindings ret
     assert.throws(() => removeDeclaration(d, "field", "height"), /内置/);
 });
 
-test("Copies regenerate paths and preserve references, geometry moves together and range damage stays repairable", () => {
-    const d = syntheticDesign(), n = d.geoNodes[1], path = (n.construction.type === "outline" ? literalCurve(n.construction.outlines[0]) : undefined)!;
+test("Copies preserve node IDs and references, geometry moves together and range damage stays repairable", () => {
+    const d = syntheticDesign(), n = d.geoNodes[1], path = (n.construction.type === "outline" ? literalCurve(d, n.construction.outlines[0]) : undefined)!;
     const strip = createStrip(d, [n.id], { from: path.nodes[0].id, to: path.nodes[2].id });
     historyEdit(d, () => {
-        const copy = copyGeo(d, n), originalIds = d.geoNodes.filter(v => v !== copy).flatMap(v => (v.construction.type === "outline" ? literalCurve(v.construction.outlines[0]) : undefined)?.nodes.map(v => v.id) ?? []);
+        const copy = copyGeo(d, n);
+        assert(copy.construction.type === "outline" && n.construction.type === "outline");
         assert.notEqual(copy.id, n.id); assert.deepEqual(copy.function, n.function); assert.equal(copy.label, n.label + " 副本");
-        assert((copy.construction.type === "outline" ? literalCurve(copy.construction.outlines[0]) : undefined)!.nodes.every(v => !originalIds.includes(v.id))); assert.equal(d.geoNodes[d.geoNodes.indexOf(n) + 1], copy);
+        assert.notDeepEqual(copy.construction, n.construction);
+        assert.deepEqual(literalCurve(d, copy.construction.outlines[0]), path);
+        assert.equal(d.geoNodes[d.geoNodes.indexOf(n) + 1], copy);
         assert.deepEqual(stripUsers(d, n.id), [strip]); assert.deepEqual(stripUsers(d, copy.id), []);
     });
     historyEdit(d, () => {
@@ -177,9 +182,10 @@ test("Copies regenerate paths and preserve references, geometry moves together a
     assert.throws(() => parseDesign(d), /range.*找不到/);
     const m = new Project(parseDesign(d, true));
     assert.equal(m.issues.filter(i => i.kind === "geo-reference").length, 2);
-    n.function = { type: "slope", kind: "radial", lines: [], center: [1, 2], radius: 2, rate: .1, value: 3 };
+    n.function = { type: "slope", kind: "radial", lines: [], center: holdPoint(d, [1, 2]), radius: 2, rate: .1, value: 3 };
     historyEdit(d, () => {
-        commitControl(d, { kind: "geoNode", id: n.id }, { role: "body", path: 0, index: 0, point: [0, 0] }, [4, 5], false); assert(n.function.type === "slope" && n.function.kind === "radial"); assert.deepEqual(n.function.center, [5, 7]);
+        commitControl(d, { kind: "geoNode", id: n.id }, { role: "body", path: 0, index: 0, point: [0, 0] }, [4, 5], false); assert(n.function.type === "slope" && n.function.kind === "radial"); assert.deepEqual(placedPoint(d, n.function.center), [5, 7]);
+        assert.deepEqual(n.function.center.offset, [4, 5]);
     });
 });
 
@@ -190,28 +196,30 @@ test("Function defaults preserve construction and drawn geometry retains its aut
         { type: "islets", density: .5, reach: 12, threshold: .45, seaLevel: 0 }, { type: "flat", amount: 1, feather: 0 },
         { type: "noise", amplitude: 1, scale: 24, octaves: 5, feather: 0, warp: 0, warpScale: 60, carve: 0 }];
     for (const f of defaults) historyEdit(d, () => {
-        n.function = defaultFunction(f.type)!; assert.deepEqual(n.function, ["mountain", "cliff", "islets", "noise"].includes(f.type) ? { ...f, seed: "{input:seed}" } : f); assert.deepEqual(n.construction, construction);
+        n.function = defaultFunction(d, f.type)!; assert.deepEqual(n.function, ["mountain", "cliff", "islets", "noise"].includes(f.type) ? { ...f, seed: "{input:seed}" } : f); assert.deepEqual(n.construction, construction);
     });
-    for (const f of [{ type: "blend" }, { type: "split" }, { type: "batter", grade: .5 } ] as const) assert.deepEqual(defaultFunction(f.type), f);
-    const erosion = defaultFunction("erosion", { id: n.id }); assert(erosion?.type === "erosion" && erosion.strength === 1 && Number(erosion.droplets) > 0 && erosion.floor === -1000);
+    for (const f of [{ type: "blend" }, { type: "split" }, { type: "batter", grade: .5 } ] as const) assert.deepEqual(defaultFunction(d, f.type), f);
+    const erosion = defaultFunction(d, "erosion", { id: n.id }); assert(erosion?.type === "erosion" && erosion.strength === 1 && Number(erosion.droplets) > 0 && erosion.floor === -1000);
     const before = serializeDesign(d), pending = draft("shore", { owner: n.id });
     assert.equal(serializeDesign(d), before);
-    pending.nodes = (n.construction.type === "outline" ? literalCurve(n.construction.outlines[0]) : undefined)!.nodes.map(v => penNode("", [...v.p]));
+    pending.nodes = (n.construction.type === "outline" ? literalCurve(d, n.construction.outlines[0]) : undefined)!.nodes.map(v => penNode("", [...v.p]));
     historyEdit(d, () => {
         finishDraft(d, t, pending); assert(n.function.type === "coast" && n.function.roughness === 6);
     });
     historyEdit(d, () => {
-        n.function = defaultFunction("slope", { center: [-14, -8] });
+        n.function = defaultFunction(d, "slope", { center: [-14, -8] });
         finishDraft(d, t, { ...pending, tool: "slopeLine" });
         assert(n.function.type === "slope" && n.function.kind === "path");
-        const nodes = literalCurve(n.function.lines[0]).nodes;
-        assert.deepEqual(nodes.map(v => v.interpolate?.includes("h") ?? false), [false, true, true, false]);
-        assert.deepEqual(nodes.map(v => v.h), [0, .7, 1.3, 2]);
+        const line = n.function.lines[0], nodes = literalCurve(d, line).nodes;
+        assert("curve" in line);
+        assert.deepEqual(nodes.map(v => line.interpolate?.[v.id]?.includes("h") ?? false), [false, true, true, false]);
+        assert.deepEqual(nodes.map(v => line.h?.[v.id]), [0, .7, 1.3, 2]);
     });
     historyEdit(d, () => {
-        n.function = defaultFunction("slope", { center: [0, 0], slope: "radial" });
+        n.function = defaultFunction(d, "slope", { center: [0, 0], slope: "radial" });
         finishDraft(d, t, { ...pending, tool: "center" });
-        assert.deepEqual(n.function, { type: "slope", kind: "radial", lines: [], center: pending.nodes[0].p, radius: 5, value: 2, rate: -.2 });
+        assert(n.function.type === "slope");
+        assert.deepEqual({ ...n.function, center: placedPoint(d, n.function.center) }, { type: "slope", kind: "radial", lines: [], center: pending.nodes[0].p, radius: 5, value: 2, rate: -.2 });
     });
 });
 
@@ -232,18 +240,18 @@ for (const construction of ["outline", "strip"] as const) test("Default shore an
         assert.equal(editor.geoDraft, undefined);
         assert.equal(f.type, type);
         if (f.type === "coast") {
-            assert(literalCurve(f.shore).nodes.length >= 4);
-            if (construction === "outline") assert.deepEqual(literalCurve(f.shore).nodes.map(v => v.p), [[-20.3, -13.4], [-7.7, -13.4], [-7.7, -2.5999999999999996], [-20.3, -2.5999999999999996]]);
-            else assert.notDeepEqual(literalCurve(f.shore).nodes.map(v => v.p), source.construction.type === "outline" && literalCurve(source.construction.outlines[0]).nodes.map(v => v.p));
+            assert(literalCurve(editor.project.design, f.shore).nodes.length >= 4);
+            if (construction === "outline") assert.deepEqual(literalCurve(editor.project.design, f.shore).nodes.map(v => v.p), [[-20.3, -13.4], [-7.7, -13.4], [-7.7, -2.5999999999999996], [-20.3, -2.5999999999999996]]);
+            else assert.notDeepEqual(literalCurve(editor.project.design, f.shore).nodes.map(v => v.p), source.construction.type === "outline" && literalCurve(d, source.construction.outlines[0]).nodes.map(v => v.p));
         }
         else {
             assert(f.type === "slope" && f.kind === "path");
             assert.deepEqual(f.lines, []);
-            if (construction === "outline") assert.deepEqual(f.center, [-14, -8]);
+            if (construction === "outline") assert.deepEqual(placedPoint(editor.project.design, f.center), [-14, -8]);
             await editor.switchFunction(n, "slope", "radial");
             const radial = editor.project.design.geoNodes.find(v => v.id === n.id)!.function;
             assert(radial.type === "slope" && radial.kind === "radial");
-            if (construction === "outline") assert.deepEqual(radial.center, [-14, -8]);
+            if (construction === "outline") assert.deepEqual(placedPoint(editor.project.design, radial.center), [-14, -8]);
             await editor.navigate(false);
         }
         assert.equal(editor.history.index, 1);
@@ -255,12 +263,12 @@ for (const construction of ["outline", "strip"] as const) test("Default shore an
 test("Erosion defaults match the example parameters with unit strength", fixtureOptions("round14-coast.json"), async () => {
     const d = parseDesign(await readFixture("round14-coast.json"));
     const { id, function: f } = d.geoNodes.find(n => n.function.type === "erosion")!;
-    assert.deepEqual(defaultFunction("erosion", { id }), { ...f, strength: 1, floor: -1000 });
+    assert.deepEqual(defaultFunction(d, "erosion", { id }), { ...f, strength: 1, floor: -1000 });
 });
 
 test("Disabled layers match deletion byte for byte and active strips can still use disabled outlines", async () => {
     const d = syntheticDesign(), n = d.geoNodes[1], cache = new TerrainCache();
-    const extra = layer("X", rect(1, 3, 6, 8), { type: "ground", value: 9 }); d.geoNodes.push(extra); d.fields.f = { label: "F" };
+    const extra = addLayer(d, "X", rect(1, 3, 6, 8), { type: "ground", value: 9 }); d.geoNodes.push(extra); d.fields.f = { label: "F" };
     function same(a: ReturnType<typeof generateTerrain>, b: ReturnType<typeof generateTerrain>) {
         assert.deepEqual(a.fields.height.defined, b.fields.height.defined);
         for (const field of Object.keys(a.fields)) {
@@ -290,7 +298,7 @@ test("Disabled layers match deletion byte for byte and active strips can still u
 });
 
 test("Curves, handles, tangency and insertion use the editable geometry", () => {
-    const d = syntheticDesign(), n = d.geoNodes[1], path = (n.construction.type === "outline" ? literalCurve(n.construction.outlines[0]) : undefined)!;
+    const d = syntheticDesign(), n = d.geoNodes[1], path = (n.construction.type === "outline" ? literalCurve(d, n.construction.outlines[0]) : undefined)!;
     historyEdit(d, () => setSegment(path, 1, "tangent"));
     assert.equal(segmentType(path, 1), "arc"); assert(Math.abs(path.nodes[1].bulge! - 1) < 1e-6);
     historyEdit(d, () => {
@@ -313,7 +321,7 @@ test("Curves, handles, tangency and insertion use the editable geometry", () => 
 
 test("Removing a mountain member keeps references to siblings and reports references to the removed member", () => {
     const d = syntheticDesign(), m = d.geoNodes[1];
-    m.function = { type: "mountain", valleys: [], ridges: [], peaks: [2, 4, 6].map(h => ({ at: [h, 3], height: h, radius: 2, scale: 3, noise: 0 })) };
+    m.function = { type: "mountain", valleys: [], ridges: [], peaks: [2, 4, 6].map(h => ({ at: holdPoint(d, [h, 3]), height: h, radius: 2, scale: 3, noise: 0 })) };
     d.inputs.B = { range: defaultInputRange("B"), value: 1 };
     const v: Design = d;
     v.inputs.B.value = "{geo:T.peaks.2.height} - {geo:T.peaks.0.radius}";
@@ -328,14 +336,16 @@ test("Removing a mountain member keeps references to siblings and reports refere
 test("Copying a mountain member preserves its geometry and the targets of existing expressions", () => {
     const d = syntheticDesign(), n = d.geoNodes[1];
     n.function = { type: "mountain", valleys: [], ridges: [], peaks: [
-        { at: [-18, -10], height: 6, radius: "{geo:T.peaks.1.radius}", scale: 2, noise: 0 },
-        { at: [-12, -6], height: 7, radius: 3, scale: 2, noise: 0 }
+        { at: holdPoint(d, [-18, -10]), height: 6, radius: "{geo:T.peaks.1.radius}", scale: 2, noise: 0 },
+        { at: holdPoint(d, [-12, -6]), height: 7, radius: 3, scale: 2, noise: 0 }
     ] };
     d.inputs.B = { range: defaultInputRange("B"), value: 1 };
     const design: Design = d;
     design.inputs.B.value = "{geo:T.peaks.1.height}";
     copyGeometryItem(design, n, ["peaks"], 0);
-    assert.deepEqual(n.function.peaks[0], n.function.peaks[1]);
+    const [a, b] = n.function.peaks;
+    assert.notEqual(a.at.point, b.at.point);
+    assert.deepEqual({ ...a, at: placedPoint(d, a.at) }, { ...b, at: placedPoint(d, b.at) });
     assert.equal(n.function.peaks[0].radius, "{geo:T.peaks.2.radius}");
     assert.equal(design.inputs.B.value, "{geo:T.peaks.2.height}");
     assert.equal(new Project(design).resolved.inputs.B.value, 7);
@@ -344,7 +354,7 @@ test("Copying a mountain member preserves its geometry and the targets of existi
 test("The arc operation stores the default quarter-turn and an absent bulge leaves a line", () => {
     const d = syntheticDesign(), n = d.geoNodes[0], construction = n.construction;
     assert(construction.type === "outline");
-    const path = literalCurve(construction.outlines[0]), v = path.nodes[0];
+    const path = literalCurve(d, construction.outlines[0]), v = path.nodes[0];
     v.bulge = defaultArcBulge;
     const expected = flattenPath(path, .02), control = geoControls(resolveDesign(d).geoNodes[0]).find(h => h.role === "arc");
     assert(control);

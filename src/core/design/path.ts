@@ -61,51 +61,51 @@ function flattenArc(a: Point, b: Point, bulge: number, tolerance: number, out: P
     out.push(b);
 }
 
-export function neighbor(path: Curve<unknown>, i: number, step: -1 | 1): number | undefined {
+export function neighbor(path: Curve, i: number, step: -1 | 1): number | undefined {
     const j = i + step, count = path.nodes.length;
     return path.closed ? (j + count) % count : j >= 0 && j < count ? j : undefined;
 }
 
-export function segmentNeighbor(path: Curve<unknown>, i: number, step: -1 | 1) {
+export function segmentNeighbor(path: Curve, i: number, step: -1 | 1) {
     const next = neighbor(path, i, step);
     if (next !== undefined && neighbor(path, next, 1) !== undefined) return next;
 }
 
-export function autoHandle(path: Curve<unknown>, i: number, side: "in" | "out"): Point {
+export function autoHandle(path: Curve, i: number, side: "in" | "out"): Point {
     const { nodes } = path, prev = nodes[neighbor(path, i, -1) ?? i].p, next = nodes[neighbor(path, i, 1) ?? i].p;
     const sign = side === "in" ? -1 : 1;
     return [(next[0] - prev[0]) * sign / 6, (next[1] - prev[1]) * sign / 6];
 }
 
-export function hasHandleSide(path: Curve<unknown>, i: number, side: "in" | "out") {
+export function hasHandleSide(path: Curve, i: number, side: "in" | "out") {
     const adjacent = neighbor(path, i, side === "in" ? -1 : 1);
     return adjacent !== undefined && path.nodes[side === "in" ? adjacent : i].bulge === undefined;
 }
 
-export function handleOffset(path: Curve<unknown>, i: number, side: "in" | "out") {
+export function handleOffset(path: Curve, i: number, side: "in" | "out") {
     if (!hasHandleSide(path, i, side)) return;
     const node = path.nodes[i];
     return node.mode === "auto" ? autoHandle(path, i, side) : node[side];
 }
 
-export function pathHandle(path: Curve<unknown>, i: number, side: "in" | "out"): Point {
+export function pathHandle(path: Curve, i: number, side: "in" | "out"): Point {
     const { p } = path.nodes[i], offset = handleOffset(path, i, side);
     return offset ? [p[0] + offset[0], p[1] + offset[1]] : p;
 }
 
-export function segmentType(path: Curve<unknown>, i: number): SegmentType | undefined {
+export function segmentType(path: Curve, i: number): SegmentType | undefined {
     const next = neighbor(path, i, 1);
     if (next === undefined) return;
     if (path.nodes[i].bulge !== undefined) return "arc";
     return handleOffset(path, i, "out")?.some(Boolean) || handleOffset(path, next, "in")?.some(Boolean) ? "curve" : "line";
 }
 
-export function pathBezier(path: Curve<unknown>, i: number): Bezier {
+export function pathBezier(path: Curve, i: number): Bezier {
     const next = neighbor(path, i, 1)!;
     return [path.nodes[i].p, pathHandle(path, i, "out"), pathHandle(path, next, "in"), path.nodes[next].p];
 }
 
-function appendSegment(path: Curve<unknown>, i: number, j: number, tolerance: number, minDepth: number, segments: Segment[]) {
+function appendSegment(path: Curve, i: number, j: number, tolerance: number, minDepth: number, segments: Segment[]) {
     const v = path.nodes[i], next = path.nodes[j], points = [v.p];
     if (v.bulge !== undefined) flattenArc(v.p, next.p, v.bulge, tolerance, points);
     else if (segmentType(path, i) === "line") points.push(next.p);
@@ -116,13 +116,13 @@ function appendSegment(path: Curve<unknown>, i: number, j: number, tolerance: nu
     if (segments.length === start) segments.push({ a: v.p, b: next.p, from: v.id });
 }
 
-export function flattenSegment(path: Curve<unknown>, i: number, tolerance: number) {
+export function flattenSegment(path: Curve, i: number, tolerance: number) {
     const segments: Segment[] = [], j = neighbor(path, i, 1);
     if (j !== undefined) appendSegment(path, i, j, tolerance, 0, segments);
     return segments;
 }
 
-export function flattenPath(path: Curve<unknown>, tolerance: number, minDepth = 0) {
+export function flattenPath(path: Curve, tolerance: number, minDepth = 0) {
     const segments: Segment[] = [];
     for (let i = 0; i < path.nodes.length; i++) {
         const j = neighbor(path, i, 1);

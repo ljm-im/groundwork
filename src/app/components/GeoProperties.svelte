@@ -1,19 +1,18 @@
 {#snippet param(address: Address)}
     <Parameter {editor} node={n} {address} />
 {/snippet}
-{#snippet geometry(label: string, index: number, redraw: DrawTool, member?: number)}
+{#snippet geometry(label: string, id: string, index: number, redraw: DrawTool, member?: number)}
     {@const active = editor.geometry?.kind === "parameter" && editor.geometry.index === index}
-    <GeometryInput {label} {active} onclick={() => editor.focusGeometry({ kind: "parameter", index })}
+    <GeometryInput {label} {active} summary={d.geometry[id].label} onclick={() => editor.openPoint(id, { kind: "parameter", index })}
         onmouseenter={() => hover("parameter", index)} onmouseleave={clearHover}
         redraw={() => editor.setTool(redraw, n.id, member)} redrawing={editor.toolActive(redraw, n.id, member)} />
 {/snippet}
-{#snippet curveInput(label: string, curve: Curve, index: number, profile?: { group: ProfileGroup; index: number })}
+{#snippet curveInput(label: string, curve: ProfileCurve, index: number, profile?: { group: ProfileGroup; index: number })}
     {@const kind = index < 0 ? "curve" : "outline"}
     {@const slot = geometrySlot(d, n.id, index)!}
-    {@const referenced = isCurveRef(editor.curves.value(slot))}
-    <GeometryInput {label} icon={curve.closed ? "closedPath" : "curve"} count={curve.nodes.length}
+    <GeometryInput {label}
         active={editor.geometry?.kind === kind && editor.geometry.index === index}
-        onclick={() => editor.focusGeometry({ kind, index })} onmouseenter={() => hover(kind, index)} onmouseleave={clearHover}
+        onclick={() => editor.openCurve(slot)} onmouseenter={() => hover(kind, index)} onmouseleave={clearHover}
         redraw={() => editor.drawCurve(slot.key)} redrawing={editor.curveToolActive(slot.key)}
         reference={{ editor, slot, name: index >= 0 ? slot.holder?.label : label }} />
     {#if profile?.group === "lines"}
@@ -30,7 +29,7 @@
             {#if profile}
                 {@const quantities = nodeQuantities(profileGroups[profile.group].kind)}
                 {#each quantities as quantity (quantity)}
-                    {@const address = [profile.group, profile.index, "curve", ...nodeQuantityPath(i, id, quantity, referenced)]}
+                    {@const address = [profile.group, profile.index, ...nodeQuantityPath(id, quantity)]}
                     {@const label = quantity === "slope" ? "坡度" : profile.group === "lines" ? "增量" : "高度"}
                     {#if !needsNodeValue(curve, i)}
                         <CheckboxRow label={"覆盖" + label + "插值"} checked={!interpolates(curve.nodes[i], quantity)}
@@ -114,9 +113,9 @@
                     {:else if f.type === "coast" && p.key[0] === "shore"}
                         {@render curveInput(p.label, geometryPath(resolved, -1)!, -1)}
                     {:else if f.type === "coast"}
-                        {@render geometry(p.label, 0, "harbor")}
+                        {@render geometry(p.label, f.harbor.center.point, 0, "harbor")}
                     {:else if f.type === "slope"}
-                        {@render geometry(p.label, 0, "center")}
+                        {@render geometry(p.label, f.center.point, 0, "center")}
                     {/if}
                 {/each}
             </Part>
@@ -136,7 +135,7 @@
                         <Subitem label={"山峰 " + (j + 1)} open={editor.subitemOpen(n.id, "peaks", j)} onclick={() => editor.toggleSubitem(n.id, "peaks", j)}
                             onmouseenter={() => hover("parameter", f.ridges.length + j)} onmouseleave={clearHover}>
                             {#snippet actions()}{@render memberActions("peaks", j)}{/snippet}
-                            {@render geometry(geoParameter(n, ["function", "peaks", j, "at"])!.label, f.ridges.length + j, "peak", j)}
+                            {@render geometry(geoParameter(n, ["function", "peaks", j, "at"])!.label, f.peaks[j].at.point, f.ridges.length + j, "peak", j)}
                             {#each memberParameters("peaks", j) as key (key.join("."))}
                                 {@render param(key)}
                             {/each}
@@ -153,8 +152,8 @@
 <script lang="ts">
     import * as session from "../state/session.svelte.ts";
     import { allowedFunctions } from "../../core/edit/geoNodes.ts";
-    import { geometrySlot, isCurveRef, memberLabel, nodeQuantities, nodeQuantityPath, profileGroups, profileIndex, type FunctionMember, type ProfileGroup } from "../../core/design/curveReferences.ts";
-    import { type Curve, type GeoFunction, type Strip } from "../../core/design/v5.ts";
+    import { geometrySlot, memberLabel, nodeQuantities, nodeQuantityPath, profileGroups, profileIndex, type FunctionMember, type ProfileGroup } from "../../core/design/curveReferences.ts";
+    import { type ProfileCurve, type GeoFunction, type Strip } from "../../core/design/v5.ts";
     import { declarationEntries, isBuiltin } from "../../core/design/defaults.ts";
     import { canWrite, functionParameters, functionTable, isBuiltinFunction, smoothIncrement } from "../../core/design/functionTable.ts";
     import { geoAt } from "../state/geoTools.ts";

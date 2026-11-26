@@ -1,70 +1,47 @@
 import { readAt, writeAt, type Address } from "../design/address.ts";
-import { curveGraph, geometrySlot, isCurveRef, isHolderRef, nodeQuantities, nodeQuantityPath, translateCurve, type CurveSlot } from "../design/curveReferences.ts";
+import { curveGraph, geometrySlot, isHolderRef, nodeQuantities, nodeQuantityPath, refKey, translateCurve, type CurveSlot } from "../design/curveReferences.ts";
+import { references } from "../design/expression.ts";
 import { defaultNodeSlope, slopeEndpointValues } from "../design/functionTable.ts";
 import { expressionLookup, parameters, slotName, type Slot } from "../design/parameters.ts";
 import { interpolates, lineProfile, needsNodeValue, profileMix, setNodeInterpolation, writeCurveProfile } from "../design/polyline.ts";
-import { type Curve, type CurveNode, type Design, type NodeQuantity, type Point } from "../design/v5.ts";
+import { type Curve, type Design, type NodeQuantity, type Point, type ProfileCurve } from "../design/v5.ts";
+import { copyGeometry } from "./geoNodes.ts";
 import { type Selection } from "./types.ts";
 
 type Graph = ReturnType<typeof curveGraph>;
-type ValueAddress = { key: string; path: Address };
 type ProfileEdit = { insertAfter?: number; mergeAt?: number; extendFrom?: number; redraw?: (p: Point) => number };
 
-function valueAddress(slot: CurveSlot, index: number, id: string, q: NodeQuantity, referenced: boolean): ValueAddress {
-    const suffix = nodeQuantityPath(index, id, q, referenced);
-    return { key: slot.key + "." + suffix.join("."), path: [...slot.path, ...suffix] };
+function valueKey(slot: CurveSlot, id: string, q: NodeQuantity) {
+    return slot.holder!.key + "." + nodeQuantityPath(id, q).join(".");
 }
 
-function addressEdits(d: Design, graph: Graph, placements: CurveSlot[], previous: Curve, next: Curve,
-    change?: { placements: Set<CurveSlot>; referenced: boolean; discard?: Address }) {
-    const positions = new Map(next.nodes.map((n, i) => [n.id, i]));
-    const mapping = new Map<string, ValueAddress | undefined>();
-    for (const slot of placements) if (slot.holder) {
-        const referenced = isCurveRef(graph.value(slot));
-        const afterRef = change?.placements.has(slot) ? change.referenced : referenced;
-        for (const [i, { id }] of previous.nodes.entries()) for (const q of nodeQuantities(slot.holder.kind)) {
-            const j = positions.get(id), before = valueAddress(slot, i, id, q, referenced);
-            const after = j === undefined ? undefined : valueAddress(slot, j, id, q, afterRef);
-            if (before.key !== after?.key) mapping.set(before.key, after);
-        }
-    }
-    function rewrite(formula: string, missing: () => void) {
-        return formula.replace(/\{([^{}]+)\}/g, (text, key: string) => {
-            if (!mapping.has(key)) return text;
-            const after = mapping.get(key);
-            if (after) return "{" + after.key + "}";
-            missing();
-            return text;
-        });
-    }
-    const uses: Slot[] = [], edits: { path: Address; before: string; after: string }[] = [];
-    if (mapping.size) for (const s of parameters(d, undefined, graph, true).values()) {
-        if (change?.discard?.every((part, i) => part === s.path[i]) || mapping.has(s.key) && !mapping.get(s.key)) continue;
-        const before = readAt(d, s.path);
-        if (typeof before !== "string") continue;
-        let used = false;
-        const after = rewrite(before, () => used = true);
-        if (used) uses.push(s);
-        if (before !== after) edits.push({ path: mapping.get(s.key)?.path ?? s.path, before, after });
-    }
-    return { uses, edits, rewrite };
+function removedNodes(before: Curve, after: Curve) {
+    const surviving = new Set(after.nodes.map(n => n.id));
+    return before.nodes.flatMap(n => surviving.has(n.id) ? [] : [n.id]);
+}
+
+function nodeRemovalUsers(d: Design, graph: Graph, placements: CurveSlot[], ids: string[], path?: Address) {
+    if (!ids.length || !placements.length) return [];
+    const dropped = new Set(placements.flatMap(slot => slot.holder ? ids.flatMap(id =>
+        nodeQuantities(slot.holder!.kind).map(q => valueKey(slot, id, q))) : []));
+    if (!dropped.size) return [];
+    return [...parameters(d, undefined, graph, true).values()].filter(slot => {
+        if (dropped.has(slot.key) || path?.every((part, i) => part === slot.path[i])) return false;
+        const formula = readAt(d, slot.path);
+        return typeof formula === "string" && references(formula).some(ref => dropped.has(ref));
+    });
 }
 
 function requireUnusedNodes(uses: Slot[]) {
     if (uses.length) throw Error("仍被引用：\n" + [...new Set(uses.map(slotName))].join("\n"));
 }
 
-function placementsOf(graph: Graph, source: CurveSlot) {
-    return [...graph.slots.values()].filter(slot => graph.source(slot).slot === source);
-}
-
 export function curveNodeUsers(d: Design, slot: CurveSlot, index: number, graph = curveGraph(d)) {
-    const { slot: source, curve } = graph.source(slot);
-    const after = { ...curve, nodes: curve.nodes.filter((_, i) => i !== index) };
-    return addressEdits(d, graph, placementsOf(graph, source), curve, after).uses;
+    const { id, curve } = graph.source(slot);
+    return nodeRemovalUsers(d, graph, graph.curvePlacements(id).map(graph.ofHolder), [curve.nodes[index].id]);
 }
 
-export function seedProfile(curve: Curve, quantities: readonly NodeQuantity[], tolerance: number, ease: boolean, height: (p: Point) => number,
+export function seedProfile(curve: ProfileCurve, quantities: readonly NodeQuantity[], tolerance: number, ease: boolean, height: (p: Point) => number,
     numberAt?: (i: number, q: NodeQuantity) => number) {
     const slopeLine = quantities.length === 1;
     for (const q of quantities) {
@@ -91,24 +68,18 @@ export function seedProfile(curve: Curve, quantities: readonly NodeQuantity[], t
 function quantityReader(d: Design, graph: Graph) {
     const slots = parameters(d, undefined, graph, true);
     const get = expressionLookup(d, key => slots.get(key), undefined, key => graph.parameterKey(key, true));
-    return (slot: CurveSlot, i: number, id: string, q: NodeQuantity) => get(valueAddress(slot, i, id, q, isCurveRef(graph.value(slot))).key) as number;
-}
-
-function withoutProfile(node: CurveNode) {
-    const copy = { ...node };
-    for (const key of ["h", "slope", "interpolate"] as const) delete copy[key];
-    return copy;
+    return (slot: CurveSlot, id: string, q: NodeQuantity) => get(valueKey(slot, id, q)) as number;
 }
 
 function updateProfile(graph: Graph, slot: CurveSlot, shape: Curve, tolerance: number,
-    read: ReturnType<typeof quantityReader>, edit: ProfileEdit, rewrite: (formula: string, missing: () => void) => string) {
+    read: ReturnType<typeof quantityReader>, edit: ProfileEdit) {
     const holder = slot.holder!, previous = graph.materialize(slot), offset = graph.offset(slot);
-    const curve = translateCurve({ ...shape, nodes: shape.nodes.map(withoutProfile) }, offset);
+    const curve: ProfileCurve = translateCurve(structuredClone(shape), offset);
     const quantities = nodeQuantities(holder.kind), ease = holder.kind === "line" ? !!graph.holder(holder).value.ease : true;
     const indices = new Map(previous.nodes.map((n, i) => [n.id, i]));
     for (const q of quantities) {
         let profile: ReturnType<typeof lineProfile> | undefined;
-        const current = (i: number) => read(slot, i, previous.nodes[i].id, q);
+        const current = (i: number) => read(slot, previous.nodes[i].id, q);
         const insertedValue = (i: number, point: Point) => {
             profile ??= lineProfile(previous, tolerance, q);
             const s = profile.stationOnSegment(i, point), span = profile.span(s, ease)!;
@@ -128,8 +99,7 @@ function updateProfile(graph: Graph, slot: CurveSlot, shape: Curve, tolerance: n
                 }
             }
             else if (edit.extendFrom !== undefined && required) {
-                const value = previous.nodes[edit.extendFrom][q]!;
-                node[q] = typeof value === "string" ? rewrite(value, () => {}) : value;
+                node[q] = previous.nodes[edit.extendFrom][q]!;
             }
             else if (edit.insertAfter !== undefined) {
                 node[q] = insertedValue(edit.insertAfter, node.p);
@@ -140,7 +110,7 @@ function updateProfile(graph: Graph, slot: CurveSlot, shape: Curve, tolerance: n
     }
     seedProfile(curve, quantities, tolerance, ease, edit.redraw ?? (() => 0), (i, q) => {
         const prior = indices.get(curve.nodes[i].id) ?? edit.extendFrom;
-        return prior === undefined ? 0 : read(slot, prior, previous.nodes[prior].id, q);
+        return prior === undefined ? 0 : read(slot, previous.nodes[prior].id, q);
     });
     return curve;
 }
@@ -150,7 +120,7 @@ function sameNodes(a: Curve, b: Curve) {
 }
 
 export function editCurve<T>(d: Design, selection: Selection, index: number, change: (curve: Curve, local: (p: Point) => Point) => T, edit?: ProfileEdit) {
-    const slot = geometrySlot(d, selection.id, index, selection.kind === "curve");
+    const slot = geometrySlot(d, selection.id, index, selection.kind === "geometry");
     if (slot) return editCurveSource(d, slot.key, change, edit);
 }
 
@@ -169,121 +139,95 @@ export function editCurveSource<T>(d: Design, key: string, change: (curve: Curve
         return result;
     }
 
-    const placements = placementsOf(graph, source.slot);
+    const placements = graph.curvePlacements(source.id).map(graph.ofHolder);
     const owners = placements.filter(p => p.holder && !isHolderRef(p.holder.value) && nodeQuantities(p.holder.kind).length);
     if (edit.redraw && owners.length) for (const [i, node] of next.nodes.entries()) node.id = source.curve.nodes[i]?.id ?? node.id;
-    const { uses, edits, rewrite } = addressEdits(d, graph, placements, source.curve, next);
-    requireUnusedNodes(uses);
+    requireUnusedNodes(nodeRemovalUsers(d, graph, placements, removedNodes(source.curve, next)));
 
     if (owners.length) {
         const read = quantityReader(d, graph), tolerance = d.grid.step / 8;
-        const profiles = owners.map(owner => [owner, updateProfile(graph, owner, next, tolerance, read, edit, rewrite)] as const);
+        const profiles = owners.map(owner => [owner, updateProfile(graph, owner, next, tolerance, read, edit)] as const);
         for (const [owner, profile] of profiles) {
-            const input = graph.value(owner), quantities = nodeQuantities(owner.holder!.kind);
-            if (isCurveRef(input)) writeCurveProfile(input, profile, quantities);
-            else for (const [i, node] of next.nodes.entries()) {
-                const values = profile.nodes[i];
-                for (const q of quantities) node[q] = values[q];
-                if (values.interpolate) node.interpolate = values.interpolate;
-                else delete node.interpolate;
-            }
+            const holder = graph.holder(owner.holder!);
+            writeCurveProfile(holder.value, profile, nodeQuantities(holder.kind));
         }
     }
 
     writeAt(d, source.slot.path, next);
-    for (const { path, before, after } of edits) if (readAt(d, path) === before) writeAt(d, path, after);
     return result;
 }
 
 export function setCurveOverride(d: Design, key: string, index: number, q: NodeQuantity, override: boolean) {
     const graph = curveGraph(d), slot = graph.slots.get(key);
     if (!slot?.holder) return;
-    const owned = graph.ofHolder(graph.holder(slot.holder)), value = graph.value(owned), curve = structuredClone(graph.shape(owned));
+    const holder = graph.holder(slot.holder), owned = graph.ofHolder(holder), curve = graph.shape(owned);
     const node = curve.nodes[index];
     if (!node || needsNodeValue(curve, index) || !nodeQuantities(slot.holder.kind).includes(q)) return;
-    node[q] ??= quantityReader(d, graph)(owned, index, node.id, q);
+    node[q] ??= quantityReader(d, graph)(owned, node.id, q);
     setNodeInterpolation(node, q, !override);
-    if (isCurveRef(value)) writeCurveProfile(value, curve, nodeQuantities(slot.holder.kind));
-    else writeAt(d, owned.path, curve);
+    writeCurveProfile(holder.value, curve, nodeQuantities(holder.kind));
 }
 
 export function setCurveReference(d: Design, key: string, target?: string) {
     const graph = curveGraph(d), slot = graph.slots.get(key), holder = slot?.holder;
     if (!slot || !holder) return;
-    const owned = graph.holder(holder), previous = graph.source(slot).curve;
-    const places = [...graph.slots.values()].filter(s => graph.reaches(s, key));
-    const same = new Set(places.filter(s => s === slot || s.holder && graph.holder(s.holder) === owned));
-    const quantities = nodeQuantities(holder.kind), oldShape = graph.shape(slot);
-    let value: typeof holder.value, next = previous, referenced = isCurveRef(graph.value(slot)), discard: Address | undefined;
-    if (target) {
-        const other = graph.holders.get(target);
-        if (other) {
-            if (!graph.canUseHolder(slot, other)) throw Error("不能引用“" + other.label + "”");
-            const candidate = graph.ofHolder(other);
-            next = graph.source(candidate).curve;
-            referenced = isCurveRef(graph.value(candidate));
-            value = { ref: "{" + target + "}" };
-            discard = holder.path;
+    const owned = graph.holder(holder), previous = graph.source(slot), quantities = nodeQuantities(holder.kind);
+    if (!target) {
+        if (!graph.canUnlink(slot)) return;
+        writeAt(d, holder.path, { ...structuredClone(owned.value), curve: copyGeometry(d, previous.id) });
+        return;
+    }
+
+    // Other holders sharing the shape stay as they are. References to this
+    // semantic holder follow its new curve and must retain all referenced nodes.
+    const places = graph.holderPlacements(holder).filter(candidate => {
+        for (let item = candidate; ; ) {
+            if (item.key === holder.key) return true;
+            if (!isHolderRef(item.value)) return false;
+            item = graph.holders.get(refKey(item.value.ref)!)!;
         }
-        else {
-            const candidate = graph.slots.get(target);
-            if (!candidate || !graph.canUse(slot, candidate)) throw Error("不能引用这条曲线");
-            next = graph.source(candidate).curve;
-            const offset = graph.offset(candidate), ref = { ref: "{" + target + "}" }, ease = owned.value.ease;
-            value = { curve: ref, ...(offset.some(Boolean) && { offset: [...offset] }), ...(ease && { ease }) };
-            referenced = true;
-            if (quantities.length) {
-                const curve = copyCurveValues(d, graph, slot, oldShape, next, true);
-                writeCurveProfile(ref, curve, quantities);
-            }
-            discard = slot.path;
-        }
+    }).map(graph.ofHolder);
+    const same = graph.holders.get(target);
+    if (same) {
+        if (!graph.canUseHolder(slot, same)) throw Error("不能引用“" + same.label + "”");
+        const next = graph.source(graph.ofHolder(same)).curve;
+        requireUnusedNodes(nodeRemovalUsers(d, graph, places, removedNodes(previous.curve, next), holder.path));
+        writeAt(d, holder.path, { ref: "{" + target + "}" });
+        return;
     }
-    else if (isHolderRef(holder.value)) value = structuredClone(owned.value);
-    else if (referenced) {
-        value = { ...owned.value, curve: oldShape };
-        referenced = false;
-    }
-    else return;
-    const { uses, edits, rewrite } = addressEdits(d, graph, places, previous, next, { placements: same, referenced, discard });
-    requireUnusedNodes(uses);
-    const dependents = places.flatMap(place => {
-        if (same.has(place) || !place.holder || isHolderRef(place.holder.value) || !nodeQuantities(place.holder.kind).length) return [];
-        const input = graph.value(place);
-        return isCurveRef(input) ? [{ input, curve: copyCurveValues(d, graph, place, graph.shape(place), next, false), quantities: nodeQuantities(place.holder.kind) }] : [];
-    });
-    for (const { input, curve, quantities } of dependents) writeCurveProfile(input, curve, quantities);
-    if (!isHolderRef(value) && isCurveRef(value.curve)) for (const q of quantities) {
-        const values = value.curve[q];
-        for (const [id, formula] of Object.entries(values ?? {})) if (typeof formula === "string")
-            values![id] = rewrite(formula, () => {});
-    }
+
+    const candidate = graph.slots.get(target);
+    if (!candidate || candidate.holder || !graph.canUse(slot, candidate)) throw Error("不能引用这条曲线");
+    if (previous.id === candidate.id && !isHolderRef(holder.value)) return;
+    const { curve: next } = graph.source(candidate);
+    requireUnusedNodes(nodeRemovalUsers(d, graph, places, removedNodes(previous.curve, next)));
+    const value = { ...structuredClone(owned.value), curve: candidate.id };
+    if (quantities.length) writeCurveProfile(value, copyCurveValues(d, graph, slot, graph.shape(slot), next), quantities);
     writeAt(d, holder.path, value);
-    for (const { path, before, after } of edits) if (readAt(d, path) === before) writeAt(d, path, after);
 }
 
-function copyCurveValues(d: Design, graph: Graph, slot: CurveSlot, previous: Curve, shape: Curve, keepEndpoints: boolean) {
-    const curve = { ...shape, nodes: shape.nodes.map(withoutProfile) };
+function copyCurveValues(d: Design, graph: Graph, slot: CurveSlot, previous: ProfileCurve, shape: Curve) {
+    const curve: ProfileCurve = structuredClone(shape);
     const kind = slot.holder!.kind, quantities = nodeQuantities(kind), read = quantityReader(d, graph);
     const indices = new Map(previous.nodes.map((node, i) => [node.id, i]));
     for (const [i, node] of curve.nodes.entries()) {
         const required = needsNodeValue(curve, i);
-        const j = indices.get(node.id) ?? (keepEndpoints && required ? (i === 0 ? 0 : previous.nodes.length - 1) : undefined);
+        const j = indices.get(node.id) ?? (required ? (i === 0 ? 0 : previous.nodes.length - 1) : undefined);
         if (j === undefined) {
-            if (keepEndpoints && !required) for (const q of quantities) setNodeInterpolation(node, q, true);
+            for (const q of quantities) setNodeInterpolation(node, q, true);
             continue;
         }
         const old = previous.nodes[j];
         for (const q of quantities) {
             const output = interpolates(old, q);
             node[q] = old[q] === undefined || output && required || node.id !== old.id && typeof old[q] === "string"
-                ? read(slot, j, old.id, q) : old[q];
+                ? read(slot, old.id, q) : old[q];
             setNodeInterpolation(node, q, output && !required);
         }
     }
     return seedProfile(curve, quantities, d.grid.step / 8, kind !== "line" || !!graph.holder(slot.holder!).value.ease, () => 0,
         (i, q) => {
             const j = indices.get(curve.nodes[i].id);
-            return j === undefined ? 0 : read(slot, j, previous.nodes[j].id, q);
+            return j === undefined ? 0 : read(slot, previous.nodes[j].id, q);
         });
 }

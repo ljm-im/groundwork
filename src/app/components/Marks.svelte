@@ -7,6 +7,10 @@
         {/snippet}
         <Part>
             <PropertySelect label="跟随" value={mark!.follow} options={follows} choose={value => editor.setMarkFollow(mark!.id, value as MarkFollow)} />
+            {#if mark.follow === "map"}
+                <GeometryInput label="位置" summary={editor.project.design.geometry[mark.point.point].label}
+                    active={editor.objectGeometry?.kind === "mark"} onclick={() => editor.openPoint(mark!.point.point)} />
+            {/if}
             {#if mark!.kind === "text"}
                 <CheckboxRow label="显示高度" checked={mark.showElevation ?? false} change={visible => {
                     editor.edit(d => {
@@ -37,6 +41,7 @@
     import { matchesSearch } from "../state/inspector.ts";
     import PropertySelect from "./PropertySelect.svelte";
     import CheckboxRow from "./CheckboxRow.svelte";
+    import GeometryInput from "./GeometryInput.svelte";
     import ListRow from "./ListRow.svelte";
     import EmptyState from "./EmptyState.svelte";
     import PropertyPane from "./PropertyPane.svelte";

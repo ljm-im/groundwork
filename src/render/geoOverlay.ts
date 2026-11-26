@@ -1,3 +1,4 @@
+import { geometryAt } from "../core/design/curveReferences.ts";
 import { type MapView, type ProjectMap } from "./map.ts";
 import { displayCurveTolerance, geoControls, geometryPath, parameterPoints, pathEntries, type CurveOwner, type GeoControl } from "../core/edit/geoControls.ts";
 import { flattenPath, flattenSegment } from "../core/design/path.ts";
@@ -164,7 +165,7 @@ export function drawGeoOverlay(map: ProjectMap, view: MapView, colors: MapColors
             for (const c of controls) {
                 const tangent = c.role === "in" || c.role === "out";
                 const hover = sameControl(handle, c), selected = sameControl(view.vertex, c);
-                const state = selected ? "selected" : hover ? "hovered" : "normal";
+                const state = selected || c.role === "parameter" && view.holderGeometry?.target?.kind === "parameter" ? "selected" : hover ? "hovered" : "normal";
                 dot(c.point, state, tangent);
                 if (hover) handle = undefined;
             }
@@ -189,24 +190,37 @@ export function drawGeoOverlay(map: ProjectMap, view: MapView, colors: MapColors
             }
         }
         if (n) {
-            const index = outline ?? whole;
+            const target = view.holderGeometry?.target, index = outline ?? whole;
             if (index !== undefined) highlight(n, index);
+            else if (target && target.kind !== "parameter") {
+                const path = geometryPath(n, target.index);
+                if (path) strokeEdges(map, flattenPath(path, tolerance), accent, overlay.selectedWidth, target.index < 0);
+            }
             if (view.vertex?.role === "segment") highlight(n, view.vertex.path, view.vertex.index);
             const remaining = drawControls(n, onOwner ? hoverHandle : undefined);
             if (onOwner) hoverHandle = remaining;
         }
         if (hoverHandle) dot(hoverHandle.point, "hovered", hoverHandle.role === "in" || hoverHandle.role === "out");
-        const h = view.selection, hover = view.hovered;
-        const shared = h?.kind === "curve" ? d.curves[h.id] : undefined;
-        if (hover?.kind === "curve" && (h?.kind !== "curve" || h.id !== hover.id) && d.curves[hover.id])
-            strokeEdges(map, flattenPath(d.curves[hover.id].curve, tolerance), colors.accentHover, overlay.hoverWidth);
-        if (shared) {
-            const current = view.dragShared ?? shared;
-            if (view.dragShared && !view.dragCommitting) strokeEdges(map, flattenPath(shared.curve, tolerance), colors.dragOrigin, overlay.parameterWidth, true);
-            strokeEdges(map, flattenPath(current.curve, tolerance), accent, overlay.selectedWidth);
-            if (view.vertex?.role === "segment") highlight(current, -1, view.vertex.index);
-            drawControls(current, !view.dragShared && hover?.kind === "curve" && hover.id === h!.id ? view.hoverPart : undefined);
+        const selected = view.selection, hover = view.hovered;
+        const item = selected?.kind === "geometry" ? geometryAt(d, selected.id) : undefined;
+        const hoveredItem = hover?.kind === "geometry" && hover.id !== selected?.id ? geometryAt(d, hover.id) : undefined;
+        if (hoveredItem) {
+            if ("point" in hoveredItem) dot(hoveredItem.point, "hovered");
+            else strokeEdges(map, flattenPath(hoveredItem.curve, tolerance), colors.accentHover, overlay.hoverWidth);
         }
+        if (item) {
+            const current = view.dragGeometry ?? item;
+            if ("point" in current) dot(current.point, "selected");
+            else {
+                if (view.dragGeometry && !view.dragCommitting && "curve" in item)
+                    strokeEdges(map, flattenPath(item.curve, tolerance), colors.dragOrigin, overlay.parameterWidth, true);
+                strokeEdges(map, flattenPath(current.curve, tolerance), accent, overlay.selectedWidth);
+                if (view.vertex?.role === "segment") highlight(current, -1, view.vertex.index);
+                drawControls(current, !view.dragGeometry && hover?.kind === "geometry" && hover.id === selected!.id ? view.hoverPart : undefined);
+            }
+        }
+        for (const curve of view.referenceCurves ?? [])
+            strokeEdges(map, flattenPath(curve, tolerance), colors.accentHover, overlay.hoverWidth);
     }
     if (draft) {
         if (draft.tool === "strip") {
@@ -216,7 +230,7 @@ export function drawGeoOverlay(map: ProjectMap, view: MapView, colors: MapColors
                 dot(v.p, draft.anchors.includes(v.id) ? "selected" : "normal");
         }
         else {
-            if (["peak", "center", "harbor"].includes(draft.tool)) {
+            if (["peak", "center", "harbor", "geometryPoint"].includes(draft.tool)) {
                 if (!draft.nodes.length && draft.cursor) dot(draft.cursor);
             }
             else if (draft.path) strokeEdges(map, flattenPath(draft.path, .5 / scale), colors.accent, overlay.selectedWidth, true);

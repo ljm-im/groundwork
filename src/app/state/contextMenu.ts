@@ -1,4 +1,4 @@
-import { memberLabel, type FunctionMember } from "../../core/design/curveReferences.ts";
+import { geometryAt, memberLabel, type FunctionMember } from "../../core/design/curveReferences.ts";
 import { isBuiltin } from "../../core/design/defaults.ts";
 import { neighbor, segmentType } from "../../core/design/path.ts";
 import { type Curve, type ResolvedDesign, type PlacedGeoNode } from "../../core/design/v5.ts";
@@ -93,10 +93,9 @@ export function contextMenuColumns(design: ResolvedDesign, h: Selection, map: bo
     if ((kind === "input" || kind === "field") && isBuiltin(kind, id)) return [];
     const node = kind === "geoNode" ? geoAt(design, id) : undefined;
     const [left, right] = node && map ? geoGroups(node, control, handle) : [[], []];
-    if (kind === "curve" && map && control && (control.role === "vertex" || control.role === "segment")) {
-        const shared = design.curves[id];
-        if (shared) left.push(...geometryGroups(h, control, shared.curve, handle));
-    }
+    const geometry = kind === "geometry" ? geometryAt(design, id) : undefined;
+    if (geometry && "curve" in geometry && map && control && (control.role === "vertex" || control.role === "segment"))
+        left.push(...geometryGroups(h, control, geometry.curve, handle));
     const items: Action[] = [];
     let title: string;
     if (!map && (kind === "geoNode" || kind === "mark" || kind === "section"))
@@ -111,7 +110,15 @@ export function contextMenuColumns(design: ResolvedDesign, h: Selection, map: bo
         title = design.marks.find(mark => mark.id === id)?.kind === "scale" ? "比例尺" : "文字标记";
         items.push({ id: "copy", name: "复制" + title, icon: "copy", run: editor => editor.copyMark(id) });
     }
-    else title = kind === "section" ? "剖面线" : kind === "input" ? "输入" : kind === "curve" ? "曲线" : "场";
+    else if (geometry) {
+        title = "curve" in geometry ? "曲线" : "点";
+        items.push({ id: "copy", name: "复制" + title, icon: "copy", run: editor => editor.duplicateGeometry(id) });
+    }
+    else if (kind === "section") {
+        title = "剖面线";
+        items.push({ id: "copy", name: "复制剖面线", icon: "copy", run: editor => editor.copySection(id) });
+    }
+    else title = kind === "input" ? "输入" : "场";
     items.push({ id: "delete", name: "删除" + title, icon: "delete", danger: true, run: editor => editor.removeElement(h) });
     right.push({ title, items });
     return left.length ? [left, right] : [right];

@@ -1,3 +1,4 @@
+import { resolveDesign } from "../../src/core/design/parameters.ts";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -11,7 +12,7 @@ import { createBrowserServer, startChromium } from "./chromium.ts";
 import { test } from "node:test";
 import { fixtureOptions, readFixture } from "../../configs/read-fixture.ts";
 
-import { syntheticDesign } from "../scenarios.ts";
+import { fixtureSection, syntheticDesign } from "../scenarios.ts";
 import { installPickers, type Probe } from "./filePickers.ts";
 
 async function withFileServer(run: (url: string) => Promise<void>) {
@@ -298,15 +299,20 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
         const authored = parseDesign(fixture), mark = authored.marks.find(m => m.kind === "scale")!;
         await click("[data-tab=marks]");
         await click("[data-mark=" + JSON.stringify(mark.id) + "]");
-        const [x, y] = await mapPoint(authored, mark.point, mark.follow === "screen");
+        const [x, y] = await mapPoint(authored, resolveDesign(authored).marks.find(m => m.id === mark.id)!.point, mark.follow === "screen");
         await mouse("mousePressed", x, y);
         await mouse("mouseMoved", x + 21, y - 12);
         await mouse("mouseReleased", x + 21, y - 12);
         await saved(1);
         const moved = await disk(a), edited = JSON.parse(moved), expected = JSON.parse(canonical);
-        const before = expected.marks.find((m: { id: string }) => m.id === mark.id).point, after = edited.marks.find((m: { id: string }) => m.id === mark.id).point;
+        const before = resolveDesign(parseDesign(expected)).marks.find(m => m.id === mark.id)!.point;
+        const after = resolveDesign(parseDesign(edited)).marks.find(m => m.id === mark.id)!.point;
         assert.notDeepEqual(before, after);
-        expected.marks.find((m: { id: string }) => m.id === mark.id).point = after;
+        if (mark.follow === "screen") expected.marks.find((m: { id: string }) => m.id === mark.id).screen = after;
+        else {
+            const [dx, dy] = mark.point.offset ?? [0, 0];
+            expected.geometry[mark.point.point].point = [after[0] - dx, after[1] - dy];
+        }
         assert.equal(moved, serializeDesign(expected));
         const movedDigest = await fileDigest(a);
         assert.equal(movedDigest.sha256, sha(serializeDesign(expected)));
@@ -557,7 +563,7 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
         const sparse = syntheticDesign();
         Reflect.deleteProperty(sparse.geoNodes[1].function, "amount");
         sparse.fields.F = { label: "F" };
-        sparse.sections = [{ id: "A", label: "A", points: [[6, 12], [24, 12]] }];
+        sparse.sections = [fixtureSection(sparse, { id: "A", label: "A", points: [[6, 12], [24, 12]] })];
         await navigate();
         await seed("sparse.json", JSON.stringify(sparse));
         await set({ openName: "sparse.json" }); await click("#open"); await filename("sparse.json");
@@ -568,7 +574,7 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
         assert.match(await evaluate(() => document.querySelector("[data-parameter$=\".function.amount\"] .numeric-face")!.textContent!.trim()), /^1(?:\.0+)?$/);
         await click("[data-tab=inputs]");
         assert.equal(await evaluate(() => document.querySelector("[data-select-field=\"F\"]")!.textContent!.trim()), "F");
-        const [sx, sy] = await mapPoint(sparse, sparse.sections[0].points[0]);
+        const [sx, sy] = await mapPoint(sparse, resolveDesign(sparse).sections[0].points[0]);
         await mouse("mousePressed", sx, sy);
         await mouse("mouseReleased", sx, sy);
         await click("[data-property-tab=section]");

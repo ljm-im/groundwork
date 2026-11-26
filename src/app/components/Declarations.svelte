@@ -24,35 +24,18 @@
                 select={() => editor.focus("field", id)} onmenu={builtin ? undefined : event => editor.openMenu({ kind: "field", id }, event)} />
         {:else}<EmptyState search />{/each}
     </Part>
-    <Part title="曲线">
+    <Part title="几何">
         {#snippet actions()}
-            <AddButton label="新建曲线" attributes={{ "data-add": "curve" }} active={editor.toolActive("sharedCurve")} action={startCurve} />
+            <AddButton label="新建几何对象" attributes={{ "data-add": "geometry" }} options={geometryTools}
+                active={geometryTools.some(({ id }) => editor.toolActive(id))} choose={id => editor.addGeometry(id as GeometryTool)} />
         {/snippet}
-        {#each curves as [id, item] (id)}
-            {@const target = { kind: "curve" as const, id }}
-            <ListRow icon={item.curve.closed ? "closedPath" : "curve"} name={item.label} attributes={{ "data-select-curve": id }}
-                selected={h?.kind === "curve" && h.id === id} select={() => editor.focus("curve", id)}
+        {#each geometries as [id, item] (id)}
+            {@const target = { kind: "geometry" as const, id }}
+            <ListRow icon={geometryIcon(item)} name={item.label} attributes={{ "data-select-geometry": id }}
+                selected={h?.kind === "geometry" && h.id === id} select={() => editor.focus("geometry", id)}
                 onmenu={event => editor.openMenu(target, event)} onmouseenter={() => editor.hoverSelection(target)} onmouseleave={() => editor.hoverSelection()} />
-        {:else}<EmptyState search={!!editor.variableFilter.trim()} text="没有曲线" />{/each}
+        {:else}<EmptyState search={eligibleGeometry.length > 0 && !!editor.variableFilter.trim()} text="没有点和曲线" />{/each}
     </Part>
-{:else if h?.kind === "curve" && d.curves[h.id]}
-    {@const item = d.curves[h.id]}
-    {@const key = curveKey(h.id)}
-    {@const icon = item.curve.closed ? "closedPath" : "curve"}
-    <PropertyPane {editor}>
-        {#snippet title()}
-            <PropertyTitle name={item.label} {icon} category="曲线" label="曲线名称" rename={name => editor.edit(d => {
-                d.curves[h!.id].label = name;
-            })}
-                remove={() => editor.removeElement(h!)} />
-        {/snippet}
-        <Part>
-            <GeometryInput label="曲线" {icon} count={item.curve.nodes.length} active={editor.geometry?.kind === "curve"}
-                onclick={() => editor.focusGeometry({ kind: "curve", index: -1 })}
-                redraw={() => editor.drawCurve(key)} redrawing={editor.curveToolActive(key)} />
-            <SelectedCurvePart {editor} curve={item.curve} path={-1} />
-        </Part>
-    </PropertyPane>
 {:else if h?.kind === "input" || h?.kind === "field"}
     {@const variable = h.kind === "input"}
     {@const table = variable ? "inputs" : "fields"}
@@ -101,9 +84,8 @@
 <script lang="ts">
     import * as session from "../state/session.svelte.ts";
     import { defaultFieldPrecision, declarationEntries, fieldPrecision, isBuiltin } from "../../core/design/defaults.ts";
-    import { curveKey } from "../../core/design/curveReferences.ts";
     import { displayValue } from "../../core/design/display.ts";
-    import { matchesSearch } from "../state/inspector.ts";
+    import { geometryIcon, matchesSearch } from "../state/inspector.ts";
     import { pendingInput } from "../state/pendingInput.ts";
     import AddButton from "./AddButton.svelte";
     import ListRow from "./ListRow.svelte";
@@ -112,19 +94,17 @@
     import FieldRow from "./FieldRow.svelte";
     import PropertyPane from "./PropertyPane.svelte";
     import PropertyTitle from "./PropertyTitle.svelte";
-    import GeometryInput from "./GeometryInput.svelte";
-    import SelectedCurvePart from "./SelectedCurvePart.svelte";
     import NumberInput from "./NumberInput.svelte";
     let { editor, properties = false }: { editor: session.Editor; properties?: boolean } = $props();
     let d = $derived(editor.project.design), h = $derived(editor.selection);
     const matches = (name: string) => matchesSearch(editor.variableFilter, name);
     let inputs = $derived(declarationEntries("input", d.inputs).filter(([id, input]) => matches(input.label ?? id)));
     let fields = $derived(declarationEntries("field", d.fields).filter(([, field]) => matches(field.label)));
-    let curves = $derived(Object.entries(d.curves).filter(([, item]) => matches(item.label)));
-    function startCurve() {
-        editor.setTool("sharedCurve");
-        editor.map.canvas.focus({ preventScroll: true });
-    }
+    let eligibleGeometry = $derived(Object.entries(d.geometry).filter(([id, item]) => item.listed || (editor.geometryUses.get(id)?.length ?? 0) >= 2));
+    let geometries = $derived(eligibleGeometry.filter(([, item]) => matches(item.label)));
+    const geometryTools = [{ id: "geometryPoint", name: "点", icon: "point" }, { id: "geometryCurve", name: "曲线", icon: "curve" },
+        { id: "geometryClosed", name: "闭合曲线", icon: "closedPath" }] as const;
+    type GeometryTool = typeof geometryTools[number]["id"];
     function commitUnit(id: string, text: string) {
         const unit = text.trim();
         if (unit === (d.fields[id].unit ?? "")) return;

@@ -14,7 +14,7 @@ import { Project } from "../src/core/project.ts";
 import { ProjectMap } from "../src/render/map.ts";
 import { generateTerrain } from "../src/core/terrain/terrain.ts";
 import { History } from "../src/core/edit/history.ts";
-import { syntheticDesign, layer, rect, openCurve } from "./scenarios.ts";
+import { fixtureMark, syntheticDesign, addLayer, rect, openCurve } from "./scenarios.ts";
 
 test("Number previews use the smallest factor within the cell budget", () => {
     assert.equal(numberPreviewFactor(512, 512), 1);
@@ -170,12 +170,12 @@ test("Camera framing survives empty and changing canvases and the viewport hides
         return next.terrain;
     };
     update();
-    d.geoNodes.push(layer("Q", rect(80, 30, 97, 41), { type: "flat", amount: 12 })); update();
+    d.geoNodes.push(addLayer(d, "Q", rect(80, 30, 97, 41), { type: "flat", amount: 12 })); update();
     d.geoNodes.splice(1, 1); update();
     d.grid.step = 2; map.fit(update(), false);
     assert.equal(map.zoomFactor(), 1); assert.deepEqual(map.center, [24.5, 0]);
     delete d.geoNodes[0].disabled;
-    d.geoNodes.push(layer("C", rect(5, 5, 12, 12), { type: "flat", amount: 15 }));
+    d.geoNodes.push(addLayer(d, "C", rect(5, 5, 12, 12), { type: "flat", amount: 15 }));
     const project = new Project(d), fromTop = d.geoNodes.toReversed();
     for (const [k, n] of fromTop.entries()) {
         const view = project.viewBelow(n.id), expected = generateTerrain({ ...d, geoNodes: fromTop.slice(k + 1).reverse() });
@@ -221,22 +221,22 @@ test("Numeric drafts and committed edits agree on resolution and error wording",
     source.inputs.B = { value: 2, range: [-1, 6, 1] };
     source.inputs.C = { value: 4, range: [-1, 6, 1] };
     source.fields.F = { label: "F" };
-    source.geoNodes.push(layer("S", { type: "strip", of: ["T"], widths: [0, 1] }, { type: "batter", grade: "{input:B}" }));
-    source.geoNodes.push(layer("U", rect(-1, -1, 2, 2), {
+    source.geoNodes.push(addLayer(source, "S", { type: "strip", of: ["T"], widths: [0, 1] }, { type: "batter", grade: "{input:B}" }));
+    source.geoNodes.push(addLayer(source, "U", rect(-1, -1, 2, 2), {
         type: "slope", kind: "path", lines: [{ curve: openCurve<Expression>([{ p: [0, 0], h: 1 }, { p: [0, 1], h: 2 }, { p: [0, 2] }, { p: [0, 3], h: "{input:C}" }]), ease: true }], center: [0, 0], radius: 5, value: 2, rate: -.2
     }));
-    source.geoNodes.push(layer("V", rect(0, 0, 4, 4), { type: "flat", amount: "6 / {input:C}" }));
-    source.marks.push({ id: "M", kind: "scale", label: "M", point: [0, 0], follow: "map", length: "{input:B}" });
+    source.geoNodes.push(addLayer(source, "V", rect(0, 0, 4, 4), { type: "flat", amount: "6 / {input:C}" }));
+    source.marks.push(fixtureMark(source, { id: "M", kind: "scale", label: "M", point: [0, 0], follow: "map", length: "{input:B}" }));
     const design = parseDesign(source), original = resolveDesign(design), edits = numberEdits(design, original);
     const a: Address = ["inputs", "A", "value"], b: Address = ["inputs", "B", "value"], c: Address = ["inputs", "C", "value"];
-    const path = (i: number): Address => ["geoNodes", 3, "function", "lines", 0, "curve", "nodes", i, "h"];
+    const path = (i: number): Address => ["geoNodes", 3, "function", "lines", 0, "h", "node-" + i];
     const cases: [Address, Expression, string?][] = [
         [a, "20", undefined], [b, ".5 * (2 + 3)", undefined], [a, "{input:missing}", "找不到自定义输入“missing”"],
         [a, "{input:A}", "引用成环"], [a, "{geo:T.amount}", "引用成环"], [a, "{field:F}", "这里不能用场"],
         [a, "1 / 0", "除数不能为 0"], [c, 0, "除数不能为 0"], [b, -1, "无效"],
         [["geoNodes", 2, "construction", "widths", 1], 0, "无效"], [["inputs", "B", "range", 2], 0, "无效"],
         [["fields", "F", "precision"], 0, "必须是正的有限数"], [["grid", "step"], -1, "无效"], [["grid", "step"], .5, undefined],
-        [["marks", 0, "length"], -2, "无效"], [path(1), 6, undefined], [path(1), "{geo:U.lines.0.curve.nodes.2.h}", "引用成环"]
+        [["marks", 0, "length"], -2, "无效"], [path(1), 6, undefined], [path(1), "{geo:U.lines.0.h.node-2}", "引用成环"]
     ];
     const outcome = <T>(work: () => T) => {
         try {

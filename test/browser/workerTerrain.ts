@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { parseDesign } from "../../src/core/design/model.ts";
 import { sampleField } from "../../src/core/design/results.ts";
 import { Project } from "../../src/core/project.ts";
-import { layer, rect, syntheticDesign } from "../scenarios.ts";
+import { addLayer, rect, syntheticDesign, fixtureConstruction } from "../scenarios.ts";
 import { withCurveMap } from "./curveMapFixture.ts";
 
 interface Run {
@@ -17,11 +17,11 @@ function terrainForBrowser() {
     const design = syntheticDesign(), area = rect(-120, -90, 120, 90);
     design.grid.step = .5;
     design.fields.F = { label: "F" };
-    design.geoNodes[0].construction = area;
+    design.geoNodes[0].construction = fixtureConstruction(design, area);
     design.geoNodes[1].function = { type: "flat", amount: "{field:F} + {input:A} - 4" };
-    design.geoNodes.splice(1, 0, layer("F", area, { type: "ground", value: .8 }, "F"));
+    design.geoNodes.splice(1, 0, addLayer(design, "F", area, { type: "ground", value: .8 }, "F"));
     for (let i = 0; i < 5; i++)
-        design.geoNodes.push(layer("N" + i, area, { type: "noise", amplitude: 2, scale: 11 + i, octaves: 7, warp: 8, warpScale: 25, carve: 1 }));
+        design.geoNodes.push(addLayer(design, "N" + i, area, { type: "noise", amplitude: 2, scale: 11 + i, octaves: 7, warp: 8, warpScale: 25, carve: 1 }));
     return design;
 }
 

@@ -2,22 +2,22 @@ import assert from "node:assert/strict";
 import { type Point } from "../../src/core/design/v5.ts";
 import { geometryPath } from "../../src/core/edit/geoControls.ts";
 import { mixPoint } from "../../src/core/math/geometry.ts";
-import { withNodeSlope, layer, literalCurve, openCurve, rect, syntheticDesign } from "../scenarios.ts";
+import { withNodeSlope, addLayer, literalCurve, openCurve, rect, syntheticDesign } from "../scenarios.ts";
 import { withCurveMap } from "./curveMapFixture.ts";
 
 export function checkCurvePlacements(url: string) {
     const d = syntheticDesign(), mountain = rect(-32, -17, -10, 1);
     mountain.outlines.push(rect(-9, -22, 2, -13).outlines[0]);
-    d.curves.S = { label: "共享环", curve: rect(16, 16, 24, 23).outlines[0].curve };
+    d.geometry.S = { label: "共享环", listed: true, curve: rect(16, 16, 24, 23).outlines[0].curve };
     d.geoNodes.splice(1, 1,
-        layer("A", rect(-35, 15, -24, 25), { type: "noise", scale: 5, amplitude: 1 }),
-        layer("B", rect(-12, 15, -2, 25), { type: "flat", amount: 2 }),
-        { ...layer("M", mountain, { type: "mountain", valleys: [], ridges: [{ curve: withNodeSlope(openCurve([
+        addLayer(d, "A", rect(-35, 15, -24, 25), { type: "noise", scale: 5, amplitude: 1 }),
+        addLayer(d, "B", rect(-12, 15, -2, 25), { type: "flat", amount: 2 }),
+        { ...addLayer(d, "M", mountain, { type: "mountain", valleys: [], ridges: [{ curve: withNodeSlope(openCurve([
             { p: [-30, -13], h: 8 }, { p: [-6, -18], h: 12 }
         ], "corner", "ridge-"), 1) }], peaks: [{ at: [-25, -10], height: 13, radius: 4, scale: 1, noise: 0 }] }), label: "山脉" },
-        { ...layer("R", rect(10, -21, 25, -6), { type: "mountain", valleys: [], ridges: [{ curve: withNodeSlope(openCurve([{ p: [14, -12], h: 0 }, { p: [20, -10], h: 0 }]), 2) }], peaks: [] }),
+        { ...addLayer(d, "R", rect(10, -21, 25, -6), { type: "mountain", valleys: [], ridges: [{ curve: withNodeSlope(openCurve([{ p: [14, -12], h: 0 }, { p: [20, -10], h: 0 }]), 2) }], peaks: [] }),
             label: "东山" },
-        layer("C", rect(12, 12, 30, 27), { type: "coast", shore: { curve: { ref: "{curve:S}" } }, roughness: 0,
+        addLayer(d, "C", rect(12, 12, 30, 27), { type: "coast", shore: { curve: "S" }, roughness: 0,
             harbor: { center: [0, 0], span: 3, radius: 0 } })
     );
 
@@ -28,6 +28,9 @@ export function checkCurvePlacements(url: string) {
         const ridgeToggle = "[aria-label='为“山脊线”引用曲线']";
         const option = (id: string) => menu + " [data-option=" + JSON.stringify(id) + "]";
         const outlineKey = "geo:M.construction.outlines.0";
+        const fixture = d.geoNodes.find(n => n.id === "M")!;
+        assert(fixture.construction.type === "outline" && "curve" in fixture.construction.outlines[0] && fixture.function.type === "mountain" && "curve" in fixture.function.ridges[0]);
+        const shape = "curve:" + fixture.construction.outlines[0].curve, ridge = "curve:" + fixture.function.ridges[0].curve;
         const groups = () => evaluate(selector => [...document.querySelectorAll(selector + " .group-name")].map(n => n.textContent), menu);
         async function select(id: string) {
             await click("[data-tab=terrain]");
@@ -76,8 +79,8 @@ export function checkCurvePlacements(url: string) {
         await openOutlineMenu("A");
         assert.deepEqual(await groups(), ["轮廓", "闭合曲线"]);
         assert.equal(await text(option(outlineKey)), "山脉.轮廓 1");
-        assert.equal(await text(option(outlineKey + ".curve")), "山脉.轮廓 1.曲线");
-        assert.equal(await text(option("geo:C.shore.curve")), "C.海岸线.曲线");
+        assert.match(await text(option(shape)), /^曲线 \d+$/);
+        assert.equal(await text(option("curve:S")), "共享环");
         assert(!await evaluate(s => document.querySelector(s), option("geo:A.construction.outlines.0")));
         await click(option(outlineKey)); await saved(); await paint();
         assert.equal(await text(".geometry-box .ref-chip"), "山脉.轮廓 1");
@@ -105,10 +108,10 @@ export function checkCurvePlacements(url: string) {
         });
 
         await openOutlineMenu("B");
-        await click(option(outlineKey + ".curve")); await saved(); await paint();
-        assert.equal(await text(".geometry-box .ref-chip"), "山脉.轮廓 1.曲线");
+        await click(option(shape)); await saved(); await paint();
+        assert.match(await text(".geometry-box"), /^曲线 \d+$/);
         const [original, placed] = await positions(["M", "B"]);
-        assert.deepEqual(placed, original);
+        assert.deepEqual(placed, literalCurve(await authored(), shape.slice(6)).nodes.map(n => n.p));
         await select("B");
         const dx = 30 / (await frame()).scale;
         await drag(mixPoint(placed[0], placed[2], .5));
@@ -145,23 +148,23 @@ export function checkCurvePlacements(url: string) {
         await click(ridgeToggle);
         assert.deepEqual(await groups(), ["山脊", "曲线"]);
         assert.equal(await text(option("geo:M.ridges.0")), "山脉.山脊 1");
-        assert.equal(await text(option("geo:M.ridges.0.curve")), "山脉.山脊 1.山脊线");
+        assert.match(await text(option(ridge)), /^曲线 \d+$/);
         await menuScreenshot("round38-ridge-reference-menu-light");
         await click(option("geo:M.ridges.0")); await saved(); await paint();
         assert.equal(await text("[aria-label=山脊线] .ref-chip"), "山脉.山脊 1");
         await tap(geometryPath(page.owner(await authored(), "R"), -1)!.nodes[0].p);
-        await click("#properties [data-parameter$='.ridges.0.curve.nodes.0.slope'] .numeric-face");
+        await click("#properties [data-parameter$='.ridges.0.slope.ridge-0'] .numeric-face");
         await evaluate(() => document.getSelection()!.selectAllChildren(document.querySelector(".numeric-edit")!));
         await page.cdp("Input.insertText", { text: "1.5" });
         await key("Enter"); await saved(); await paint();
         const final = await authored(), fn = page.owner(final, "M").function;
-        assert(fn.type === "mountain" && literalCurve(fn.ridges[0]).nodes[0].slope === 1.5);
+        assert(fn.type === "mountain" && fn.ridges[0].curve.nodes[0].slope === 1.5);
         const alias = final.geoNodes.find(n => n.id === "R")!.function;
         assert(alias.type === "mountain");
         assert.deepEqual(alias.ridges[0], { ref: "{geo:M.ridges.0}" });
 
-        await click("[data-tab=inputs]"); await click("[data-select-curve=S]"); await paint();
-        const originalShared = final.curves.S.curve, savedText = await disk();
+        await click("[data-tab=inputs]"); await click("[data-select-geometry=S]"); await paint();
+        const originalShared = literalCurve(final, "S"), savedText = await disk();
         await drag(mixPoint(originalShared.nodes[0].p, originalShared.nodes[1].p, .5), 0, async () => {
             assert(await evaluate(() => !window.curveMapProbe.editor!.dragPreview));
         });

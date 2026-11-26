@@ -1,4 +1,4 @@
-import { geometryIndex, type CurveSlot } from "../../core/design/curveReferences.ts";
+import { geometryAt, geometryIndex, type CurveSlot } from "../../core/design/curveReferences.ts";
 import { flattenPath, neighbor } from "../../core/design/path.ts";
 import { type Curve, type Point } from "../../core/design/v5.ts";
 import { displayCurveTolerance, geometryPath, parameterPoints, pathEntries, type GeoControl } from "../../core/edit/geoControls.ts";
@@ -35,8 +35,8 @@ export function mapSnapTargets(editor: Editor) {
     const slots = new Map<string, CurveSlot>();
     for (const slot of curves.slots.values()) {
         const { location } = slot;
-        if (location.kind === "geo" || location.kind === "curve")
-            slots.set(placement(location.kind === "geo" ? "geoNode" : "curve", location.id, geometryIndex(slot)), slot);
+        if (location.kind === "geo" || location.kind === "geometry")
+            slots.set(placement(location.kind === "geo" ? "geoNode" : "geometry", location.id, geometryIndex(slot)), slot);
     }
     function curveGroup(kind: string, id: string, path: number) {
         const key = placement(kind, id, path), slot = slots.get(key);
@@ -63,8 +63,10 @@ export function mapSnapTargets(editor: Editor) {
         }
         if (parameters) for (const [i, point] of parameterPoints(node)) pointInView(point, parameterSnapGroup(node.id), i);
     }
-    if (selection?.kind === "curve" && design.curves[selection.id])
-        addCurve(design.curves[selection.id].curve, curveGroup("curve", selection.id, -1));
+    if (selection?.kind === "geometry") {
+        const item = geometryAt(design, selection.id);
+        if (item && "curve" in item) addCurve(item.curve, curveGroup("geometry", selection.id, -1));
+    }
     for (const section of design.sections) {
         if (view.layers.sections || view.objectGeometry?.kind === "section" && view.objectGeometry.id === section.id)
             section.points.forEach((point, i) => pointInView(point, sectionSnapGroup(section.id), i));
@@ -86,7 +88,7 @@ export function controlSnap(editor: Editor, selection: Selection, control: GeoCo
         };
     }
 
-    const design = editor.project.resolved, owner = kind === "curve" ? design.curves[id] : design.geoNodes.find(n => n.id === id)!;
+    const owner = editor.geometryOwner(selection)!;
     const curve = geometryPath(owner, path)!;
     const group = curveGroup(kind, id, path);
     if (role === "segment") {

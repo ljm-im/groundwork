@@ -1,19 +1,18 @@
 import { defaultFollow, type Design } from "./v5.ts";
 import { defaultFieldPrecision, defaultInputRange, heightId, reserved, seedId } from "./defaults.ts";
-import { constructionCenter, rasterRegion, shapeLayout } from "./regions.ts";
 import { distance } from "../math/geometry.ts";
-import { type WorkPool } from "../math/work.ts";
-import { point, record, validateCurves, validateGeo, validateProfileEndpoints, validateSharedCurves } from "./validateGeo.ts";
+import { point, record, validateCurves, validateGeo, validateGeometry, validatePointHolder, validateProfileEndpoints } from "./validateGeo.ts";
 import { check, type Location } from "./problems.ts";
 import { fillFunctionParameters, gridStep, markParameters, numericValid } from "./functionTable.ts";
-import { curveGraph, geoHolderSlots, isHolderRef } from "./curveReferences.ts";
+import { curveGraph, geometryUsers } from "./curveReferences.ts";
 import { literalPattern, tokens } from "./expression.ts";
 import { parameters, resolveDesign, writeAt } from "./parameters.ts";
 
-export function parseDesign(text: unknown, allowBrokenReferences = false, pool?: WorkPool): Design {
+export function parseDesign(text: unknown, allowBrokenReferences = false): Design {
     const d: Design = typeof text === "string" ? JSON.parse(text) : structuredClone(text);
     check(d && typeof d === "object", "不支持的版本");
     check(d.version === 5, "不支持的版本");
+    validateGeometry(d);
     if (d.grid && d.grid.step === undefined) d.grid.step = gridStep.default as number;
     check(numericValid(gridStep, d.grid?.step), "无效", { kind: "project", path: gridStep.key });
 
@@ -34,7 +33,8 @@ export function parseDesign(text: unknown, allowBrokenReferences = false, pool?:
     }
     for (const [index, mark] of d.marks.entries()) {
         const at = (path: string[]): Location => ({ kind: "mark", id: mark.id, index, path });
-        check(point(mark.point), "只能填写数字坐标", at(["point"]));
+        validatePointHolder(mark.point, at(["point"]));
+        check(point(mark.screen), "只能填写数字坐标", at(["screen"]));
         check(mark.kind === "text" || mark.kind === "scale", "无效", at(["kind"]));
         if (mark.follow === undefined) mark.follow = defaultFollow(mark.kind);
         check(mark.follow === "screen" || mark.follow === "map", "无效", at(["follow"]));
@@ -60,26 +60,29 @@ export function parseDesign(text: unknown, allowBrokenReferences = false, pool?:
         if (input.range === undefined) input.range = defaultInputRange(id);
     }
 
-    if (d.curves === undefined) d.curves = {};
-    validateSharedCurves(d);
-    const implicitHarbors: number[] = [];
     for (const [index, node] of d.geoNodes.entries()) {
         const at = (path: (string | number)[]): Location => ({ kind: "geo", id: node.id, index, path });
         if (node.field === undefined) node.field = heightId;
         const f = node.function;
         if (f?.type === "coast") {
-            if (f.harbor === undefined) {
-                f.harbor = { center: [0, 0] } as typeof f.harbor;
-                implicitHarbors.push(index);
-            }
-            else check(f.harbor && point(f.harbor.center), "无效", at(["function", "harbor", "center"]));
+            check(record(f.harbor), "无效", at(["function", "harbor"]));
+            validatePointHolder(f.harbor.center, at(["function", "harbor", "center"]));
             fillFunctionParameters(f, ["harbor"]);
         }
         if (f?.type === "mountain") {
-            if (Array.isArray(f.peaks)) f.peaks.forEach((peak, j) => check(record(peak), "无效", at(["function", "peaks", j])));
+            check(Array.isArray(f.peaks), "无效", at(["function", "peaks"]));
+            f.peaks.forEach((peak, j) => {
+                check(record(peak), "无效", at(["function", "peaks", j]));
+                validatePointHolder(peak.at, at(["function", "peaks", j, "at"]));
+            });
         }
         if (f?.type === "erosion") check(f.spacing !== undefined, "缺少计算间距", at(["function", "spacing"]));
         validateCurves(node, index);
+    }
+    for (const [index, section] of d.sections.entries()) {
+        const at = (path: (string | number)[]): Location => ({ kind: "section", id: section.id, index, path });
+        check(Array.isArray(section.points) && section.points.length === 2, "长度无效", at(["points"]));
+        section.points.forEach((p, i) => validatePointHolder(p, at(["points", i])));
     }
     const curves = curveGraph(d);
     validateProfileEndpoints(curves);
@@ -96,30 +99,18 @@ export function parseDesign(text: unknown, allowBrokenReferences = false, pool?:
         const spec = markParameters[mark.kind];
         check(numericValid(spec, mark.kind === "scale" ? mark.length : mark.elevation), "无效", { kind: "mark", id: mark.id, index, path: spec.key });
     }
-    let layout: ReturnType<typeof shapeLayout> | undefined;
-    for (const i of implicitHarbors) {
-        const { construction, id } = numeric.geoNodes[i], f = d.geoNodes[i].function;
-        if (f.type !== "coast") continue;
-        if (construction.type === "outline" && construction.outlines.length === 1)
-            f.harbor.center = constructionCenter(construction, d.grid.step);
-        else {
-            const { grid, shapes } = layout ??= shapeLayout(numeric, pool);
-            f.harbor.center = constructionCenter(construction, d.grid.step, grid, rasterRegion(grid, shapes.get(id)!, pool));
-        }
-    }
     for (const object of [d, ...d.geoNodes, ...d.sections]) {
         check(!Object.hasOwn(object, "prompt") || typeof object.prompt === "string", "描述必须是字符串");
         if (object.prompt === "") delete object.prompt;
     }
-    const validPoints = (list: unknown) => Array.isArray(list) && list.length === 2 && list.every(point);
-    for (const [i, s] of d.sections.entries()) {
+    for (const [i, s] of numeric.sections.entries()) {
         const at = (path: string[]): Location => ({ kind: "section", id: s.id, index: i, path });
-        check(validPoints(s.points) && distance(...s.points) > 0, "长度无效", at(["points"]));
+        check(distance(...s.points) > 0, "长度无效", at(["points"]));
     }
     return d;
 }
 export function serializeDesign(d: Design | null) {
-    const holders = new Set<object>(d?.geoNodes.flatMap((node, index) => geoHolderSlots(node, index).map(slot => slot.value).filter(value => !isHolderRef(value))));
+    const holders = new Set<object>(d ? [...geometryUsers(d).values()].flat().map(slot => slot.value) : []);
     const terrain = new Set<object>(d?.geoNodes);
     const sections = new Set<object>(d?.sections);
     const fields = new Set<object>(Object.values(d?.fields ?? {}));
@@ -129,7 +120,6 @@ export function serializeDesign(d: Design | null) {
     return JSON.stringify(d, function (this: object, key: string, value: unknown) {
         if (key === "prompt" && value === "" || key === "disabled" && value === false ||
             key === "showLabel" && value === !terrain.has(this)) return undefined;
-        if (key === "curves" && this === d && !Object.keys(d.curves).length) return undefined;
         if (key === "offset" && holders.has(this) && point(value) && !value.some(Boolean)) return undefined;
         if (key === "field" && terrain.has(this) && value === heightId) return undefined;
         if (key === "labelOffset" && (terrain.has(this) || sections.has(this)) && point(value) && value[0] === 0 && value[1] === 0) return undefined;
@@ -140,7 +130,6 @@ export function serializeDesign(d: Design | null) {
         if (key === "range" && range && Array.isArray(value) && value.length === range.length && range.every((v, i) => v === value[i])) return undefined;
         if (key === "ease" && lines.has(this) && value === false) return undefined;
         if (key === "interpolate") {
-            if (Array.isArray(value)) return value.length ? value : undefined;
             if (value && typeof value === "object") {
                 const entries = Object.entries(value).filter(([, flags]) => flags.length);
                 return entries.length ? Object.fromEntries(entries) : undefined;

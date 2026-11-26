@@ -1,4 +1,4 @@
-import { type ClosedCurve, type Curve, type Expression, type CurveNode, type Point } from "../design/v5.ts";
+import { type ClosedCurve, type Curve, type CurveNode, type Point } from "../design/v5.ts";
 import { advance, bearing, distance, mixPoint, projection } from "../math/geometry.ts";
 import { arcGeometry, autoHandle, defaultArcBulge, flattenBezier, flattenSegment, handleOffset, hasHandleSide, neighbor, pathBezier,
     pathHandle, segmentType, splitBezier, type Bezier, type Segment, type SegmentType } from "../design/path.ts";
@@ -8,16 +8,16 @@ type Side = "in" | "out";
 const offset = (a: Point, b: Point): Point => [a[0] - b[0], a[1] - b[1]];
 const scale = (v: Point, factor: number): Point => [v[0] * factor, v[1] * factor];
 
-export function penNode(id: string, p: Point, drag?: Point): CurveNode<never> {
+export function penNode(id: string, p: Point, drag?: Point): CurveNode {
     if (!drag) return { id, p, mode: "corner" };
     const out = offset(drag, p);
     return { id, p, mode: "manual", out, in: scale(out, -1) };
 }
-export function closedPen(nodes: CurveNode<never>[]): ClosedCurve {
+export function closedPen(nodes: CurveNode[]): ClosedCurve {
     if (nodes.length < 3) throw Error("闭合曲线至少需要三个节点");
     return { closed: true, nodes };
 }
-export function penPath<N extends Expression>(nodes: CurveNode<N>[], closed: boolean): Curve<N> {
+export function penPath(nodes: CurveNode[], closed: boolean): Curve {
     const path = { closed, nodes: closed ? nodes : nodes.map(node => ({ ...node })) };
     if (!closed) cleanHandles(path);
     return path;
@@ -25,7 +25,7 @@ export function penPath<N extends Expression>(nodes: CurveNode<N>[], closed: boo
 export const isEndpoint = (curve: Curve, index: number) =>
     !curve.closed && (index === 0 || index === curve.nodes.length - 1);
 
-export function extendCurve(curve: Curve, nodes: CurveNode<never>[], start: number, closed: boolean) {
+export function extendCurve(curve: Curve, nodes: CurveNode[], start: number, closed: boolean) {
     const additions = start === 0 ? nodes.toReversed().map(({ in: incoming, out: outgoing, ...node }) => ({
         ...node, ...(outgoing && { in: outgoing }), ...(incoming && { out: incoming })
     })) : nodes;
@@ -34,8 +34,8 @@ export function extendCurve(curve: Curve, nodes: CurveNode<never>[], start: numb
 }
 
 export function shapePath(tool: Exclude<ShapeTool, "pen">, a: Point, b: Point, id: () => string, end?: Point): ClosedCurve {
-    const corner = (p: Point): CurveNode<never> => ({ id: id(), p, mode: "corner" });
-    const arc = (p: Point, bulge: number): CurveNode<never> => ({ ...corner(p), bulge });
+    const corner = (p: Point): CurveNode => ({ id: id(), p, mode: "corner" });
+    const arc = (p: Point, bulge: number): CurveNode => ({ ...corner(p), bulge });
     if (distance(a, b) < 1e-6) throw Error("请选取不同的起点和终点");
     if (tool === "rect") {
         if (a[0] === b[0] || a[1] === b[1]) throw Error("矩形需要有宽度和高度");

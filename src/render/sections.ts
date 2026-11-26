@@ -6,9 +6,9 @@ import { canvasText, interfaceColors, sectionColors, type Theme } from "./palett
 import { displaySteps, markParameters } from "../core/design/functionTable.ts";
 import { displayReading } from "../core/design/display.ts";
 
-const sectionCuts = new WeakMap<Section, { a: Point; b: Point; len: number; n: number; stations: Point[] }>();
+const sectionCuts = new WeakMap<Section<"resolved">, { a: Point; b: Point; len: number; n: number; stations: Point[] }>();
 
-function sectionCut(section: Section) {
+function sectionCut(section: Section<"resolved">) {
     const [a, b] = section.points, last = sectionCuts.get(section);
     if (last?.a === a && last.b === b) return last;
     const len = distance(a, b), n = Math.max(2, Math.round(len * 2));
@@ -42,7 +42,7 @@ export function sectionAxis(values: (number | undefined)[], precision: number, h
     return { first, last, step, ticks };
 }
 
-export function drawSection(ctx: CanvasRenderingContext2D, w: number, h: number, section: Section, terrain: Terrain,
+export function drawSection(ctx: CanvasRenderingContext2D, w: number, h: number, section: Section<"resolved">, terrain: Terrain,
     field: string, precision: number, theme: Theme) {
     const colors = interfaceColors[theme];
     ctx.clearRect(0, 0, w, h);

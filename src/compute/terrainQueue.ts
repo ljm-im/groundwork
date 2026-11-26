@@ -88,7 +88,7 @@ export class TerrainQueue {
     private async calculate(request: Request, pool: WorkPool) {
         const { id } = request;
         if (request.kind === "generate") {
-            const design = parseDesign(request.design, true, pool), resolved = resolveDesign(design);
+            const design = parseDesign(request.design, true), resolved = resolveDesign(design);
             const source = request.reset ? new TerrainCache() : this.cache;
             this.send({ kind: "started", id, missing: source.missingResolved(resolved) });
             const cache = source.fork(), project = new Project(design, cache, resolved, pool);

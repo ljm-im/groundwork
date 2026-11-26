@@ -1,4 +1,4 @@
-import { type Curve, type CurveNode, type CurveRef, type NodeQuantity } from "./v5.ts";
+import { type Curve, type ProfileCurve, type ProfileNode, type NodeRecords, type NodeQuantity } from "./v5.ts";
 import { nearest, smooth, stations, type Point } from "../math/geometry.ts";
 import { flattenPath } from "./path.ts";
 
@@ -6,27 +6,27 @@ export function needsNodeValue(curve: Curve, index: number) {
     return index === 0 || !curve.closed && index === curve.nodes.length - 1;
 }
 
-export function interpolates(node: CurveNode, quantity: NodeQuantity) {
+export function interpolates(node: ProfileNode, quantity: NodeQuantity) {
     return node[quantity] === undefined || !!node.interpolate?.includes(quantity);
 }
 
-export function setNodeInterpolation(node: CurveNode, quantity: NodeQuantity, enabled: boolean) {
+export function setNodeInterpolation(node: ProfileNode, quantity: NodeQuantity, enabled: boolean) {
     const quantities = (node.interpolate ?? []).filter(key => key !== quantity);
     if (enabled) quantities.push(quantity);
     if (quantities.length) node.interpolate = quantities;
     else delete node.interpolate;
 }
 
-export function writeCurveProfile(ref: CurveRef, curve: Curve, quantities: readonly NodeQuantity[]) {
-    for (const q of quantities) ref[q] = Object.fromEntries(curve.nodes.flatMap(n => n[q] === undefined ? [] : [[n.id, n[q]]]));
+export function writeCurveProfile(records: NodeRecords, curve: ProfileCurve, quantities: readonly NodeQuantity[]) {
+    for (const q of quantities) records[q] = Object.fromEntries(curve.nodes.flatMap(n => n[q] === undefined ? [] : [[n.id, n[q]]]));
     const flags = curve.nodes.flatMap(n => n.interpolate?.length ? [[n.id, n.interpolate] as const] : []);
-    if (flags.length) ref.interpolate = Object.fromEntries(flags);
-    else delete ref.interpolate;
+    if (flags.length) records.interpolate = Object.fromEntries(flags);
+    else delete records.interpolate;
 }
 
 export const profileMix = (a: number, b: number, t: number) => a + (b - a) * t;
 
-export function lineProfile<N extends number | string>(line: Curve<N>, tolerance: number, quantity: NodeQuantity = "h") {
+export function lineProfile<N extends number | string>(line: ProfileCurve<N>, tolerance: number, quantity: NodeQuantity = "h") {
     // Keep at least eight samples per curved segment for stable terrain evaluation.
     const segments = flattenPath(line, tolerance, 3);
     const points = segments.length ? [segments[0].a, ...segments.map(e => e.b)] : line.nodes.map(v => v.p);
@@ -60,7 +60,7 @@ export function lineProfile<N extends number | string>(line: Curve<N>, tolerance
     return { points, station, span, nodeStation, stationOnSegment, interpolate };
 }
 
-export function numericProfile(line: Curve<number>, tolerance: number, quantity: NodeQuantity = "h") {
+export function numericProfile(line: ProfileCurve<number>, tolerance: number, quantity: NodeQuantity = "h") {
     const { interpolate, ...profile } = lineProfile(line, tolerance, quantity);
     const value = (s: number, ease = false) => interpolate(s, ease, (a, b, t) => a === b ? a.value : profileMix(a.value, b.value, t)) ?? 0;
     const nodeValue = (index: number, ease: boolean) => interpolates(line.nodes[index], quantity)

@@ -1,3 +1,4 @@
+import { resolveDesign } from "../../src/core/design/parameters.ts";
 import assert from "node:assert/strict";
 import { type Point } from "../../src/core/design/v5.ts";
 import { distance } from "../../src/core/math/geometry.ts";
@@ -16,8 +17,8 @@ export async function checkSectionPlots(url: string) {
         assert(await inMap(target));
         const beforeSection = await authored();
         assert.equal(sampleField(new Project(beforeSection).terrain, "height", target), undefined);
-        await drag(await at(beforeSection.sections[0].points[1]), await at(target)); await saved();
-        assert(distance((await authored()).sections[0].points[1], target) < .3);
+        await drag(await at(resolveDesign(beforeSection).sections[0].points[1]), await at(target)); await saved();
+        assert(distance(resolveDesign(await authored()).sections[0].points[1], target) < .3);
         await paint();
         assert.equal(await text(".bottom-tabs small"), "高度 / m");
         const heightPlot = await evaluate(() => ({ ...window.layeredMapProbe.plots, terrain: window.layeredMapProbe.terrain }));

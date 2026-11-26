@@ -4,7 +4,7 @@ import { parseDesign } from "../../src/core/design/model.ts";
 import { exportProject } from "../../src/core/export.ts";
 import { Project } from "../../src/core/project.ts";
 import { decodePreview, readNpy, readProject, readZip } from "../exportFiles.ts";
-import { syntheticDesign } from "../scenarios.ts";
+import { fixtureMark, syntheticDesign } from "../scenarios.ts";
 import { createBrowserServer } from "./chromium.ts";
 import { withCurveMap } from "./curveMapFixture.ts";
 
@@ -13,7 +13,7 @@ export async function checkWorkerExport(url: string, commit: string, shared: boo
     const scene = "export-terrain", output = "已导出“" + filename + "”";
     design.prompt = "打开文件时的项目描述。";
     design.geoNodes[0].function = { type: "ground", value: 4.12532 };
-    design.marks.push({ id: "A", kind: "text", label: "A", point: [2.1234, 3.5678], follow: "map" });
+    design.marks.push(fixtureMark(design, { id: "A", kind: "text", label: "A", point: [2.1234, 3.5678], follow: "map" }));
     await withCurveMap(url, scene, async ({ cdp, click, evaluate, idle, saved, wait, text, disk }) => {
         const read = async (name = filename) => Uint8Array.from(await evaluate(async name => {
             const root = await navigator.storage.getDirectory(), handle = await root.getFileHandle(name);

@@ -2,7 +2,7 @@
     {#snippet title()}
         <PropertyTitle name={section.label} category="剖面线" icon="sectionMark" rename={label => editor.edit(d => {
             d.sections.find(s => s.id === section.id)!.label = label;
-        })} remove={() => editor.removeSelected()} />
+        })} copy={() => editor.copySection(section.id)} remove={() => editor.removeSelected()} />
     {/snippet}
     {#snippet children(tab)}
         {#if tab === "label"}
@@ -11,8 +11,13 @@
                     d.sections.find(s => s.id === section.id)!.showLabel = visible;
                 })} />
         {:else}
-            <GeometryInput label="剖面线" icon="section" active={editor.objectGeometry?.kind === "section"}
+            <GeometryInput label="剖面线" icon="section" active={editor.objectGeometry?.kind === "section" && editor.objectGeometry.index === undefined}
                 onclick={() => editor.focusObjectGeometry({ kind: "section", id: section.id })} />
+            {#each section.points as holder, index (index)}
+                <GeometryInput label={index === 0 ? "起点" : "终点"} summary={editor.project.design.geometry[holder.point].label}
+                    active={editor.objectGeometry?.kind === "section" && editor.objectGeometry.index === index}
+                    onclick={() => editor.openPoint(holder.point, undefined, index)} />
+            {/each}
         {/if}
     {/snippet}
 </PropertyPane>

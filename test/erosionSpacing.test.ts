@@ -6,7 +6,7 @@ import { parameters, resolveDesign } from "../src/core/design/parameters.ts";
 import { defaultFunction } from "../src/core/edit/geoNodes.ts";
 import { createGrid, sample } from "../src/core/math/geometry.ts";
 import { erode, erodeAtSpacing } from "../src/core/terrain/erosion.ts";
-import { erosion, layer, syntheticDesign } from "./scenarios.ts";
+import { erosion, addLayer, syntheticDesign } from "./scenarios.ts";
 
 const grid = createGrid({ xMin: 4, xMax: 33, yMin: -20, yMax: 11, step: 1 });
 const cells = Int32Array.from({ length: grid.size }, (_, k) => k);
@@ -59,9 +59,10 @@ test("Coarse erosion averages partial blocks and interpolates changes only onto 
 });
 
 test("Erosion spacing defaults to half its own radius and supports an authored number or expression", () => {
-    const design = syntheticDesign(), fn = defaultFunction("erosion", { id: "E" });
+    const design = syntheticDesign(), layer = addLayer(design, "E", design.geoNodes[0].construction, defaultFunction(design, "erosion", { id: "E" }));
+    const fn = layer.function;
     assert(fn.type === "erosion");
-    design.geoNodes.push(layer("E", design.geoNodes[0].construction, fn));
+    design.geoNodes.push(layer);
     const spec = functionTable.erosion.parameters.find(p => p.key[0] === "spacing");
     assert(spec && typeof spec.default === "function");
     assert.equal(spec.default("E"), "{geo:E.radius} / 2");

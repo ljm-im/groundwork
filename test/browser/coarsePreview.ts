@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { parseDesign, serializeDesign } from "../../src/core/design/model.ts";
 import { Project } from "../../src/core/project.ts";
-import { rect, syntheticDesign } from "../scenarios.ts";
+import { rect, syntheticDesign, fixtureConstruction } from "../scenarios.ts";
 import { startChromium } from "./chromium.ts";
 import { installPickers } from "./filePickers.ts";
 
@@ -12,7 +12,7 @@ declare global {
 export async function checkCoarsePreview(url: string) {
     const design = syntheticDesign();
     design.grid.step = .2;
-    design.geoNodes[0].construction = rect(-60, -60, 60, 60);
+    design.geoNodes[0].construction = fixtureConstruction(design, rect(-60, -60, 60, 60));
     const browser = await startChromium(), { cdp, click, evaluate, mouse, wait, idle, saved } = browser;
     try {
         await cdp("Page.addScriptToEvaluateOnNewDocument", { source: "(" + installPickers.toString() + ")()" });

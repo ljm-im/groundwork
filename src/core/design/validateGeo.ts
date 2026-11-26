@@ -1,10 +1,10 @@
-import { type ClosedCurve, type Curve, type GeoNode, type Point, type ResolvedDesign, type ResolvedGeoNode, type Design, type CurveRef, type NodeQuantity } from "./v5.ts";
+import { type ClosedCurve, type GeoNode, type Point, type ResolvedDesign, type ResolvedGeoNode, type Design, type NodeQuantity, type ProfileCurve, type NodeRecords, type PointHolder } from "./v5.ts";
 import { defaultFieldPrecision, isBuiltin, reserved, seedId, heightId } from "./defaults.ts";
 import { canWrite, expandKeys, functionParameters, functionTable, numericValid } from "./functionTable.ts";
 import { readAt, type Address } from "./address.ts";
 import { check, DesignError, type DesignProblem, type Location } from "./problems.ts";
 import { hasHandleSide, neighbor } from "./path.ts";
-import { curveGraph, isCurveRef, isHolderRef, nodeQuantities, nodeQuantityPath, profileGroups, type ProfileGroup } from "./curveReferences.ts";
+import { curveGraph, nodeQuantities, nodeQuantityPath, profileGroups, type ProfileGroup } from "./curveReferences.ts";
 import { interpolates, needsNodeValue } from "./polyline.ts";
 
 export const point = (p: unknown): p is Point => Array.isArray(p) && p.length === 2 && Number.isFinite(p[0]) && Number.isFinite(p[1]);
@@ -25,23 +25,10 @@ function validInterpolation(value: unknown, allowed: readonly NodeQuantity[]) {
     return Array.isArray(value) && new Set(value).size === value.length && value.every(k => allowed.includes(k));
 }
 
-function validateCurve(value: unknown, at: (path: Address) => Location, key: Address, ids: Set<string>, closed: boolean,
-    allowed: readonly NodeQuantity[], reference: boolean) {
+function validateCurve(value: unknown, at: (path: Address) => Location, key: Address, closed: boolean,
+    allowed?: readonly NodeQuantity[]) {
     check(record(value), "无效", at(key));
-    if (Object.hasOwn(value as object, "ref")) {
-        check(reference, "这里不能引用曲线", at([...key, "ref"]));
-        const ref = value as CurveRef;
-        check(typeof ref.ref === "string", "无效", at([...key, "ref"]));
-        check(Object.keys(ref).every(k => k === "ref" || k === "interpolate" || quantities.some(q => q === k)), "无效", at(key));
-        for (const q of quantities) if (Object.hasOwn(ref, q)) {
-            check(allowed.includes(q), q === "h" ? "这里的节点不能有高度" : "这里的节点不能有坡度", at([...key, q]));
-            check(record(ref[q]) && Object.values(ref[q]!).every(authoredNumber), "无效", at([...key, q]));
-        }
-        if (Object.hasOwn(ref, "interpolate"))
-            check(allowed.length && record(ref.interpolate) && Object.values(ref.interpolate!).every(v => validInterpolation(v, allowed)), "无效", at([...key, "interpolate"]));
-        return;
-    }
-    const p = value as Curve;
+    const p = value as ProfileCurve, ids = new Set<string>();
     check(typeof p.closed === "boolean" && (!closed || p.closed), "无效", at([...key, "closed"]));
     const nodesAt = [...key, "nodes"];
     check(Array.isArray(p.nodes), "无效", at(nodesAt));
@@ -57,12 +44,15 @@ function validateCurve(value: unknown, at: (path: Address) => Location, key: Add
         if (!p.closed && i === 0) check(!Object.hasOwn(node, "in"), "开放曲线的首节点没有前一段", field("in"));
         if (!p.closed && i === p.nodes.length - 1) for (const name of ["out", "bulge"])
             check(!Object.hasOwn(node, name), "开放曲线的末节点没有后一段", field(name));
-        for (const q of quantities) if (node[q] !== undefined) {
+        for (const q of quantities) if (Object.hasOwn(node, q)) {
+            check(allowed, "退役键", field(q));
             check(allowed.includes(q), q === "h" ? "这里的节点不能有高度" : "这里的节点不能有坡度", field(q));
-            check(authoredNumber(node[q]), "无效", field(q));
+            check(node[q] === undefined || authoredNumber(node[q]), "无效", field(q));
         }
-        if (Object.hasOwn(node, "interpolate"))
+        if (Object.hasOwn(node, "interpolate")) {
+            check(allowed, "退役键", field("interpolate"));
             check(allowed.length && validInterpolation(node.interpolate, allowed), "无效", field("interpolate"));
+        }
         if (node.bulge !== undefined) check(Number.isFinite(node.bulge) && node.bulge !== 0, "无效", field("bulge"));
     }
     for (const [i, node] of p.nodes.entries()) {
@@ -86,14 +76,26 @@ function validateCurve(value: unknown, at: (path: Address) => Location, key: Add
     }
 }
 
-export function validateSharedCurves(d: Design) {
-    check(record(d.curves), "无效", { kind: "project", path: ["curves"] });
-    for (const [id, entry] of Object.entries(d.curves)) {
-        const at = (path: Address): Location => ({ kind: "curve", id, path });
+export function validateGeometry(d: Design) {
+    check(!Object.hasOwn(d, "curves"), "退役键", { kind: "project", path: ["curves"] });
+    check(record(d.geometry), "无效", { kind: "project", path: ["geometry"] });
+    for (const [id, entry] of Object.entries(d.geometry)) {
+        const at = (path: Address): Location => ({ kind: "geometry", id, path });
         check(id && record(entry), "无效", at([]));
         check(typeof entry.label === "string", "无效", at(["label"]));
-        validateCurve(entry.curve, at, ["curve"], new Set(), false, [], false);
+        check(entry.listed === undefined || entry.listed === true, "无效", at(["listed"]));
+        check(Object.hasOwn(entry, "point") !== Object.hasOwn(entry, "curve"), "需要点或曲线", at([]));
+        for (const key of ["showLabel", "labelOffset"]) check(!Object.hasOwn(entry, key), "无效", at([key]));
+        if ("point" in entry) check(point(entry.point), "只能填写数字坐标", at(["point"]));
+        else validateCurve(entry.curve, at, ["curve"], false);
     }
+}
+
+export function validatePointHolder(value: unknown, at: Location): asserts value is PointHolder {
+    check(record(value), "需要点的持有者", at);
+    const holder = value as PointHolder;
+    check(typeof holder.point === "string" && holder.point, "无效", { ...at, path: [...at.path, "point"] });
+    if (Object.hasOwn(holder, "offset")) check(point(holder.offset), "只能填写两个有限数", { ...at, path: [...at.path, "offset"] });
 }
 
 export function validateCurves(n: GeoNode | ResolvedGeoNode, index: number, resolved = false) {
@@ -102,7 +104,7 @@ export function validateCurves(n: GeoNode | ResolvedGeoNode, index: number, reso
         const allowed = group ? nodeQuantities(profileGroups[group].kind) : [];
         const curveAt = [...key, ...(!resolved || group ? ["curve"] : [])];
         if (resolved) {
-            validateCurve(group ? readAt(value as object, ["curve"]) : value, at, curveAt, new Set(), !group, allowed, false);
+            validateCurve(group ? readAt(value as object, ["curve"]) : value, at, curveAt, !group, allowed);
             return;
         }
         check(record(value), "无效", at(key));
@@ -112,9 +114,16 @@ export function validateCurves(n: GeoNode | ResolvedGeoNode, index: number, reso
             return;
         }
         if (Object.hasOwn(holder, "offset")) check(point(holder.offset), "只能填写两个有限数", at([...key, "offset"]));
-        if (group === "ridges") check(!Object.hasOwn(holder, "slope"), "坡度必须写在节点上", at([...key, "slope"]));
         if (group === "lines") check(holder.ease === undefined || typeof holder.ease === "boolean", "无效", at([...key, "ease"]));
-        validateCurve(holder.curve, at, curveAt, new Set(), !group, allowed, true);
+        check(!record(holder.curve), "退役的曲线格式", at(curveAt));
+        check(typeof holder.curve === "string" && holder.curve, "无效", at(curveAt));
+        const values = holder as NodeRecords;
+        for (const q of quantities) if (Object.hasOwn(values, q)) {
+            check(allowed.includes(q), q === "h" ? "这里的节点不能有高度" : "这里的节点不能有坡度", at([...key, q]));
+            check(record(values[q]) && Object.values(values[q]!).every(authoredNumber), "无效", at([...key, q]));
+        }
+        if (Object.hasOwn(values, "interpolate"))
+            check(allowed.length && record(values.interpolate) && Object.values(values.interpolate!).every(v => validInterpolation(v, allowed)), "无效", at([...key, "interpolate"]));
     }
     const c = n.construction;
     check(c?.type === "outline" || c?.type === "strip", "是未知取值", at(["construction", "type"]));
@@ -127,7 +136,9 @@ export function validateCurves(n: GeoNode | ResolvedGeoNode, index: number, reso
     if (f?.type === "slope") {
         for (const key of ["line", "ease"])
             check(!Object.hasOwn(f, key), "请在 lines 中写入坡线及其设置", at(["function", key]));
-        check(point(f.center), "只能填写数字坐标", at(["function", "center"]));
+        const center = at(["function", "center"]);
+        if (resolved) check(point(f.center), "只能填写数字坐标", center);
+        else validatePointHolder(f.center, center);
         for (const key of ["radius", "value", "rate"] as const)
             check(authoredNumber(f[key]), "无效", at(["function", key]));
         check(Array.isArray(f.lines), "无效", at(["function", "lines"]));
@@ -141,15 +152,11 @@ export function validateCurves(n: GeoNode | ResolvedGeoNode, index: number, reso
 
 export function validateProfileEndpoints(graph: ReturnType<typeof curveGraph>) {
     for (const holder of graph.holders.values()) {
-        if (isHolderRef(holder.value)) {
-            graph.source(graph.ofHolder(holder));
-            continue;
-        }
-        const slot = graph.ofHolder(holder), curve = graph.shape(slot), referenced = isCurveRef(holder.value.curve);
+        const slot = graph.ofHolder(holder), curve = graph.shape(slot);
         for (const q of nodeQuantities(holder.kind)) for (const [i, node] of curve.nodes.entries()) {
             if (!needsNodeValue(curve, i)) continue;
             const label = q === "slope" ? "坡度" : holder.kind === "line" ? "增量" : "高度";
-            const path = [...slot.location.path, ...nodeQuantityPath(i, node.id, q, referenced)];
+            const path = [...holder.location.path, ...nodeQuantityPath(node.id, q)];
             check(!interpolates(node, q), (curve.closed ? "第一个节点" : "首尾节点") + "必须写明" + label, { ...slot.location, path });
         }
     }

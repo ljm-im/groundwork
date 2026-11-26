@@ -31,7 +31,9 @@ const hints: Record<Tool, string> = {
     textMark: "单击放置文字标记",
     scaleMark: "单击放置比例尺",
     section: "单击起点和终点",
-    sharedCurve: lineHint,
+    geometryPoint: "单击地图放置",
+    geometryCurve: "单击添加节点，双击结束",
+    geometryClosed: closedPenHint,
     redrawCurve: lineHint,
     continueCurve: penHint + continueEnd
 };
@@ -56,8 +58,10 @@ export function drawingStatus(mode: Exclude<Tool, "select">, name: string, owner
         textMark: ["新建文字标记", point, false],
         scaleMark: ["新建比例尺", point, false],
         section: ["新建剖面线", "单击起点和终点", false],
-        sharedCurve: ["新建曲线", lineEnd, true],
-        redrawCurve: [curve?.redrawTitle ?? "重画" + label, curve?.requiredClosed ? pen : lineEnd, true],
+        geometryPoint: ["新建点", "单击地图放置", false],
+        geometryCurve: ["新建曲线", "单击添加节点，双击结束", true],
+        geometryClosed: ["新建闭合曲线", pen, true],
+        redrawCurve: [curve?.redrawTitle ?? "重画" + label, curve?.requiredClosed ? pen : curve?.openOnly ? "单击添加节点，双击结束" : lineEnd, true],
         continueCurve: ["继续画" + label, continueEnd + "，Esc 取消", true]
     };
     const [title, end, finish] = text[mode];

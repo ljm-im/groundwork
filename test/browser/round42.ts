@@ -1,0 +1,116 @@
+import assert from "node:assert/strict";
+import { type Design, type Point } from "../../src/core/design/v5.ts";
+import { fixtureMark, literalCurve, syntheticDesign } from "../scenarios.ts";
+import { withCurveMap } from "./curveMapFixture.ts";
+
+export function checkGeometryObjects(url: string) {
+    const design: Design = syntheticDesign();
+    const position: Point = [-20, 22];
+    design.marks.push(fixtureMark(design, { id: "A", label: "测点 A", kind: "text", point: position, follow: "map" }));
+    return withCurveMap(url, "round42-geometry", async page => {
+        const { authored, click, evaluate, frame, key, paint, saved, tap, text, tool, wait } = page;
+        const row = "#properties .geometry-box[aria-label=曲线]";
+        const region = "[data-property-tab=region]", geometry = "[data-property-tab=geometry]";
+        const list = (id: string) => "[data-select-geometry=" + JSON.stringify(id) + "]";
+        const menu = ".reference-menu[aria-label=引用曲线]";
+        const outline = (d: Design, id: string) => {
+            const c = d.geoNodes.find(n => n.id === id)!.construction;
+            assert(c.type === "outline" && "curve" in c.outlines[0]);
+            return c.outlines[0];
+        };
+        const visible = (selector: string) => evaluate(s => !!document.querySelector(s), selector);
+        async function selectOutline(id: string) {
+            await click("[data-tab=terrain]");
+            await click("[data-geo-node=" + JSON.stringify(id) + "]");
+            await click(region);
+            if (!await visible(row)) await click("[data-outline] .subitem-toggle");
+        }
+        async function useCurve(id: string) {
+            await click("#properties .geometry-reference");
+            await click(menu + " [data-option=" + JSON.stringify("curve:" + id) + "]");
+            await saved();
+            await paint();
+        }
+
+        await selectOutline("T");
+        const original = outline(await authored(), "T"), label = design.geometry[original.curve].label;
+        assert.equal(await text(row), label);
+        await click(row);
+        assert.equal((await frame()).selection?.id, "T");
+        assert.equal(await evaluate(s => document.querySelector(s)?.getAttribute("aria-label"), geometry), label);
+        assert(await visible(".side-tabs hr"));
+        await tap(literalCurve(design, original).nodes[0].p);
+        assert(await visible("[aria-label=节点类型]"));
+        assert(!await visible("[data-curve-node] [aria-label=高度]"));
+        await click(region);
+        assert(!await visible(geometry));
+        assert.equal(await evaluate(s => document.querySelector(s)?.getAttribute("aria-pressed"), row), "true");
+
+        await click("[data-tab=inputs]");
+        assert(!await visible(list(original.curve)));
+        await click("[data-add=geometry]");
+        await click(".creation-menu [data-option=geometryClosed]");
+        assert.equal(await text(".drawing-status strong"), "新建闭合曲线");
+        for (const p of [[-28, 4], [-10, 4], [-14, 15]] as Point[]) await tap(p, 2);
+        await key("Enter"); await saved(); await paint();
+        const listedId = (await frame()).selection!.id, created = await authored();
+        assert(created.geometry[listedId].listed && literalCurve(created, listedId).closed);
+        assert(await visible(list(listedId)));
+        assert(!await visible("#properties .side-tabs"));
+
+        await selectOutline("T");
+        await useCurve(listedId);
+        assert.equal(outline(await authored(), "T").curve, listedId);
+        assert(!Object.hasOwn((await authored()).geometry, original.curve));
+        await click("#properties [aria-label=删除地件]"); await saved(); await paint();
+        assert(Object.hasOwn((await authored()).geometry, listedId));
+        await click("[data-tab=inputs]");
+        assert(await visible(list(listedId)));
+
+        async function rectangle(from: Point, to: Point) {
+            await tool("地件", "rect");
+            await tap(from, 2); await tap(to, 2); await saved(); await paint();
+            return (await frame()).selection!.id;
+        }
+        const a = await rectangle([-24, -26], [-10, -12]), shapeId = outline(await authored(), a).curve;
+        await click("[data-tab=inputs]");
+        assert(!await visible(list(shapeId)));
+        const b = await rectangle([5, -26], [18, -12]);
+        await selectOutline(b);
+        await useCurve(shapeId);
+        await click("[data-tab=inputs]");
+        assert(await visible(list(shapeId)));
+        await click(list(shapeId));
+        await click("#properties [aria-label=删除曲线]");
+        assert.match(await text("#remove-dialog"), /以下位置仍在使用它，请先修改。/);
+        assert.equal(await evaluate(() => document.querySelectorAll("#remove-dialog li").length), 2);
+        await click("#remove-dialog button[value=cancel]");
+
+        await click("[data-tab=marks]");
+        await click("[data-mark=A]"); await paint();
+        assert.match(await text("#properties .geometry-box[aria-label=位置]"), /^点 \d+$/);
+        await click("#properties .geometry-box[aria-label=位置]");
+        assert(await visible(geometry));
+        assert(await visible("[data-property-tab=general][aria-label=文字标记]"));
+        await click("[data-property-tab=general]");
+
+        await click("[data-tab=inputs]");
+        await click("[data-add=geometry]");
+        await click(".creation-menu [data-option=geometryPoint]");
+        await tap([12, 12], 2); await saved(); await paint();
+        const pointId = (await frame()).selection!.id;
+        await wait(() => !!document.querySelector("#properties [aria-label=点名称]"));
+        assert(await visible(list(pointId)));
+        const point = (await authored()).geometry[pointId];
+        assert("point" in point);
+        await page.drag(point.point, 2);
+        const moved = (await authored()).geometry[pointId];
+        assert("point" in moved && moved.point[0] > point.point[0]);
+        await click("#properties [aria-label=复制点]");
+        await saved(); await paint();
+        const copyId = (await frame()).selection!.id;
+        assert.notEqual(copyId, pointId);
+        await click("#properties [aria-label=删除点]"); await saved();
+        assert(!Object.hasOwn((await authored()).geometry, copyId));
+    }, design);
+}

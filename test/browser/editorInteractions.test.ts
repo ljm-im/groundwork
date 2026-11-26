@@ -1,3 +1,5 @@
+import { checkGeometryObjects } from "./round42.ts";
+import { resolveDesign } from "../../src/core/design/parameters.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { parseDesign, serializeDesign } from "../../src/core/design/model.ts";
@@ -6,7 +8,7 @@ import { ProjectMap } from "../../src/render/map.ts";
 import { mapColors } from "../../src/render/palette.ts";
 import { geoLabelPoint } from "../../src/render/labelLayout.ts";
 import { type Point } from "../../src/core/design/v5.ts";
-import { literalCurve, layer, rect, syntheticDesign } from "../scenarios.ts";
+import { fixtureMark, literalCurve, addLayer, rect, syntheticDesign } from "../scenarios.ts";
 import { checkProfilesAndLabels } from "./round41.ts";
 import { checkVisibleSearch } from "./visibleSearch.ts";
 import { createBrowserServer, startChromium } from "./chromium.ts";
@@ -68,6 +70,7 @@ test("Editor interactions in Chromium", async t => {
         await t.test("A single outline highlights and segmented buttons keep their gap and keys in Chromium", () => checkSingleOutlineAndButtons(url));
         await t.test("Outline holes support hover, selection, cycling, menus and body dragging in Chromium", () => checkOutlineHoleHits(url));
         await t.test("Node profiles, slope lines, valleys and localized inspector labels in Chromium", () => checkProfilesAndLabels(url));
+        await t.test("Geometry objects, holders and mark anchors in Chromium", () => checkGeometryObjects(url));
         await t.test("List and numeric reference searches match visible labels in Chromium", () => checkVisibleSearch(url));
     }
     finally {
@@ -83,10 +86,10 @@ async function checkEditor(url: string) {
     d.geoNodes[0].function = { type: "ground", value: 4.5364 };
     d.fields.F = { label: "系数", unit: "%" };
     d.geoNodes.splice(1, 0,
-        layer("F", rect(-36, -36, 36, 36), { type: "ground", value: .4564 }, "F"),
-        layer("R", rect(-32, -32, 32, 32), { type: "flat", amount: .04 }, "F"));
-    d.geoNodes.push(layer("X", { type: "strip", of: ["missing"], widths: [1, 2] }, { type: "blend" }));
-    d.marks.push({ id: "M", label: "比例尺", kind: "scale", point: [94, 120], follow: "screen", length: 10 });
+        addLayer(d, "F", rect(-36, -36, 36, 36), { type: "ground", value: .4564 }, "F"),
+        addLayer(d, "R", rect(-32, -32, 32, 32), { type: "flat", amount: .04 }, "F"));
+    d.geoNodes.push(addLayer(d, "X", { type: "strip", of: ["missing"], widths: [1, 2] }, { type: "blend" }));
+    d.marks.push(fixtureMark(d, { id: "M", label: "比例尺", kind: "scale", point: [94, 120], follow: "screen", length: 10 }));
     const browser = await startChromium();
     const { cdp, click, evaluate, key, wait, idle, saved } = browser;
     const text = (sel: string) => evaluate(sel => document.querySelector<HTMLElement>(sel)?.innerText.trim() ?? "", sel);
@@ -152,7 +155,7 @@ async function checkEditor(url: string) {
         assert.equal(await text("#properties .property-title h2"), "项目");
         assert.deepEqual(await evaluate(() => [...document.querySelectorAll("#properties h3")].map(h => h.textContent)), ["描述", "地形计算"]);
         await panel("inputs");
-        assert.deepEqual(await evaluate(() => [...document.querySelectorAll("#panel h3")].map(h => h.textContent)), ["输入", "场", "曲线"]);
+        assert.deepEqual(await evaluate(() => [...document.querySelectorAll("#panel h3")].map(h => h.textContent)), ["输入", "场", "几何"]);
         assert.deepEqual(await evaluate(() => [document.querySelector<HTMLElement>("[data-select-input]")?.dataset.selectInput,
             document.querySelector<HTMLElement>("[data-select-field]")?.dataset.selectField]), ["seed", "height"]);
         assert(await hasBuiltinMark("[data-select-input=seed]"));
@@ -677,13 +680,15 @@ async function checkEditor(url: string) {
         assert.equal(await evaluate(() => document.querySelector("[aria-label=添加山脊]")?.getAttribute("aria-pressed")), "false");
         await actionTip("删除山脊");
         await click(await actionTip("复制山脊")); await idle(); await saved();
-        const mountain = ridgeOf(await disk());
+        const savedDesign = parseDesign(await disk(), true), mountain = ridgeOf(serializeDesign(savedDesign));
         assert(mountain.type === "mountain" && mountain.ridges.length === 2);
         const [originalMember, copy] = mountain.ridges;
-        assert.equal(literalCurve(originalMember).nodes[0].slope, .75);
-        const copiedIds = new Set(literalCurve(copy).nodes.map(v => v.id));
-        assert(literalCurve(originalMember).nodes.every(v => !copiedIds.has(v.id)));
-        assert.deepEqual({ ...copy, curve: { ...literalCurve(copy), nodes: literalCurve(copy).nodes.map((v, i) => ({ ...v, id: literalCurve(originalMember).nodes[i].id })) } }, originalMember);
+        assert("curve" in originalMember && "curve" in copy);
+        const shape = literalCurve(savedDesign, originalMember);
+        assert.equal(originalMember.slope?.[shape.nodes[0].id], .75);
+        assert.notEqual(copy.curve, originalMember.curve);
+        assert.deepEqual(literalCurve(savedDesign, copy), shape);
+        assert.deepEqual({ ...copy, curve: originalMember.curve }, originalMember);
         assert.equal(await evaluate(() => [...document.querySelectorAll("#properties .subitem-toggle")]
             .find(button => button.textContent?.includes("山脊 2"))?.getAttribute("aria-expanded")), "true");
         await undo();
@@ -738,10 +743,10 @@ async function checkEditor(url: string) {
 
         console.log("Strip construction, segment menu, section list and draggable names");
         const adjacent = syntheticDesign();
-        const west = { ...layer("A", rect(-30, -12, 0, 12), { type: "flat", amount: 2 }), label: "西台" };
+        const west = { ...addLayer(adjacent, "A", rect(-30, -12, 0, 12), { type: "flat", amount: 2 }), label: "西台" };
         west.showLabel = true;
-        adjacent.geoNodes.push(west, { ...layer("B", rect(0, -12, 24, 12), { type: "flat", amount: 5 }), label: "东台" });
-        adjacent.marks.push({ id: "M", kind: "scale", label: "比例尺", point: [94, 120], follow: "screen", length: 10 });
+        adjacent.geoNodes.push(west, { ...addLayer(adjacent, "B", rect(0, -12, 24, 12), { type: "flat", amount: 5 }), label: "东台" });
+        adjacent.marks.push(fixtureMark(adjacent, { id: "M", kind: "scale", label: "比例尺", point: [94, 120], follow: "screen", length: 10 }));
         await evaluate(async bytes => {
             window.probe.openName = "editor-interactions.json";
             const root = await navigator.storage.getDirectory();
@@ -767,13 +772,14 @@ async function checkEditor(url: string) {
         await browser.mouse("mouseMoved", rimX, rimY);
         await browser.mouse("mouseReleased", rimX, rimY);
         await selected(); await idle(); await saved();
-        const circle = parseDesign(await disk()).geoNodes.find(n => !project.design.geoNodes.some(original => original.id === n.id));
+        const circleDesign = parseDesign(await disk());
+        const circle = circleDesign.geoNodes.find(n => !project.design.geoNodes.some(original => original.id === n.id));
         assert(circle?.construction.type === "outline");
-        const [circleBoundary] = circle.construction.outlines.map(literalCurve);
+        const [circleBoundary] = circle.construction.outlines.map(holder => literalCurve(circleDesign, holder));
         assert.equal(circleBoundary.nodes.length, 4);
         await wait(id => document.querySelector<HTMLElement>("[data-geo-node][aria-pressed=true]")?.dataset.geoNode === id, circle.id);
         await click("[data-property-tab=region]");
-        assert.equal(await text("#property-content .geometry-box"), "闭合曲线（4 个节点）");
+        assert.match(await text("#property-content .geometry-box"), /^曲线 \d+$/);
         const theme = await evaluate(() => document.documentElement.dataset.theme);
         assert(theme === "light" || theme === "dark");
         const handleColor = mapColors[theme].bgPanel.slice(1).match(/../g)!.map(channel => Number.parseInt(channel, 16));
@@ -808,15 +814,15 @@ async function checkEditor(url: string) {
         await click("[data-geo-node=A]");
         await tap(at([-17, -12]), 1, "right");
         await click(".context-menu [data-option=insert-node]"); await idle(); await saved();
-        const changed = parseDesign(await disk()).geoNodes.find(n => n.id === "A")!.construction;
-        assert(changed.type === "outline" && literalCurve(changed.outlines[0]).nodes.length === 5);
-        assert(Math.abs(literalCurve(changed.outlines[0]).nodes[1].p[0] + 17) < .15);
-        assert.equal(literalCurve(changed.outlines[0]).nodes[1].p[1], -12);
+        const nextDesign = parseDesign(await disk()), changed = nextDesign.geoNodes.find(n => n.id === "A")!.construction;
+        assert(changed.type === "outline" && literalCurve(nextDesign, changed.outlines[0]).nodes.length === 5);
+        assert(Math.abs(literalCurve(nextDesign, changed.outlines[0]).nodes[1].p[0] + 17) < .15);
+        assert.equal(literalCurve(nextDesign, changed.outlines[0]).nodes[1].p[1], -12);
         await undo();
 
         await panel("marks"); await chooseTool("标记", "textMark"); await tap(at([-8, 25])); await idle(); await saved(); await selected();
         await chooseTool("标记", "section"); await tap(at([-34, -26])); await tap(at([25, -26])); await idle(); await saved(); await selected();
-        const section = parseDesign(await disk()).sections[0];
+        const section = resolveDesign(parseDesign(await disk())).sections[0];
         assert.equal(section.label, "剖面线 1");
         assert.equal(await evaluate(() => document.querySelector("[data-section]")?.getAttribute("aria-pressed")), "true");
         assert.match(await text("#plots .plot-title"), /剖面线 1/);
@@ -859,7 +865,7 @@ async function checkEditor(url: string) {
         console.log("Parameter edits preserve terrain list scroll");
         const long = syntheticDesign();
         for (let i = 0; i < 35; i++)
-            long.geoNodes.push(layer("P" + i, rect(0, 0, 4, 4), { type: "flat", amount: 1 }));
+            long.geoNodes.push(addLayer(long, "P" + i, rect(0, 0, 4, 4), { type: "flat", amount: 1 }));
         await evaluate(async bytes => {
             const root = await navigator.storage.getDirectory();
             const file = await root.getFileHandle("editor-interactions.json");

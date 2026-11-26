@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { arcGeometry, degreesFromBulge, pathBezier, pathHandle, segmentType, splitBezier } from "../../src/core/design/path.ts";
 import { geometryPath } from "../../src/core/edit/geoControls.ts";
-import { defaultFunction } from "../../src/core/edit/geoNodes.ts";
+import { defaultFunction, holdPoint } from "../../src/core/edit/geoNodes.ts";
 import { arcHandle } from "../../src/core/edit/paths.ts";
 import { type Curve, type Point } from "../../src/core/design/v5.ts";
 import { distance } from "../../src/core/math/geometry.ts";
 import { mapColors, overlay, type Theme } from "../../src/render/palette.ts";
-import { withNodeSlope, layer, openCurve, rect, syntheticDesign } from "../scenarios.ts";
+import { fixtureSection, withNodeSlope, addLayer, openCurve, rect, syntheticDesign, fixtureCurve } from "../scenarios.ts";
 import { withCurveMap } from "./curveMapFixture.ts";
 
 function segmentPoint(path: Curve, index: number, t = .5): Point {
@@ -20,24 +20,24 @@ function scene() {
     const design = syntheticDesign(), region = rect(-45, -18, -10, 12), hole = rect(-36, -8, -25, 4).outlines[0];
     for (const node of hole.curve.nodes) node.id = "hole-" + node.id;
     region.outlines.push(hole);
-    const mountain = defaultFunction("mountain");
+    const mountain = defaultFunction(design, "mountain");
     assert(mountain.type === "mountain");
     const ridge: Point[] = [[-43, 27], [-32, 31], [-18, 28], [-4, 32], [10, 25]];
-    mountain.ridges.push({ curve: withNodeSlope(openCurve(ridge.map((p, i) => ({ p, h: 5 + i })), "auto"), 1) });
-    mountain.peaks.push({ at: [11, 37], height: 9, radius: 8, noise: 0, scale: 1 });
+    mountain.ridges.push(fixtureCurve(design, { curve: withNodeSlope(openCurve(ridge.map((p, i) => ({ p, h: 5 + i })), "auto"), 1) }, ["h", "slope"]));
+    mountain.peaks.push({ at: holdPoint(design, [11, 37]), height: 9, radius: 8, noise: 0, scale: 1 });
     const shore = rect(28, 19, 51, 38).outlines[0].curve;
     for (const node of shore.nodes) node.id = "shore-" + node.id;
     shore.nodes[0].bulge = .35;
-    const coast = defaultFunction("coast", { shore, center: [42, 34] });
+    const coast = defaultFunction(design, "coast", { shore, center: [42, 34] });
     const slope = openCurve([{ p: [20, -22], h: 0 }, { p: [31, -16], h: 3 }, { p: [45, -14], h: 7 }]);
     design.geoNodes = [
-        layer("G", rect(-57, -45, 57, 45), { type: "ground", value: 4 }),
-        layer("A", region, { type: "flat", amount: 1 }),
-        layer("M", rect(-48, 18, 19, 42), mountain),
-        layer("C", rect(23, 12, 54, 42), coast),
-        layer("S", rect(14, -29, 49, 3), { type: "slope", kind: "path", lines: [{ curve: slope }], center: [0, 0], radius: 5, value: 2, rate: -.2 })
+        addLayer(design, "G", rect(-57, -45, 57, 45), { type: "ground", value: 4 }),
+        addLayer(design, "A", region, { type: "flat", amount: 1 }),
+        addLayer(design, "M", rect(-48, 18, 19, 42), mountain),
+        addLayer(design, "C", rect(23, 12, 54, 42), coast),
+        addLayer(design, "S", rect(14, -29, 49, 3), { type: "slope", kind: "path", lines: [{ curve: slope }], center: [0, 0], radius: 5, value: 2, rate: -.2 })
     ];
-    design.sections = [{ id: "Q", label: "剖面线 Q", points: [[-44, -32], [9, -32]], showLabel: false }];
+    design.sections = [fixtureSection(design, { id: "Q", label: "剖面线 Q", points: [[-44, -32], [9, -32]], showLabel: false })];
     return design;
 }
 
@@ -135,7 +135,7 @@ export async function checkSegmentEditing(url: string) {
         assert.equal((await frame()).selection?.id, "M");
         assert.equal(await segmentTitle(), "");
         await selectedStroke(true);
-        assert.equal(await text(".geometry-box[aria-pressed=true]"), "曲线（5 个节点）");
+        assert.match(await text(".geometry-box[aria-pressed=true]"), /^曲线 \d+$/);
         await tap(firstRidge);
         assert.equal(await segmentTitle(), "线段 1");
         await selectedStroke(true);
@@ -265,7 +265,7 @@ export async function checkSegmentEditing(url: string) {
         assert.deepEqual((await menuGroups())[0][0], ["山峰 1", "复制山峰", "删除山峰"]);
         await key("Escape");
         await tap([-17, -32], 0, "right");
-        assert.deepEqual(await menuGroups(), [[["剖面线", "删除剖面线"]]]);
+        assert.deepEqual(await menuGroups(), [[["剖面线", "复制剖面线", "删除剖面线"]]]);
         await key("Escape");
         await click("[data-tab=terrain]");
         const list = await evaluate(() => {
@@ -382,7 +382,7 @@ export async function checkSegmentEditing(url: string) {
         await tap(segmentPoint(shore, 0, .3));
         assert.equal((await frame()).selection?.id, "C");
         assert.equal(await segmentTitle(), "");
-        assert.equal(await text(".geometry-box[aria-pressed=true]"), "闭合曲线（4 个节点）");
+        assert.match(await text(".geometry-box[aria-pressed=true]"), /^曲线 \d+$/);
         await tap(segmentPoint(shore, 0, .3));
         assert.equal(await segmentTitle(), "线段 1");
         assert.equal(segmentType(shore, 0), "arc");
@@ -444,7 +444,7 @@ export async function checkSegmentEditing(url: string) {
         assert.equal((await frame()).selection?.id, "S");
         assert.equal(await segmentTitle(), "");
         assert.deepEqual(await nodeTitles(), []);
-        assert.equal(await text(".geometry-box[aria-pressed=true]"), "曲线（3 个节点）");
+        assert.match(await text(".geometry-box[aria-pressed=true]"), /^曲线 \d+$/);
         await tap(slope.nodes[0].p);
         assert.deepEqual(await nodeTitles(), ["节点 1"]);
         await tap(segmentPoint(slope, 0));

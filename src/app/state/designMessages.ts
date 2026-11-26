@@ -30,8 +30,8 @@ export function designProblemText({ location, message }: DesignProblem, d: Desig
         const n = d.geoNodes.find(n => n.id === id);
         label = n?.label;
         let curve = path;
-        if (path.at(-2) === "h") curve = path.slice(0, -2);
-        else if (path.at(-1) === "ref" || path.at(-1) === "offset") curve = path.slice(0, -1);
+        if (path.at(-2) === "h" || path.at(-2) === "slope" || path.at(-2) === "interpolate") curve = path.slice(0, -2);
+        else if (path.at(-1) === "ref" || path.at(-1) === "offset" || path.at(-1) === "point") curve = path.slice(0, -1);
         property = (n && geoParameterName(d, n, path)) ?? curveParameterName(curve) ?? geoProperty(path);
     }
     else if (kind === "mark") {
@@ -40,7 +40,7 @@ export function designProblemText({ location, message }: DesignProblem, d: Desig
         if (mark && key === markParameters[mark.kind].key[0]) property = markParameters[mark.kind].label;
         else if (key === "follow") property = "跟随";
     }
-    else if (kind === "curve") label = d.curves[id]?.label;
+    else if (kind === "geometry") label = d.geometry[id]?.label;
     else if (kind === "section") label = d.sections.find(s => s.id === id)?.label;
     else {
         label = (kind === "field" ? d.fields[id] : d.inputs[id])?.label;

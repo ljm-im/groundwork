@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { arcHandle } from "../../src/core/edit/paths.ts";
 import { type Design, type Point } from "../../src/core/design/v5.ts";
-import { layer, openCurve, rect, syntheticDesign } from "../scenarios.ts";
+import { fixtureMark, addLayer, openCurve, rect, syntheticDesign, fixtureCurve } from "../scenarios.ts";
 import { withCurveMap } from "./curveMapFixture.ts";
 
 type Page = Parameters<Parameters<typeof withCurveMap>[2]>[0];
@@ -27,11 +27,11 @@ function narrowDesign(): Design {
         const x = -41 + i % 8 * 4, y = -42 + Math.floor(i / 8) * 5;
         const item = rect(x, y, x + 2, y + 2).outlines[0];
         item.curve.nodes.forEach(node => node.id = "extra-" + i + "-" + node.id);
-        region.outlines.push(item);
+        region.outlines.push(fixtureCurve(d, item));
     }
     const last = rect(18, 10, 32, 25).outlines[0];
     last.curve.nodes.forEach(node => node.id = "target-" + node.id);
-    region.outlines.push(last);
+    region.outlines.push(fixtureCurve(d, last));
     return d;
 }
 
@@ -117,15 +117,15 @@ export function checkInspectorActions(url: string) {
     const d: Design = syntheticDesign(), n = d.geoNodes[1], region = n.construction;
     assert(region.type === "outline" && "curve" in region.outlines[0]);
     const boundary = rect(-26, -16, -5, 2).outlines[0].curve;
-    d.curves.boundary = { label: "共享的台地边界曲线", curve: boundary };
-    region.outlines[0] = { curve: { ref: "{curve:boundary}" } };
+    d.geometry.boundary = { label: "共享的台地边界曲线", listed: true, curve: boundary };
+    region.outlines[0] = { curve: "boundary" };
     const ridgePoints: Point[] = [[-23, -12], [-19, -8], [-12, -8], [-9, -4]];
     const curve = openCurve<never>(ridgePoints.map(p => ({ p })), "corner", "ridge-");
     curve.nodes[1].bulge = .5;
-    d.curves.ridge = { label: "一条需要截断长名称的共享山脊线", curve };
-    n.function = { type: "mountain", valleys: [], ridges: [{ curve: { ref: "{curve:ridge}", h: { "ridge-0": 7, "ridge-3": 7 }, slope: { "ridge-0": 2, "ridge-3": 2 } } }], peaks: [] };
+    d.geometry.ridge = { label: "一条需要截断长名称的共享山脊线", listed: true, curve };
+    n.function = { type: "mountain", valleys: [], ridges: [{ curve: "ridge", h: { "ridge-0": 7, "ridge-3": 7 }, slope: { "ridge-0": 2, "ridge-3": 2 } }], peaks: [] };
     return withCurveMap(url, "round39-inspector-actions", async page => {
-        const { click, evaluate, key, paint, tap, wait } = page;
+        const { click, evaluate, key, tap, wait } = page;
         await resizeSplit(page, "right", 300, 0);
         assert.equal(await evaluate(() => Math.round(document.querySelector(".inspector")!.getBoundingClientRect().width)), 270);
         await click("[data-geo-node=T]");
@@ -141,10 +141,8 @@ export function checkInspectorActions(url: string) {
         const ridgeRow = ".geometry-control:has([aria-label=山脊线])";
         if (!await evaluate(s => !!document.querySelector(s), ridgeRow)) await click("#properties .part:has([aria-label=添加山脊]) .subitem-toggle");
         await assertRow(page, ridgeRow, ":scope > button", 3);
-        await click(ridgeRow + " .geometry-box");
-        await paint();
-        await tap(ridgePoints[0]);
-        await assertRow(page, "[data-parameter$=\".ridges.0.curve.slope.ridge-0\"]", ".number-box button", 4);
+        await tap(ridgePoints[0]); await tap(ridgePoints[0]);
+        await assertRow(page, "[data-parameter$=\".ridges.0.slope.ridge-0\"]", ".number-box button", 4);
         await tap(arcHandle(ridgePoints[1], ridgePoints[2], .5), 2);
         await wait(() => !!document.querySelector("[aria-label=相切]"));
         await assertRow(page, ".parameter-row:has([aria-label=圆心角])", ".number-box button, .parameter-action button", 4);
@@ -152,16 +150,16 @@ export function checkInspectorActions(url: string) {
         await page.saved();
 
         await click("[data-tab=inputs]");
-        await click("[data-select-curve=ridge]");
-        assert(await evaluate(() => document.querySelector(".geometry-box[aria-label=曲线]") && document.querySelector("[aria-label=重画曲线]")));
+        await click("[data-select-geometry=ridge]");
+        assert(await evaluate(() => document.querySelector("input[aria-label=曲线名称]") && document.querySelector("[aria-label=重画曲线]")));
     }, d);
 }
 
 export function checkParameterSources(url: string) {
     const d: Design = syntheticDesign();
-    d.geoNodes.push(layer("F", rect(2, -12, 14, 5), { type: "flat", amount: "{field:height} * .5" }));
-    d.marks.push({ id: "M", kind: "text", label: "测点", point: [0, 0], elevation: 13, follow: "map" },
-        { id: "R", kind: "scale", label: "地图比例尺", point: [22, 23], length: 10, follow: "map" });
+    d.geoNodes.push(addLayer(d, "F", rect(2, -12, 14, 5), { type: "flat", amount: "{field:height} * .5" }));
+    d.marks.push(fixtureMark(d, { id: "M", kind: "text", label: "测点", point: [0, 0], elevation: 13, follow: "map" }),
+        fixtureMark(d, { id: "R", kind: "scale", label: "地图比例尺", point: [22, 23], length: 10, follow: "map" }));
     return withCurveMap(url, "round39-parameter-sources", async page => {
         const { authored, cdp, click, evaluate, key, saved, undo, wait } = page;
         const option = (id: string) => "[aria-label=可用变量] button[data-option=" + JSON.stringify(id) + "]";

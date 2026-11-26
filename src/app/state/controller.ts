@@ -1,8 +1,7 @@
 import { composingKey } from "./numbers.ts";
 import { commitFocusedInput, isEditableText } from "./pendingInput.ts";
-import { defaultFollow } from "../../core/design/v5.ts";
 import { distance } from "../../core/math/geometry.ts";
-import { moveHandle, sectionHandlePoint } from "../../core/edit/controls.ts";
+import { moveHandle, moveSection, sectionHandlePoint } from "../../core/edit/controls.ts";
 import { commitControl, controlPreview } from "../../core/edit/geoControls.ts";
 import { doubleClickTools, draftPointer, updatePreview } from "./geoTools.ts";
 import { controlSnap, sectionSnap, type SnapModifiers } from "./mapSnaps.ts";
@@ -101,7 +100,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
     }
     function clickControl(view: MapView, hit: MapHit, alternate: boolean) {
         const c = hit.control;
-        if (c && hit.selection.kind !== "curve" && c.path < 0 && (alternate || view.selection?.id !== hit.selection.id ||
+        if (c && hit.selection.kind !== "geometry" && c.path < 0 && (alternate || view.selection?.id !== hit.selection.id ||
             view.geometry?.kind !== "curve" || view.geometry.index !== c.path)) return { ...c, role: "curve" as const };
         return c;
     }
@@ -148,9 +147,8 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         }
         if (editor.tool === "textMark" || editor.tool === "scaleMark") {
             const tool = editor.tool, kind = tool === "scaleMark" ? "scale" : "text";
-            const point = map.markCoordinate(screen, defaultFollow(kind));
             beginPan(ev, screen, "stationary", () => {
-                if (editor.tool === tool) void editor.addMark(kind, point);
+                if (editor.tool === tool) void editor.addMark(kind, screen);
             });
             return;
         }
@@ -192,7 +190,10 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             c = { ...part, role: part.path < 0 ? "curve" : "body" };
         else if (part?.role === "vertex" && part.path < 0 && hit !== control)
             c = { ...part, role: "curve" };
-        if (selection.kind === "curve" && c?.role === "curve") return;
+        if (selection.kind === "geometry" && c?.role === "curve") return;
+        const focus = view.holderGeometry?.target;
+        if (focus && focus.kind !== "parameter" && selection.id === view.selection?.id && c &&
+            (c.role === "body" || c.path === focus.index && (c.role === "curve" || c.role === "outline"))) return;
         selectHit(hit, c, true);
         if (c) {
             const { design, resolved } = editor.project;
@@ -202,10 +203,13 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         else if (h) {
             const mark = h.kind === "mark" ? editor.project.design.marks.find(m => m.id === h.id)! : undefined;
             const at = mark ? map.markCoordinate(screen, mark.follow) : p;
-            editor.gesture = { handle: h, offset: [h.point[0] - at[0], h.point[1] - at[1]], snap: sectionSnap(editor, h), screen, pointer };
+            const { design, resolved } = editor.project;
+            const pointPreview = h.kind === "section" || mark?.follow === "map" ? controlPreview(design, resolved, editor.curves, selection,
+                { role: "parameter", path: h.index ?? 0, index: h.index ?? 0, point: h.point }, false) : undefined;
+            editor.gesture = { handle: h, offset: [h.point[0] - at[0], h.point[1] - at[1]], pointPreview, snap: sectionSnap(editor, h), screen, pointer };
         }
         else if (selection.kind === "section") {
-            const section = editor.project.design.sections.find(s => s.id === selection.id)!;
+            const section = editor.project.resolved.sections.find(s => s.id === selection.id)!;
             editor.gesture = { section, screen, pointer };
         }
     }
@@ -369,16 +373,20 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         const at = mark ? map.markCoordinate(screen, mark.follow) : p;
         const target: Point = [at[0] + editor.gesture.offset[0], at[1] + editor.gesture.offset[1]];
         if (mark) {
-            editor.dragMark = { id: h.id, point: target }; return;
+            editor.dragMark = { id: h.id, point: target };
+            editor.dragPreview = editor.gesture.pointPreview?.(target);
+            return;
         }
-        const section = d.sections.find(s => s.id === h.id)!, index = h.index!;
+        const section = editor.project.resolved.sections.find(s => s.id === h.id)!, index = h.index!;
         const result = editor.gesture.snap?.(target, ev);
-        const point = sectionHandlePoint(section, index, result?.point ?? target, ev.shiftKey && !ev.ctrlKey || !!result?.snapped);
+        const [a, b] = d.sections.find(s => s.id === h.id)!.points;
+        const point = sectionHandlePoint(section, index, result?.point ?? target, ev.shiftKey && !ev.ctrlKey || !!result?.snapped, a.point === b.point);
         editor.snapGuides = point ? result?.guides : undefined;
         if (point) {
             const points = [...section.points] as typeof section.points;
             points[index] = point;
             editor.dragSection = { id: h.id, points };
+            editor.dragPreview = editor.gesture.pointPreview?.(point);
         }
     }
 
@@ -431,7 +439,11 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             else {
                 const drag = editor.dragSection;
                 if (drag) await editor.edit(d => {
-                    d.sections.find(s => s.id === drag.id)!.points = drag.points;
+                    if ("section" in g) {
+                        const [a] = g.section.points, [b] = drag.points;
+                        moveSection(d, drag.id, [b[0] - a[0], b[1] - a[1]]);
+                    }
+                    else if ("handle" in g) moveHandle(d, g.handle, drag.points[g.handle.index!]);
                 });
                 if ("handle" in g && editor.dragMark) {
                     const mark = editor.project.resolved.marks.find(m => m.id === g.handle.id), point = editor.dragMark.point;

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import { resolveDesign } from "../src/core/design/parameters.ts";
 import assert from "node:assert/strict";
-import { type ClosedCurve, type Point, type GeoNode } from "../src/core/design/v5.ts";
+import { type ClosedCurve, type Point } from "../src/core/design/v5.ts";
 import { parseDesign } from "../src/core/design/model.ts";
 import { distance, nearest, sampleDefined, spline } from "../src/core/math/geometry.ts";
 import { fbm, noise } from "../src/core/math/noise.ts";
@@ -13,12 +13,12 @@ import { mountainProfile } from "../src/core/terrain/mountain.ts";
 import { terrainIssues } from "../src/core/checks/terrain.ts";
 import { terrainSurface } from "../src/core/terrain/surface.ts";
 import { Project } from "../src/core/project.ts";
-import { withNodeSlope, erosion, layer, rect, syntheticDesign, openCurve } from "./scenarios.ts";
+import { withNodeSlope, erosion, addLayer, fixtureConstruction, layer, literalCurve, placeLayer, type FixtureLayer, rect, syntheticDesign, openCurve } from "./scenarios.ts";
 
-function design(nodes: GeoNode[], step = 1) {
-    const d = syntheticDesign();
+function design(nodes: FixtureLayer[], step = 1) {
+    const d = syntheticDesign("empty");
     d.grid.step = step;
-    d.geoNodes = nodes;
+    d.geoNodes = nodes.map(n => placeLayer(d, n));
     return d;
 }
 const base = () => layer("G", rect(-30, -30, 30, 30), { type: "ground", value: 2 });
@@ -35,7 +35,7 @@ test("A seed reproduces the final height field", () => {
     assert.deepEqual(new Project(structuredClone(d)).terrain.fields.height.values, initial.terrain.fields.height.values);
     d.inputs.seed.value++;
     assert.notDeepEqual(generateTerrain(d).fields.height.values, initial.terrain.fields.height.values);
-    detail.function.seed = "{input:seed} + 6";
+    d.geoNodes[1].function.seed = "{input:seed} + 6";
     assert.deepEqual(generateTerrain(d).fields.height.values, initial.terrain.fields.height.values);
 });
 
@@ -43,7 +43,7 @@ test("A local mountain preserves the underlying height differences along its bou
     const g = base(), slope = layer("S", g.construction, { type: "slope", kind: "path",
         lines: [{ curve: openCurve([{ p: [-30, 0], h: 4 }, { p: [30, 0], h: 7 }]) }], center: [0, 0], radius: 5, value: 2, rate: -.2 });
     const d = design([g, slope]), before = evaluateStack(d).fields.height.values;
-    d.geoNodes.push(layer("M", rect(-12, -12, 12, 12), { type: "mountain", valleys: [],
+    d.geoNodes.push(addLayer(d, "M", rect(-12, -12, 12, 12), { type: "mountain", valleys: [],
         ridges: [{ curve: withNodeSlope(openCurve([{ p: [-5, 0], h: 12 }, { p: [5, 0], h: 10 }]), 3) }],
         peaks: [{ at: [0, 3], height: 16, radius: 2, noise: .1, scale: 7 }] }));
     const t = evaluateStack(parseDesign(d)), after = t.fields.height.values, region = t.regions.get("M")!;
@@ -67,9 +67,9 @@ test("Noise fades to zero at the boundary and reaches its full FBM amplitude ins
     const fn = { type: "noise" as const, amplitude: 2, scale: 11, seed: 3 };
     const n = layer("N", rect(-8.5, -6.5, 9.5, 7.5), fn, "B"), d = design([base(), n]);
     d.fields.B = { label: "B" };
-    d.geoNodes.splice(1, 0, layer("BB", d.geoNodes[0].construction, { type: "ground", value: 2.5 }, "B"));
+    d.geoNodes.splice(1, 0, addLayer(d, "BB", d.geoNodes[0].construction, { type: "ground", value: 2.5 }, "B"));
     const plain = evaluateStack(parseDesign(d));
-    n.function = { ...fn, feather: 4 };
+    d.geoNodes[2].function = { ...fn, feather: 4 };
     const soft = evaluateStack(parseDesign(d)), pattern = noise(fn.seed);
     const seen = new Set<string>();
     for (const k of soft.regions.get(n.id)!.cells) {
@@ -96,8 +96,9 @@ test("A field-bound noise amplitude leaves a zero disk intact and skips undefine
         const [x, y] = t.grid.point(k);
         assert.equal(t.fields.height.values[k], regionMaskAt(region, k) ? 2 : Math.fround(2 + 2 * fbm(pattern, x / 7, y / 7, 2)));
     }
-    n.field = "A"; n.function = { type: "noise", amplitude: "{field:height}", scale: 7 };
-    d.geoNodes = [a, n, g];
+    const [ground, field, , detail] = d.geoNodes;
+    detail.field = "A"; detail.function = { type: "noise", amplitude: "{field:height}", scale: 7 };
+    d.geoNodes = [field, detail, ground];
     assert(evaluateStack(parseDesign(d)).fields.A.values.every(v => v === 4));
 });
 
@@ -116,6 +117,7 @@ test("Bulge arcs cover the disk area and even-odd paths cut a hole", () => {
     const area = full.fields.height.defined.reduce((a, b) => a + b, 0) * d.grid.step ** 2;
     assert(Math.abs(area / (Math.PI * 400) - 1) < .01);
     g.construction.outlines.push({ curve: { ...circle(7), nodes: circle(7).nodes.map(v => ({ ...v, id: "hole" + v.id })) } });
+    d.geoNodes[0].construction = fixtureConstruction(d, g.construction);
     const hole = evaluateStack(d);
     assert.equal(hole.fields.height.defined[hole.grid.index(0, 0)], 0);
     assert.equal(hole.fields.height.defined[hole.grid.index(12, 0)], 1);
@@ -142,12 +144,14 @@ test("Shared strips match touching and overlapping rectangles and ranges survive
         const inUnion = x >= 0 ? x < 12 && Math.abs(y) < 10 : x >= -12 && Math.abs(y) < 5;
         assert.equal(before[k], +(inUnion && Math.hypot(x, endDistance) <= (x >= 0 ? 3 : 2)));
     }
-    left.construction = rect(-12, -5, 2, 5);
+    const [, a, rightNode, strip] = d.geoNodes;
+    a.construction = fixtureConstruction(d, rect(-12, -5, 2, 5));
     assert.deepEqual(mask(), before);
-    const single = { type: "strip" as const, of: ["B"] as [string], widths: [1, 2] as Point, range: { from: "3", to: "0" } };
-    band.construction = single;
-    const selected = mask(), p = right.outlines[0].curve;
-    delete (band.construction as { range?: unknown }).range;
+    const single: Extract<typeof strip.construction, { type: "strip" }> = { type: "strip", of: ["B"], widths: [1, 2], range: { from: "3", to: "0" } };
+    strip.construction = single;
+    assert(rightNode.construction.type === "outline");
+    const selected = mask(), p = literalCurve(d, rightNode.construction.outlines[0]);
+    delete single.range;
     assert(mask().reduce((a, b) => a + b) > selected.reduce((a, b) => a + b));
     single.range = { from: "3", to: "0" };
     p.nodes.splice(2, 0, { id: "extra", p: [12, 0], mode: "corner" });
@@ -160,8 +164,8 @@ test("Shared strips match touching and overlapping rectangles and ranges survive
 
 test("Blend is monotone, split holds both side values, and a batter measures its grade and residual", () => {
     const plateau = layer("A", rect(-20, -10, 0, 10), { type: "flat", amount: 5 });
-    const strip = layer("B", { type: "strip", of: ["A"], widths: [2, 6], range: { from: "1", to: "2" } }, { type: "blend" });
-    const d = design([base(), plateau, strip], .5);
+    const d = design([base(), plateau, layer("B", { type: "strip", of: ["A"], widths: [2, 6], range: { from: "1", to: "2" } }, { type: "blend" })], .5);
+    const strip = d.geoNodes[2];
     const across = (t: ReturnType<typeof generateTerrain>, xs: number[]) => xs.map(x => t.fields.height.values[t.grid.index(x, 0)]);
     const xs = Array.from({ length: 16 }, (_, i) => -1.75 + i * .5);
     const blend = across(generateTerrain(d), xs);
@@ -199,9 +203,9 @@ test("Height diagnostics count uncovered cardinal pairs once and ignore non-heig
     assert.equal(raw.length, 1);
     assert.equal(raw[0].geoNode, "A");
     assert.match(raw[0].message, /20 处.*3\.00/);
-    band.field = "height";
+    d.geoNodes[2].field = "height";
     assert.equal(issues().length, 0);
-    d.geoNodes.pop(); top.function = { type: "flat", amount: .5 };
+    d.geoNodes.pop(); d.geoNodes[1].function = { type: "flat", amount: .5 };
     assert.equal(issues().length, 0);
 });
 
@@ -213,7 +217,7 @@ test("Canvas and ordinary writes respect initializer order and independent holes
     const d = design([layer("early", c, { type: "flat", amount: 19 }), layer("color", c, { type: "flat", amount: 2, feather: 0 }, "f"), g,
         layer("T", rect(-50, -2, 2, 2), { type: "flat", amount: 10 })]);
     d.fields.f = { label: "F" };
-    d.geoNodes.unshift(layer("F", g.construction, { type: "ground", value: 3 }, "f"));
+    d.geoNodes.unshift(addLayer(d, "F", g.construction, { type: "ground", value: 3 }, "f"));
     const t = generateTerrain(parseDesign(d));
     assert.equal(t.grid.width, 60);
     assert.equal(t.fields.f.values[t.grid.index(0, 0)], 5);
@@ -230,9 +234,9 @@ test("A zero strength disk protects every cell of an eroded slope", () => {
     const d = design([base(), layer("S", all, { type: "slope", kind: "radial", lines: [], center: [0, 0], value: 16, radius: 0, rate: -.3 }),
         layer("P", { type: "outline", outlines: [{ curve: circle(6) }] }, { type: "flat", amount: -1 }, "f")]);
     d.fields.f = { label: "F" };
-    d.geoNodes.unshift(layer("F", all, { type: "ground", value: 1 }, "f"));
+    d.geoNodes.unshift(addLayer(d, "F", all, { type: "ground", value: 1 }, "f"));
     const before = evaluateStack(d);
-    d.geoNodes.push(layer("E", all, { ...erosion, droplets: 2400, strength: "{field:f}" }));
+    d.geoNodes.push(addLayer(d, "E", all, { ...erosion, droplets: 2400, strength: "{field:f}" }));
     const after = evaluateStack(d);
     assert(after.fields.height.values.some((v, k) => v !== before.fields.height.values[k]));
     for (const k of after.regions.get("P")!.cells) assert.equal(after.fields.height.values[k], before.fields.height.values[k]);
@@ -303,12 +307,13 @@ test("Omitted mountain and erosion floors preserve cells at and below minus one 
         const d = design([layer("A", area, { type: "ground", value: -1000 }),
             layer("B", area, { type: "slope", kind: "path", lines: [{ curve: openCurve([{ p: [-8, 0], h: -12 }, { p: [8, 0], h: 0 }]) }], center: [0, 0], radius: 5, value: 2, rate: -.2 })]);
         const before = evaluateStack(d).fields.height.values;
-        d.geoNodes.push(node);
+        const placed = placeLayer(d, node);
+        d.geoNodes.push(placed);
         const initial = evaluateStack(d).fields.height.values;
         assert.deepEqual(initial, before); assert(initial.includes(-1000));
-        Object.assign(node.function, { floor: -1000 });
+        Object.assign(placed.function, { floor: -1000 });
         assert.deepEqual(evaluateStack(d).fields.height.values, initial);
-        Object.assign(node.function, { floor: -2000 });
+        Object.assign(placed.function, { floor: -2000 });
         assert.notDeepEqual(evaluateStack(d).fields.height.values, before);
     }
 });

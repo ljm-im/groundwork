@@ -4,7 +4,7 @@ import { Project } from "../src/core/project.ts";
 import { gridDefaults, layerDefaults } from "../src/core/edit/display.ts";
 import { ProjectMap, type MapView } from "../src/render/map.ts";
 import { mapColors } from "../src/render/palette.ts";
-import { syntheticDesign } from "./scenarios.ts";
+import { fixtureMark, fixtureSection, syntheticDesign } from "./scenarios.ts";
 
 const view = (project: Project, layers: Partial<MapView["layers"]>): MapView => ({
     project: project.view(), layers: { ...layerDefaults, ...layers }, grid: gridDefaults,
@@ -13,7 +13,7 @@ const view = (project: Project, layers: Partial<MapView["layers"]>): MapView => 
 
 test("Text marks show the resolved authored elevation when enabled", () => {
     const d = syntheticDesign();
-    d.marks.push({ id: "A", label: "A", kind: "text", point: [1, 2], follow: "map", elevation: "{input:A}", showElevation: true });
+    d.marks.push(fixtureMark(d, { id: "A", label: "A", kind: "text", point: [1, 2], follow: "map", elevation: "{input:A}", showElevation: true }));
     d.inputs.A.value = 9;
     const project = new Project(d), mark = project.resolved.marks[0];
     assert(mark.kind === "text");
@@ -38,8 +38,8 @@ test("Text marks show the resolved authored elevation when enabled", () => {
 test("Groundwork names and section names follow separate map switches", () => {
     const d = syntheticDesign();
     d.geoNodes[0].showLabel = true;
-    d.sections = [{ id: "A", label: "A", points: [[0, 0], [0, 5]] },
-        { id: "B", label: "B", points: [[1, 0], [1, 5]], showLabel: false }];
+    d.sections = [fixtureSection(d, { id: "A", label: "A", points: [[0, 0], [0, 5]] }),
+        fixtureSection(d, { id: "B", label: "B", points: [[1, 0], [1, 5]], showLabel: false })];
     const project = new Project(d);
     const names: string[] = [];
     const ctx = { save() {}, restore() {}, strokeText() {}, measureText: () => ({ width: 8 }),

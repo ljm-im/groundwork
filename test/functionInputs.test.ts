@@ -2,18 +2,18 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { applyLayer } from "../src/core/terrain/functions.ts";
 import { resolveDesign, type Address, writeAt } from "../src/core/design/parameters.ts";
-import { type GeoFunction, type GeoNode } from "../src/core/design/v5.ts";
+import { type GeoNode } from "../src/core/design/v5.ts";
 import { createGrid } from "../src/core/math/geometry.ts";
 import { TerrainCache } from "../src/core/terrain/cache.ts";
 import { evaluateLayer, type FieldState } from "../src/core/terrain/functions.ts";
 import { makeShape, rasterRegion, regionMaskAt } from "../src/core/design/regions.ts";
 import { evaluateStack } from "../src/core/terrain/terrain.ts";
-import { withNodeSlope, erosion, layer, openCurve, polygon, rect, resolvedRect, syntheticDesign } from "./scenarios.ts";
+import { withNodeSlope, erosion, addLayer, openCurve, polygon, rect, resolvedRect, syntheticDesign, type FixtureFunction } from "./scenarios.ts";
 
 const area = rect(-28, -25, 28, 25);
 const shore = polygon([[-16, -20], [16, -20], [18, 16], [-15, 19]]);
 const line = openCurve([{ p: [-17, -9], h: 2 }, { p: [-3, 4], h: 8 }, { p: [18, 0], h: 4 }], "auto");
-type Fn = GeoFunction<number>;
+type Fn = FixtureFunction;
 type Mutation = [address: Address, replacement: unknown];
 type Case = { fn: Fn; changes: Mutation[]; fieldInput?: boolean };
 const grid = createGrid({ xMin: -34, xMax: 34, yMin: -30, yMax: 30, step: 1 });
@@ -86,7 +86,7 @@ test("Flat, both slopes and coast pass a one-metre ground lift through the stack
     const coast: Fn = { type: "coast", shore: { curve: shore }, roughness: 0, harbor: { center: [0, 0], radius: 0, span: 3 } };
     for (const fn of [{ type: "flat", amount: 2 } as const, cases.slope.fn, radial.fn, coast]) {
         const d = syntheticDesign(), ground = d.geoNodes[0];
-        d.geoNodes = [ground, layer("A", area, fn)];
+        d.geoNodes = [ground, addLayer(d, "A", area, fn)];
         const cache = new TerrainCache();
         const before = cache.generate(d), cells = before.regions.get("A")!.cells;
         assert(ground.function.type === "ground");
@@ -100,7 +100,7 @@ test("Flat, both slopes and coast pass a one-metre ground lift through the stack
 function resolvedCase(f: Fn, field = "height") {
     const isStrip = ["blend", "split", "batter"].includes(f.type), d = syntheticDesign();
     d.fields.A = { label: "A" };
-    d.geoNodes = [layer("B", isStrip ? stripConstruction : area, f, field)];
+    d.geoNodes = [addLayer(d, "B", isStrip ? stripConstruction : area, f, field)];
     return { node: resolveDesign(d).geoNodes[0], region: isStrip ? stripRegion : free };
 }
 
@@ -150,8 +150,8 @@ test("Strip functions skip missing neighbor samples even at defined target cells
 test("Flat applies field increments with and without feathering", () => {
     const area = rect(-5, -4, 5, 4), d = syntheticDesign();
     d.fields.A = { label: "A" };
-    const flat = layer("F", area, { type: "flat", amount: "{field:A} * 0.5", feather: 0 });
-    d.geoNodes = [layer("H", area, { type: "ground", value: 4 }), layer("A", area, { type: "ground", value: 6 }, "A"), flat];
+    const flat = addLayer(d, "F", area, { type: "flat", amount: "{field:A} * 0.5", feather: 0 });
+    d.geoNodes = [addLayer(d, "H", area, { type: "ground", value: 4 }), addLayer(d, "A", area, { type: "ground", value: 6 }, "A"), flat];
     const plain = evaluateStack(d);
     assert(plain.fields.height.values.every(v => v === 7));
     flat.function = { type: "flat", amount: "{field:A} * 0.5", feather: 1 };

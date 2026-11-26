@@ -7,7 +7,7 @@ import { setNodeMode, setSegment } from "../../src/core/edit/paths.ts";
 import { type Design, type Point } from "../../src/core/design/v5.ts";
 import { distance } from "../../src/core/math/geometry.ts";
 import { mapColors, overlay } from "../../src/render/palette.ts";
-import { withNodeSlope, layer, openCurve, rect, syntheticDesign } from "../scenarios.ts";
+import { fixtureSection, withNodeSlope, addLayer, openCurve, rect, syntheticDesign, fixtureCurve } from "../scenarios.ts";
 import { startChromium, type Chromium } from "./chromium.ts";
 import { installPickers } from "./filePickers.ts";
 
@@ -113,14 +113,14 @@ async function observeCurveMap() {
 }
 
 function sample() {
-    const design: Design = syntheticDesign(), mountain = defaultFunction("mountain");
+    const design: Design = syntheticDesign(), mountain = defaultFunction(design, "mountain");
     assert(mountain.type === "mountain");
     const line = openCurve(([[-40, 25], [-30, 25], [-20, 31], [-10, 25], [0, 25], [10, 30], [20, 25], [30, 25]] as Point[])
         .map((p, i) => ({ p, h: 6 + i })));
     setNodeMode(line, 2, "auto");
     Object.assign(line.nodes[4], { mode: "manual", in: [-3, 0], out: [3, 0] });
     setSegment(line, 5, "arc");
-    mountain.ridges.push({ curve: withNodeSlope(line, 1) });
+    mountain.ridges.push(fixtureCurve(design, { curve: withNodeSlope(line, 1) }, ["h", "slope"]));
     const region = rect(-46, 18, 43, 40), hole = rect(33, 31, 38, 36).outlines[0];
     for (const node of hole.curve.nodes) node.id = "hole-" + node.id;
     region.outlines.push(hole);
@@ -128,12 +128,12 @@ function sample() {
     for (const node of upper.curve.nodes) node.id = "upper-" + node.id;
     ground.outlines.push(upper);
     design.geoNodes = [
-        layer("G", ground, { type: "ground", value: .2 }),
-        layer("A", rect(-37, -13, 3, 13), { type: "flat", amount: 1 }),
-        layer("B", rect(-12, -12, 25, 15), { type: "flat", amount: .4 }),
-        layer("M", region, mountain)
+        addLayer(design, "G", ground, { type: "ground", value: .2 }),
+        addLayer(design, "A", rect(-37, -13, 3, 13), { type: "flat", amount: 1 }),
+        addLayer(design, "B", rect(-12, -12, 25, 15), { type: "flat", amount: .4 }),
+        addLayer(design, "M", region, mountain)
     ];
-    design.sections = [{ id: "Q", label: "剖面线 Q", points: [[-28, 25], [26, 25]], showLabel: false }];
+    design.sections = [fixtureSection(design, { id: "Q", label: "剖面线 Q", points: [[-28, 25], [26, 25]], showLabel: false })];
     return design;
 }
 

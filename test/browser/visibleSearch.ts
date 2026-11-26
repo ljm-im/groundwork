@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { defaultInputRange } from "../../src/core/design/defaults.ts";
 import { type Design } from "../../src/core/design/v5.ts";
-import { layer, rect, syntheticDesign } from "../scenarios.ts";
+import { fixtureMark, addLayer, rect, syntheticDesign } from "../scenarios.ts";
 import { withCurveMap } from "./curveMapFixture.ts";
 
 export function checkVisibleSearch(url: string) {
@@ -15,11 +15,11 @@ export function checkVisibleSearch(url: string) {
     d.inputs["shown-key"] = { value: 1, range: defaultInputRange("shown-key") };
     d.fields["field-key"] = { label: "砂率" };
     d.geoNodes.push(
-        { ...layer("mountain-key", rect(1, 1, 8, 8), { type: "mountain", ridges: [], valleys: [], peaks: [] }), label: "山体乙" },
-        { ...layer("strip-key", { type: "strip", of: [terrace.id], widths: [1, 2] }, { type: "blend" }), label: "过渡带丙" },
-        { ...layer("field-writer", rect(2, 2, 7, 7), { type: "ground", value: 2 }, "field-key"), label: "覆盖区丁" }
+        { ...addLayer(d, "mountain-key", rect(1, 1, 8, 8), { type: "mountain", ridges: [], valleys: [], peaks: [] }), label: "山体乙" },
+        { ...addLayer(d, "strip-key", { type: "strip", of: [terrace.id], widths: [1, 2] }, { type: "blend" }), label: "过渡带丙" },
+        { ...addLayer(d, "field-writer", rect(2, 2, 7, 7), { type: "ground", value: 2 }, "field-key"), label: "覆盖区丁" }
     );
-    d.marks.push({ id: "mark-key", label: "测点", kind: "text", follow: "map", point: [25, 13], elevation: 2 });
+    d.marks.push(fixtureMark(d, { id: "mark-key", label: "测点", kind: "text", follow: "map", point: [25, 13], elevation: 2 }));
     return withCurveMap(url, "round41-visible-search", async page => {
         const { cdp, click, evaluate, key, paint, wait } = page;
         const search = async (id: string, value: string) => {

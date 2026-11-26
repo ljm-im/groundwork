@@ -11,7 +11,7 @@ import { Project } from "../src/core/project.ts";
 import { nodePool } from "../src/compute/nodePool.ts";
 import { ThreadPool } from "../src/compute/pool.ts";
 import { countBlocks, type CountBlocks } from "./parallelBlocks.ts";
-import { erosion, layer, polygon, rect, resolvedRect, syntheticDesign } from "./scenarios.ts";
+import { erosion, addLayer, polygon, rect, resolvedRect, syntheticDesign } from "./scenarios.ts";
 
 function geometry(id: string, construction: Construction<number, "resolved">): GeoNode<number, "resolved"> {
     return { id, label: id, field: "height", construction, function: { type: "ground", value: 0 } };
@@ -98,16 +98,16 @@ function parallelDesign() {
     d.grid.step = .2;
     d.fields.F = { label: "F" };
     d.geoNodes = [
-        layer("G", full, { type: "ground", value: 2 }),
-        layer("F", left, { type: "ground", value: .8 }, "F"),
-        layer("C", full, { type: "coast", shore: { curve: shore },
+        addLayer(d, "G", full, { type: "ground", value: 2 }),
+        addLayer(d, "F", left, { type: "ground", value: .8 }, "F"),
+        addLayer(d, "C", full, { type: "coast", shore: { curve: shore },
             roughness: "{field:F}", harbor: { center: [12, 30], radius: 6, span: 8 } }),
-        layer("A", rect(-30, -25, 24, 23), { type: "flat", amount: 9 }),
-        layer("B", { type: "strip", of: ["A"], widths: [12, 18] }, { type: "batter", grade: .2 }),
-        layer("N", { type: "strip", of: ["B"], widths: [6, 6] }, { type: "flat", amount: "{field:F}" }),
-        layer("L", full, { type: "cliff", factor: "{field:F} + 1.2" }),
-        layer("I", full, { type: "islets", density: "{field:F}", reach: 25 }),
-        layer("E", full, { ...erosion, strength: "{field:F}", spacing: .8 })
+        addLayer(d, "A", rect(-30, -25, 24, 23), { type: "flat", amount: 9 }),
+        addLayer(d, "B", { type: "strip", of: ["A"], widths: [12, 18] }, { type: "batter", grade: .2 }),
+        addLayer(d, "N", { type: "strip", of: ["B"], widths: [6, 6] }, { type: "flat", amount: "{field:F}" }),
+        addLayer(d, "L", full, { type: "cliff", factor: "{field:F} + 1.2" }),
+        addLayer(d, "I", full, { type: "islets", density: "{field:F}", reach: 25 }),
+        addLayer(d, "E", full, { ...erosion, strength: "{field:F}", spacing: .8 })
     ];
     return parseDesign(d);
 }
