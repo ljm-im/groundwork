@@ -223,20 +223,20 @@ test("Numeric drafts and committed edits agree on resolution and error wording",
     source.fields.F = { label: "F" };
     source.geoNodes.push(layer("S", { type: "strip", of: ["T"], widths: [0, 1] }, { type: "batter", grade: "{input:B}" }));
     source.geoNodes.push(layer("U", rect(-1, -1, 2, 2), {
-        type: "slope", kind: "path", ease: true, line: openCurve<Expression>([{ p: [0, 0], h: 1 }, { p: [0, 1] }, { p: [0, 2] }, { p: [0, 3], h: "{input:C}" }])
+        type: "slope", kind: "path", ease: true, line: { curve: openCurve<Expression>([{ p: [0, 0], h: 1 }, { p: [0, 1] }, { p: [0, 2] }, { p: [0, 3], h: "{input:C}" }]) }
     }));
     source.geoNodes.push(layer("V", rect(0, 0, 4, 4), { type: "flat", amount: "6 / {input:C}" }));
     source.marks.push({ id: "M", kind: "scale", label: "M", point: [0, 0], follow: "map", length: "{input:B}" });
     const design = parseDesign(source), original = resolveDesign(design), edits = numberEdits(design, original);
     const a: Address = ["inputs", "A", "value"], b: Address = ["inputs", "B", "value"], c: Address = ["inputs", "C", "value"];
-    const path = (i: number): Address => ["geoNodes", 3, "function", "line", "nodes", i, "h"];
+    const path = (i: number): Address => ["geoNodes", 3, "function", "line", "curve", "nodes", i, "h"];
     const cases: [Address, Expression, string?][] = [
         [a, "20", undefined], [b, ".5 * (2 + 3)", undefined], [a, "{input:missing}", "找不到自定义输入“missing”"],
         [a, "{input:A}", "引用成环"], [a, "{geo:T.amount}", "是场类型参数，不能引用"], [a, "{field:F}", "这里不能用场"],
         [a, "1 / 0", "除数不能为 0"], [c, 0, "除数不能为 0"], [b, -1, "无效"],
         [["geoNodes", 2, "construction", "widths", 1], 0, "无效"], [["inputs", "B", "range", 2], 0, "无效"],
         [["fields", "F", "precision"], 0, "必须是正的有限数"], [["grid", "step"], -1, "无效"], [["grid", "step"], .5, undefined],
-        [["marks", 0, "length"], -2, "无效"], [path(1), 6, undefined], [path(1), "{geo:U.line.nodes.2.h}", "引用成环"]
+        [["marks", 0, "length"], -2, "无效"], [path(1), 6, undefined], [path(1), "{geo:U.line.curve.nodes.2.h}", "引用成环"]
     ];
     const outcome = <T>(work: () => T) => {
         try {

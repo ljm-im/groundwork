@@ -1,4 +1,5 @@
 import { test } from "node:test";
+import { resolveDesign } from "../src/core/design/parameters.ts";
 import assert from "node:assert/strict";
 import { type ClosedCurve, type Point, type GeoNode } from "../src/core/design/v5.ts";
 import { parseDesign } from "../src/core/design/model.ts";
@@ -40,10 +41,10 @@ test("A seed reproduces the final height field", () => {
 
 test("A local mountain preserves the underlying height differences along its boundary", () => {
     const g = base(), slope = layer("S", g.construction, { type: "slope", kind: "path",
-        line: openCurve([{ p: [-30, 0], h: 4 }, { p: [30, 0], h: 7 }]) });
+        line: { curve: openCurve([{ p: [-30, 0], h: 4 }, { p: [30, 0], h: 7 }]) } });
     const d = design([g, slope]), before = evaluateStack(d).fields.height.values;
     d.geoNodes.push(layer("M", rect(-12, -12, 12, 12), { type: "mountain",
-        ridges: [{ line: openCurve([{ p: [-5, 0], h: 12 }, { p: [5, 0], h: 10 }]),
+        ridges: [{ curve: openCurve([{ p: [-5, 0], h: 12 }, { p: [5, 0], h: 10 }]),
             slope: 3 }],
         peaks: [{ at: [0, 3], height: 16, radius: 2, noise: .1, scale: 7 }] }));
     const t = evaluateStack(parseDesign(d)), after = t.fields.height.values, region = t.regions.get("M")!;
@@ -86,7 +87,7 @@ test("Noise fades to zero at the boundary and reaches its full FBM amplitude ins
 });
 
 test("A field-bound noise amplitude leaves a zero disk intact and skips undefined input", () => {
-    const g = base(), disk = layer("Z", { type: "outline", outlines: [circle(6)] }, { type: "flat", amount: -4 }, "A");
+    const g = base(), disk = layer("Z", { type: "outline", outlines: [{ curve: circle(6) }] }, { type: "flat", amount: -4 }, "A");
     const n = layer("N", g.construction, { type: "noise", amplitude: "{field:A} * 0.5", scale: 7, octaves: 2 });
     const a = layer("A", g.construction, { type: "ground", value: 4 }, "A");
     const d = design([g, a, disk, n]); d.fields.A = { label: "A" };
@@ -111,11 +112,11 @@ test("Adaptive auto cubic vertices lie on the v4 Catmull-Rom curve", () => {
 });
 
 test("Bulge arcs cover the disk area and even-odd paths cut a hole", () => {
-    const g = base(); g.construction = { type: "outline", outlines: [circle(20)] };
+    const g = base(); g.construction = { type: "outline", outlines: [{ curve: circle(20) }] };
     const d = design([g], .5), full = evaluateStack(d);
     const area = full.fields.height.defined.reduce((a, b) => a + b, 0) * d.grid.step ** 2;
     assert(Math.abs(area / (Math.PI * 400) - 1) < .01);
-    g.construction.outlines.push({ ...circle(7), nodes: circle(7).nodes.map(v => ({ ...v, id: "hole" + v.id })) });
+    g.construction.outlines.push({ curve: { ...circle(7), nodes: circle(7).nodes.map(v => ({ ...v, id: "hole" + v.id })) } });
     const hole = evaluateStack(d);
     assert.equal(hole.fields.height.defined[hole.grid.index(0, 0)], 0);
     assert.equal(hole.fields.height.defined[hole.grid.index(12, 0)], 1);
@@ -146,7 +147,7 @@ test("Shared strips match touching and overlapping rectangles and ranges survive
     assert.deepEqual(mask(), before);
     const single = { type: "strip" as const, of: ["B"] as [string], widths: [1, 2] as Point, range: { from: "3", to: "0" } };
     band.construction = single;
-    const selected = mask(), p = right.outlines[0];
+    const selected = mask(), p = right.outlines[0].curve;
     delete (band.construction as { range?: unknown }).range;
     assert(mask().reduce((a, b) => a + b) > selected.reduce((a, b) => a + b));
     single.range = { from: "3", to: "0" };
@@ -173,7 +174,7 @@ test("Blend is monotone, split holds both side values, and a batter measures its
     strip.construction.widths = [0, 6];
     const terrain = generateTerrain(d), fill = across(terrain, [.25, 1.25, 2.25, 3.25]);
     for (let i = 1; i < fill.length; i++) assert(Math.abs((fill[i - 1] - fill[i]) / .5 - 1) < .02);
-    const issues = terrainIssues(d, terrain).filter(i => i.kind === "short-batter");
+    const issues = terrainIssues(resolveDesign(d), terrain).filter(i => i.kind === "short-batter");
     assert.equal(issues.length, 1);
     assert.match(issues[0].message, /放坡不到底.*2\.00/);
     strip.construction.widths = [0, 12];
@@ -193,7 +194,7 @@ test("Height diagnostics count uncovered cardinal pairs once and ignore non-heig
     const band = layer("B", { type: "strip", of: ["A"], widths: [1, 1] }, { type: "split" }, "f");
     const d = design([base(), top, band]); d.fields.f = { label: "F" };
     const issues = () => {
-        const t = generateTerrain(d); return terrainIssues(d, t).filter(i => i.kind === "untreated-height");
+        const t = generateTerrain(d); return terrainIssues(resolveDesign(d), t).filter(i => i.kind === "untreated-height");
     };
     const raw = issues();
     assert.equal(raw.length, 1);
@@ -207,9 +208,9 @@ test("Height diagnostics count uncovered cardinal pairs once and ignore non-heig
 
 test("Canvas and ordinary writes respect initializer order and independent holes", () => {
     const g = base(), c = rect(-50, -50, 50, 50);
-    const hole = rect(2, 2, 8, 8).outlines[0];
+    const hole = rect(2, 2, 8, 8).outlines[0].curve;
     assert(g.construction.type === "outline");
-    g.construction.outlines.push({ ...hole, nodes: hole.nodes.map(v => ({ ...v, id: "h" + v.id })) });
+    g.construction.outlines.push({ curve: { ...hole, nodes: hole.nodes.map(v => ({ ...v, id: "h" + v.id })) } });
     const d = design([layer("early", c, { type: "flat", amount: 19 }), layer("color", c, { type: "flat", amount: 2, feather: 0 }, "f"), g,
         layer("T", rect(-50, -2, 2, 2), { type: "flat", amount: 10 })]);
     d.fields.f = { label: "F" };
@@ -228,7 +229,7 @@ test("Canvas and ordinary writes respect initializer order and independent holes
 test("A zero strength disk protects every cell of an eroded slope", () => {
     const all = rect(-24, -24, 24, 24);
     const d = design([base(), layer("S", all, { type: "slope", kind: "radial", center: [0, 0], value: 16, radius: 0, rate: -.3 }),
-        layer("P", { type: "outline", outlines: [circle(6)] }, { type: "flat", amount: -1 }, "f")]);
+        layer("P", { type: "outline", outlines: [{ curve: circle(6) }] }, { type: "flat", amount: -1 }, "f")]);
     d.fields.f = { label: "F" };
     d.geoNodes.unshift(layer("F", all, { type: "ground", value: 1 }, "f"));
     const before = evaluateStack(d);
@@ -240,10 +241,10 @@ test("A zero strength disk protects every cell of an eroded slope", () => {
 
 test("All functions operate on a design with only the built-in field", () => {
     const all = rect(-20, -20, 20, 20), nodes = [base(),
-        layer("C", all, { type: "coast", shore: circle(12), roughness: 2, harbor: { center: [0, 0], radius: 0, span: 3 } }),
+        layer("C", all, { type: "coast", shore: { curve: circle(12) }, roughness: 2, harbor: { center: [0, 0], radius: 0, span: 3 } }),
         layer("M", all, { type: "mountain", ridges: [], peaks: [], floor: 0 }), layer("N", all, { type: "noise", amplitude: 1, scale: 8 }), layer("K", all, { type: "cliff", factor: .7 }),
         layer("E", all, erosion), layer("I", all, { type: "islets", density: 1, reach: 5 }), layer("F", all, { type: "flat", amount: 5 }),
-        layer("A", all, { type: "flat", amount: 1, feather: 3 }), layer("S", all, { type: "slope", kind: "path", line: openCurve([{ p: [-2, 0], h: 2 }, { p: [2, 0], h: 3 }]) })];
+        layer("A", all, { type: "flat", amount: 1, feather: 3 }), layer("S", all, { type: "slope", kind: "path", line: { curve: openCurve([{ p: [-2, 0], h: 2 }, { p: [2, 0], h: 3 }]) } })];
     for (const type of ["blend", "batter", "split"] as const)
         nodes.push(layer(type, { type: "strip", of: ["F"], widths: [2, 2] }, type === "batter" ? { type, grade: .4 } : { type }));
     const d = parseDesign(design(nodes)), a = new Project(d), b = new Project(parseDesign(d));
@@ -257,10 +258,10 @@ test("Slope ridges round the crown and foot, interpolate heights and merge at th
         { p: [-20, 0], h: 24 }, { p: [-10, 0] }, { p: [0, 0], h: 28 }, { p: [20, 0], h: 29 }
     ]);
     const d = design([layer("A", area, { type: "ground", value: 0 }),
-        layer("B", area, { type: "mountain", ridges: [{ line, slope: "{input:A} / 10 + .05" }], peaks: [] })], .5);
+        layer("B", area, { type: "mountain", ridges: [{ curve: line, slope: "{input:A} / 10 + .05" }], peaks: [] })], .5);
     const project = new Project(parseDesign(d)), f = project.resolved.geoNodes[1].function;
     assert(f.type === "mountain");
-    assert.equal(f.ridges[0].line.nodes[1].h, undefined);
+    assert.equal(f.ridges[0].curve.nodes[1].h, undefined);
     const height = mountainProfile(f, .0625, 0);
     assert.equal(height(-10, 0, 0), 26);
     assert.equal(height(0, 0, 0), 28);
@@ -276,7 +277,7 @@ test("Slope ridges round the crown and foot, interpolate heights and merge at th
         (height(0, foot, 0) - height(0, foot + .001, 0))) < 1e-6);
     assert.equal(height(0, 100, 4), 4);
 
-    const second = { slope: .75, line: openCurve([{ p: [-20, 20], h: 28 }, { p: [20, 20], h: 28 }]) };
+    const second = { slope: .75, curve: openCurve([{ p: [-20, 20], h: 28 }, { p: [20, 20], h: 28 }]) };
     const merged = mountainProfile({ ...f, ridges: [...f.ridges, second] }, .0625, 0);
     assert(Math.abs(merged(0, 10, 0) - height(0, 10, 0) - 1.25) < 1e-9);
 });
@@ -301,7 +302,7 @@ test("Omitted mountain and erosion floors preserve cells at and below minus one 
     const e = layer("E", area, { ...erosion });
     for (const node of [m, e]) {
         const d = design([layer("A", area, { type: "ground", value: -1000 }),
-            layer("B", area, { type: "slope", kind: "path", line: openCurve([{ p: [-8, 0], h: -12 }, { p: [8, 0], h: 0 }]) })]);
+            layer("B", area, { type: "slope", kind: "path", line: { curve: openCurve([{ p: [-8, 0], h: -12 }, { p: [8, 0], h: 0 }]) } })]);
         const before = evaluateStack(d).fields.height.values;
         d.geoNodes.push(node);
         const initial = evaluateStack(d).fields.height.values;

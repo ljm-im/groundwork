@@ -1,3 +1,4 @@
+import { resolveDesign } from "../../src/core/design/parameters.ts";
 import assert from "node:assert/strict";
 import { parseDesign, serializeDesign } from "../../src/core/design/model.ts";
 import { geometryPath } from "../../src/core/edit/geoControls.ts";
@@ -111,12 +112,12 @@ function sample() {
     setNodeMode(line, 2, "auto");
     Object.assign(line.nodes[4], { mode: "manual", in: [-3, 0], out: [3, 0] });
     setSegment(line, 5, "arc");
-    mountain.ridges.push({ line, slope: 1 });
+    mountain.ridges.push({ curve: line, slope: 1 });
     const region = rect(-46, 18, 43, 40), hole = rect(33, 31, 38, 36).outlines[0];
-    for (const node of hole.nodes) node.id = "hole-" + node.id;
+    for (const node of hole.curve.nodes) node.id = "hole-" + node.id;
     region.outlines.push(hole);
     const ground = rect(-57, -45, 57, 16), upper = rect(48, 20, 57, 41).outlines[0];
-    for (const node of upper.nodes) node.id = "upper-" + node.id;
+    for (const node of upper.curve.nodes) node.id = "upper-" + node.id;
     ground.outlines.push(upper);
     design.geoNodes = [
         layer("G", ground, { type: "ground", value: .2 }),
@@ -135,7 +136,7 @@ function curveMap(browser: Chromium, design: Design, name: string, url: string) 
     const disk = () => evaluate(name => window.disk(name), name);
     const text = (selector: string) => evaluate(s => document.querySelector<HTMLElement>(s)?.innerText.trim() ?? "", selector);
     const authored = async () => parseDesign(await disk(), true);
-    const owner = (d: Design, id: string) => d.geoNodes.find(n => n.id === id)!;
+    const owner = (d: Design, id: string) => resolveDesign(d).geoNodes.find(n => n.id === id)!;
     const curve = async () => geometryPath(owner(await authored(), "M"), -1)!;
     const boundary = (d: Design, id: string) => geometryPath(owner(d, id), 0)!;
     const undo = async () => {

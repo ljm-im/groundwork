@@ -1,6 +1,6 @@
 {#snippet formatted(text: string, operators: boolean)}
     {#each text.split(/(\{(?:input|field|geo):[^{}]+\})/g) as part, i (i)}
-        {#if part.startsWith("{") && part.endsWith("}")}<ReferenceChip refKey={part.slice(1, -1)} design={base} {slots} />
+        {#if part.startsWith("{") && part.endsWith("}")}<ReferenceChip refKey={part.slice(1, -1)} design={base} {slots} canonical={editor.numberEdits.key} />
         {:else}{operators ? displayValue(part, step) : part}{/if}
     {/each}
 {/snippet}
@@ -363,7 +363,7 @@
     }
     function rejectedStep(next: Expression, cause: unknown) {
         const reading = displayValue(next, step, "", key => {
-            const { name, property } = referenceLabel(key, base, slots);
+            const { name, property } = referenceLabel(editor.numberEdits.key(key), base, slots);
             return property ? name + "." + property : name;
         });
         const reason = designErrorText(cause, base, "message");

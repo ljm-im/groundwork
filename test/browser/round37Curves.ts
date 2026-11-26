@@ -13,16 +13,16 @@ const slopePoints: Point[] = [[-36, 20], [-24, 27], [-12, 20]];
 
 function designFixture(): Design {
     const d = syntheticDesign(), outline = rect(-29, -18, -12, -4), land = d.geoNodes[1];
-    Object.assign(outline.outlines[0].nodes[0], { in: [0, 4], out: [4, -1] });
+    Object.assign(outline.outlines[0].curve.nodes[0], { in: [0, 4], out: [4, -1] });
     land.label = "西台"; land.construction = outline;
     d.curves.ridge = { label: "脊形", curve: openCurve<never>(sourcePoints.map(p => ({ p })), "auto", "r") };
     d.geoNodes.push(
         { ...layer("E", rect(9, -20, 26, -7), { type: "flat", amount: 3 }), label: "东台" },
         { ...layer("M", rect(3, 9, 43, 40), { type: "mountain", ridges: [
-            { line: openCurve([{ p: [6, 30], h: 6 }, { p: [30, 32], h: 8 }]), slope: 1 }
+            { curve: openCurve([{ p: [6, 30], h: 6 }, { p: [30, 32], h: 8 }]), slope: 1 }
         ], peaks: [] }), label: "东山" },
         layer("S", rect(-43, 10, -7, 38), { type: "slope", kind: "path",
-            line: openCurve(slopePoints.map((p, i) => ({ p, ...(i !== 1 && { h: i + 1 }) })), "corner", "s") })
+            line: { curve: openCurve(slopePoints.map((p, i) => ({ p, ...(i !== 1 && { h: i + 1 }) })), "corner", "s") } })
     );
     return d;
 }
@@ -159,8 +159,9 @@ export function checkCurveZoom(url: string) {
 
 export function checkSharedCurves(url: string) {
     return withCurveMap(url, "round37-shared", async page => {
-        const { click, evaluate, key, saved, authored, owner, frame, tap, drag, paint, text, undo, wait } = page;
-        const menu = ".reference-menu[aria-label=可用曲线]";
+        const { click, evaluate, key, saved, authored, frame, tap, drag, paint, text, undo, wait } = page;
+        const menu = ".reference-menu[aria-label=引用曲线]";
+        const owner = (d: Design, id: string) => d.geoNodes.find(node => node.id === id)!;
         const option = (id: string) => menu + " [data-option=" + JSON.stringify(id) + "]";
         const region = async (id: string) => {
             await click("[data-geo-node=" + id + "]");
@@ -211,7 +212,7 @@ export function checkSharedCurves(url: string) {
         await page.pointer("mousePressed", from); await page.pointer("mouseMoved", to);
         await page.pointer("mouseReleased", to); await saved(); await paint();
         const moved = await authored(), east = owner(moved, "E").construction;
-        assert(east.type === "outline" && "ref" in east.outlines[0]);
+        assert(east.type === "outline" && "curve" in east.outlines[0] && "ref" in east.outlines[0].curve);
         const offset = east.outlines[0].offset!;
         assert(offset[0] > 15 && Math.abs(offset[1]) < .01);
         assert.deepEqual(owner(moved, "T").construction, beforeWest);
@@ -235,9 +236,9 @@ export function checkSharedCurves(url: string) {
         await cropped(page, "round37-curve-reference-menu", menu);
         await click(option("geo:T.construction.outlines.0")); await saved();
         const eastAttached = owner(await authored(), "E").construction;
-        assert(eastAttached.type === "outline" && "ref" in eastAttached.outlines[0] && !eastAttached.outlines[0].offset);
+        assert(eastAttached.type === "outline" && "ref" in eastAttached.outlines[0]);
         await useSource("轮廓 1", "unlink");
-        assert.deepEqual(boundaryOf(await authored(), "E"), reshaped.curves[id].curve);
+        assert.deepEqual(owner(await authored(), "E").construction, owner(reshaped, "T").construction);
 
         await click("[data-tab=inputs]"); await click("[data-select-curve=" + id + "]");
         await click("[aria-label=删除曲线]");
@@ -248,19 +249,19 @@ export function checkSharedCurves(url: string) {
         await useSource("山脊线", "curve:ridge");
         for (const [i, value] of [[0, 12], [2, 19]]) {
             await tap(sourcePoints[i]);
-            await enterNumber(page, "[data-parameter$='.ridges.0.line.h.r" + i + "'] .numeric-face", String(value));
+            await enterNumber(page, "[data-parameter$='.ridges.0.curve.h.r" + i + "'] .numeric-face", String(value));
             await key("Enter"); await saved(); await paint();
         }
         const equivalent = await authored(), f = owner(equivalent, "M").function;
         assert(f.type === "mountain");
-        assert.deepEqual(f.ridges[0].line, { ref: "{curve:ridge}", h: { r0: 12, r2: 19 } });
-        f.ridges[0].line = openCurve(sourcePoints.map((p, i) => ({ p, ...(i !== 1 && { h: i ? 19 : 12 }) })), "auto", "r");
+        assert.deepEqual(f.ridges[0], { curve: { ref: "{curve:ridge}", h: { r0: 12, r2: 19 } }, slope: 1 });
+        f.ridges[0] = { curve: openCurve(sourcePoints.map((p, i) => ({ p, ...(i !== 1 && { h: i ? 19 : 12 }) })), "auto", "r"), slope: 1 };
         const expected = evaluateStack(equivalent).fields.height;
         assert.deepEqual(await terrain(), { values: Array.from(expected.values), defined: Array.from(expected.defined) });
 
         await tap(sourcePoints[2], 0, "right");
         await click("[data-option=continue-curve]");
-        assert.equal(await text(".drawing-status strong"), "继续画“东山.山脊 1 山脊线”");
+        assert.equal(await text(".drawing-status strong"), "继续画“东山.山脊 1.山脊线”");
         await tap([38, 22], 2); await tap([42, 26], 2);
         await key("Backspace"); await key("Enter"); await saved(); await paint();
         const tail = (await authored()).curves.ridge.curve;
@@ -293,10 +294,4 @@ export function checkSharedCurves(url: string) {
         assert(line.closed && line.nodes.length === 4 && !Object.hasOwn(line.nodes[3], "h"));
         assert.deepEqual(line.nodes.slice(0, 3).map(n => n.p), slopePoints);
     }, designFixture());
-}
-
-function boundaryOf(d: Design, id: string) {
-    const c = d.geoNodes.find(n => n.id === id)!.construction;
-    assert(c.type === "outline");
-    return literalCurve(c.outlines[0]);
 }

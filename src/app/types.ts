@@ -1,5 +1,5 @@
-import { type FollowingCurves, type GeoControl, type OutlineParameterGeometry } from "../core/edit/geoControls.ts";
-import { type Expression, type GeoNode, type Point, type Section, type SharedCurve } from "../core/design/v5.ts";
+import { type ControlPreview, type GeoControl } from "../core/edit/geoControls.ts";
+import { type Point, type Section } from "../core/design/v5.ts";
 import { type Handle, type Selection } from "../core/edit/types.ts";
 import { type DrawTool } from "../core/edit/types.ts";
 import { type layerDefaults } from "../core/edit/display.ts";
@@ -16,7 +16,7 @@ export type Layer = keyof typeof layerDefaults;
 
 interface GestureStart { screen: Point; pointer: number; changed?: boolean }
 export type Gesture = GestureStart & (
-  { geo: GeoNode<Expression, never> | SharedCurve; selection: Selection; control: GeoControl; independent: boolean; target?: Point; outlineGeometry?: OutlineParameterGeometry; followers?: FollowingCurves } |
+  { preview: (at: Point) => ControlPreview; selection: Selection; control: GeoControl; independent: boolean; target?: Point } |
   { label: LabelTarget; offset: Point } |
   { section: Section } |
   { pan: "middle" | "space" | "stationary"; center: number[]; click?: () => void } |

@@ -11,9 +11,9 @@ import { Project } from "../src/core/project.ts";
 import { nodePool } from "../src/compute/nodePool.ts";
 import { ThreadPool } from "../src/compute/pool.ts";
 import { countBlocks, type CountBlocks } from "./parallelBlocks.ts";
-import { erosion, layer, polygon, rect, syntheticDesign } from "./scenarios.ts";
+import { erosion, layer, polygon, rect, resolvedRect, syntheticDesign } from "./scenarios.ts";
 
-function geometry(id: string, construction: Construction<number, never>): GeoNode<number, never> {
+function geometry(id: string, construction: Construction<number, "resolved">): GeoNode<number, "resolved"> {
     return { id, label: id, field: "height", construction, function: { type: "ground", value: 0 } };
 }
 
@@ -21,7 +21,7 @@ test("Free scanlines use the same even-odd mask and row-major cells as individua
     const grid = createGrid({ xMin: -6, xMax: 6, yMin: -6, yMax: 6, step: 1 });
     const a = polygon([[-4.5, -3.5], [5.5, -3.5], [5.5, -1.5], [.5, -1.5], [.5, 3.5], [-4.5, 3.5]]);
     const b = polygon([[-4.5, -4.5], [4.5, 4.5], [4.5, -4.5], [-4.5, 4.5]]);
-    const hole = rect(-3.5, -2.5, -1.5, 1.5).outlines[0], overlap = rect(-2.5, -2.5, 1.5, .5).outlines[0];
+    const hole = resolvedRect(-3.5, -2.5, -1.5, 1.5).outlines[0], overlap = resolvedRect(-2.5, -2.5, 1.5, .5).outlines[0];
     const sliver = polygon([[.5 - 1e-14, -1.5], [.5 + 1e-14, -1.5], [.5 + 1e-15, 4.5]]);
     for (const outlines of [[a], [b], [a, hole, overlap], [a, b, sliver], [sliver]]) {
         const shape = makeShape(geometry("A", { type: "outline", outlines }), new Map(), grid.step / 8);
@@ -42,8 +42,8 @@ test("Free scanlines use the same even-odd mask and row-major cells as individua
 test("A cloned ShapeData rebuilds outlines, strip sides and multi-level strip geometry", () => {
     const tolerance = .12, original = new Map<string, RegionShape>(), rebuilt = new Map<string, RegionShape>(), next = random(32);
     const nodes = [
-        geometry("A", rect(-20, -10, 2, 18)),
-        geometry("B", rect(2, -10, 16, 18)),
+        geometry("A", resolvedRect(-20, -10, 2, 18)),
+        geometry("B", resolvedRect(2, -10, 16, 18)),
         geometry("C", { type: "strip", of: ["A", "B"], widths: [4, 5] }),
         geometry("D", { type: "strip", of: ["C"], widths: [3, 2] }),
         geometry("E", { type: "strip", of: ["B", "C"], widths: [2, 1] })
@@ -100,7 +100,7 @@ function parallelDesign() {
     d.geoNodes = [
         layer("G", full, { type: "ground", value: 2 }),
         layer("F", left, { type: "ground", value: .8 }, "F"),
-        layer("C", full, { type: "coast", shore,
+        layer("C", full, { type: "coast", shore: { curve: shore },
             roughness: "{field:F}", harbor: { center: [12, 30], radius: 6, span: 8 } }),
         layer("A", rect(-30, -25, 24, 23), { type: "flat", amount: 9 }),
         layer("B", { type: "strip", of: ["A"], widths: [12, 18] }, { type: "batter", grade: .2 }),

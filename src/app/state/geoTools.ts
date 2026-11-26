@@ -1,8 +1,8 @@
-import { type Design, type GeoNode, type Point, type ResolvedDesign } from "../../core/design/v5.ts";
+import { type Design, type Point, type ResolvedDesign } from "../../core/design/v5.ts";
 import { heightId } from "../../core/design/defaults.ts";
 import { fillFunctionParameters, slopeEndpointValues } from "../../core/design/functionTable.ts";
 import { resolveDesign } from "../../core/design/parameters.ts";
-import { curveSlotName } from "../../core/design/curveReferences.ts";
+import { curveGraph, curveSlotName, geometrySlot } from "../../core/design/curveReferences.ts";
 import { editCurveSource } from "../../core/edit/curveEdits.ts";
 import { writeAt } from "../../core/design/address.ts";
 import { type DrawTool, type GeoDraft } from "../../core/edit/types.ts";
@@ -33,7 +33,7 @@ export function startCurveDrawing(e: Editor, tool: "redrawCurve" | "continueCurv
     const owner = slot.location.kind === "geo" ? slot.location.id : undefined;
     const draft = startDrawing(e, tool, owner);
     draft.curve = { key, endpoint, name: curveSlotName(slot), original: graph.materialize(slot),
-        pen: slot.location.kind === "curve" || slot.location.path[0] === "construction" ? "boundary" : "terrain", requiredClosed: slot.closed };
+        pen: slot.location.kind === "curve" || slot.location.path[0] === "construction" ? "boundary" : "terrain", requiredClosed: graph.needsClosed(graph.source(slot).slot) };
     return draft;
 }
 
@@ -169,26 +169,25 @@ export function finishDraft(d: Design, terrain: Terrain, draft: GeoDraft) {
     }
     if (tool === "ridge" || tool === "slopeLine") {
         const f = n!.function;
-        const previous = f.type === "slope" && f.kind === "path" ? f.line
-            : f.type === "mountain" && member !== undefined ? f.ridges[member].line : undefined;
+        const slot = tool === "slopeLine" && f.type === "slope" && f.kind === "path" ? geometrySlot(d, n!.id, -1) :
+            tool === "ridge" && f.type === "mountain" && member !== undefined ? geometrySlot(d, n!.id, -1 - member) : undefined;
+        const previous = slot && curveGraph(d).source(slot).curve;
         const closed = !!draft.closed;
         if (draft.nodes.length < (closed ? 3 : 2)) throw Error(closed ? "闭合曲线至少需要三个节点" : "曲线至少需要两个节点");
         const id = nodeIds(d), line = penPath(draft.nodes.map(v => ({ ...v, id: id() })), closed);
         for (const [i, v] of line.nodes.entries()) {
-            const h = (previous && "nodes" in previous ? previous.nodes[i]?.h : undefined) ?? (tool === "ridge" ? tenth(sampleField(terrain, heightId, v.p)) :
+            const h = (previous?.nodes[i]?.h) ?? (tool === "ridge" ? tenth(sampleField(terrain, heightId, v.p)) :
                 i === 0 ? slopeEndpointValues[0] : i === line.nodes.length - 1 ? slopeEndpointValues[1] : undefined);
             if (h !== undefined) v.h = h;
         }
-        if (tool === "slopeLine") {
-            if (n!.function.type === "slope" && n!.function.kind === "path") n!.function.line = line;
-            else n!.function = defaultFunction("slope", { line });
-        }
+        if (slot) editCurveSource(d, slot.key, (curve, local) => {
+            for (const v of line.nodes) v.p = local(v.p);
+            Object.assign(curve, line);
+        });
+        else if (tool === "slopeLine") n!.function = defaultFunction("slope", { line });
         else if (f.type === "mountain") {
-            if (member !== undefined) f.ridges[member].line = line;
-            else {
-                const path = ["ridges", f.ridges.length];
-                writeAt(f, path, { line }); fillFunctionParameters(f, path);
-            }
+            const path = ["ridges", f.ridges.length];
+            writeAt(f, path, { curve: line }); fillFunctionParameters(f, path);
         }
         return n!;
     }
@@ -215,13 +214,16 @@ export function finishDraft(d: Design, terrain: Terrain, draft: GeoDraft) {
         shapePath(tool, draft.start!, draft.radius ?? draft.cursor!, nextId, draft.cursor) :
         closedPen(draft.nodes.map(v => ({ ...v, id: nextId() })));
     if (tool === "shore" && n) {
-        if (n.function.type === "coast") n.function.shore = path;
+        if (n.function.type === "coast") editCurveSource(d, geometrySlot(d, n.id, -1)!.key, (curve, local) => {
+            for (const v of path.nodes) v.p = local(v.p);
+            Object.assign(curve, path);
+        });
         else n.function = defaultFunction("coast", { shore: path,
             center: constructionCenter(resolveDesign(d).geoNodes.find(v => v.id === n.id)!.construction, d.grid.step, terrain.grid, terrain.regions.get(n.id)) });
         return n;
     }
     if (tool === "addOutline" && n?.construction.type === "outline") {
-        n.construction.outlines.push(path); return n;
+        n.construction.outlines.push({ curve: path }); return n;
     }
     return createOutline(d, path, draft.ids[0]);
 }
@@ -291,6 +293,6 @@ export function draftPointer(e: Editor, phase: "down" | "move" | "up", raw: Poin
     if (complete) void e.completeDrawing();
     return true;
 }
-export function geoAt<N extends GeoNode>(d: { geoNodes: N[] }, id: string): N {
+export function geoAt<N extends { id: string }>(d: { geoNodes: N[] }, id: string): N {
     return d.geoNodes.find(n => n.id === id)!;
 }

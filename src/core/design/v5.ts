@@ -33,18 +33,22 @@ export interface CurveNode<N = Expression> {
 }
 export interface Curve<N = Expression> { closed: boolean; nodes: CurveNode<N>[] }
 export type ClosedCurve = Curve<never> & { closed: true };
-export interface CurveRef<N = Expression> { ref: string; offset?: Point; h?: Record<string, N> }
+export interface HolderRef { ref: string }
+export interface CurveRef<N = Expression> { ref: string; h?: Record<string, N> }
 export interface SharedCurve { label: string; curve: Curve<never> }
-export type CurveValue<N = Expression, Ref = CurveRef<N>> = Curve<N> | Ref;
-type ClosedValue<Ref> = ClosedCurve | (Ref & CurveRef<never>);
+export type CurveValue<N = Expression> = Curve<N> | CurveRef<N>;
+export type CurveHolder<C, Extra = object> = { offset?: Point; curve: C } & Extra;
+export type Held<C, Extra = object> = CurveHolder<C, Extra> | HolderRef;
+type GeometryState = "authored" | "resolved";
+type Geometry<C, State, Ref = CurveRef<never>> = State extends "resolved" ? C : Held<C | Ref>;
 export interface Strip<N = Expression> {
     type: "strip";
     of: [string] | [string, string];
     widths: [N, N];
     range?: { from: string; to: string };
 }
-export type Construction<N = Expression, Ref = CurveRef<N>> = { type: "outline"; outlines: ClosedValue<Ref>[] } | Strip<N>;
-export interface Ridge<N, Ref = CurveRef<N>> { line: CurveValue<N, Ref>; slope: N }
+export type Construction<N = Expression, State extends GeometryState = "authored"> = { type: "outline"; outlines: Geometry<ClosedCurve, State>[] } | Strip<N>;
+export type Ridge<N, State extends GeometryState = "authored"> = State extends "resolved" ? { curve: Curve<N>; slope: N } : Held<CurveValue<N>, { slope: N }>;
 export interface Peak<N> { at: Point; height: N; radius: N; noise: N; scale: N }
 export interface Erosion {
     /** Number of simulated droplets. */
@@ -69,44 +73,45 @@ export interface Erosion {
     radius: number;
 }
 
-export type GeoFunction<N = Expression, Ref = CurveRef<N>> = (
+export type GeoFunction<N = Expression, State extends GeometryState = "authored"> = (
     { type: "ground"; value: N } |
     { type: "flat"; amount: Expression; feather?: N } |
-    { type: "coast"; shore: ClosedValue<Ref>; roughness: Expression; harbor: { center: Point; span: N; radius: N } } |
-    { type: "mountain"; ridges: Ridge<N, Ref>[]; peaks: Peak<N>[]; floor?: N; crestRound?: N; footRound?: N; blend?: N } |
+    { type: "coast"; shore: Geometry<ClosedCurve, State>; roughness: Expression; harbor: { center: Point; span: N; radius: N } } |
+    { type: "mountain"; ridges: Ridge<N, State>[]; peaks: Peak<N>[]; floor?: N; crestRound?: N; footRound?: N; blend?: N } |
     { type: "cliff"; factor: Expression; seaLevel?: N } |
     ({ type: "erosion"; strength?: Expression; floor?: N; spacing?: N } & NumericProperties<Erosion, N>) |
     { type: "islets"; density: Expression; reach: N; threshold?: N; seaLevel?: N } |
-    { type: "slope"; kind: "path"; line: CurveValue<N, Ref>; ease?: boolean } |
+    { type: "slope"; kind: "path"; line: Geometry<Curve<N>, State, CurveRef<N>>; ease?: boolean } |
     { type: "slope"; kind: "radial"; center: Point; radius: N; value: N; rate: N } |
     { type: "noise"; amplitude: Expression; scale: N; octaves?: N; feather?: N; warp?: N; warpScale?: N; carve?: N } |
     { type: "blend" | "split" } |
     { type: "batter"; grade: N }
 ) & { seed?: N };
-export interface GeoNode<N = Expression, Ref = CurveRef<N>> extends MapLabel {
+export interface GeoNode<N = Expression, State extends GeometryState = "authored"> extends MapLabel {
     disabled?: true;
     prompt?: string;
     field: string;
-    construction: Construction<N, Ref>;
-    function: GeoFunction<N, Ref>;
+    construction: Construction<N, State>;
+    function: GeoFunction<N, State>;
     fill?: string;
     outline?: boolean;
 }
+export type PlacedGeoNode = GeoNode<Expression, "resolved">;
 export interface FieldDeclaration { label: string; unit?: string; precision?: number }
-export interface DesignData<N, Ref = CurveRef<N>> {
+export interface DesignData<N, State extends GeometryState = "authored"> {
     version: 5;
     prompt?: string;
     grid: { step: number };
     inputs: Record<string, CustomInput<N>>;
     fields: Record<string, FieldDeclaration>;
     curves: Record<string, SharedCurve>;
-    geoNodes: GeoNode<N, Ref>[];
+    geoNodes: GeoNode<N, State>[];
     sections: Section[];
     marks: Mark<N>[];
 }
 
 export interface Design extends DesignData<Expression> {}
-type ResolveFunction<F> = F extends GeoFunction<number, never> ? F & Required<Omit<F, "seed" | "ease">> : never;
-export type ResolvedFunction = ResolveFunction<GeoFunction<number, never>>;
-export type ResolvedGeoNode = Omit<GeoNode<number, never>, "function"> & { function: ResolvedFunction };
-export type ResolvedDesign = Omit<DesignData<number, never>, "geoNodes" | "marks"> & { geoNodes: ResolvedGeoNode[]; marks: Required<Mark<number>>[] };
+type ResolveFunction<F> = F extends GeoFunction<number, "resolved"> ? F & Required<Omit<F, "seed" | "ease">> : never;
+export type ResolvedFunction = ResolveFunction<GeoFunction<number, "resolved">>;
+export type ResolvedGeoNode = Omit<GeoNode<number, "resolved">, "function"> & { function: ResolvedFunction };
+export type ResolvedDesign = Omit<DesignData<number, "resolved">, "geoNodes" | "marks"> & { geoNodes: ResolvedGeoNode[]; marks: Required<Mark<number>>[] };

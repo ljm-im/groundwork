@@ -64,7 +64,7 @@ export class TerrainCache {
         return this.designKey === this.terrainKey(d) ? null : "natural";
     }
 
-    private terrainKey(d: Design) {
+    private terrainKey(d: ResolvedDesign) {
         return JSON.stringify([d.grid.step, Object.keys(d.fields), d.inputs, d.geoNodes.map(n => [n.id, n.disabled, n.construction, n.field, n.function])]);
     }
 

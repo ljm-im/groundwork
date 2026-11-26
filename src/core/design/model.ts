@@ -6,7 +6,7 @@ import { type WorkPool } from "../math/work.ts";
 import { point, record, validateCurves, validateGeo, validateSharedCurves } from "./validateGeo.ts";
 import { check, type Location } from "./problems.ts";
 import { fillFunctionParameters, gridStep, markParameters, numericValid } from "./functionTable.ts";
-import { curveGraph, isCurveRef } from "./curveReferences.ts";
+import { curveGraph, geoHolderSlots, isHolderRef } from "./curveReferences.ts";
 import { literalPattern } from "./expression.ts";
 import { parameters, resolveDesign, writeAt } from "./parameters.ts";
 
@@ -106,7 +106,7 @@ export function parseDesign(text: unknown, allowBrokenReferences = false, pool?:
     return d;
 }
 export function serializeDesign(d: Design | null) {
-    const refs = new Set<object>(d ? [...curveGraph(d).slots.values()].map(slot => slot.value).filter(isCurveRef) : []);
+    const holders = new Set<object>(d?.geoNodes.flatMap((node, index) => geoHolderSlots(node, index).map(slot => slot.value).filter(value => !isHolderRef(value))));
     const terrain = new Set<object>(d?.geoNodes);
     const sections = new Set<object>(d?.sections);
     const fields = new Set<object>(Object.values(d?.fields ?? {}));
@@ -117,7 +117,7 @@ export function serializeDesign(d: Design | null) {
         if (key === "prompt" && value === "" || key === "disabled" && value === false ||
             key === "showLabel" && value === !terrain.has(this)) return undefined;
         if (key === "curves" && this === d && !Object.keys(d.curves).length) return undefined;
-        if (key === "offset" && refs.has(this) && point(value) && !value.some(Boolean)) return undefined;
+        if (key === "offset" && holders.has(this) && point(value) && !value.some(Boolean)) return undefined;
         if (key === "field" && terrain.has(this) && value === heightId) return undefined;
         if (key === "labelOffset" && (terrain.has(this) || sections.has(this)) && point(value) && value[0] === 0 && value[1] === 0) return undefined;
         if (key === "precision" && fields.has(this) && value === defaultFieldPrecision) return undefined;

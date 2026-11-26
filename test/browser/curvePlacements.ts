@@ -1,74 +1,169 @@
 import assert from "node:assert/strict";
 import { type Point } from "../../src/core/design/v5.ts";
+import { geometryPath } from "../../src/core/edit/geoControls.ts";
 import { mixPoint } from "../../src/core/math/geometry.ts";
-import { baseMap } from "../../src/render/palette.ts";
-import { layer, rect, syntheticDesign } from "../scenarios.ts";
+import { layer, openCurve, rect, syntheticDesign } from "../scenarios.ts";
 import { withCurveMap } from "./curveMapFixture.ts";
 
 export function checkCurvePlacements(url: string) {
-    const d = syntheticDesign();
-    d.curves.S = { label: "S", curve: rect(-23, 16, -15, 23).outlines[0] };
+    const d = syntheticDesign(), mountain = rect(-32, -17, -10, 1);
+    mountain.outlines.push(rect(-9, -22, 2, -13).outlines[0]);
+    d.curves.S = { label: "共享环", curve: rect(16, 16, 24, 23).outlines[0].curve };
     d.geoNodes.splice(1, 1,
-        layer("A", rect(-35, -19, -27, -11), { type: "flat", amount: 1 }),
-        layer("B", { type: "outline", outlines: [{ ref: "{geo:A.construction.outlines.0}", offset: [16, 0] }] }, { type: "flat", amount: 2 }),
-        layer("C", { type: "outline", outlines: [{ ref: "{geo:B.construction.outlines.0}", offset: [16, 1] }] }, { type: "flat", amount: 3 }),
-        { ...layer("D", { type: "outline", outlines: [{ ref: "{curve:S}", offset: [15, 5] }] }, { type: "flat", amount: 1 }), outline: true },
-        { ...layer("E", { type: "outline", outlines: [{ ref: "{geo:D.construction.outlines.0}", offset: [15, -3] }] }, { type: "flat", amount: 2 }), outline: true }
+        layer("A", rect(-35, 15, -24, 25), { type: "noise", scale: 5, amplitude: 1 }),
+        layer("B", rect(-12, 15, -2, 25), { type: "flat", amount: 2 }),
+        { ...layer("M", mountain, { type: "mountain", ridges: [{ curve: openCurve([
+            { p: [-30, -13], h: 8 }, { p: [-6, -18], h: 12 }
+        ], "corner", "ridge-"), slope: 1 }], peaks: [{ at: [-25, -10], height: 13, radius: 4, scale: 1, noise: 0 }] }), label: "山脉" },
+        { ...layer("R", rect(10, -21, 25, -6), { type: "mountain", ridges: [{ curve: openCurve([{ p: [14, -12] }, { p: [20, -10] }]), slope: 2 }], peaks: [] }),
+            label: "东山" },
+        layer("C", rect(12, 12, 30, 27), { type: "coast", shore: { curve: { ref: "{curve:S}" } }, roughness: 0,
+            harbor: { center: [0, 0], span: 3, radius: 0 } })
     );
 
-    return withCurveMap(url, "round37-curve-placements", async page => {
-        const { click, evaluate, frame, paint, drag, pixels, translated, authored } = page;
-        const positions = (ids: string[]) => evaluate(ids => {
-            const { resolved } = window.curveMapProbe.editor!.project;
-            return ids.map(id => {
-                const c = resolved.geoNodes.find(node => node.id === id)?.construction;
-                if (c?.type !== "outline") throw Error("Missing outline for " + id);
-                return c.outlines[0].nodes.map(n => n.p);
-            });
-        }, ids);
+    return withCurveMap(url, "round38-curve-placements", async page => {
+        const { authored, click, disk, drag, evaluate, frame, key, paint, pixels, saved, screenshot, tap, text, translated, undo } = page;
+        const menu = ".reference-menu[aria-label=引用曲线]";
+        const outlineToggle = "[aria-label='为“轮廓 1”引用曲线']";
+        const ridgeToggle = "[aria-label='为“山脊线”引用曲线']";
+        const option = (id: string) => menu + " [data-option=" + JSON.stringify(id) + "]";
+        const outlineKey = "geo:M.construction.outlines.0";
+        const groups = () => evaluate(selector => [...document.querySelectorAll(selector + " .group-name")].map(n => n.textContent), menu);
+        async function select(id: string) {
+            await click("[data-tab=terrain]");
+            await click("[data-geo-node=" + id + "]");
+            await paint();
+        }
+        async function menuScreenshot(name: string) {
+            const clip = await evaluate(selector => {
+                const popup = document.querySelector(selector)!;
+                popup.querySelector(".menu-group:last-child .group-name")!.scrollIntoView({ block: "nearest" });
+                const { x, y, width, height } = popup.getBoundingClientRect();
+                return { x, y, width, height };
+            }, menu);
+            await screenshot(name, clip);
+        }
+        async function openOutlineMenu(id: string) {
+            await select(id);
+            await click("[data-property-tab=region]");
+            if (!await evaluate(s => !!document.querySelector(s), outlineToggle)) await click("[data-outline] .subitem-toggle");
+            assert(await evaluate(() => document.querySelector(".geometry-box[aria-label=曲线]")));
+            await click(outlineToggle);
+        }
+        const positions = async (ids: string[]) => {
+            const design = await authored();
+            return ids.map(id => geometryPath(page.owner(design, id), 0)!.nodes.map(node => node.p));
+        };
         const eastEdge = (points: Point[]) => mixPoint(points[1], points[2], .5);
-        async function checkPoints(points: Point[]) {
-            const view = await frame();
-            await evaluate(points => window.curveMapProbe.pathChecks = points, points.map(p => pixels(view, p, true)));
+        async function whole(id: string, watch: string, verify: () => Promise<void>) {
+            await select(id);
+            const [own, followed] = await positions([id, watch]), f = await frame(), dx = 30 / f.scale;
+            const [x, y] = eastEdge(followed);
+            await evaluate(points => window.curveMapProbe.pathChecks = points, [pixels(f, [x, y], true), pixels(f, [x + dx, y], true)]);
+            const before = await disk();
+            await drag(mixPoint(own[0], own[2], .5), 0, async () => {
+                assert.equal(await disk(), before);
+                const rendered = await evaluate(() => window.curveMapProbe.pathStrokes);
+                assert(rendered.some(s => Math.abs(s.width - .6) < .001 && s.hits?.[0] === false && s.hits[1] === true),
+                    "The other holder's region is drawn at its new position before release");
+                await verify();
+            });
+            const [after, follower] = await positions([id, watch]);
+            translated(own, after, dx);
+            translated(followed, follower, dx);
         }
-        const strokes = () => evaluate(() => window.curveMapProbe.pathStrokes);
 
-        for (const [i, id] of ["A", "B"].entries()) {
-            await click("[data-geo-node=" + id + "]"); await paint();
-            const before = await positions(["A", "B", "C"]), dx = 30 / (await frame()).scale;
-            const checks = before.slice(i + 1).flatMap(points => {
-                const [x, y] = eastEdge(points);
-                return [[x, y], [x + dx, y]] satisfies Point[];
-            });
-            await checkPoints(checks);
-            await drag(mixPoint(before[i][0], before[i][2], .5), 0, async () => {
-                const rendered = await strokes();
-                for (let j = 0; j < checks.length; j += 2)
-                    assert(rendered.some(s => Math.abs(s.width - .6) < .001 && s.color === "rgba(34, 102, 89, 0.5)" &&
-                        s.hits?.[j] === false && s.hits[j + 1] === true), "A follower's preview outline should be drawn at its new position");
-            });
-            const after = await positions(["A", "B", "C"]);
-            before.forEach((points, j) => translated(points, after[j], j < i ? 0 : dx));
-        }
-        const current = await authored(), c = current.geoNodes.find(n => n.id === "C")!.construction;
-        assert(c.type === "outline");
-        assert.deepEqual(c.outlines[0], { ref: "{geo:B.construction.outlines.0}", offset: [16, 1] });
+        await openOutlineMenu("A");
+        assert.deepEqual(await groups(), ["轮廓", "闭合曲线"]);
+        assert.equal(await text(option(outlineKey)), "山脉.轮廓 1");
+        assert.equal(await text(option(outlineKey + ".curve")), "山脉.轮廓 1.曲线");
+        assert.equal(await text(option("geo:C.shore.curve")), "C.海岸线.曲线");
+        assert(!await evaluate(s => document.querySelector(s), option("geo:A.construction.outlines.0")));
+        await click(option(outlineKey)); await saved(); await paint();
+        assert.equal(await text(".geometry-box .ref-chip"), "山脉.轮廓 1");
+        await click(outlineToggle);
+        assert(await evaluate(s => document.querySelector(s)?.getAttribute("aria-selected") === "true", option(outlineKey)));
+        assert.equal(await text(menu + " .menu-group:first-child button:first-child"), "解除引用");
+        const viewport = { width: 1440, height: 960, deviceScaleFactor: 1, mobile: false };
+        await page.cdp("Emulation.setDeviceMetricsOverride", { ...viewport, height: 1180 });
+        await paint();
+        await menuScreenshot("round38-outline-reference-menu-light");
+        await key("Escape");
+        await page.cdp("Emulation.setDeviceMetricsOverride", viewport);
+        await paint();
+
+        const before = page.owner(await authored(), "M").function;
+        await whole("A", "M", async () => {
+            const n = await evaluate(() => window.curveMapProbe.editor!.dragPreview?.nodes.get("M")?.node);
+            assert.deepEqual(n?.function, before);
+        });
+        assert.deepEqual(page.owner(await authored(), "M").function, before);
+        await whole("M", "A", async () => {
+            const n = await evaluate(() => window.curveMapProbe.editor!.dragNode);
+            assert(n?.function.type === "mountain" && before.type === "mountain");
+            assert(n.function.peaks[0].at[0] > before.peaks[0].at[0]);
+        });
+
+        await openOutlineMenu("B");
+        await click(option(outlineKey + ".curve")); await saved(); await paint();
+        assert.equal(await text(".geometry-box .ref-chip"), "山脉.轮廓 1.曲线");
+        const [original, placed] = await positions(["M", "B"]);
+        assert.deepEqual(placed, original);
+        await select("B");
+        const dx = 30 / (await frame()).scale;
+        await drag(mixPoint(placed[0], placed[2], .5));
+        const [still, shifted] = await positions(["M", "B"]);
+        assert.deepEqual(still, original);
+        translated(placed, shifted, dx);
+        const graph = (await authored()).geoNodes.find(n => n.id === "M")!.construction;
+        const source = graph.type === "outline" ? graph.outlines[0] : undefined;
+        assert(source && "curve" in source);
+        await drag(shifted[0], 2);
+        const [changed, reshaped] = await positions(["M", "B"]);
+        assert(changed[0][0] > still[0][0]);
+        assert(Math.abs(changed[0][0] - still[0][0] - dx) < .02);
+        assert(Math.abs(reshaped[0][0] - shifted[0][0] - dx) < .02);
+        assert.deepEqual(changed.slice(1), still.slice(1));
+        const stored = (await authored()).geoNodes.find(n => n.id === "M")!.construction;
+        assert(stored.type === "outline" && "curve" in stored.outlines[0]);
+        assert.deepEqual(stored.outlines[0].offset, source.offset);
+
+        await select("M");
+        const moved = page.owner(await authored(), "M"), middle = mixPoint(changed[0], changed[2], .5);
+        await tap(middle);
+        assert.equal((await frame()).outline, 0);
+        await drag(middle);
+        const movedOutline = page.owner(await authored(), "M");
+        assert.deepEqual(movedOutline.function, moved.function);
+        assert.deepEqual(geometryPath(movedOutline, 1), geometryPath(moved, 1));
+        await undo();
+        assert.deepEqual(page.owner(await authored(), "M"), moved);
+
+        await select("R"); await click("[data-property-tab=function]");
+        if (!await evaluate(s => !!document.querySelector(s), ridgeToggle))
+            await click(".part:has([aria-label=添加山脊]) .subitem-toggle");
+        await click(ridgeToggle);
+        assert.deepEqual(await groups(), ["山脊", "曲线"]);
+        assert.equal(await text(option("geo:M.ridges.0")), "山脉.山脊 1");
+        assert.equal(await text(option("geo:M.ridges.0.curve")), "山脉.山脊 1.山脊线");
+        await menuScreenshot("round38-ridge-reference-menu-light");
+        await click(option("geo:M.ridges.0")); await saved(); await paint();
+        assert.equal(await text("[aria-label=山脊线] .ref-chip"), "山脉.山脊 1");
+        await click("#properties [data-parameter$='.ridges.0.slope'] .numeric-face");
+        await evaluate(() => document.getSelection()!.selectAllChildren(document.querySelector(".numeric-edit")!));
+        await page.cdp("Input.insertText", { text: "1.5" });
+        await key("Enter"); await saved(); await paint();
+        const final = await authored(), fn = page.owner(final, "M").function;
+        assert(fn.type === "mountain" && fn.ridges[0].slope === 1.5);
+        const alias = final.geoNodes.find(n => n.id === "R")!.function;
+        assert(alias.type === "mountain");
+        assert.deepEqual(alias.ridges[0], { ref: "{geo:M.ridges.0}" });
 
         await click("[data-tab=inputs]"); await click("[data-select-curve=S]"); await paint();
-        const oldShared = current.curves.S.curve.nodes.map(n => n.p), before = await positions(["D", "E"]);
-        const dx = 30 / (await frame()).scale;
-        await checkPoints(before.map(eastEdge));
-        await drag(mixPoint(oldShared[0], oldShared[1], .5), 0, async () => {
-            const preview = await evaluate(() => window.curveMapProbe.editor!.dragShared!.curve.nodes.map(n => n.p));
-            translated(oldShared, preview, dx);
-            const rendered = await strokes();
-            for (const i of [0, 1])
-                assert(rendered.some(s => s.color === baseMap.light.boundary && s.hits?.[i]),
-                    "A reference stays at its original position while the shared curve moves");
+        const originalShared = final.curves.S.curve, savedText = await disk();
+        await drag(mixPoint(originalShared.nodes[0].p, originalShared.nodes[1].p, .5), 0, async () => {
+            assert(await evaluate(() => !window.curveMapProbe.editor!.dragPreview));
         });
-        const after = await positions(["D", "E"]);
-        before.forEach((points, i) => translated(points, after[i], 0));
-        translated(oldShared, (await authored()).curves.S.curve.nodes.map(n => n.p), dx);
-        assert(await evaluate(() => window.curveMapProbe.editor!.dragShared === undefined));
+        assert.equal(await disk(), savedText);
     }, d);
 }

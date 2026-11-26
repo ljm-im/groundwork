@@ -20,7 +20,7 @@ function roundCrest(slope: number, radius: number) {
 export function mountainProfile(f: Mountain, tolerance: number, seed: number) {
     const pattern = noise(seed + 202);
     const ridges = f.ridges.map(ridge => {
-        const profile = numericProfile(ridge.line, tolerance);
+        const profile = numericProfile(ridge.curve, tolerance);
         return { profile, drop: roundCrest(ridge.slope, f.crestRound) };
     });
     return (x: number, y: number, ground: number) => {

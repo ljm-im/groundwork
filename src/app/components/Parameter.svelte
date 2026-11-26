@@ -1,6 +1,6 @@
 {#if spec && spec.type !== "geometry"}
-    <NumberInput {editor} address={["geoNodes", index, ...path]} {label} {unit}
-        kind={spec.type === "field" ? "field" : "number"} self={key} owner={node.id} step={parameterStep(spec, field)} />
+    <NumberInput {editor} address={slot?.path ?? ["geoNodes", index, ...path]} {label} {unit}
+        kind={spec.type === "field" ? "field" : "number"} self={key} owner={slot?.id ?? node.id} step={parameterStep(spec, field)} />
 {/if}
 
 <script lang="ts">
@@ -14,7 +14,7 @@
     let d = $derived(editor.project.design);
     let index = $derived(d.geoNodes.findIndex(n => n.id === node.id));
     let path = $derived([construction ? "construction" : "function", ...address]);
-    let key = $derived("geo:" + node.id + "." + (construction ? path : address).join("."));
+    let key = $derived(editor.numberEdits.key("geo:" + node.id + "." + (construction ? path : address).join(".")));
     let slot = $derived(editor.numberEdits.slots.get(key));
     let spec = $derived(slot?.spec ?? geoParameter(node, path));
     let label = $derived(geoParameterName(d, node, path, false) ?? (address.includes("h") ? slot?.spec?.label : slot?.label) ?? "数值");

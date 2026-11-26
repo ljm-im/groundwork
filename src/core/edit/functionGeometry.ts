@@ -43,7 +43,7 @@ function measure(ring: Point[]) {
     return { area: Math.abs(area), center: [ox + x / (3 * area), oy + y / (3 * area)] as Point };
 }
 
-export function functionGeometry(c: Construction<number, never>, shape: RegionShape, step: number, nextId: () => string) {
+export function functionGeometry(c: Construction<number, "resolved">, shape: RegionShape, step: number, nextId: () => string) {
     const outline = shape.boundary();
     const rings = c.type === "outline" ? outline.map(path => path.map(e => e.a)) : closedContours(outline.flat(), step * 1e-6);
     const largest = rings.flatMap((ring, i) => ring.length < 3 ? [] : [{ ring, i, ...measure(ring) }]).sort((a, b) => b.area - a.area)[0];

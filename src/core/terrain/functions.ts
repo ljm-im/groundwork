@@ -1,4 +1,4 @@
-import { type Expression, type GeoNode, type ResolvedGeoNode, type Point } from "../design/v5.ts";
+import { type Expression, type ResolvedGeoNode, type Point } from "../design/v5.ts";
 import { numericProfile } from "../design/polyline.ts";
 import { fieldExpressions, functionTable } from "../design/functionTable.ts";
 import { type FieldSamples } from "../design/results.ts";
@@ -403,7 +403,7 @@ export function evaluateLayer(n: ResolvedGeoNode, { shape, ...region }: Region, 
     });
 }
 
-export function applyLayer(output: LayerOutput, n: Pick<GeoNode, "field" | "function">, state: FieldState) {
+export function applyLayer(output: LayerOutput, n: Pick<ResolvedGeoNode, "field" | "function">, state: FieldState) {
     const { values, defined } = state.fields[n.field], initial = functionTable[n.function.type].initial;
     const length = output.cells.length, first = output.cells[0];
     if (length && output.cells[length - 1] - first + 1 === length) {

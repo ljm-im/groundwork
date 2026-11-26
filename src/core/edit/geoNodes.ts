@@ -1,4 +1,4 @@
-import { curveGraph, curveSlotName, isCurveRef, refKey, type CurveSlot } from "../design/curveReferences.ts";
+import { curveGraph, curveSlotName, geoHolderSlots, isCurveRef, isHolderRef, type CurveSlot, type HolderSlot } from "../design/curveReferences.ts";
 import { quotedLocation } from "../design/problems.ts";
 import { type Design, type GeoFunction, type GeoNode, type ClosedCurve, type Curve, type Point, type Strip } from "../design/v5.ts";
 import { defaultInputRange, heightId, isBuiltin } from "../design/defaults.ts";
@@ -13,17 +13,12 @@ export function nextId(used: Iterable<string>, prefix: string) {
 }
 
 export function curvesOf(n: GeoNode) {
-    const f = n.function;
-    const boundaries = n.construction.type === "outline" ? n.construction.outlines : [];
-    if (f.type === "coast") return [...boundaries, f.shore];
-    if (f.type === "mountain") return [...boundaries, ...f.ridges.map(r => r.line)];
-    if (f.type === "slope" && f.kind === "path") return [...boundaries, f.line];
-    return boundaries;
+    return geoHolderSlots(n, 0).flatMap(({ value }) => isHolderRef(value) || isCurveRef(value.curve) ? [] : [value.curve]);
 }
 
 export function nodeIds(d: Design) {
     const used = new Set([...Object.values(d.curves ?? {}).map(v => v.curve), ...d.geoNodes.flatMap(curvesOf)]
-        .flatMap(curve => isCurveRef(curve) ? [] : curve.nodes.map(v => v.id)));
+        .flatMap(curve => curve.nodes.map(v => v.id)));
     let i = 1;
     return () => {
         while (used.has("p" + i)) i++;
@@ -43,7 +38,7 @@ function identity(d: Design) {
     return { id, label: "地件 " + id.slice(4) };
 }
 export function createOutline(d: Design, path: ClosedCurve, above?: string) {
-    return insert(d, { ...identity(d), field: heightId, construction: { type: "outline", outlines: [path] }, function: defaultFunction("flat") }, above);
+    return insert(d, { ...identity(d), field: heightId, construction: { type: "outline", outlines: [{ curve: path }] }, function: defaultFunction("flat") }, above);
 }
 export function stripConstruction(d: Design, ids: string[], range?: Strip["range"]): Strip<number> {
     const refs = d.geoNodes.filter(n => ids.includes(n.id)).reverse();
@@ -53,7 +48,7 @@ export function stripConstruction(d: Design, ids: string[], range?: Strip["range
         const c = refs[0].construction;
         const graph = curveGraph(d);
         if (c.type !== "outline" || !c.outlines.some((_, i) => {
-            const slot = graph.slots.get("geo:" + refs[0].id + ".construction.outlines." + i)!;
+            const slot = graph.slots.get("geo:" + refs[0].id + ".construction.outlines." + i + ".curve")!;
             return [range.from, range.to].every(id => graph.source(slot).curve.nodes.some(v => v.id === id));
         }))
             throw Error("请选择同一条路径上的两个节点");
@@ -73,7 +68,7 @@ export function copyGeo(d: Design, original: GeoNode) {
     const copy = structuredClone(original), id = nodeIds(d);
     copy.id = identity(d).id;
     copy.label += " 副本";
-    for (const curve of curvesOf(copy)) if (!isCurveRef(curve)) for (const v of curve.nodes) v.id = id();
+    for (const curve of curvesOf(copy)) for (const v of curve.nodes) v.id = id();
     return insert(d, copy, original.id);
 }
 export function enableGeo(n: GeoNode, enabled: boolean) {
@@ -113,15 +108,11 @@ export function rangeUsers(d: Design, owner: string, nodes: string[]) {
     });
 }
 
-export type RemovalUse = { kind: "parameter"; slot: Slot } | { kind: "curve"; slot: CurveSlot } | { kind: "strip" | "output"; node: GeoNode };
+export type RemovalUse = { kind: "parameter"; slot: Slot } | { kind: "curve"; slot: CurveSlot | HolderSlot } | { kind: "strip" | "output"; node: GeoNode };
 
-export function curveRemovalUses(d: Design, matches: (slot: CurveSlot) => boolean): RemovalUse[] {
-    const { slots } = curveGraph(d);
-    return [...slots.values()].flatMap(slot => {
-        if (matches(slot) || !isCurveRef(slot.value)) return [];
-        const target = slots.get(refKey(slot.value.ref) ?? "");
-        return target && matches(target) ? [{ kind: "curve" as const, slot }] : [];
-    });
+export function curveRemovalUses(d: Design, matches: (slot: CurveSlot | HolderSlot) => boolean): RemovalUse[] {
+    return [...curveGraph(d).references()].flatMap(({ slot, target }) =>
+        matches(target) && !matches(slot) ? [{ kind: "curve" as const, slot }] : []);
 }
 
 export function removalUses(d: Design, kind: "geo" | "input" | "field" | "curve", id: string): RemovalUse[] {
@@ -174,11 +165,11 @@ export function defaultFunction(type: GeoFunction["type"], geometry: { shore?: C
     let f;
     if (type === "coast") {
         if (!geometry.shore || !geometry.center) throw Error("海岸线或港湾圆心缺失");
-        f = { type, shore: geometry.shore, harbor: { center: geometry.center } };
+        f = { type, shore: { curve: geometry.shore }, harbor: { center: geometry.center } };
     }
     else if (type === "slope") {
         if (geometry.slope === "radial" && geometry.center) f = { type, kind: "radial", center: geometry.center };
-        else if (geometry.line) f = { type, kind: "path", line: geometry.line };
+        else if (geometry.line) f = { type, kind: "path", line: { curve: geometry.line } };
         else throw Error("坡面几何缺失");
     }
     else f = { type };

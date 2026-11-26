@@ -52,7 +52,7 @@ test("Editor interactions in Chromium", async t => {
         await t.test("Terrain export with shared memory in Chromium", () => checkWorkerExport(url, commit, true));
         await t.test("Curve handles and camera zoom in Chromium", () => checkCurveZoom(url));
         await t.test("Shared curves and endpoint drawing in Chromium", () => checkSharedCurves(url));
-        await t.test("Referenced curves follow placement drags in Chromium", () => checkCurvePlacements(url));
+        await t.test("Same-object and shape-only curve references in Chromium", () => checkCurvePlacements(url));
     }
     finally {
         await server.close();
@@ -662,11 +662,12 @@ async function checkEditor(url: string) {
         const mountain = ridgeOf(await disk());
         assert(mountain.type === "mountain" && mountain.ridges.length === 2);
         const [originalMember, copy] = mountain.ridges;
+        assert("slope" in originalMember);
         assert.equal(originalMember.slope, .75);
         assert.equal(await text("#properties [data-parameter$='.ridges.1.slope'] .param-name"), "坡度");
-        const copiedIds = new Set(literalCurve(copy.line).nodes.map(v => v.id));
-        assert(literalCurve(originalMember.line).nodes.every(v => !copiedIds.has(v.id)));
-        assert.deepEqual({ ...copy, line: { ...copy.line, nodes: literalCurve(copy.line).nodes.map((v, i) => ({ ...v, id: literalCurve(originalMember.line).nodes[i].id })) } }, originalMember);
+        const copiedIds = new Set(literalCurve(copy).nodes.map(v => v.id));
+        assert(literalCurve(originalMember).nodes.every(v => !copiedIds.has(v.id)));
+        assert.deepEqual({ ...copy, curve: { ...literalCurve(copy), nodes: literalCurve(copy).nodes.map((v, i) => ({ ...v, id: literalCurve(originalMember).nodes[i].id })) } }, originalMember);
         assert.equal(await evaluate(() => [...document.querySelectorAll("#properties .subitem-toggle")]
             .find(button => button.textContent?.includes("山脊 2"))?.getAttribute("aria-expanded")), "true");
         await undo();

@@ -2,7 +2,7 @@ import { copyAt, readAt, type Address } from "./address.ts";
 import { defaultFieldPrecision, isBuiltin } from "./defaults.ts";
 import { gridStep, numericValid } from "./functionTable.ts";
 import { literalPattern, references } from "./expression.ts";
-import { expressionGraph, expressionLookup, parameters, resolveParameterValues, type Slot } from "./parameters.ts";
+import { expressionGraph, expressionLookup, parameters, resolveParameterValues, resolvedPaths, type Slot } from "./parameters.ts";
 import { check, type Location } from "./problems.ts";
 import { validFieldPrecision, validInputRange, validStripWidths } from "./validateGeo.ts";
 import { type Design, type Expression, type ResolvedDesign } from "./v5.ts";
@@ -35,7 +35,8 @@ export function numberEdits(design: Design, resolved: ResolvedDesign) {
     for (const slot of slots.values()) {
         byAddress.set(JSON.stringify(slot.path), slot);
         order.set(slot.key, order.size);
-        for (const key of references(slot.value)) {
+        for (const ref of references(slot.value)) {
+            const key = graph.key(ref);
             const list = readers.get(key);
             if (list) list.push(slot.key);
             else readers.set(key, [slot.key]);
@@ -43,7 +44,7 @@ export function numberEdits(design: Design, resolved: ResolvedDesign) {
     }
 
     function affected(roots: Iterable<string>) {
-        const dirty = new Set(roots);
+        const dirty = new Set([...roots].map(graph.key));
         for (const key of dirty) for (const reader of readers.get(key) ?? []) dirty.add(reader);
         return dirty;
     }
@@ -62,7 +63,7 @@ export function numberEdits(design: Design, resolved: ResolvedDesign) {
         }
         const dirty = affected(replacements.keys());
         const lookup = (key: string) => replacements.get(key) ?? slots.get(key);
-        const get = expressionLookup(design, lookup, key => dirty.has(key) ? undefined : graph.get(key));
+        const get = expressionLookup(design, lookup, key => dirty.has(key) ? undefined : graph.get(key), graph.key);
         const ordered = [...dirty].sort((a, b) => order.get(a)! - order.get(b)!);
         const values = resolveParameterValues(ordered.map(key => lookup(key)!), get);
 
@@ -87,10 +88,10 @@ export function numberEdits(design: Design, resolved: ResolvedDesign) {
         }
         return {
             address, value,
-            resolved: [...values].filter(([s, result]) => result !== readAt(resolved, s.resolvedPath))
-                .map(([s, value]) => ({ address: s.resolvedPath, value }))
+            resolved: [...values].flatMap(([s, value]) => resolvedPaths(s).filter(path => value !== readAt(resolved, path))
+                .map(address => ({ address, value })))
         };
     }
 
-    return { slots, get: graph.get, affected, validate };
+    return { slots, key: graph.key, get: graph.get, affected, validate };
 }

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { type CurveRef, type ClosedCurve, type Construction, type Curve, type Design, type Expression, type GeoFunction, type GeoNode, type Point, type ResolvedDesign } from "../src/core/design/v5.ts";
+import { type CurveRef, type ClosedCurve, type Construction, type Curve, type Design, type Expression, type Held, type GeoFunction, type GeoNode, type Point, type ResolvedDesign } from "../src/core/design/v5.ts";
 import { defaultInputRange, heightId, reserved } from "../src/core/design/defaults.ts";
 
 export function polygon(points: Point[]): ClosedCurve {
@@ -8,12 +8,18 @@ export function polygon(points: Point[]): ClosedCurve {
 export function openCurve<N extends Expression>(points: { p: Point; h?: N }[], mode: "corner" | "auto" = "corner", prefix = "node-"): Curve<N> {
     return { closed: false, nodes: points.map((v, i) => ({ id: prefix + i, ...v, mode })) };
 }
-export function literalCurve<C extends Curve>(value: C | CurveRef): C {
-    assert("nodes" in value);
-    return value;
+export function literalCurve<C extends Curve>(value: C | CurveRef | Held<C | CurveRef>): C {
+    const curve = "curve" in value ? value.curve : value;
+    assert("nodes" in curve);
+    return curve;
 }
-export function rect(x0: number, y0: number, x1: number, y1: number): Construction<number, never> & { type: "outline" } {
-    return { type: "outline", outlines: [polygon([[x0, y0], [x1, y0], [x1, y1], [x0, y1]])] };
+export function rect(x0: number, y0: number, x1: number, y1: number) {
+    return { type: "outline" as const, outlines: [{ curve: polygon([[x0, y0], [x1, y0], [x1, y1], [x0, y1]]) }] };
+}
+
+export function resolvedRect(x0: number, y0: number, x1: number, y1: number) {
+    const { type, outlines } = rect(x0, y0, x1, y1);
+    return { type, outlines: outlines.map(item => item.curve) };
 }
 export function layer(id: string, construction: Construction, fn: GeoFunction, field = heightId): GeoNode {
     return { id, label: id, construction, function: fn, field };
@@ -21,13 +27,13 @@ export function layer(id: string, construction: Construction, fn: GeoFunction, f
 export function overlappingLandforms(): Design {
     const design = syntheticDesign();
     const upper = rect(-20, -15, 16, 6), island = rect(20, -9, 24, -5).outlines[0];
-    for (const node of island.nodes) node.id = "island-" + node.id;
+    for (const node of island.curve.nodes) node.id = "island-" + node.id;
     upper.outlines.push(island);
     design.geoNodes.push(
         layer("A", rect(-16, -10, 12, 10), {
             type: "mountain", peaks: [],
             ridges: [[[-10, 0], [4, 0]], [[-12, 10], [8, 10]]].map((points, i) => ({
-                line: openCurve((points as Point[]).map(p => ({ p, h: 8 })), "corner", "ridge-" + i + "-"),
+                curve: openCurve((points as Point[]).map(p => ({ p, h: 8 })), "corner", "ridge-" + i + "-"),
                 slope: 2
             }))
         }),

@@ -25,8 +25,8 @@
     import { referenceLabel } from "../state/numbers.ts";
     import { type Design } from "../../core/design/v5.ts";
     import { type Slot } from "../../core/design/parameters.ts";
-    let { refKey, design, slots, curve }: { refKey: string; design: Design; slots: Map<string, Slot>; curve?: never } |
-        { refKey?: never; design?: never; slots?: never; curve: { key: string; name: string; closed: boolean } } = $props();
+    let { refKey, design, slots, canonical, curve }: { refKey: string; design: Design; slots: Map<string, Slot>; canonical: (key: string) => string; curve?: never } |
+        { refKey?: never; design?: never; slots?: never; canonical?: never; curve: { key: string; name: string; closed: boolean } } = $props();
     let info = $derived(curve ? { icon: curve.closed ? "closedPath" as const : "curve" as const, name: curve.name, property: undefined, builtin: undefined } :
-        referenceLabel(refKey!, design!, slots!));
+        referenceLabel(canonical!(refKey!), design!, slots!));
 </script>

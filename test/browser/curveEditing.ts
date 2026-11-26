@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { resolveDesign } from "../../src/core/design/parameters.ts";
 import { parseDesign, serializeDesign } from "../../src/core/design/model.ts";
 import { flattenPath, pathBezier, segmentType, splitBezier } from "../../src/core/design/path.ts";
 import { geometryPath, type GeoControl, type GeometryTarget } from "../../src/core/edit/geoControls.ts";
@@ -35,7 +36,7 @@ async function observeCurveEditing() {
         const canvas = document.querySelector("#map")!.getBoundingClientRect(), [x, y] = this.screen([0, 0]);
         const dragged = view.dragNode?.function;
         probe.frame = { origin: [canvas.left + x, canvas.top + y], scale: this.scale, selected: view.selection?.id,
-            geometry: view.geometry, vertex: view.vertex, ridgePreview: dragged?.type === "mountain" ? dragged.ridges[0].line : undefined,
+            geometry: view.geometry, vertex: view.vertex, ridgePreview: dragged?.type === "mountain" ? dragged.ridges[0].curve : undefined,
             section: view.project.design.sections.find(s => s.id === "Q")?.points,
             height: sampleField(view.project.terrain, "height", [-23, 5]) };
     };
@@ -45,7 +46,7 @@ async function checkDrawnCurves(url: string) {
     const design = syntheticDesign(), filename = "drawn-curve-editing.json";
     const mountain = { ...layer("M", rect(-45, -33, 12, 30), defaultFunction("mountain")), label: "山" };
     const slope = { ...layer("S", rect(17, -24, 53, 24), {
-        type: "slope", kind: "path", line: openCurve([{ p: [20, -18], h: 0 }, { p: [49, -18], h: 2 }])
+        type: "slope", kind: "path", line: { curve: openCurve([{ p: [20, -18], h: 0 }, { p: [49, -18], h: 2 }]) }
     }), label: "坡面" };
     design.geoNodes = [layer("G", rect(-60, -47, 60, 47), { type: "ground", value: 4 }), mountain, slope];
     design.sections = [{ id: "Q", label: "剖面线 Q", points: [[-48, -37], [35, -37]], showLabel: false }];
@@ -95,7 +96,7 @@ async function checkDrawnCurves(url: string) {
     }
     const nodeRow = (id: string) => "[data-curve-node=" + JSON.stringify(id) + "]";
     const ridge = async (i = 0) => {
-        const n = (await authored()).geoNodes.find(n => n.id === "M")!;
+        const n = resolveDesign(await authored()).geoNodes.find(n => n.id === "M")!;
         return geometryPath(n, -1 - i)!;
     };
     const section = async () => (await authored()).sections[0].points;
@@ -131,7 +132,7 @@ async function checkDrawnCurves(url: string) {
         await key("Enter"); await saved(); await paint();
         const id = (await frame()).selected!;
         assert(!["G", "M", "S"].includes(id));
-        const boundary = async () => geometryPath((await authored()).geoNodes.find(n => n.id === id)!, 0)!;
+        const boundary = async () => geometryPath(resolveDesign(await authored()).geoNodes.find(n => n.id === id)!, 0)!;
         const before = await boundary();
         assert.deepEqual(before.nodes.map((_, i) => segmentType(before, i)), ["line", "line", "line"]);
         await tap(before.nodes[1].p);
@@ -256,7 +257,7 @@ export async function checkCurveEditing(url: string) {
         console.log("boundary controls, confirmation and clipped menu");
         await panel("terrain"); await click(region); await property("region"); await fit();
         assert.doesNotMatch(await text("#properties"), /构造方式/);
-        assert.match(await text("button[aria-label=值]"), /闭合曲线（4 个节点）/);
+        assert.match(await text("button[aria-label=曲线]"), /闭合曲线（4 个节点）/);
         const deleteBoundary = "button[aria-label=\"删除轮廓\"]";
         assert.equal(await evaluate(s => document.querySelectorAll(s).length, deleteBoundary), 0);
         await screenshot("boundary-one");
@@ -324,14 +325,14 @@ export async function checkCurveEditing(url: string) {
         assert.equal(await evaluate(() => document.querySelector("[data-property-tab=function]")?.getAttribute("aria-pressed")), "true");
         assert.deepEqual(await evaluate(() => [...document.querySelectorAll(".subitem-toggle[aria-expanded=true]")].map(el => el.textContent?.trim())), ["山脊 3"]);
         await tap(await at(vertex));
-        const heightRow = "[data-parameter$=\".ridges.2.line.nodes.1.h\"]";
+        const heightRow = "[data-parameter$=\".ridges.2.curve.nodes.1.h\"]";
         await wait(s => !!document.querySelector(s), heightRow);
         await click("[data-geo-node=A]");
         await tap(await at(vertex));
         await tap(await at(vertex), 1);
         await drag(await at(vertex), await at([-4, 32.3])); await saved();
-        const mountain = (await authored()).geoNodes.find(n => n.id === "C")!.function;
-        assert(mountain.type === "mountain" && distance(literalCurve(mountain.ridges[2].line).nodes[1].p, [-4, 32.3]) < .3);
+        const mountain = resolveDesign(await authored()).geoNodes.find(n => n.id === "C")!.function;
+        assert(mountain.type === "mountain" && distance(literalCurve(mountain.ridges[2]).nodes[1].p, [-4, 32.3]) < .3);
         await undo();
     });
     await withCurveMap(url, "curve-controls", async ({ authored, boundary, click, curve, disk, drag, evaluate, frame, key, nodeTitles, paint, pixels, saved, screenshot, tap, text, undo }) => {

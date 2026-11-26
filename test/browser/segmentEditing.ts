@@ -18,14 +18,14 @@ function segmentPoint(path: Curve, index: number, t = .5): Point {
 
 function scene() {
     const design = syntheticDesign(), region = rect(-45, -18, -10, 12), hole = rect(-36, -8, -25, 4).outlines[0];
-    for (const node of hole.nodes) node.id = "hole-" + node.id;
+    for (const node of hole.curve.nodes) node.id = "hole-" + node.id;
     region.outlines.push(hole);
     const mountain = defaultFunction("mountain");
     assert(mountain.type === "mountain");
     const ridge: Point[] = [[-43, 27], [-32, 31], [-18, 28], [-4, 32], [10, 25]];
-    mountain.ridges.push({ line: openCurve(ridge.map((p, i) => ({ p, h: 5 + i })), "auto"), slope: 1 });
+    mountain.ridges.push({ curve: openCurve(ridge.map((p, i) => ({ p, h: 5 + i })), "auto"), slope: 1 });
     mountain.peaks.push({ at: [11, 37], height: 9, radius: 8, noise: 0, scale: 1 });
-    const shore = rect(28, 19, 51, 38).outlines[0];
+    const shore = rect(28, 19, 51, 38).outlines[0].curve;
     for (const node of shore.nodes) node.id = "shore-" + node.id;
     shore.nodes[0].bulge = .35;
     const coast = defaultFunction("coast", { shore, center: [42, 34] });
@@ -35,7 +35,7 @@ function scene() {
         layer("A", region, { type: "flat", amount: 1 }),
         layer("M", rect(-48, 18, 19, 42), mountain),
         layer("C", rect(23, 12, 54, 42), coast),
-        layer("S", rect(14, -29, 49, 3), { type: "slope", kind: "path", line: slope })
+        layer("S", rect(14, -29, 49, 3), { type: "slope", kind: "path", line: { curve: slope } })
     ];
     design.sections = [{ id: "Q", label: "剖面线 Q", points: [[-44, -32], [9, -32]], showLabel: false }];
     return design;

@@ -3,7 +3,7 @@ import { commitFocusedInput, isEditableText } from "./pendingInput.ts";
 import { defaultFollow } from "../../core/design/v5.ts";
 import { distance } from "../../core/math/geometry.ts";
 import { moveHandle, sectionHandlePoint } from "../../core/edit/controls.ts";
-import { commitControl, editControl, followingCurves, outlineParameterGeometry } from "../../core/edit/geoControls.ts";
+import { commitControl, controlPreview } from "../../core/edit/geoControls.ts";
 import { doubleClickTools, draftPointer, snapPoint, updatePreview } from "./geoTools.ts";
 import { type GeoDraft } from "../../core/edit/types.ts";
 import { nextMapHit, type MapHit, type MapView } from "../../render/map.ts";
@@ -182,15 +182,12 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         if (!hit) return;
         const { selection, control: part, handle: h } = hit;
         const c = part?.role === "vertex" && part.path < 0 && hit !== control ? { ...part, role: "curve" as const } : part;
+        if (selection.kind === "curve" && (c?.role === "curve" || c?.role === "segment")) return;
         selectHit(hit, c?.role === "segment" && c.path < 0 ? { ...c, role: "curve" } : c, true);
         if (c) {
-            const geo = editor.geometryOwner(selection);
-            if (geo && (c.role !== "body" || !("curve" in geo) && geo.construction.type === "outline")) {
-                const outlineGeometry = c.role === "outline" && !("curve" in geo) ?
-                    outlineParameterGeometry(geo, c.path, view.project.terrain.regions.get(geo.id)?.shape) : undefined;
-                const followers = selection.kind === "geoNode" ? followingCurves(editor.curves, selection.id, c, outlineGeometry) : undefined;
-                editor.gesture = { geo, selection, control: c, independent: down.altKey, outlineGeometry, followers, screen, pointer };
-            }
+            const { design, resolved } = editor.project;
+            const independent = down.altKey, preview = controlPreview(design, resolved, editor.curves, selection, c, independent);
+            if (preview) editor.gesture = { preview, selection, control: c, independent, screen, pointer };
         }
         else if (h) {
             const mark = h.kind === "mark" ? editor.project.design.marks.find(m => m.id === h.id)! : undefined;
@@ -339,21 +336,18 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             editor.dragLabel = map.labelOffset(editor.mapProject, label, [p[0] + offset[0], p[1] + offset[1]]);
             return;
         }
-        if ("geo" in editor.gesture) {
-            const { geo, control, independent, outlineGeometry, followers } = editor.gesture, copy = structuredClone(geo);
+        if ("preview" in editor.gesture) {
+            const { selection, control, preview } = editor.gesture;
             let at = p;
             if (control.role === "segment" || control.role === "curve") {
                 const start = map.world(...editor.gesture.screen);
                 at = [control.point[0] + p[0] - start[0], control.point[1] + p[1] - start[1]];
             }
             else if (control.role === "vertex" && !ev.ctrlKey)
-                at = snapPoint(editor.mapProject.terrain, editor.mapProject.design, p, map.scale, "curve" in geo ? undefined : geo.id);
-            editControl(copy, control, at, independent, outlineGeometry, "curve" in copy ? undefined : followers?.get(copy.id));
-            editor.dragFollowers = followers && { curves: followers, delta: [at[0] - control.point[0], at[1] - control.point[1]] };
+                at = snapPoint(editor.mapProject.terrain, editor.mapProject.design, p, map.scale, selection.kind === "geoNode" ? selection.id : undefined);
+            editor.dragPreview = preview(at);
             editor.gesture.target = at;
-            editor.dragCurve = control.path < 0 || control.role === "outline" ? control.path : undefined;
-            if ("curve" in copy) editor.dragShared = copy;
-            else editor.dragNode = copy;
+            editor.dragCurve = control.role !== "body" && control.role !== "parameter" ? control.path : undefined;
             return;
         }
         if ("section" in editor.gesture) {
@@ -414,11 +408,11 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
                 const drag = editor.dragLabel;
                 if (drag) await editor.moveLabel(g.label, drag.offset);
             }
-            else if ("geo" in g) {
+            else if ("preview" in g) {
                 if (g.target) {
                     editor.dragCommitting = true;
                     await editor.edit(d => {
-                        commitControl(d, g.selection, g.control, g.target!, g.independent, g.outlineGeometry);
+                        commitControl(d, g.selection, g.control, g.target!, g.independent);
                     });
                 }
             }
@@ -434,8 +428,8 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             }
         }
         finally {
-            editor.dragNode = editor.dragMark = editor.dragLabel = editor.dragSection = undefined;
-            editor.dragShared = editor.dragFollowers = editor.dragCurve = undefined;
+            editor.dragMark = editor.dragLabel = editor.dragSection = undefined;
+            editor.dragPreview = editor.dragCurve = undefined;
             editor.dragCommitting = false;
         }
     }

@@ -10,7 +10,7 @@
             <button class="icon-button geometry-reference" data-tip="引用曲线" aria-label={"为“" + (reference.name ?? label) + "”引用曲线"}
                 aria-expanded={opened} bind:this={toggle} onclick={() => opened = !opened}><Icon name="collapse" /></button>
             {#if opened}
-                <Menu label="可用曲线" variant="reference-menu" kind="listbox" anchor={box} groups={choices} empty="没有可用的曲线"
+                <Menu label="引用曲线" variant="reference-menu" kind="listbox" anchor={box} groups={choices} empty="没有可用的曲线"
                     close={focus => close(focus)} choose={choose} />
             {/if}
         {/if}
@@ -37,7 +37,7 @@
 
 <script lang="ts">
     import Icon, { type IconName } from "./Icon.svelte";
-    import { curveSlotName, isCurveRef, refKey, type CurveSlot } from "../../core/design/curveReferences.ts";
+    import { curveSlotName, holderLabel, isCurveRef, isHolderRef, refKey, type CurveSlot } from "../../core/design/curveReferences.ts";
     import * as session from "../state/session.svelte.ts";
     import ReferenceChip from "./ReferenceChip.svelte";
     import Menu from "./Menu.svelte";
@@ -50,19 +50,29 @@
     } = $props();
     let opened = $state(false);
     let box = $state<HTMLElement>(null!), toggle = $state<HTMLButtonElement>(null!);
-    let selected = $derived(reference && isCurveRef(reference.slot.value) ? refKey(reference.slot.value.ref) : undefined);
+    let selected = $derived.by(() => {
+        const holder = reference?.slot.holder;
+        if (!holder) return;
+        if (isHolderRef(holder.value)) return refKey(holder.value.ref);
+        return isCurveRef(holder.value.curve) ? refKey(holder.value.curve.ref) : undefined;
+    });
     let source = $derived.by(() => {
-        const graph = reference?.editor.curves, slot = selected && graph?.slots.get(selected);
-        return slot && graph ? { key: slot.key, name: curveSlotName(slot), closed: graph.source(slot).curve.closed } : undefined;
+        if (!selected || !reference) return;
+        const graph = reference.editor.curves, holder = graph.holders.get(selected), slot = holder ? graph.ofHolder(holder) : graph.slots.get(selected);
+        return slot && { key: selected, name: curveSlotName(holder ?? slot), closed: graph.source(slot).curve.closed };
     });
     let choices = $derived.by(() => {
-        if (!opened || !reference) return [];
+        if (!opened || !reference?.slot.holder) return [];
         const { editor: { curves }, slot } = reference;
-        const items = [...curves.slots.values()].filter(candidate => curves.canUse(slot, candidate)).map(candidate => ({
-            id: candidate.key, name: curveSlotName(candidate), icon: curves.source(candidate).curve.closed ? "closedPath" as const : "curve" as const,
-            selected: candidate.key === selected
-        }));
-        return [...(selected ? [{ items: [{ id: "unlink", name: "解除引用" }] }] : []), { title: "可用曲线", items }];
+        function item(option: CurveSlot, name: string, id = option.key) {
+            return { id, name, icon: curves.source(option).curve.closed ? "closedPath" as const : "curve" as const, selected: id === selected };
+        }
+        const same = [...curves.holders.values()].filter(candidate => curves.canUseHolder(slot, candidate))
+            .map(candidate => item(curves.ofHolder(candidate), curveSlotName(candidate), candidate.key));
+        const shapes = [...curves.slots.values()].filter(candidate => curves.canUse(slot, candidate))
+            .map(candidate => item(candidate, curveSlotName(candidate)));
+        return [...(selected ? [{ items: [{ id: "unlink", name: "解除引用" }] }] : []),
+            { title: holderLabel(slot.holder!), items: same }, { title: slot.closed ? "闭合曲线" : "曲线", items: shapes }].filter(group => group.items.length);
     });
     function close(focus?: boolean) {
         opened = false;

@@ -289,7 +289,7 @@ export function nearbyBoundary(shape: RegionShape, p: Point, radius: number, tol
     return trace(shape, tolerance, expand([p[0], p[1], p[0], p[1]], radius + tolerance));
 }
 
-export function makeShapeData(node: GeoNode<number, never>, below: ReadonlyMap<string, RegionShape>, tolerance: number): ShapeData {
+export function makeShapeData(node: GeoNode<number, "resolved">, below: ReadonlyMap<string, RegionShape>, tolerance: number): ShapeData {
     const c = node.construction;
     if (c.type === "outline") {
         const outlines = c.outlines.map(p => flattenPath(p, tolerance));
@@ -382,7 +382,7 @@ export function rebuildShape(data: ShapeData, below: ReadonlyMap<string, RegionS
     return shape;
 }
 
-export function makeShape(node: GeoNode<number, never>, below: ReadonlyMap<string, RegionShape>, tolerance: number, pool?: WorkPool) {
+export function makeShape(node: GeoNode<number, "resolved">, below: ReadonlyMap<string, RegionShape>, tolerance: number, pool?: WorkPool) {
     return rebuildShape(makeShapeData(node, below, tolerance), below, tolerance, pool);
 }
 
@@ -547,7 +547,7 @@ function pathCenter(path: ClosedCurve, tolerance: number): Point {
     return [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2];
 }
 
-export function constructionCenter(c: Construction<number, never>, step: number, grid?: Grid, region?: Region): Point {
+export function constructionCenter(c: Construction<number, "resolved">, step: number, grid?: Grid, region?: Region): Point {
     if (c.type === "outline" && c.outlines.length === 1) return pathCenter(c.outlines[0], step / 8);
     if (grid && region?.cells.length) {
         const sum: Point = [0, 0];

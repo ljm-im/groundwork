@@ -5,8 +5,7 @@ import { createGrid, distance } from "../src/core/math/geometry.ts";
 import { sectionHandles } from "../src/core/edit/controls.ts";
 import { geoParameterName, resolveDesign } from "../src/core/design/parameters.ts";
 import { History } from "../src/core/edit/history.ts";
-import { editControl, geometryPath, insertCurveNode, outlineParameterGeometry } from "../src/core/edit/geoControls.ts";
-import { translateGeo } from "../src/core/edit/paths.ts";
+import { commitControl, geometryPath, insertCurveNode } from "../src/core/edit/geoControls.ts";
 import { parseDesign } from "../src/core/design/model.ts";
 import { positionReadings, readingRange } from "../src/app/state/mapText.ts";
 import { propertyTabs } from "../src/app/state/inspector.ts";
@@ -18,14 +17,14 @@ import { makeShape, rasterRegion } from "../src/core/design/regions.ts";
 import { clampMarkPoint, nextMapHit, ProjectMap } from "../src/render/map.ts";
 import { testProjectModel, testTerrainClient } from "./computeFixture.ts";
 import { render } from "svelte/server";
-import { coveredLandformPoints, layer, openCurve, overlappingLandforms, polygon, rect, syntheticDesign } from "./scenarios.ts";
+import { coveredLandformPoints, layer, openCurve, overlappingLandforms, polygon, rect, resolvedRect, syntheticDesign } from "./scenarios.ts";
 
 test("Overlapping map objects cycle in paint order, including separate geometries of the same terrain", async () => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
     const design = syntheticDesign(), point: [number, number] = [-14, -8];
     design.geoNodes.push(layer("M", rect(-25, -17, 5, 3), {
         type: "mountain", peaks: [{ at: point, height: 12, radius: 20, noise: 0, scale: 1 }],
-        ridges: [{ line: openCurve([{ p: [-23, -8] }, { p: [-4, -8] }]), slope: 2 }]
+        ridges: [{ curve: openCurve([{ p: [-23, -8] }, { p: [-4, -8] }]), slope: 2 }]
     }));
     design.sections = [{ id: "Q", label: "Q", points: [[-24, -8], [1, -8]] }];
     const project = new Project(design), map: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), { width: 1000, height: 700 });
@@ -320,7 +319,7 @@ test("Drawing or canceling a parameter keeps its owner and activates only the co
         assert.equal(editor.tool, "select"); assert.deepEqual(editor.selection, selected);
         assert.equal(editor.history.index, cancel ? 0 : 1);
     }
-    const owner = editor.project.design.geoNodes[1], target = editor.geometry;
+    const owner = editor.project.resolved.geoNodes[1], target = editor.geometry;
     assert.deepEqual(target, { kind: "curve", index: -1 });
     const handles = geoControls(owner, target);
     assert.equal(handles.filter(c => c.role === "vertex").length, 3);
@@ -334,7 +333,7 @@ test("Drawing or canceling a parameter keeps its owner and activates only the co
     assert.equal(editor.geoDraft, undefined);
     assert.equal(editor.history.index, 2);
     assert.deepEqual(editor.selection, selected);
-    assert.equal(geoControls(editor.project.design.geoNodes[1], editor.geometry).length, 1);
+    assert.equal(geoControls(editor.project.resolved.geoNodes[1], editor.geometry).length, 1);
 });
 
 test("Isolating a section exposes only its own map handles", () => {
@@ -380,11 +379,11 @@ test("Zoom stays between 5 and 3000 percent and keeps its anchor fixed", () => {
 test("Terrain labels use the even-odd centroid, the nearest cell in a hole and the strip midpoint", () => {
     const grid = createGrid({ xMin: -12, xMax: 12, yMin: -12, yMax: 12, step: 1 });
     const make = (outlines: ReturnType<typeof polygon>[]) => makeShape({ field: "height", id: "A", label: "A", construction: { type: "outline", outlines }, function: { type: "ground", value: 0 } }, new Map(), .125);
-    const outer = rect(-8, -6, 8, 6).outlines[0], hole = rect(-2, -2, 2, 2).outlines[0];
+    const outer = resolvedRect(-8, -6, 8, 6).outlines[0], hole = resolvedRect(-2, -2, 2, 2).outlines[0];
     const holed = make([outer, hole]), point = geoLabelPoint(rasterRegion(grid, holed), grid)!;
     assert(holed.contains(point));
     assert.equal(Math.hypot(...point), Math.hypot(2.5, .5));
-    const crossing = make([rect(-9, -3, 0, 3).outlines[0], rect(-3, -1, 4, 1).outlines[0]]);
+    const crossing = make([resolvedRect(-9, -3, 0, 3).outlines[0], resolvedRect(-3, -1, 4, 1).outlines[0]]);
     const centroid = geoLabelPoint(rasterRegion(grid, crossing), grid)!;
     assert(distance(centroid, [-109 / 28, 0]) < 1e-9);
     const shape = makeShape({ field: "height", id: "B", label: "B", function: { type: "blend" },
@@ -490,7 +489,7 @@ test("Selected segments follow their starting node through edits, undo and redo"
     editor.selectControl({ role: "segment", path: 0, index: 2, point: [-14, -2] });
     const selected = () => {
         const part = editor.vertex!;
-        const owner = editor.project.design.geoNodes[1];
+        const owner = editor.project.resolved.geoNodes[1];
         return [part.role, part.index, geometryPath(owner, part.path)!.nodes[part.index].id];
     };
     assert.deepEqual(selected(), ["segment", 2, "2"]);
@@ -520,11 +519,11 @@ function islandDesign() {
     const d = syntheticDesign(), n = d.geoNodes[1], c = rect(-30, -30, 10, 10);
     for (const [prefix, shape] of [["hole", rect(-22, -22, 4, 4)], ["island", rect(-15, -15, -2, -2)]] as const) {
         const outline = shape.outlines[0];
-        for (const node of outline.nodes) node.id = prefix + node.id;
+        for (const node of outline.curve.nodes) node.id = prefix + node.id;
         c.outlines.push(outline);
     }
     n.construction = c;
-    n.function = { type: "slope", kind: "path", line: openCurve([{ p: [-15, -27], h: 2 }, { p: [5, -27], h: 7 }]) };
+    n.function = { type: "slope", kind: "path", line: { curve: openCurve([{ p: [-15, -27], h: 2 }, { p: [5, -27], h: 7 }]) } };
     return d;
 }
 
@@ -556,28 +555,12 @@ test("Nested outlines use their own area and expand a selected landform's place 
         if (hit.control) editor.selectControl(hit.control);
     }
 
-    const crossed = rect(-10, -10, 10, 10), bow = polygon([[-14, -14], [14, 14], [-14, 14], [14, -14]]);
-    const small = rect(-4, -6, 4, 6).outlines[0];
+    const crossed = resolvedRect(-10, -10, 10, 10), bow = polygon([[-14, -14], [14, 14], [-14, 14], [14, -14]]);
+    const small = resolvedRect(-4, -6, 4, 6).outlines[0];
     crossed.outlines.push(bow, small);
     const overlapping = makeShape({ id: "X", label: "X", field: "height", construction: crossed,
         function: { type: "ground", value: 1 } }, new Map(), .1);
     assert.deepEqual(overlapping.containingOutlines!([0, 5]), [2, 1, 0]);
-});
-
-test("Dragging an only outline carries its peaks and ridges with their attributes", () => {
-    const design = syntheticDesign(), owner = design.geoNodes[1];
-    owner.construction = rect(-20, -20, 20, 20);
-    const line = openCurve([{ p: [-12, -4], h: 5 }, { p: [2, 9], h: 8 }, { p: [11, 1], h: 6 }], "auto");
-    owner.function = {
-        type: "mountain", ridges: [{ line, slope: 1 }],
-        peaks: [{ at: [-8, 8], height: 13, radius: 7, noise: 0, scale: 1 }]
-    };
-    const shape = new Project(design).terrain.regions.get(owner.id)!.shape;
-    const members = outlineParameterGeometry(owner, 0, shape);
-    const actual = structuredClone(owner), expected = structuredClone(owner);
-    translateGeo(expected, [16, 4]);
-    editControl(actual, { role: "outline", path: 0, index: 0, point: [0, 0] }, [16, 4], false, members);
-    assert.deepEqual(actual, expected);
 });
 
 test("Dragging nested outlines moves only their own geometry and preserves selection through history", async t => {
@@ -588,7 +571,7 @@ test("Dragging nested outlines moves only their own geometry and preserves selec
     ] as [number, number][][];
     design.geoNodes[1].function = {
         type: "mountain",
-        ridges: ridges.map((points, i) => ({ line: openCurve(points.map((p, j) => ({ p, h: 5 + j })), "corner", i + "-ridge-"), slope: 1 })),
+        ridges: ridges.map((points, i) => ({ curve: openCurve(points.map((p, j) => ({ p, h: 5 + j })), "corner", i + "-ridge-"), slope: 1 })),
         peaks: [{ at: [-8, -7], height: 12, radius: 8, noise: 0, scale: 1 },
             { at: [0, -28], height: 9, radius: 6, noise: 0, scale: 1 }]
     };
@@ -598,18 +581,17 @@ test("Dragging nested outlines moves only their own geometry and preserves selec
     await editor.replace(d, true);
     editor.history = new History(d);
     const original = structuredClone(d.geoNodes[1]);
-    const shape = editor.project.terrain.regions.get("T")!.shape;
+    const placed = editor.project.resolved.geoNodes[1];
     editor.select({ kind: "geoNode", id: "T" });
     const outer = { role: "outline" as const, path: 0, index: 0, point: [-10, -28] as [number, number] };
     editor.selectControl(outer);
-    await editor.editNode("T", n => editControl(n, outer, [-7, -28], false, outlineParameterGeometry(original, 0, shape)));
-    const movedOuter = editor.project.design.geoNodes[1];
-    assert(movedOuter.function.type === "mountain" && original.function.type === "mountain");
-    for (const i of [-1, -2, -4, 1, 2]) assert.deepEqual(geometryPath(movedOuter, i), geometryPath(original, i));
-    for (const i of [0, -3])
-        assert.deepEqual(geometryPath(movedOuter, i)?.nodes.map(node => node.p), geometryPath(original, i)?.nodes.map(({ p: [x, y] }) => [x + 3, y]));
-    assert.deepEqual(movedOuter.function.peaks[0], original.function.peaks[0]);
-    assert.deepEqual(movedOuter.function.peaks[1].at, [3, -28]);
+    await editor.edit(d => {
+        commitControl(d, { kind: "geoNode", id: "T" }, outer, [-7, -28], false);
+    });
+    const movedOuter = editor.project.resolved.geoNodes[1];
+    assert.deepEqual(movedOuter.function, placed.function);
+    for (const i of [1, 2]) assert.deepEqual(geometryPath(movedOuter, i), geometryPath(placed, i));
+    assert.deepEqual(geometryPath(movedOuter, 0)?.nodes.map(node => node.p), geometryPath(placed, 0)?.nodes.map(({ p: [x, y] }) => [x + 3, y]));
     await editor.navigate(false);
     assert.deepEqual(editor.project.design.geoNodes[1], original);
 
@@ -617,21 +599,20 @@ test("Dragging nested outlines moves only their own geometry and preserves selec
     editor.selectControl(control);
     assert.equal(editor.outline, 2);
     assert.equal(editor.vertex, undefined);
-    await editor.editNode("T", n => editControl(n, control, [-8, -13], false, outlineParameterGeometry(original, 2, shape)));
-    const moved = editor.project.design.geoNodes[1];
-    assert(moved.function.type === "mountain");
-    for (const i of [-2, -3, -4, 0, 1]) assert.deepEqual(geometryPath(moved, i), geometryPath(original, i));
-    for (const i of [2, -1])
-        assert.deepEqual(geometryPath(moved, i)?.nodes.map(node => node.p),
-            geometryPath(original, i)?.nodes.map(({ p: [x, y] }) => [x + 2, y - 3]));
-    assert.deepEqual(moved.function.peaks[1], original.function.peaks[1]);
-    assert.deepEqual(moved.function.peaks[0].at, [-6, -10]);
+    await editor.edit(d => {
+        commitControl(d, { kind: "geoNode", id: "T" }, control, [-8, -13], false);
+    });
+    const moved = editor.project.resolved.geoNodes[1];
+    assert.deepEqual(moved.function, placed.function);
+    for (const i of [0, 1]) assert.deepEqual(geometryPath(moved, i), geometryPath(placed, i));
+    assert.deepEqual(geometryPath(moved, 2)?.nodes.map(node => node.p),
+        geometryPath(placed, 2)?.nodes.map(({ p: [x, y] }) => [x + 2, y - 3]));
     editor.removeOutline("T", 1);
     editor.removal?.perform?.();
     await editor.finishWork();
     editor.removal = null;
     assert.equal(editor.outline, 1);
-    assert.equal(geometryPath(editor.project.design.geoNodes[1], 1)?.nodes[0].id, "island0");
+    assert.equal(geometryPath(editor.project.resolved.geoNodes[1], 1)?.nodes[0].id, "island0");
     await editor.navigate(false);
     assert.equal(editor.outline, 2);
     await editor.navigate(false);
@@ -695,7 +676,7 @@ test("Removing a segment asks before leaving a strip reference to its removed en
     assert.equal(editor.canUndo, false);
     editor.removal?.perform?.();
     await editor.finishWork();
-    const path = geometryPath(editor.project.design.geoNodes[1], 0)!;
+    const path = geometryPath(editor.project.resolved.geoNodes[1], 0)!;
     assert.deepEqual(path.nodes.map(n => n.id), ["0", "2", "3"]);
     assert.equal(editor.vertex?.role, "vertex");
     assert.equal(editor.project.issues.find(issue => issue.geoNode === "S")?.kind, "geo-reference");

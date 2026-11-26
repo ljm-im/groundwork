@@ -10,18 +10,19 @@
 {#snippet curveInput(label: string, curve: Curve, index: number, heightAt?: Address)}
     {@const kind = index < 0 ? "curve" : "outline"}
     {@const slot = geometrySlot(d, n.id, index)!}
+    {@const referenced = heightAt && isCurveRef(editor.curves.value(slot))}
     <GeometryInput {label} icon={curve.closed ? "closedPath" : "curve"} count={curve.nodes.length}
         active={editor.geometry?.kind === kind && editor.geometry.index === index}
         onclick={() => editor.focusGeometry({ kind, index })} onmouseenter={() => hover(kind, index)} onmouseleave={clearHover}
         redraw={() => editor.drawCurve(slot.key)} redrawing={editor.curveToolActive(slot.key)}
-        reference={{ editor, slot, name: index >= 0 ? slot.label : label }} />
+        reference={{ editor, slot, name: index >= 0 ? slot.holder?.label : label }} />
     {#if heightAt}
         <CheckboxRow label="闭合" checked={curve.closed} disabled={curve.nodes.length < 3}
             change={closed => editor.setCurveClosed(n.id, index, closed)} />
     {/if}
     <SelectedCurvePart {editor} {curve} path={index}>
         {#snippet height(i, id)}
-            {#if heightAt}{@render param([...heightAt, ...(isCurveRef(slot.value) ? ["h", id] : ["nodes", i, "h"])])}{/if}
+            {#if heightAt}{@render param([...heightAt, ...(referenced ? ["h", id] : ["nodes", i, "h"])])}{/if}
         {/snippet}
     </SelectedCurvePart>
 {/snippet}
@@ -55,7 +56,7 @@
                                     <button class="icon-button danger" aria-label="删除轮廓" data-tip="删除轮廓" onclick={() => editor.removeOutline(n.id, i)}><Icon name="delete" /></button>
                                 {/if}
                             {/snippet}
-                            {@render curveInput("值", outline, i)}
+                            {@render curveInput("曲线", outline, i)}
                         </Subitem>
                     {/each}
                 </Part>
@@ -86,7 +87,7 @@
                     {:else if f.type === "coast"}
                         {@render geometry(p.label, 0, "harbor")}
                     {:else if f.type === "slope" && f.kind === "path"}
-                        {@render curveInput(p.label, geometryPath(resolved, -1)!, -1, ["line"])}
+                        {@render curveInput(p.label, geometryPath(resolved, -1)!, -1, ["line", "curve"])}
                         {#each functionTable.slope.toggles ?? [] as toggle (toggle.label)}
                             <CheckboxRow label={toggle.label} checked={Boolean(readAt(f, toggle.key) ?? toggle.default)}
                                 change={value => editor.editNode(n.id, item => writeAt(item.function, toggle.key, value))} />
@@ -110,7 +111,7 @@
                         <Subitem label={"山脊 " + (j + 1)} open={editor.subitemOpen(n.id, "ridges", j)} onclick={() => editor.toggleSubitem(n.id, "ridges", j)}
                             onmouseenter={() => hover("curve", -1 - j)} onmouseleave={clearHover}>
                             {#snippet actions()}{@render memberActions("ridges", j)}{/snippet}
-                            {@render curveInput(geoParameter(n, ["function", "ridges", j, "line"])!.label, geometryPath(resolved, -1 - j)!, -1 - j, ["ridges", j, "line"])}
+                            {@render curveInput(geoParameter(n, ["function", "ridges", j, "curve"])!.label, geometryPath(resolved, -1 - j)!, -1 - j, ["ridges", j, "curve"])}
                             {#each memberParameters("ridges", j) as key (key.join("."))}
                                 {@render param(key)}
                             {/each}

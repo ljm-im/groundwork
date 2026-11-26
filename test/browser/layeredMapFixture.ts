@@ -92,7 +92,7 @@ function sampleDesign() {
     const mountain = defaultFunction("mountain");
     assert(mountain.type === "mountain");
     for (const y of [23, 27, 31]) {
-        mountain.ridges.push({ line: openCurve([{ p: [-33, y], h: 5 }, { p: [-7, y], h: 5 }, { p: [18, y], h: 5 }], "corner", "ridge-" + y + "-"),
+        mountain.ridges.push({ curve: openCurve([{ p: [-33, y], h: 5 }, { p: [-7, y], h: 5 }, { p: [18, y], h: 5 }], "corner", "ridge-" + y + "-"),
             slope: 2 });
     }
     d.geoNodes = [

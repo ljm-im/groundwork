@@ -11,7 +11,7 @@ import { resolveDesign } from "../src/core/design/parameters.ts";
 import { removeDeclaration } from "../src/core/edit/geoNodes.ts";
 import { DesignError } from "../src/core/design/problems.ts";
 import { generateTerrain } from "../src/core/terrain/terrain.ts";
-import { syntheticDesign, rect, layer, polygon } from "./scenarios.ts";
+import { syntheticDesign, rect, layer, polygon, literalCurve } from "./scenarios.ts";
 
 test("Version five opens atomically and older formats have a common version error", () => {
     const d = syntheticDesign(), bytes = serializeDesign(d);
@@ -41,9 +41,9 @@ test("Geo references report their location and reject invalid field writers", ()
     n.function = { type: "flat", amount: 1 }; n.construction = { type: "strip", of: ["N"], widths: [1, 1] };
     assert.throws(() => parseDesign(d), /of.*找不到下方/);
     n.construction = p;
-    p.outlines[0].nodes.push(structuredClone(p.outlines[0].nodes[0]));
+    literalCurve(p.outlines[0]).nodes.push(structuredClone(literalCurve(p.outlines[0]).nodes[0]));
     assert.throws(() => parseDesign(d), /nodes\[4\].id 重复/);
-    p.outlines[0].nodes.pop(); n.id = d.geoNodes[0].id;
+    literalCurve(p.outlines[0]).nodes.pop(); n.id = d.geoNodes[0].id;
     assert.throws(() => parseDesign(d), /geoNodes\[2\].id/);
 });
 
@@ -163,8 +163,8 @@ test("Built-in seed, ranges and harbors materialize on read and omit their defau
     delete raw.inputs.seed;
     delete raw.inputs.A.range;
     raw.geoNodes.push({ ...layer("C", rect(0, 0, 10, 8), { type: "flat", amount: 1 }),
-        function: { type: "coast", shore: polygon([[0, 0], [1, 0], [1, 1], [0, 1]]), roughness: 4, seed: "{input:seed}" } });
-    for (const node of raw.geoNodes.at(-1).function.shore.nodes) node.id = "s" + node.id;
+        function: { type: "coast", shore: { curve: polygon([[0, 0], [1, 0], [1, 1], [0, 1]]) }, roughness: 4, seed: "{input:seed}" } });
+    for (const node of raw.geoNodes.at(-1).function.shore.curve.nodes) node.id = "s" + node.id;
     const hydrated = parseDesign(raw), f = hydrated.geoNodes.at(-1)!.function;
     assert.deepEqual(hydrated.inputs.seed, { label: "种子", value: 1, range: [-10000, 10000, 1] });
     assert.deepEqual(hydrated.inputs.A.range, [-10000, 10000, .1]);

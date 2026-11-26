@@ -1,3 +1,4 @@
+import { resolveDesign } from "../src/core/design/parameters.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { contextMenuColumns, issueMenuColumns } from "../src/app/state/contextMenu.ts";
@@ -16,7 +17,7 @@ test("Contour, curve and region menus follow the actual geometry and semantic ow
     const d = syntheticDesign(), n = d.geoNodes[1];
     assert(n.construction.type === "outline");
     n.construction.outlines.push(rect(-16, -10, -13, -5).outlines[0]);
-    const menu = (control?: GeoControl) => contextMenuColumns(d, selection("T"), true, control);
+    const menu = (control?: GeoControl) => contextMenuColumns(resolveDesign(d), selection("T"), true, control);
     const semantic = ["轮廓 2", "区域", "地件"], curveActions = ["全部节点改为自动平滑", "全部线段改为直线"];
     for (const role of ["vertex", "in", "out"] as const) {
         const groups = menu(hit(role, 1));
@@ -46,7 +47,7 @@ test("Contour, curve and region menus follow the actual geometry and semantic ow
     assert.deepEqual(menu(hit("segment"))[0][1].items.map(i => i.name), ["插入节点"]);
     assert.deepEqual(titles(menu(hit("outline"))), [["轮廓 1", "区域", "地件"]]);
     d.geoNodes.push(layer("S", { type: "strip", of: ["T"], widths: [1, 2] }, { type: "blend" }));
-    const strip = contextMenuColumns(d, selection("S"), true, hit("body"));
+    const strip = contextMenuColumns(resolveDesign(d), selection("S"), true, hit("body"));
     assert.deepEqual(titles(strip), [["区域", "地件"]]);
     assert.deepEqual(names(strip), [["重选边", "复制地件", "禁用地件", "删除地件"]]);
 });
@@ -58,9 +59,9 @@ test("Parameter geometry menus show member operations only for ridges and peaks"
     ridge.nodes[0].bulge = .5;
     assert(mountain.type === "mountain");
     n.function = mountain;
-    mountain.ridges.push({ line: structuredClone(ridge), slope: 2 }, { line: ridge, slope: 1 });
+    mountain.ridges.push({ curve: structuredClone(ridge), slope: 2 }, { curve: ridge, slope: 1 });
     mountain.peaks.push({ at: [0, 0], height: 3, radius: 18, noise: 0, scale: 1 });
-    const menu = (control?: GeoControl) => contextMenuColumns(d, selection("T"), true, control);
+    const menu = (control?: GeoControl) => contextMenuColumns(resolveDesign(d), selection("T"), true, control);
     const first = menu(hit("segment", -2, 0));
     assert.deepEqual(titles(first), [["线段类型", "线段", "曲线"], ["山脊 2", "地件"]]);
     assert.deepEqual(names(first)[1].slice(0, 2), ["复制山脊", "删除山脊"]);
@@ -74,11 +75,11 @@ test("Parameter geometry menus show member operations only for ridges and peaks"
     ridge.closed = true;
     assert.deepEqual(titles(menu(hit("segment", -2, 3))), [["线段类型", "线段", "闭合曲线"], ["山脊 2", "地件"]]);
 
-    n.function = { type: "slope", kind: "path", line: ridge };
+    n.function = { type: "slope", kind: "path", line: { curve: ridge } };
     assert.deepEqual(titles(menu(hit("segment", -1, 3))), [["线段类型", "线段", "闭合曲线"], ["地件"]]);
     ridge.closed = false;
     assert.deepEqual(titles(menu(hit("vertex", -1, 1))), [["节点类型", "节点", "曲线"], ["地件"]]);
-    n.function = defaultFunction("coast", { shore: rect(0, 0, 4, 4).outlines[0], center: [0, 0] });
+    n.function = defaultFunction("coast", { shore: rect(0, 0, 4, 4).outlines[0].curve, center: [0, 0] });
     assert.deepEqual(titles(menu(hit("segment", -1))), [["线段类型", "线段", "闭合曲线"], ["地件"]]);
     assert.deepEqual(titles(menu(hit("parameter"))), [["地件"]]);
 });
@@ -108,12 +109,12 @@ test("List menus put reveal first and name every semantic operation", () => {
         ["input", "A", "输入", ["删除输入"]],
         ["field", "F", "场", ["删除场"]]
     ] as const) {
-        const h = { kind, id }, menu = contextMenuColumns(d, h, false), reveal = kind === "input" || kind === "field" ? [] : ["在视野中显示"];
+        const h = { kind, id }, menu = contextMenuColumns(resolveDesign(d), h, false), reveal = kind === "input" || kind === "field" ? [] : ["在视野中显示"];
         assert.deepEqual(titles(menu), [[title]]);
         assert.deepEqual(names(menu), [[...reveal, ...operations]]);
         assert.equal(menu[0][0].items.at(-1)?.danger, true);
-        if (kind === "mark" || kind === "section") assert.deepEqual(names(contextMenuColumns(d, h, true)), [operations]);
+        if (kind === "mark" || kind === "section") assert.deepEqual(names(contextMenuColumns(resolveDesign(d), h, true)), [operations]);
     }
-    assert.deepEqual(contextMenuColumns(d, { kind: "input", id: "seed" }, false), []);
-    assert.deepEqual(contextMenuColumns(d, { kind: "field", id: "height" }, false), []);
+    assert.deepEqual(contextMenuColumns(resolveDesign(d), { kind: "input", id: "seed" }, false), []);
+    assert.deepEqual(contextMenuColumns(resolveDesign(d), { kind: "field", id: "height" }, false), []);
 });

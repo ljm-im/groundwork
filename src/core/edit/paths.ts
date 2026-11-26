@@ -1,5 +1,4 @@
-import { isCurveRef } from "../design/curveReferences.ts";
-import { type ClosedCurve, type Curve, type CurveValue, type Expression, type CurveNode, type GeoNode, type Point } from "../design/v5.ts";
+import { type ClosedCurve, type Curve, type Expression, type CurveNode, type Point } from "../design/v5.ts";
 import { advance, bearing, distance, mixPoint, projection } from "../math/geometry.ts";
 import { arcGeometry, autoHandle, defaultArcBulge, flattenBezier, flattenSegment, handleOffset, hasHandleSide, neighbor, pathBezier,
     pathHandle, segmentType, splitBezier, type Bezier, type Segment, type SegmentType } from "../design/path.ts";
@@ -292,39 +291,4 @@ export function nearestSegment(edges: Segment[], at: Point) {
         if (!best || gap < best.distance) best = { edge, point, distance: gap };
     }
     return best;
-}
-export function translateCurve(path: CurveValue, delta: Point) {
-    if (isCurveRef(path)) {
-        const [x = 0, y = 0] = path.offset ?? [];
-        const moved: Point = [x + delta[0], y + delta[1]];
-        if (moved.some(Boolean)) path.offset = moved;
-        else delete path.offset;
-        return;
-    }
-    for (const v of path.nodes) {
-        v.p[0] += delta[0];
-        v.p[1] += delta[1];
-    }
-}
-export function translateGeo(n: GeoNode, delta: Point, inherited?: ReadonlySet<CurveValue>) {
-    const move = (p: Point) => {
-        p[0] += delta[0]; p[1] += delta[1];
-    };
-    const moveCurve = (curve: CurveValue) => {
-        if (!inherited?.has(curve)) translateCurve(curve, delta);
-    };
-    if (n.construction.type === "outline") for (const outline of n.construction.outlines) moveCurve(outline);
-    const f = n.function;
-    if (f.type === "coast") {
-        moveCurve(f.shore);
-        move(f.harbor.center);
-    }
-    if (f.type === "mountain") {
-        for (const ridge of f.ridges) moveCurve(ridge.line);
-        for (const peak of f.peaks) move(peak.at);
-    }
-    if (f.type === "slope") {
-        if (f.kind === "radial") move(f.center);
-        else moveCurve(f.line);
-    }
 }

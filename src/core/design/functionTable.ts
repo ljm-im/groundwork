@@ -65,8 +65,8 @@ export const functionTable: Record<GeoFunction["type"], FunctionSpec> = {
         number("crestRound", "山顶圆角半径", "m", .1, 4, advanced),
         number("footRound", "山脚过渡高度", "m", .1, 5, advanced),
         number("blend", "山脊融合高度", "m", .1, 5, advanced),
-        geometry("ridges.*.line", "山脊线", "draw-line"),
-        number("ridges.*.line.nodes.*.h", "高度", "field", "field", 0, { profile: true }),
+        geometry("ridges.*.curve", "山脊线", "draw-line"),
+        number("ridges.*.curve.nodes.*.h", "高度", "field", "field", 0, { profile: true }),
         number("ridges.*.slope", "坡度", "m/m", .01, .75, { constraint: "positive" }),
         geometry("peaks.*.at", "位置", "draw-point"),
         number("peaks.*.height", "高度", "field", "field", 0),
@@ -101,7 +101,7 @@ export const functionTable: Record<GeoFunction["type"], FunctionSpec> = {
     ] },
     slope: { initial: false, writes: "any", reading: "point", parameters: [
         geometry("line", "坡线", "axis", "path"),
-        number("line.nodes.*.h", "增量", "field", "field", slopeEndpointValues[0], { variant: "path", profile: true }),
+        number("line.curve.nodes.*.h", "增量", "field", "field", slopeEndpointValues[0], { variant: "path", profile: true }),
         geometry("center", "圆心", "center", "radial"),
         number("radius", "半径", "m", .1, 5, { variant: "radial" }),
         number("value", "增量", "field", "field", 2, { variant: "radial" }),
@@ -141,7 +141,7 @@ export function matchesKey(template: Address, path: Address) {
     return template.length === path.length && template.every((part, i) => part === path[i] || part === "*" && typeof path[i] === "number");
 }
 
-export function functionParameters(f: GeoFunction) {
+export function functionParameters(f: GeoFunction | GeoFunction<number, "resolved">) {
     return functionTable[f.type].parameters.filter(p => !p.variant || f.type === "slope" && p.variant === f.kind);
 }
 
@@ -175,8 +175,9 @@ export function expandKeys(root: object, key: Address): Address[] {
     return paths;
 }
 
-export function functionParameterKeys(f: GeoFunction, p: ParameterSpec) {
-    return expandKeys(f, p.key);
+export function functionParameterKeys(f: GeoFunction | GeoFunction<number, "resolved">, p: ParameterSpec, resolved = false) {
+    const key = resolved && f.type === "slope" && p.type !== "geometry" && p.profile ? p.key.filter(part => part !== "curve") : p.key;
+    return expandKeys(f, key);
 }
 
 export function fillFunctionParameters(f: GeoFunction, prefix: Address = []) {
@@ -199,6 +200,6 @@ export function numericValid(p: NumericParameter, value: unknown) {
     if (p.constraint.endsWith("-integer") && !Number.isSafeInteger(value)) return false;
     return p.constraint.startsWith("nonnegative") ? value >= 0 : value > 0;
 }
-export function fieldExpressions(f: GeoFunction): Expression[] {
+export function fieldExpressions(f: GeoFunction<number, "resolved">): Expression[] {
     return functionParameters(f).flatMap(p => p.type === "field" ? expandKeys(f, p.key).map(key => readAt(f, key) as Expression) : []);
 }

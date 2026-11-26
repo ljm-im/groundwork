@@ -1,4 +1,4 @@
-import { type ClosedCurve, type Curve, type GeoNode, type Point, type ResolvedDesign, type Design, type CurveRef } from "./v5.ts";
+import { type ClosedCurve, type Curve, type GeoNode, type Point, type ResolvedDesign, type ResolvedGeoNode, type Design, type CurveRef } from "./v5.ts";
 import { defaultFieldPrecision, isBuiltin, reserved, seedId, heightId } from "./defaults.ts";
 import { canWrite, expandKeys, functionParameterKeys, functionParameters, functionTable, numericValid } from "./functionTable.ts";
 import { readAt, type Address } from "./address.ts";
@@ -19,8 +19,7 @@ function validateCurve(value: unknown, at: (path: Address) => Location, key: Add
         check(reference, "这里不能引用曲线", at([...key, "ref"]));
         const ref = value as CurveRef;
         check(typeof ref.ref === "string", "无效", at([...key, "ref"]));
-        check(!Object.hasOwn(ref, "nodes") && !Object.hasOwn(ref, "closed"), "是未知字段", at(key));
-        if (Object.hasOwn(ref, "offset")) check(point(ref.offset), "只能填写两个有限数", at([...key, "offset"]));
+        check(Object.keys(ref).every(k => k === "ref" || k === "h"), "无效", at(key));
         if (Object.hasOwn(ref, "h")) {
             check(height, "这里的节点不能有高度", at([...key, "h"]));
             check(record(ref.h), "无效", at([...key, "h"]));
@@ -77,17 +76,32 @@ export function validateSharedCurves(d: Design) {
     }
 }
 
-export function validateCurves(n: GeoNode, index: number) {
+export function validateCurves(n: GeoNode | ResolvedGeoNode, index: number, resolved = false) {
     const at = (path: Address): Location => ({ kind: "geo", id: n.id, index, path });
-    const curve = (value: unknown, key: Address, closed: boolean) => validateCurve(value, at, key, new Set(), closed, !closed, true);
+    function held(value: unknown, key: Address, closed: boolean, ridge = false) {
+        if (resolved) {
+            validateCurve(ridge ? readAt(value as object, ["curve"]) : value, at, ridge ? [...key, "curve"] : key, new Set(), closed, !closed, false);
+            return;
+        }
+        check(record(value), "无效", at(key));
+        const holder = value as Record<string, unknown>;
+        if (Object.hasOwn(holder, "ref")) {
+            check(Object.keys(holder).length === 1 && typeof holder.ref === "string", "无效", at(key));
+            return;
+        }
+        if (Object.hasOwn(holder, "offset")) check(point(holder.offset), "只能填写两个有限数", at([...key, "offset"]));
+        validateCurve(holder.curve, at, [...key, "curve"], new Set(), closed, !closed, true);
+    }
     const c = n.construction;
     check(c?.type === "outline" || c?.type === "strip", "是未知取值", at(["construction", "type"]));
-    if (c.type === "outline") check(Array.isArray(c.outlines) && c.outlines.length, "无效", at(["construction", "outlines"]));
-    if (c?.type === "outline" && Array.isArray(c.outlines)) c.outlines.forEach((p, i) => curve(p, ["construction", "outlines", i], true));
+    if (c.type === "outline") {
+        check(Array.isArray(c.outlines) && c.outlines.length, "无效", at(["construction", "outlines"]));
+        c.outlines.forEach((value, i) => held(value, ["construction", "outlines", i], true));
+    }
     const f = n.function;
-    if (f?.type === "coast") curve(f.shore, ["function", "shore"], true);
-    if (f?.type === "slope" && f.kind === "path") curve(f.line, ["function", "line"], false);
-    if (f?.type === "mountain" && Array.isArray(f.ridges)) f.ridges.forEach((r, i) => curve(r?.line, ["function", "ridges", i, "line"], false));
+    if (f?.type === "coast") held(f.shore, ["function", "shore"], true);
+    if (f?.type === "slope" && f.kind === "path") held(f.line, ["function", "line"], false);
+    if (f?.type === "mountain" && Array.isArray(f.ridges)) f.ridges.forEach((value, i) => held(value, ["function", "ridges", i], false, true));
 }
 
 export function validateGeo(d: ResolvedDesign, allowBrokenReferences = false) {
@@ -121,7 +135,7 @@ export function validateGeo(d: ResolvedDesign, allowBrokenReferences = false) {
             if (!n.disabled) problems.push({ location: at(path), message });
         };
         valid(!Object.hasOwn(n, "disabled") || n.disabled === true, ["disabled"]);
-        validateCurves(n, index);
+        validateCurves(n, index, true);
         const c = n.construction, f = n.function, spec = functionTable[f.type];
         const fn = (key: Address) => ["function", ...key];
         valid(c && ["outline", "strip"].includes(c.type), ["construction"]);
@@ -148,7 +162,7 @@ export function validateGeo(d: ResolvedDesign, allowBrokenReferences = false) {
         upperPaths.set(n.id, c.type === "outline" ? c.outlines : []);
         if (f.type === "slope") valid(f.kind === "path" || f.kind === "radial", fn(["kind"]));
         for (const p of ps) {
-            for (const key of functionParameterKeys(f, p)) {
+            for (const key of functionParameterKeys(f, p, true)) {
                 const value = readAt(f, key), pos = fn(key);
                 if (p.type !== "geometry") {
                     if (value === undefined && p.profile) continue;

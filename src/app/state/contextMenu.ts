@@ -1,6 +1,6 @@
 import { isBuiltin } from "../../core/design/defaults.ts";
 import { neighbor, segmentType } from "../../core/design/path.ts";
-import { type Curve, type Design, type GeoNode } from "../../core/design/v5.ts";
+import { type Curve, type ResolvedDesign, type PlacedGeoNode } from "../../core/design/v5.ts";
 import { type Issue } from "../../core/design/results.ts";
 import { controlOwner, geometryPath, type GeoControl } from "../../core/edit/geoControls.ts";
 import { canRemoveNode, canSetManual, isEndpoint, segmentRemovalIndex } from "../../core/edit/paths.ts";
@@ -55,7 +55,7 @@ function memberGroup(id: string, group: "ridges" | "peaks", index: number): Grou
     ] };
 }
 
-function geoGroups(node: GeoNode, control?: GeoControl, handle?: HandleSide): [Group[], Group[]] {
+function geoGroups(node: PlacedGeoNode, control?: GeoControl, handle?: HandleSide): [Group[], Group[]] {
     const id = node.id, c = node.construction, f = node.function;
     const geometry = control?.role === "vertex" || control?.role === "segment" ? geometryPath(node, control.path) : undefined;
     const left = control && geometry ? geometryGroups({ kind: "geoNode", id }, control, geometry, handle) : [], right: Group[] = [];
@@ -88,7 +88,7 @@ export function issueMenuColumns(issue: Issue): Group[][] {
     ] }]];
 }
 
-export function contextMenuColumns(design: Design, h: Selection, map: boolean, hit?: GeoControl): Group[][] {
+export function contextMenuColumns(design: ResolvedDesign, h: Selection, map: boolean, hit?: GeoControl): Group[][] {
     const { kind, id } = h, control = controlOwner(hit);
     const handle = hit?.role === "in" || hit?.role === "out" ? hit.role : undefined;
     if ((kind === "input" || kind === "field") && isBuiltin(kind, id)) return [];

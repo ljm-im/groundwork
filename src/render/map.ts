@@ -1,4 +1,4 @@
-import { type GeoNode, type Expression, type SharedCurve, type Mark, type TextMark, type Point } from "../core/design/v5.ts";
+import { type PlacedGeoNode, type SharedCurve, type Mark, type TextMark, type Point } from "../core/design/v5.ts";
 import { displaySteps, markParameters } from "../core/design/functionTable.ts";
 import { fieldPrecision, heightId } from "../core/design/defaults.ts";
 import { type Issue, type Terrain } from "../core/design/results.ts";
@@ -8,10 +8,11 @@ import { type GridDisplay, type layerDefaults, pixelGridSpacing } from "../core/
 import { type Box } from "../core/math/geometry.ts";
 import { clamp, distance, nearest } from "../core/math/geometry.ts";
 import { objectIssues } from "../core/checks/issues.ts";
-import { hitGeoControl, hitOutlineVertex, hitParameterGeometries, hitPathSegment, parameterTarget, type FollowingCurves, type GeoControl, type GeometryTarget } from "../core/edit/geoControls.ts";
+import { hitGeoControl, hitOutlineVertex, hitParameterGeometries, hitPathSegment, parameterTarget, type ControlPreview, type GeoControl, type GeometryTarget } from "../core/edit/geoControls.ts";
+import { flattenPath } from "../core/design/path.ts";
 import { contourLabels, fieldContours } from "./fieldContours.ts";
 import { constrainGeoLabel, constrainSectionLabel, geoLabelPoint } from "./labelLayout.ts";
-import { drawGeoOverlay, drawHandle, drawParameterGeometry, followsOutline, showsParameterGeometry } from "./geoOverlay.ts";
+import { drawGeoOverlay, drawHandle, drawParameterGeometry, hasOutlinePreview, showsParameterGeometry } from "./geoOverlay.ts";
 import { baseMap, canvasText, contourStyle, interfaceColors, mapColors, overlay, type MapColors, type Theme } from "./palette.ts";
 import { displayReading, displayValue } from "../core/design/display.ts";
 import { sectionHandles } from "../core/edit/controls.ts";
@@ -65,9 +66,9 @@ export type MapView = Readonly<{
     objectGeometry?: Selection;
     vertex?: GeoControl;
     draft?: Readonly<GeoDraft>;
-    dragNode?: GeoNode<Expression, never>;
+    dragNode?: PlacedGeoNode;
     dragShared?: SharedCurve;
-    dragFollowers?: { curves: FollowingCurves; delta: Point };
+    dragNodes?: ControlPreview["nodes"];
     dragCurve?: number;
     dragCommitting?: boolean;
     dragMark?: Readonly<{ id: string; point: Point }>;
@@ -95,16 +96,15 @@ function stroke(ctx: Context, points: Point[], color: string, width: number, das
 }
 
 const outlines = new WeakMap<Region, Path2D>();
-function regionOutline(region: Region, g: Grid, shifted?: { paths: ReadonlySet<number>; delta: Point }) {
-    const cached = !shifted && outlines.get(region);
+function regionOutline(region: Region, g: Grid) {
+    const cached = outlines.get(region);
     if (cached) return cached;
     const outline = new Path2D();
     if (!region.shape.cross) {
-        for (const [i, edges] of region.shape.boundary().entries()) {
+        for (const edges of region.shape.boundary()) {
             if (!edges.length) continue;
-            const [dx, dy] = shifted?.paths.has(i) ? shifted.delta : [0, 0];
-            outline.moveTo(edges[0].a[0] + dx, edges[0].a[1] + dy);
-            for (const { b } of edges) outline.lineTo(b[0] + dx, b[1] + dy);
+            outline.moveTo(...edges[0].a);
+            for (const { b } of edges) outline.lineTo(...b);
             outline.closePath();
         }
     }
@@ -131,7 +131,20 @@ function regionOutline(region: Region, g: Grid, shifted?: { paths: ReadonlySet<n
             }
         }
     }
-    if (!shifted) outlines.set(region, outline);
+    outlines.set(region, outline);
+    return outline;
+}
+
+function previewOutline(c: PlacedGeoNode["construction"], tolerance: number) {
+    if (c.type !== "outline") return;
+    const outline = new Path2D();
+    for (const path of c.outlines) {
+        const edges = flattenPath(path, tolerance);
+        if (!edges.length) continue;
+        outline.moveTo(...edges[0].a);
+        for (const { b } of edges) outline.lineTo(...b);
+        outline.closePath();
+    }
     return outline;
 }
 
@@ -468,17 +481,16 @@ export class ProjectMap {
             ctx.restore();
         }
         if (view.layers.grid) this.drawGrid(ctx, view, scale, base);
-        const { dragNode, dragFollowers } = view;
-        const draggedRegionId = dragNode?.construction.type === "outline" &&
-            ((view.dragCurve ?? 0) >= 0 || followsOutline(dragFollowers?.curves.get(dragNode.id))) ? dragNode.id : undefined;
-        const draggingOutline = draggedRegionId !== undefined && view.dragCurve !== undefined;
-        const movedOutlines = dragFollowers && new Map<string, Path2D>();
+        const { dragNode, dragNodes } = view;
+        const draggedRegionId = dragNode && hasOutlinePreview(dragNodes?.get(dragNode.id)?.paths) ? dragNode.id : undefined;
+        const draggingOutline = draggedRegionId !== undefined && view.dragCurve !== undefined && view.dragCurve >= 0;
+        const movedOutlines = dragNodes && new Map<string, Path2D>();
         for (const n of d.geoNodes) {
             if (n.disabled && !empty) continue;
-            const paths = dragFollowers?.curves.get(n.id), follows = n.id !== draggedRegionId && followsOutline(paths);
-            if (!follows && !empty && !n.fill && !n.outline && !view.layers.geoNodes) continue;
+            const preview = dragNodes?.get(n.id), moved = preview && hasOutlinePreview(preview.paths) ?
+                previewOutline(preview.node.construction, g.step / 8) : undefined;
+            if (!moved && !empty && !n.fill && !n.outline && !view.layers.geoNodes) continue;
             const region = t.regions.get(n.id)!;
-            const moved = follows ? regionOutline(region, g, { paths: paths!, delta: dragFollowers!.delta }) : undefined;
             if (moved) movedOutlines!.set(n.id, moved);
             if (n.fill && !empty) {
                 if (moved) {
@@ -512,7 +524,7 @@ export class ProjectMap {
                 for (const edge of r.shape.spine) stroke(ctx, [edge.a, edge.b], outline.color, outline.width);
             }
             ctx.strokeStyle = id === draggedRegionId ? colors.dragOrigin : outline.color;
-            ctx.lineWidth = outline.width; ctx.stroke(movedOutlines?.get(id) ?? regionOutline(r, g));
+            ctx.lineWidth = outline.width; ctx.stroke(id === draggedRegionId ? regionOutline(r, g) : movedOutlines?.get(id) ?? regionOutline(r, g));
         }
         this.drawIssueShapes(ctx, view, colors);
         ctx.restore();

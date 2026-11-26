@@ -1,11 +1,11 @@
-import { type Design, type Point } from "../design/v5.ts";
+import { type ResolvedDesign, type Point } from "../design/v5.ts";
 import { heightId } from "../design/defaults.ts";
 import { functionTable } from "../design/functionTable.ts";
 import { type Issue, type Terrain } from "../design/results.ts";
 
 const untreatedHeightLimit = .5;
 
-export function terrainIssues(d: Design, t: Terrain): Issue[] {
+export function terrainIssues(d: ResolvedDesign, t: Terrain): Issue[] {
     const { values: heights, defined } = t.fields[heightId], { width, height, size } = t.grid, covered = new Uint8Array(size), issues: Issue[] = [];
     const nodes = d.geoNodes.filter(n => !n.disabled && n.field === heightId && !functionTable[n.function.type].initial);
     for (const n of d.geoNodes) {

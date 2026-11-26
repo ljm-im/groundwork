@@ -7,12 +7,12 @@ import { readDisplaySettings, saveDisplaySettings } from "./layers.ts";
 import { type GridDisplay } from "../../core/edit/display.ts";
 import { bounds, type Box } from "../../core/math/geometry.ts";
 import { heightId, isBuiltin } from "../../core/design/defaults.ts";
-import { defaultFollow, type Curve, type GeoNode, type GeoFunction, type CurveNode, type Section, type SharedCurve } from "../../core/design/v5.ts";
+import { defaultFollow, type Curve, type GeoNode, type GeoFunction, type PlacedGeoNode, type CurveNode, type Section, type SharedCurve } from "../../core/design/v5.ts";
 import { geoParameter, slotName, type Slot } from "../../core/design/parameters.ts";
 import { numberEdits, type NumberChange } from "../../core/design/numberEdit.ts";
 import { curveGraph, curveSlotName, geometryIndex, geometrySlot, type CurveSlot } from "../../core/design/curveReferences.ts";
 import { editCurve, setCurveReference } from "../../core/edit/curveEdits.ts";
-import { type GeoControl, type GeometryHover, type GeometryPart, type GeometrySelection, type GeometryTarget, controlOwner, copyGeometryItem,
+import { type ControlPreview, type GeoControl, type GeometryHover, type GeometryPart, type GeometrySelection, type GeometryTarget, controlOwner, copyGeometryItem,
     geometryHover, geometryItemCurveUses, geometryPath, geometrySelection, insertCurveNode, parameterTarget, removeCurveNode, removeCurveSegment, removeGeometryItem,
     removeParameterPoint, resolveGeometrySelection } from "../../core/edit/geoControls.ts";
 import { addInput, addField, copyGeo, curveRemovalUses, defaultFunction, deleteGeo, enableGeo, isLastInitializer, nextId, nodeIds, rangeUsers,
@@ -86,9 +86,9 @@ export class Editor {
     private resolvedPart = $derived(this.resolvePart(this.selection, this.selectedPart));
     outline = $derived(this.resolvedPart?.role === "outline" ? this.resolvedPart.path : undefined);
     vertex = $derived(this.resolvedPart?.role === "outline" || this.resolvedPart?.role === "curve" ? undefined : this.resolvedPart);
-    dragNode = $state.raw<GeoNode<Expression, never>>();
-    dragShared = $state.raw<SharedCurve>();
-    dragFollowers = $state.raw<MapView["dragFollowers"]>();
+    dragPreview = $state.raw<ControlPreview>();
+    dragNode = $derived(this.selection?.kind === "geoNode" ? this.dragPreview?.nodes.get(this.selection.id)?.node : undefined);
+    dragShared = $derived(this.dragPreview?.shared);
     dragCurve = $state<number>();
     dragCommitting = $state(false);
     dragMark = $state.raw<{ id: string; point: Point }>();
@@ -155,7 +155,7 @@ export class Editor {
             geometry: this.geometry, objectGeometry: this.objectGeometry, vertex: this.vertex, outline: this.outline,
             hoverPart: this.resolvePart(this.hovered, this.hoveredPart),
             draft: draft && { ...draft, nodes: [...draft.nodes], ids: [...draft.ids], anchors: [...draft.anchors] },
-            dragNode: this.dragNode, dragShared: this.dragShared, dragFollowers: this.dragFollowers, dragCurve: this.dragCurve,
+            dragNode: this.dragNode, dragShared: this.dragShared, dragNodes: this.dragPreview?.nodes, dragCurve: this.dragCurve,
             dragCommitting: this.dragCommitting, dragMark: this.dragMark, dragLabel: this.dragLabel,
             displayField: this.displayField,
             layers: { ...this.layers }, grid: { ...this.displayGrid }, referencedGeo: this.hoverRefs,
@@ -192,7 +192,7 @@ export class Editor {
         this.canRedo = this.history.canRedo;
         this.files.syncHistory(changed);
     }
-    geometryOwner(selection: Selection | null | undefined): GeoNode<Expression, never> | SharedCurve | undefined {
+    geometryOwner(selection: Selection | null | undefined): PlacedGeoNode | SharedCurve | undefined {
         const d = this.project.resolved;
         if (selection?.kind === "geoNode") return geoAt(d, selection.id);
         if (selection?.kind === "curve") return d.curves[selection.id];

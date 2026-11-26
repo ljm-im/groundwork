@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { geometryPath } from "../../src/core/edit/geoControls.ts";
 import { pathHandle } from "../../src/core/design/path.ts";
-import { type GeoNode, type Point } from "../../src/core/design/v5.ts";
+import { type PlacedGeoNode, type Point } from "../../src/core/design/v5.ts";
 import { distance, mixPoint } from "../../src/core/math/geometry.ts";
 import { mapColors, overlay, type Theme } from "../../src/render/palette.ts";
 import { layer, openCurve, rect, syntheticDesign } from "../scenarios.ts";
@@ -11,7 +11,7 @@ function scene() {
     const design = syntheticDesign(), outlines = rect(-43, -22, -6, 16);
     for (const [prefix, region] of [["hole", rect(-37, -16, -12, 10)], ["island", rect(-30, -8, -20, 3)]] as const) {
         const path = region.outlines[0];
-        for (const node of path.nodes) node.id = prefix + node.id;
+        for (const node of path.curve.nodes) node.id = prefix + node.id;
         outlines.outlines.push(path);
     }
     const ridge = openCurve([{ p: [-43, 25], h: 12 }, { p: [-26, 28], h: 14 }, { p: [-9, 27], h: 7 }]);
@@ -21,16 +21,16 @@ function scene() {
         layer("A", outlines, {
             type: "mountain",
             ridges: [
-                { line: openCurve([{ p: [-38, -19], h: 4 }, { p: [-13, -18], h: 15 }], "corner", "outer-ridge-"), slope: 1 },
-                { line: openCurve([{ p: [-29, -6], h: 7 }, { p: [-22, -6], h: 8 }], "corner", "island-ridge-"), slope: 1 },
-                { line: openCurve([{ p: [-41, 14], h: 9 }, { p: [-28, 1], h: 7 }], "corner", "cross-ridge-"), slope: 1 }
+                { curve: openCurve([{ p: [-38, -19], h: 4 }, { p: [-13, -18], h: 15 }], "corner", "outer-ridge-"), slope: 1 },
+                { curve: openCurve([{ p: [-29, -6], h: 7 }, { p: [-22, -6], h: 8 }], "corner", "island-ridge-"), slope: 1 },
+                { curve: openCurve([{ p: [-41, 14], h: 9 }, { p: [-28, 1], h: 7 }], "corner", "cross-ridge-"), slope: 1 }
             ],
             peaks: [{ at: [-22, 1], height: 11, radius: 8, noise: 0, scale: 1 },
                 { at: [-40, 9], height: 12, radius: 9, noise: 0, scale: 1 }]
         }),
         layer("M", rect(-48, 19, 31, 40), {
             type: "mountain",
-            ridges: [{ line: ridge, slope: 1 }],
+            ridges: [{ curve: ridge, slope: 1 }],
             peaks: [{ at: [20, 31], height: 17, radius: 12, noise: 0, scale: 1 }]
         }),
         { ...layer("D", rect(23, -28, 43, -15), { type: "flat", amount: 3 }), disabled: true }
@@ -102,19 +102,16 @@ export async function checkRound31Fix(url: string) {
         translated(peaks.map(peak => peak.at), movedOwner.function.peaks.map(peak => peak.at), shift);
         await undo();
 
-        async function dragOutline(index: number, point: Point, ridgePath: number, peakIndex: number) {
-            const checkGeometry = (moved: GeoNode) => {
+        async function dragOutline(index: number, point: Point, ridgePath: number) {
+            const checkGeometry = (moved: PlacedGeoNode) => {
                 for (const path of [-3, -2, -1, 0, 1, 2]) {
                     const before = geometryPath(owner, path)!, after = geometryPath(moved, path)!;
-                    if (path === index || path === ridgePath) translated(before.nodes.map(n => n.p), after.nodes.map(n => n.p), shift);
+                    if (path === index) translated(before.nodes.map(n => n.p), after.nodes.map(n => n.p), shift);
                     else assert.deepEqual(after, before);
                 }
                 const mountain = moved.function;
                 assert(mountain.type === "mountain");
-                for (const [i, peak] of peaks.entries()) {
-                    if (i === peakIndex) translated([peak.at], [mountain.peaks[i].at], shift);
-                    else assert.deepEqual(mountain.peaks[i], peak);
-                }
+                assert.deepEqual(mountain.peaks, peaks);
             };
             const before = await disk();
             await drag(point, 0, async () => {
@@ -148,13 +145,13 @@ export async function checkRound31Fix(url: string) {
             await tap(inside, alt);
             assert.equal((await frame()).selection?.id, id);
             assert.equal((await frame()).outline, index);
-            if (index === 0) await dragOutline(0, [-40, 11], -1, 1);
+            if (index === 0) await dragOutline(0, [-40, 11], -1);
         }
         await tap(inside, 0, "right");
         assert.equal((await frame()).outline, 2);
         assert.deepEqual(await evaluate(() => [...document.querySelectorAll(".context-menu .group-name")].map(n => n.textContent)), ["轮廓 3", "区域", "地件"]);
         await key("Escape");
-        await dragOutline(2, inside, -2, 0);
+        await dragOutline(2, inside, -2);
         const before = await disk();
         await key("Delete");
         await wait(() => document.querySelector("#remove-dialog[open]"));
