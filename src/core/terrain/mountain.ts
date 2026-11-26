@@ -32,7 +32,7 @@ export function mountainProfile(f: Mountain, tolerance: number, seed: number) {
         }
         for (const p of f.peaks) {
             const radius = p.radius + p.noise * pattern(x / p.scale, y / p.scale);
-            ground = Math.max(ground, p.at.h * Math.exp(-((distance([x, y], p.at.p) / (radius || 1e-9)) ** 2)));
+            ground = Math.max(ground, p.height * Math.exp(-((distance([x, y], p.at) / (radius || 1e-9)) ** 2)));
         }
         return top === undefined ? ground : roundedMaximum(ground, top, f.footRound);
     };

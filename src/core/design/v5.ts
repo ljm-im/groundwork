@@ -45,7 +45,7 @@ export interface Strip<N = Expression> {
 }
 export type Construction<N = Expression, Ref = CurveRef<N>> = { type: "outline"; outlines: ClosedValue<Ref>[] } | Strip<N>;
 export interface Ridge<N, Ref = CurveRef<N>> { line: CurveValue<N, Ref>; slope: N }
-export interface Peak<N> { at: { p: Point; h: N }; radius: N; noise: N; scale: N }
+export interface Peak<N> { at: Point; height: N; radius: N; noise: N; scale: N }
 export interface Erosion {
     /** Number of simulated droplets. */
     droplets: number;

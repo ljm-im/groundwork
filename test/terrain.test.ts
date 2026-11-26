@@ -45,7 +45,7 @@ test("A local mountain preserves the underlying height differences along its bou
     d.geoNodes.push(layer("M", rect(-12, -12, 12, 12), { type: "mountain",
         ridges: [{ line: openCurve([{ p: [-5, 0], h: 12 }, { p: [5, 0], h: 10 }]),
             slope: 3 }],
-        peaks: [{ at: { p: [0, 3], h: 16 }, radius: 2, noise: .1, scale: 7 }] }));
+        peaks: [{ at: [0, 3], height: 16, radius: 2, noise: .1, scale: 7 }] }));
     const t = evaluateStack(parseDesign(d)), after = t.fields.height.values, region = t.regions.get("M")!;
     assert(after[t.grid.index(0, 3)] > 12 && after[t.grid.index(-5, 0)] > 8);
     let pairs = 0;
@@ -297,7 +297,7 @@ test("Noise gullies cut a bounded proportion of positive heights and leave the s
 
 test("Omitted mountain and erosion floors preserve cells at and below minus one thousand", () => {
     const area = rect(-12, -12, 12, 12);
-    const m = layer("M", area, { type: "mountain", ridges: [], peaks: [{ at: { p: [0, 0], h: 5 }, radius: 3, noise: 0, scale: 12 }] });
+    const m = layer("M", area, { type: "mountain", ridges: [], peaks: [{ at: [0, 0], height: 5, radius: 3, noise: 0, scale: 12 }] });
     const e = layer("E", area, { ...erosion });
     for (const node of [m, e]) {
         const d = design([layer("A", area, { type: "ground", value: -1000 }),

@@ -197,10 +197,10 @@ export function finishDraft(d: Design, terrain: Terrain, draft: GeoDraft) {
         if (!p) throw Error("请先在地图上选择一个点");
         const h = tenth(sampleField(terrain, heightId, p));
         if (tool === "peak" && n?.function.type === "mountain") {
-            if (member !== undefined) n.function.peaks[member].at.p = p;
+            if (member !== undefined) n.function.peaks[member].at = p;
             else {
                 const path = ["peaks", n.function.peaks.length];
-                writeAt(n.function, path, { at: { p, h } }); fillFunctionParameters(n.function, path);
+                writeAt(n.function, path, { at: p, height: h }); fillFunctionParameters(n.function, path);
             }
         }
         if (tool === "harbor" && n?.function.type === "coast") n.function.harbor.center = p;

@@ -68,8 +68,8 @@ export const functionTable: Record<GeoFunction["type"], FunctionSpec> = {
         geometry("ridges.*.line", "山脊线", "draw-line"),
         number("ridges.*.line.nodes.*.h", "高度", "field", "field", 0, { profile: true }),
         number("ridges.*.slope", "坡度", "m/m", .01, .75, { constraint: "positive" }),
-        geometry("peaks.*.at.p", "位置", "draw-point"),
-        number("peaks.*.at.h", "高度", "field", "field", 0),
+        geometry("peaks.*.at", "位置", "draw-point"),
+        number("peaks.*.height", "高度", "field", "field", 0),
         number("peaks.*.radius", "半径", "m", .1, 5, { constraint: "positive" }),
         number("peaks.*.noise", "半径起伏", "m", .1, 0),
         number("peaks.*.scale", "噪声尺度", "m", 1, 12, { constraint: "positive" })

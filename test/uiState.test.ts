@@ -24,7 +24,7 @@ test("Overlapping map objects cycle in paint order, including separate geometrie
     const { Editor } = await import("../src/app/state/session.svelte.ts");
     const design = syntheticDesign(), point: [number, number] = [-14, -8];
     design.geoNodes.push(layer("M", rect(-25, -17, 5, 3), {
-        type: "mountain", peaks: [{ at: { p: point, h: 12 }, radius: 20, noise: 0, scale: 1 }],
+        type: "mountain", peaks: [{ at: point, height: 12, radius: 20, noise: 0, scale: 1 }],
         ridges: [{ line: openCurve([{ p: [-23, -8] }, { p: [-4, -8] }]), slope: 2 }]
     }));
     design.sections = [{ id: "Q", label: "Q", points: [[-24, -8], [1, -8]] }];
@@ -570,7 +570,7 @@ test("Dragging an only outline carries its peaks and ridges with their attribute
     const line = openCurve([{ p: [-12, -4], h: 5 }, { p: [2, 9], h: 8 }, { p: [11, 1], h: 6 }], "auto");
     owner.function = {
         type: "mountain", ridges: [{ line, slope: 1 }],
-        peaks: [{ at: { p: [-8, 8], h: 13 }, radius: 7, noise: 0, scale: 1 }]
+        peaks: [{ at: [-8, 8], height: 13, radius: 7, noise: 0, scale: 1 }]
     };
     const shape = new Project(design).terrain.regions.get(owner.id)!.shape;
     const members = outlineParameterGeometry(owner, 0, shape);
@@ -589,8 +589,8 @@ test("Dragging nested outlines moves only their own geometry and preserves selec
     design.geoNodes[1].function = {
         type: "mountain",
         ridges: ridges.map((points, i) => ({ line: openCurve(points.map((p, j) => ({ p, h: 5 + j })), "corner", i + "-ridge-"), slope: 1 })),
-        peaks: [{ at: { p: [-8, -7], h: 12 }, radius: 8, noise: 0, scale: 1 },
-            { at: { p: [0, -28], h: 9 }, radius: 6, noise: 0, scale: 1 }]
+        peaks: [{ at: [-8, -7], height: 12, radius: 8, noise: 0, scale: 1 },
+            { at: [0, -28], height: 9, radius: 6, noise: 0, scale: 1 }]
     };
     const d = parseDesign(design, true);
     t.mock.method(editor, "reconcileProject", () => {});
@@ -609,7 +609,7 @@ test("Dragging nested outlines moves only their own geometry and preserves selec
     for (const i of [0, -3])
         assert.deepEqual(geometryPath(movedOuter, i)?.nodes.map(node => node.p), geometryPath(original, i)?.nodes.map(({ p: [x, y] }) => [x + 3, y]));
     assert.deepEqual(movedOuter.function.peaks[0], original.function.peaks[0]);
-    assert.deepEqual(movedOuter.function.peaks[1].at.p, [3, -28]);
+    assert.deepEqual(movedOuter.function.peaks[1].at, [3, -28]);
     await editor.navigate(false);
     assert.deepEqual(editor.project.design.geoNodes[1], original);
 
@@ -625,7 +625,7 @@ test("Dragging nested outlines moves only their own geometry and preserves selec
         assert.deepEqual(geometryPath(moved, i)?.nodes.map(node => node.p),
             geometryPath(original, i)?.nodes.map(({ p: [x, y] }) => [x + 2, y - 3]));
     assert.deepEqual(moved.function.peaks[1], original.function.peaks[1]);
-    assert.deepEqual(moved.function.peaks[0].at.p, [-6, -10]);
+    assert.deepEqual(moved.function.peaks[0].at, [-6, -10]);
     editor.removeOutline("T", 1);
     editor.removal?.perform?.();
     await editor.finishWork();

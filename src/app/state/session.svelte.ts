@@ -886,7 +886,7 @@ export class Editor {
                 }
                 else if (group === "peaks" && n.function.type === "mountain" && slot.path[5] === "at") {
                     const index = Number(slot.path[4]);
-                    this.selectControl({ role: "parameter", path: n.function.ridges.length + index, index: 0, point: n.function.peaks[index].at.p });
+                    this.selectControl({ role: "parameter", path: n.function.ridges.length + index, index: 0, point: n.function.peaks[index].at });
                 }
                 if (geoParameter(geoAt(this.project.design, slot.id), slot.path.slice(2))?.advanced) this.toggleSubitem(slot.id, "advanced", undefined, true);
             }

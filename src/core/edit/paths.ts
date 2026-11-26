@@ -321,7 +321,7 @@ export function translateGeo(n: GeoNode, delta: Point, inherited?: ReadonlySet<C
     }
     if (f.type === "mountain") {
         for (const ridge of f.ridges) moveCurve(ridge.line);
-        for (const peak of f.peaks) move(peak.at.p);
+        for (const peak of f.peaks) move(peak.at);
     }
     if (f.type === "slope") {
         if (f.kind === "radial") move(f.center);

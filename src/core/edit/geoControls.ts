@@ -74,7 +74,7 @@ export function geometryPath(n: CurveOwner, index: number): Curve | undefined {
 export function parameterPoints(n: CurveOwner): [number, Point][] {
     if ("curve" in n) return [];
     const f = n.function;
-    if (f.type === "mountain") return f.peaks.map(({ at }, i) => [f.ridges.length + i, at.p]);
+    if (f.type === "mountain") return f.peaks.map(({ at }, i) => [f.ridges.length + i, at]);
     if (f.type === "coast") return [[0, f.harbor.center]];
     if (f.type === "slope" && f.kind === "radial") return [[0, f.center]];
     return [];

@@ -143,7 +143,7 @@ test("Declarations report all writers, nested inputs and marks, and bindings ret
     });
     d.geoNodes.pop();
     d.geoNodes.shift();
-    d.geoNodes.push(layer("B", rect(1, 1, 8, 8), { type: "mountain", ridges: [], peaks: [{ at: { p: [2, 2], h: bindHeight(variable) }, radius: 3, scale: 1, noise: 0 }], floor: bindHeight(variable) }));
+    d.geoNodes.push(layer("B", rect(1, 1, 8, 8), { type: "mountain", ridges: [], peaks: [{ at: [2, 2], height: bindHeight(variable), radius: 3, scale: 1, noise: 0 }], floor: bindHeight(variable) }));
     d.marks.push({ id: "C", label: "C", kind: "text", point: [2, 2], follow: "map", elevation: bindHeight(variable), showElevation: true });
     n.function = { type: "noise", amplitude: bindField(field), scale: 3 }; n.field = field;
     for (const [kind, id, count] of [["input", variable, 3], ["field", field, 2]] as const) {
@@ -315,31 +315,31 @@ test("Curves, handles, tangency, insertion and six-pixel snap use the editable g
 
 test("Removing a mountain member keeps references to siblings and reports references to the removed member", () => {
     const d = syntheticDesign(), m = d.geoNodes[1];
-    m.function = { type: "mountain", ridges: [], peaks: [2, 4, 6].map(h => ({ at: { p: [h, 3], h }, radius: 2, scale: 3, noise: 0 })) };
+    m.function = { type: "mountain", ridges: [], peaks: [2, 4, 6].map(h => ({ at: [h, 3], height: h, radius: 2, scale: 3, noise: 0 })) };
     d.inputs.B = { range: defaultInputRange("B"), value: 1 };
     const v: Design = d;
-    v.inputs.B.value = "{geo:T.peaks.2.at.h} - {geo:T.peaks.0.radius}";
+    v.inputs.B.value = "{geo:T.peaks.2.height} - {geo:T.peaks.0.radius}";
     const before = serializeDesign(d);
     assert.throws(() => removeGeometryItem(d, m, ["peaks"], 0), /仍被引用[\s\S]*“B”/);
     assert.equal(serializeDesign(d), before);
     removeGeometryItem(d, m, ["peaks"], 1);
-    assert.equal(v.inputs.B.value, "{geo:T.peaks.1.at.h} - {geo:T.peaks.0.radius}");
+    assert.equal(v.inputs.B.value, "{geo:T.peaks.1.height} - {geo:T.peaks.0.radius}");
     assert.equal(new Project(d).resolved.inputs.B.value, 4);
 });
 
 test("Copying a mountain member preserves its geometry and the targets of existing expressions", () => {
     const d = syntheticDesign(), n = d.geoNodes[1];
     n.function = { type: "mountain", ridges: [], peaks: [
-        { at: { p: [-18, -10], h: 6 }, radius: "{geo:T.peaks.1.radius}", scale: 2, noise: 0 },
-        { at: { p: [-12, -6], h: 7 }, radius: 3, scale: 2, noise: 0 }
+        { at: [-18, -10], height: 6, radius: "{geo:T.peaks.1.radius}", scale: 2, noise: 0 },
+        { at: [-12, -6], height: 7, radius: 3, scale: 2, noise: 0 }
     ] };
     d.inputs.B = { range: defaultInputRange("B"), value: 1 };
     const design: Design = d;
-    design.inputs.B.value = "{geo:T.peaks.1.at.h}";
+    design.inputs.B.value = "{geo:T.peaks.1.height}";
     copyGeometryItem(design, n, ["peaks"], 0);
     assert.deepEqual(n.function.peaks[0], n.function.peaks[1]);
     assert.equal(n.function.peaks[0].radius, "{geo:T.peaks.2.radius}");
-    assert.equal(design.inputs.B.value, "{geo:T.peaks.2.at.h}");
+    assert.equal(design.inputs.B.value, "{geo:T.peaks.2.height}");
     assert.equal(new Project(design).resolved.inputs.B.value, 7);
 });
 

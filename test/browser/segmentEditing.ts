@@ -24,7 +24,7 @@ function scene() {
     assert(mountain.type === "mountain");
     const ridge: Point[] = [[-43, 27], [-32, 31], [-18, 28], [-4, 32], [10, 25]];
     mountain.ridges.push({ line: openCurve(ridge.map((p, i) => ({ p, h: 5 + i })), "auto"), slope: 1 });
-    mountain.peaks.push({ at: { p: [11, 37], h: 9 }, radius: 8, noise: 0, scale: 1 });
+    mountain.peaks.push({ at: [11, 37], height: 9, radius: 8, noise: 0, scale: 1 });
     const shore = rect(28, 19, 51, 38).outlines[0];
     for (const node of shore.nodes) node.id = "shore-" + node.id;
     shore.nodes[0].bulge = .35;
@@ -209,6 +209,31 @@ export async function checkSegmentEditing(url: string) {
         assert.deepEqual(await menuGroups(), [regionGroups]);
         assert.equal((await frame()).vertex, undefined);
         await key("Escape");
+        await click("[data-tab=terrain]");
+        await click("[data-geo-node=M]");
+        await click("[data-property-tab=function]");
+        const peak = prop + " .subitem:has(> .subitem-heading [aria-label=删除山峰])";
+        await click(peak + " .subitem-toggle[aria-expanded=false]");
+        assert.equal((await frame()).vertex, undefined);
+        assert.deepEqual(await evaluate(selector =>
+            [...document.querySelectorAll(selector + " .param-name")].map(el => el.textContent),
+        peak), ["位置", "高度", "半径", "半径起伏", "噪声尺度"]);
+        const height = () => evaluate(async () => (await window.terrainFieldHashes!()).fields.height);
+        const originalHeight = await height();
+        await click(peak + " .numeric-face[aria-label=高度]");
+        await wait(() => document.activeElement?.matches(".numeric-edit[aria-label=高度]"));
+        await evaluate(() => document.getSelection()!.selectAllChildren(document.activeElement!));
+        await cdp("Input.insertText", { text: "30" }); await key("Enter"); await saved(); await paint();
+        const changedMountain = page.owner(await authored(), "M").function;
+        assert(changedMountain.type === "mountain");
+        assert.deepEqual([changedMountain.peaks[0].at, changedMountain.peaks[0].height], [[11, 37], 30]);
+        assert.equal((await frame()).vertex, undefined);
+        const changedHeight = await height();
+        assert.notEqual(changedHeight.values, originalHeight.values);
+        assert.equal(changedHeight.defined, originalHeight.defined);
+        await undo();
+        assert.deepEqual(await height(), originalHeight);
+
         await tap([11, 37], 0, "right");
         assert.deepEqual((await menuGroups())[0][0], ["山峰 1", "复制山峰", "删除山峰"]);
         await key("Escape");

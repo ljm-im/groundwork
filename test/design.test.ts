@@ -47,6 +47,24 @@ test("Geo references report their location and reject invalid field writers", ()
     assert.throws(() => parseDesign(d), /geoNodes\[2\].id/);
 });
 
+test("Peak height has its own numeric address and its position is a coordinate", () => {
+    const d: Design = syntheticDesign(), n = d.geoNodes[1], at = [-18, -10] satisfies [number, number];
+    n.function = { type: "mountain", ridges: [], peaks: [{ at, height: "{input:A} + 10", radius: 3, scale: 1, noise: 0 }] };
+    d.inputs.B = { value: "{geo:T.peaks.0.height}", range: [0, 30, 1] };
+    const parsed = parseDesign(serializeDesign(d)), resolved = resolveDesign(parsed);
+    const mountain = resolved.geoNodes[1].function;
+    assert(mountain.type === "mountain");
+    assert.deepEqual(mountain.peaks[0].at, at);
+    assert.equal(mountain.peaks[0].height, 17);
+    assert.equal(resolved.inputs.B.value, 17);
+
+    d.inputs.B.value = "{geo:T.peaks.0.at.h}";
+    assert.throws(() => parseDesign(d), /peaks\.0\.at\.h/);
+    d.inputs.B.value = "{geo:T.peaks.0.height}";
+    Object.assign(n.function.peaks[0], { at: { p: at, h: 17 } });
+    assert.throws(() => parseDesign(d), /function\.peaks\[0\]\.at 无效/);
+});
+
 test("Noise validates its inputs", () => {
     const d = syntheticDesign(), node = d.geoNodes[1];
     const fn = { type: "noise" as const, amplitude: 2, scale: 8 };

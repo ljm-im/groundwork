@@ -59,7 +59,7 @@ test("Parameter geometry menus show member operations only for ridges and peaks"
     assert(mountain.type === "mountain");
     n.function = mountain;
     mountain.ridges.push({ line: structuredClone(ridge), slope: 2 }, { line: ridge, slope: 1 });
-    mountain.peaks.push({ at: { p: [0, 0], h: 3 }, radius: 18, noise: 0, scale: 1 });
+    mountain.peaks.push({ at: [0, 0], height: 3, radius: 18, noise: 0, scale: 1 });
     const menu = (control?: GeoControl) => contextMenuColumns(d, selection("T"), true, control);
     const first = menu(hit("segment", -2, 0));
     assert.deepEqual(titles(first), [["线段类型", "线段", "曲线"], ["山脊 2", "地件"]]);

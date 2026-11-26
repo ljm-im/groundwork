@@ -1,14 +1,11 @@
 {#snippet param(address: Address)}
     <Parameter {editor} node={n} {address} />
 {/snippet}
-{#snippet geometry(label: string, index: number, redraw: DrawTool, member?: number, heightAt?: Address)}
+{#snippet geometry(label: string, index: number, redraw: DrawTool, member?: number)}
     {@const active = editor.geometry?.kind === "parameter" && editor.geometry.index === index}
     <GeometryInput {label} {active} onclick={() => editor.focusGeometry({ kind: "parameter", index })}
         onmouseenter={() => hover("parameter", index)} onmouseleave={clearHover}
         redraw={() => editor.setTool(redraw, n.id, member)} redrawing={editor.toolActive(redraw, n.id, member)} />
-    {#if heightAt && active && vertex?.role === "parameter" && vertex.path === index}
-        {@render param([...heightAt, "h"])}
-    {/if}
 {/snippet}
 {#snippet curveInput(label: string, curve: Curve, index: number, heightAt?: Address)}
     {@const kind = index < 0 ? "curve" : "outline"}
@@ -126,7 +123,7 @@
                         <Subitem label={"山峰 " + (j + 1)} open={editor.subitemOpen(n.id, "peaks", j)} onclick={() => editor.toggleSubitem(n.id, "peaks", j)}
                             onmouseenter={() => hover("parameter", f.ridges.length + j)} onmouseleave={clearHover}>
                             {#snippet actions()}{@render memberActions("peaks", j)}{/snippet}
-                            {@render geometry(geoParameter(n, ["function", "peaks", j, "at", "p"])!.label, f.ridges.length + j, "peak", j, ["peaks", j, "at"])}
+                            {@render geometry(geoParameter(n, ["function", "peaks", j, "at"])!.label, f.ridges.length + j, "peak", j)}
                             {#each memberParameters("peaks", j) as key (key.join("."))}
                                 {@render param(key)}
                             {/each}
@@ -176,7 +173,6 @@
         return specs.filter(p => p.key[0] === group && p.type !== "geometry" && p.key.slice(2).every(part => part !== "*") && p.key.at(-1) !== "h")
             .map(p => [group, i, ...p.key.slice(2)]).filter(key => geoParameter(n, ["function", ...key]));
     }
-    let vertex = $derived(editor.vertex);
     function hover(role: GeoControl["role"], path: number, index = 0) {
         editor.hoverSelection({ kind: "geoNode", id: n.id }, { role, path, index });
     }

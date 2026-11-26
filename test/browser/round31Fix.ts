@@ -25,13 +25,13 @@ function scene() {
                 { line: openCurve([{ p: [-29, -6], h: 7 }, { p: [-22, -6], h: 8 }], "corner", "island-ridge-"), slope: 1 },
                 { line: openCurve([{ p: [-41, 14], h: 9 }, { p: [-28, 1], h: 7 }], "corner", "cross-ridge-"), slope: 1 }
             ],
-            peaks: [{ at: { p: [-22, 1], h: 11 }, radius: 8, noise: 0, scale: 1 },
-                { at: { p: [-40, 9], h: 12 }, radius: 9, noise: 0, scale: 1 }]
+            peaks: [{ at: [-22, 1], height: 11, radius: 8, noise: 0, scale: 1 },
+                { at: [-40, 9], height: 12, radius: 9, noise: 0, scale: 1 }]
         }),
         layer("M", rect(-48, 19, 31, 40), {
             type: "mountain",
             ridges: [{ line: ridge, slope: 1 }],
-            peaks: [{ at: { p: [20, 31], h: 17 }, radius: 12, noise: 0, scale: 1 }]
+            peaks: [{ at: [20, 31], height: 17, radius: 12, noise: 0, scale: 1 }]
         }),
         { ...layer("D", rect(23, -28, 43, -15), { type: "flat", amount: 3 }), disabled: true }
     ];
@@ -99,7 +99,7 @@ export async function checkRound31Fix(url: string) {
         for (const path of [-3, -2, -1, 0, 1, 2])
             translated(geometryPath(owner, path)!.nodes.map(n => n.p), geometryPath(movedOwner, path)!.nodes.map(n => n.p), shift);
         assert(movedOwner.function.type === "mountain");
-        translated(peaks.map(peak => peak.at.p), movedOwner.function.peaks.map(peak => peak.at.p), shift);
+        translated(peaks.map(peak => peak.at), movedOwner.function.peaks.map(peak => peak.at), shift);
         await undo();
 
         async function dragOutline(index: number, point: Point, ridgePath: number, peakIndex: number) {
@@ -112,7 +112,7 @@ export async function checkRound31Fix(url: string) {
                 const mountain = moved.function;
                 assert(mountain.type === "mountain");
                 for (const [i, peak] of peaks.entries()) {
-                    if (i === peakIndex) translated([peak.at.p], [mountain.peaks[i].at.p], shift);
+                    if (i === peakIndex) translated([peak.at], [mountain.peaks[i].at], shift);
                     else assert.deepEqual(mountain.peaks[i], peak);
                 }
             };
