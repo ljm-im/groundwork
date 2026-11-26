@@ -19,7 +19,8 @@ export const mapColors = {
         stripArea: "rgb(34 102 89 / 10%)",
         warning: "#ad771c",
         danger: "#a34839",
-        parameterGeometry: "#8b4f9a"
+        parameterGeometry: "#8b4f9a",
+        derivedGeometry: "rgb(139 79 154 / 50%)"
     },
     dark: {
         bgPanel: "#1d2422",
@@ -32,7 +33,8 @@ export const mapColors = {
         stripArea: "rgb(98 179 160 / 10%)",
         warning: "#cf9c45",
         danger: "#e5816f",
-        parameterGeometry: "#c08fd0"
+        parameterGeometry: "#c08fd0",
+        derivedGeometry: "rgb(192 143 208 / 50%)"
     }
 } as const;
 
@@ -54,10 +56,12 @@ export const overlay = {
     handleOutline: 1.5,
     controlLine: 1,
     parameterWidth: 2,
+    derivedWidth: 1,
     segmentWidth: 4,
     segmentHoverOpacity: .3,
     labelHalo: 3,
-    dash: [6, 4]
+    dash: [6, 4],
+    dots: [1, 3]
 } as const;
 
 const fieldRamp = { light: [238, 242, 230], dark: [104, 140, 128] } as const;

@@ -119,9 +119,9 @@ export function drawParameterGeometry(map: ProjectMap, view: MapView, colors: Ma
             const { center } = n.function.harbor, { radius } = owner.function.harbor;
             ctx.beginPath();
             ctx.arc(...map.screen(center), radius * scale, 0, Math.PI * 2);
-            ctx.strokeStyle = colors.parameterGeometry;
-            ctx.lineWidth = overlay.parameterWidth;
-            ctx.setLineDash([...overlay.dash]);
+            ctx.strokeStyle = colors.derivedGeometry;
+            ctx.lineWidth = overlay.derivedWidth;
+            ctx.setLineDash([...overlay.dots]);
             ctx.stroke();
             ctx.setLineDash([]);
         }
