@@ -17,7 +17,7 @@ import { type GeoControl, type GeometryHover, type GeometryPart, type GeometrySe
     removeParameterPoint, resolveGeometrySelection } from "../../core/edit/geoControls.ts";
 import { addInput, addField, copyGeo, curveRemovalUses, defaultFunction, deleteGeo, enableGeo, isLastInitializer, nextId, nodeIds, rangeUsers,
     removalUses, removeDeclaration, requiredInitializer, type RemovalUse } from "../../core/edit/geoNodes.ts";
-import { canRemoveNode, cleanHandles, editWholeCurve, isEndpoint, segmentRemovalIndex, setNodeMode, setSegment } from "../../core/edit/paths.ts";
+import { canRemoveNode, cleanHandles, editWholeCurve, isEndpoint, retractHandle, segmentRemovalIndex, setNodeMode, setSegment } from "../../core/edit/paths.ts";
 import { drawingReady, drawingTools, finishCurveDraft, finishDraft, geoAt, startCurveDrawing, startDrawing, updatePreview } from "./geoTools.ts";
 import { type DrawTool, type GeoDraft } from "../../core/edit/types.ts";
 import { markParameters } from "../../core/design/functionTable.ts";
@@ -846,7 +846,7 @@ export class Editor {
     openMenu(h: Selection, x: number, y: number, map = false, hit?: GeoControl) {
         this.select(h);
         if (hit) this.selectControl(hit);
-        this.menu = { x, y, map, control: controlOwner(hit) };
+        this.menu = { x, y, map, control: hit };
     }
     openIssueMenu(issue: Issue, x: number, y: number) {
         this.menu = { x, y, issue };
@@ -1006,6 +1006,9 @@ export class Editor {
     }
     pathNodeMode(control: GeoControl, mode?: CurveNode["mode"]) {
         return this.editSelectedCurve(control, path => setNodeMode(path, control.index, mode ?? (path.nodes[control.index].mode === "auto" ? "corner" : "auto")));
+    }
+    retractHandle(control: GeoControl, side: "in" | "out") {
+        return this.editSelectedCurve(control, path => retractHandle(path, control.index, side));
     }
     segment(control: GeoControl, type: SegmentType | "tangent") {
         return this.editSelectedCurve(control, path => setSegment(path, control.index, type));

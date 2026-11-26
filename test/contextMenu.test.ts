@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { contextMenuColumns, issueMenuColumns } from "../src/app/state/contextMenu.ts";
-import { type GeoControl, controlOwner } from "../src/core/edit/geoControls.ts";
+import { type GeoControl } from "../src/core/edit/geoControls.ts";
 import { defaultFunction } from "../src/core/edit/geoNodes.ts";
 import { type Selection } from "../src/core/edit/types.ts";
 import { type Point } from "../src/core/design/v5.ts";
 import { literalCurve, layer, openCurve, rect, syntheticDesign } from "./scenarios.ts";
 
 const selection = (id: string): Selection => ({ kind: "geoNode", id });
-const hit = (role: GeoControl["role"], path = 0, index = 0) => controlOwner({ role, path, index, point: [0, 0] });
+const hit = (role: GeoControl["role"], path = 0, index = 0): GeoControl => ({ role, path, index, point: [0, 0] });
 const titles = (columns: ReturnType<typeof contextMenuColumns>) => columns.map(column => column.map(group => group.title));
 const names = (columns: ReturnType<typeof contextMenuColumns>) => columns.map(column => column.flatMap(group => group.items.map(item => item.name)));
 
@@ -21,7 +21,8 @@ test("Contour, curve and region menus follow the actual geometry and semantic ow
     for (const role of ["vertex", "in", "out"] as const) {
         const groups = menu(hit(role, 1));
         assert.deepEqual(titles(groups), [["节点类型", "节点", "闭合曲线"], semantic]);
-        assert.deepEqual(names(groups), [["尖角", "自动平滑", "手动平滑", "删除节点", ...curveActions],
+        const handleAction = role === "vertex" ? [] : ["收回控制柄"];
+        assert.deepEqual(names(groups), [["尖角", "自动平滑", "手动平滑", ...handleAction, "删除节点", ...curveActions],
             ["复制轮廓", "删除轮廓", "添加轮廓", "复制地件", "禁用地件", "删除地件"]]);
         assert.equal(groups[0][0].items[0].selected, true);
     }

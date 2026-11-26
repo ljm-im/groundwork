@@ -7,11 +7,11 @@ import { parseDesign, serializeDesign } from "../src/core/design/model.ts";
 import { numberEdits } from "../src/core/design/numberEdit.ts";
 import { resolveDesign } from "../src/core/design/parameters.ts";
 import { type CurveRef, type Design, type Point } from "../src/core/design/v5.ts";
-import { editCurveSource, setCurveReference } from "../src/core/edit/curveEdits.ts";
+import { editCurve, editCurveSource, setCurveReference } from "../src/core/edit/curveEdits.ts";
 import { commitControl, copyGeometryItem, geometryPath, geometrySelection, removeCurveNode, removeGeometryItem, resolveGeometrySelection } from "../src/core/edit/geoControls.ts";
 import { copyGeo, deleteGeo, removeDeclaration } from "../src/core/edit/geoNodes.ts";
 import { History } from "../src/core/edit/history.ts";
-import { penNode, translateGeo } from "../src/core/edit/paths.ts";
+import { penNode, retractHandle, translateGeo } from "../src/core/edit/paths.ts";
 import { type GeoDraft } from "../src/core/edit/types.ts";
 import { TerrainCache } from "../src/core/terrain/cache.ts";
 import { evaluateStack } from "../src/core/terrain/terrain.ts";
@@ -53,6 +53,24 @@ test("Outline-only storage and optional shared curve declarations round-trip", (
     t.construction.outlines[0] = reference("curve:ring", [0, 0]);
     assert.deepEqual(JSON.parse(serializeDesign(refs)).geoNodes[2].construction.outlines[0], { ref: "{curve:ring}" });
     assert.deepEqual(parseDesign(serializeDesign(refs)).curves, refs.curves);
+});
+
+test("Retracting a handle through a reference edits its source", () => {
+    const d = fixture();
+    const placement = { kind: "geoNode", id: "S" } as const;
+    const before = structuredClone(geo(d, placement.id).function);
+    editCurve(d, placement, -1, curve => retractHandle(curve, 1, "in"));
+
+    const source = d.curves.line.curve.nodes[1];
+    assert.equal(source.mode, "corner");
+    assert(!Object.hasOwn(source, "in"));
+    assert(source.out);
+    assert.deepEqual(geo(d, placement.id).function, before);
+    const resolved = resolveDesign(d);
+    const node = geometryPath(geo(resolved, placement.id), -1)!.nodes[1];
+    assert.equal(node.mode, "corner");
+    assert(!Object.hasOwn(node, "in"));
+    assert.deepEqual(node.out, source.out);
 });
 
 test("Chained references use the same terrain and masks as equivalent literal curves", () => {

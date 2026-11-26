@@ -8,7 +8,7 @@ import { numericProfile } from "../src/core/design/polyline.ts";
 import { type ClosedCurve, type Curve, type Point } from "../src/core/design/v5.ts";
 import { defaultFunction, curvesOf } from "../src/core/edit/geoNodes.ts";
 import { copyGeometryItem, insertCurveNode, removeCurveNode, removeCurveSegment } from "../src/core/edit/geoControls.ts";
-import { arcHandle, editWholeCurve, insertPathNode, moveHandle, penNode, penPath, removePathSegment, segmentRemovalIndex,
+import { arcHandle, editWholeCurve, insertPathNode, moveHandle, penNode, penPath, removePathSegment, retractHandle, segmentRemovalIndex,
     setNodeMode, setSegment } from "../src/core/edit/paths.ts";
 import { distance, mixPoint, spline, stations } from "../src/core/math/geometry.ts";
 import { literalCurve, openCurve, syntheticDesign } from "./scenarios.ts";
@@ -331,6 +331,28 @@ test("An Alt split survives the next drag, and auto at an arc can only become a 
     assert.equal(v.mode, "corner");
     assert.equal(v.in, undefined);
     assert.deepEqual(v.out, [5, -2]);
+});
+
+test("Retracting one Bézier handle freezes the opposite segment and leaves a corner", () => {
+    for (const mode of ["corner", "manual", "auto"] as const) {
+        const path = line(), node = path.nodes[1];
+        Object.assign(node, { in: [-2, 1], out: [2, -1] });
+        setNodeMode(path, 1, mode);
+        const opposite = pathBezier(path, 0);
+        retractHandle(path, 1, "out");
+        assert.equal(node.mode, "corner");
+        assert(!Object.hasOwn(node, "out"));
+        assert.deepEqual(pathBezier(path, 0), opposite);
+        assert.equal(segmentType(path, 1), "line");
+    }
+
+    const path = line();
+    path.nodes[1].out = [2, -1];
+    path.nodes[2].in = [-2, 1];
+    retractHandle(path, 2, "in");
+    assert(!Object.hasOwn(path.nodes[2], "in"));
+    assert.deepEqual(path.nodes[1].out, [2, -1]);
+    assert.equal(segmentType(path, 1), "curve");
 });
 
 test("Whole-curve operations preserve nodes and report when no edit is needed", () => {

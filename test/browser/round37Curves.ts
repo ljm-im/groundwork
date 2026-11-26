@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { pathHandle } from "../../src/core/design/path.ts";
 import { type Design, type Point } from "../../src/core/design/v5.ts";
 import { evaluateStack } from "../../src/core/terrain/terrain.ts";
 import { distance } from "../../src/core/math/geometry.ts";
@@ -45,7 +46,7 @@ async function cropped(page: Page, name: string, selector: string) {
 
 export function checkCurveZoom(url: string) {
     return withCurveMap(url, "round37-zoom", async page => {
-        const { click, cdp, evaluate, frame, key, paint, tap, drag, saved, authored, boundary, wait, text } = page;
+        const { click, cdp, evaluate, frame, key, paint, tap, drag, saved, authored, boundary, wait, text, undo, nodeTitles } = page;
         const camera = () => evaluate(() => window.curveMapProbe.editor!.map.center.slice());
         const viewportCenter = () => evaluate(() => {
             const map = window.curveMapProbe.editor!.map;
@@ -118,6 +119,37 @@ export function checkCurveZoom(url: string) {
         assert.deepEqual(after.in, other);
         assert.notDeepEqual(after.out, corner.out);
         assert(await evaluate(selector => document.querySelector(selector + " [aria-label=尖角]")?.getAttribute("aria-pressed") === "true", nodeType));
+        const outline = () => authored().then(d => boundary(d, "T"));
+        const dragged = await outline(), menu = ".context-menu [data-option=retract-handle]";
+        const out = pathHandle(dragged, 0, "out");
+        await tap(out);
+        await tap(out, 0, "left", 2);
+        await saved();
+        let retracted = (await outline()).nodes[0];
+        assert.equal(retracted.mode, "corner");
+        assert.deepEqual(retracted.in, other);
+        assert(!Object.hasOwn(retracted, "out"));
+        assert.deepEqual(await nodeTitles(), ["节点 1"]);
+        await undo();
+        assert.deepEqual((await outline()).nodes[0], after);
+
+        await click(nodeType + " [aria-label=手动平滑]"); await saved(); await paint();
+        const manual = await outline();
+        assert.equal(manual.nodes[0].mode, "manual");
+        await tap(manual.nodes[0].p, 0, "right");
+        assert.equal(await text(menu), "");
+        await key("Escape");
+        await tap(pathHandle(manual, 0, "in"), 0, "right");
+        await click(menu); await saved(); await paint();
+        retracted = (await outline()).nodes[0];
+        assert.equal(retracted.mode, "corner");
+        assert(!Object.hasOwn(retracted, "in"));
+        assert.deepEqual(retracted.out, manual.nodes[0].out);
+        assert.deepEqual(await nodeTitles(), ["节点 1"]);
+        await undo();
+        assert.deepEqual((await outline()).nodes[0], manual.nodes[0]);
+        await click(nodeType + " [aria-label=尖角]"); await saved();
+
         await cropped(page, "round37-node-types-light", nodeType);
         await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] });
         await wait(() => document.documentElement.dataset.theme === "dark");

@@ -2,7 +2,7 @@ import { isBuiltin } from "../../core/design/defaults.ts";
 import { neighbor, segmentType } from "../../core/design/path.ts";
 import { type Curve, type Design, type GeoNode } from "../../core/design/v5.ts";
 import { type Issue } from "../../core/design/results.ts";
-import { geometryPath, type GeoControl } from "../../core/edit/geoControls.ts";
+import { controlOwner, geometryPath, type GeoControl } from "../../core/edit/geoControls.ts";
 import { canRemoveNode, canSetManual, isEndpoint, segmentRemovalIndex } from "../../core/edit/paths.ts";
 import { type Selection } from "../../core/edit/types.ts";
 import { geoAt } from "./geoTools.ts";
@@ -12,8 +12,9 @@ type MenuItem = import("../components/Menu.svelte").MenuItem;
 
 type Action = MenuItem & { run: (editor: Editor) => void };
 interface Group { title: string; items: Action[] }
+type HandleSide = "in" | "out";
 
-function geometryGroups(selection: Selection, control: GeoControl, curve: Curve): Group[] {
+function geometryGroups(selection: Selection, control: GeoControl, curve: Curve, handle?: HandleSide): Group[] {
     const groups: Group[] = [], { index } = control, node = curve.nodes[index];
     if (control.role === "vertex") {
         groups.push({ title: "节点类型", items: nodeModes.map(([id, name, icon]) => ({
@@ -22,6 +23,7 @@ function geometryGroups(selection: Selection, control: GeoControl, curve: Curve)
         })) });
         const items: Action[] = [];
         if (isEndpoint(curve, index)) items.push({ id: "continue-curve", name: "继续画", icon: "pen", run: editor => editor.continueCurve(control) });
+        if (handle) items.push({ id: "retract-handle", name: "收回控制柄", icon: "nodeCorner", run: editor => editor.retractHandle(control, handle) });
         if (canRemoveNode(curve)) items.push({ id: "delete-node", name: "删除节点", icon: "delete", danger: true,
             run: editor => editor.removeCurvePart(selection, control) });
         if (items.length) groups.push({ title: "节点", items });
@@ -53,10 +55,10 @@ function memberGroup(id: string, group: "ridges" | "peaks", index: number): Grou
     ] };
 }
 
-function geoGroups(node: GeoNode, control?: GeoControl): [Group[], Group[]] {
+function geoGroups(node: GeoNode, control?: GeoControl, handle?: HandleSide): [Group[], Group[]] {
     const id = node.id, c = node.construction, f = node.function;
     const geometry = control?.role === "vertex" || control?.role === "segment" ? geometryPath(node, control.path) : undefined;
-    const left = control && geometry ? geometryGroups({ kind: "geoNode", id }, control, geometry) : [], right: Group[] = [];
+    const left = control && geometry ? geometryGroups({ kind: "geoNode", id }, control, geometry, handle) : [], right: Group[] = [];
     const outline = control && control.path >= 0 && (geometry || control.role === "outline") ? control.path : undefined;
     if (outline !== undefined && c.type === "outline") {
         const index = outline;
@@ -86,14 +88,15 @@ export function issueMenuColumns(issue: Issue): Group[][] {
     ] }]];
 }
 
-export function contextMenuColumns(design: Design, h: Selection, map: boolean, control?: GeoControl): Group[][] {
-    const { kind, id } = h;
+export function contextMenuColumns(design: Design, h: Selection, map: boolean, hit?: GeoControl): Group[][] {
+    const { kind, id } = h, control = controlOwner(hit);
+    const handle = hit?.role === "in" || hit?.role === "out" ? hit.role : undefined;
     if ((kind === "input" || kind === "field") && isBuiltin(kind, id)) return [];
     const node = kind === "geoNode" ? geoAt(design, id) : undefined;
-    const [left, right] = node && map ? geoGroups(node, control) : [[], []];
+    const [left, right] = node && map ? geoGroups(node, control, handle) : [[], []];
     if (kind === "curve" && map && control && (control.role === "vertex" || control.role === "segment")) {
         const shared = design.curves[id];
-        if (shared) left.push(...geometryGroups(h, control, shared.curve));
+        if (shared) left.push(...geometryGroups(h, control, shared.curve, handle));
     }
     const items: Action[] = [];
     let title: string;

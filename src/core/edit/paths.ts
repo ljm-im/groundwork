@@ -116,6 +116,12 @@ export function moveHandle(path: Curve, i: number, side: Side, target: Point, in
     v[side] = delta;
 }
 
+export function retractHandle(path: Curve, i: number, side: Side) {
+    if (handleOffset(path, i, side) === undefined) return;
+    setNodeMode(path, i, "corner");
+    delete path.nodes[i][side];
+}
+
 export function arcHandle(a: Point, b: Point, bulge: number): Point {
     return [(a[0] + b[0] + (b[1] - a[1]) * bulge) / 2, (a[1] + b[1] - (b[0] - a[0]) * bulge) / 2];
 }

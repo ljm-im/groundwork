@@ -277,6 +277,10 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
                 selectHit(hit, c);
                 editor.pathNodeMode(c);
             }
+            if (c.role === "in" || c.role === "out") {
+                selectHit(hit, c);
+                editor.retractHandle(c, c.role);
+            }
         }
     }, { signal });
     canvas.addEventListener("pointermove", ev => {
