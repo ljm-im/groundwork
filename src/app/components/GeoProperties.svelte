@@ -71,7 +71,7 @@
         {:else if tab === "function"}
             <Part>
                 <PropertySelect label="函数" group="函数" icon="function" value={f.type}
-                    options={allowedFunctions(n).map(id => ({ id, name: id, builtin: isBuiltinFunction(id) }))}
+                    options={allowedFunctions(n).map(id => ({ id, name: functionTable[id].name, builtin: isBuiltinFunction(id) }))}
                     choose={id => editor.switchFunction(n, id as GeoFunction["type"])} />
                 <PropertySelect label="输出到" group="场" icon="field" value={n.field} options={fields}
                     choose={id => editor.editNode(n.id, v => v.field = id)} />

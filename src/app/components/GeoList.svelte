@@ -26,7 +26,7 @@
                     editor.hover([]);
                 }}>
                 {#snippet detail()}
-                    <small class="list-detail"><Icon name="function" builtin={isBuiltinFunction(n.function.type)} />{n.function.type}{#if n.function.type === "flat"}<span class="flat-amount" use:flagOverflow>{flatAmount(n, n.function.amount)}</span>{/if}</small>
+                    <small class="list-detail"><Icon name="function" builtin={isBuiltinFunction(n.function.type)} />{functionTable[n.function.type].name}{#if n.function.type === "flat"}<span class="flat-amount" use:flagOverflow>{flatAmount(n, n.function.amount)}</span>{/if}</small>
                     {#if c.type === "strip"}<small class="along">沿 {c.of.map(id => "“" + (d.geoNodes.find(n => n.id === id)?.label ?? id) + "”").join("、")}</small>{/if}
                     {#if n.field !== heightId}<small class="field-detail"><Icon name="field" />{d.fields[n.field]?.label ?? n.field}</small>{/if}
                 {/snippet}
@@ -48,7 +48,7 @@
     import { SvelteMap } from "svelte/reactivity";
     import * as session from "../state/session.svelte.ts";
     import { heightId } from "../../core/design/defaults.ts";
-    import { isBuiltinFunction, parameterDefault, parameterStep } from "../../core/design/functionTable.ts";
+    import { functionTable, isBuiltinFunction, parameterDefault, parameterStep } from "../../core/design/functionTable.ts";
     import { geoParameter } from "../../core/design/parameters.ts";
     import { flagOverflow, referenceLabel } from "../state/numbers.ts";
     import { displayValue } from "../../core/design/display.ts";
@@ -80,7 +80,8 @@
         return result;
     });
     let rows = $derived.by(() => {
-        const matches = order.filter(r => r.node && matchesSearch(editor.terrainFilter, r.node.label, r.node.function.type, r.node.id, d.fields[r.node.field]?.label));
+        const matches = order.filter(r => r.node && matchesSearch(editor.terrainFilter, r.node.label,
+            functionTable[r.node.function.type].name, r.node.function.type, r.node.id, d.fields[r.node.field]?.label));
         return matches.length ? order.filter(row => !row.node || matches.includes(row)) : [];
     });
     let mark = $state("");
