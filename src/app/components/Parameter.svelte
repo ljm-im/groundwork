@@ -15,8 +15,9 @@
     let index = $derived(d.geoNodes.findIndex(n => n.id === node.id));
     let path = $derived([construction ? "construction" : "function", ...address]);
     let key = $derived("geo:" + node.id + "." + (construction ? path : address).join("."));
-    let spec = $derived(geoParameter(node, path));
-    let label = $derived(geoParameterName(d, node, path, false) ?? "数值");
+    let slot = $derived(editor.numberEdits.slots.get(key));
+    let spec = $derived(slot?.spec ?? geoParameter(node, path));
+    let label = $derived(geoParameterName(d, node, path, false) ?? (address.includes("h") ? slot?.spec?.label : slot?.label) ?? "数值");
     let field = $derived(d.fields[node.field]);
     let unit = $derived(spec ? parameterUnit(spec, field?.unit) : "");
 </script>

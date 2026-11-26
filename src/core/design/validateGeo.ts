@@ -1,11 +1,11 @@
-import { type ClosedCurve, type Curve, type GeoNode, type Point, type ResolvedDesign } from "./v5.ts";
+import { type ClosedCurve, type Curve, type GeoNode, type Point, type ResolvedDesign, type Design, type CurveRef } from "./v5.ts";
 import { defaultFieldPrecision, isBuiltin, reserved, seedId, heightId } from "./defaults.ts";
 import { canWrite, expandKeys, functionParameterKeys, functionParameters, functionTable, numericValid } from "./functionTable.ts";
 import { readAt, type Address } from "./address.ts";
-import { check, DesignError, rejectRetired, type DesignProblem, type Location } from "./problems.ts";
+import { check, DesignError, type DesignProblem, type Location } from "./problems.ts";
 import { hasHandleSide, neighbor } from "./path.ts";
 
-export const point = (p: unknown): p is Point => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite);
+export const point = (p: unknown): p is Point => Array.isArray(p) && p.length === 2 && Number.isFinite(p[0]) && Number.isFinite(p[1]);
 export const record = (v: unknown) => !!v && typeof v === "object" && !Array.isArray(v);
 
 export const validInputRange = (range: unknown) =>
@@ -13,54 +13,77 @@ export const validInputRange = (range: unknown) =>
 export const validFieldPrecision = (precision: unknown) => precision === undefined || typeof precision === "number" && Number.isFinite(precision) && precision > 0;
 export const validStripWidths = (widths: unknown) => point(widths) && widths.every(w => w >= 0) && widths.some(w => w > 0);
 
-export function validateCurves(n: GeoNode, index: number) {
-    const at = (path: Address): Location => ({ kind: "geo", id: n.id, index, path });
-    const ids = new Set<string>();
-    function curve(value: unknown, key: Address, closed: boolean) {
-        check(record(value), "无效", at(key));
-        const p = value as Curve;
-        rejectRetired(p, ["points", "smooth"], at(key));
-        check(typeof p.closed === "boolean" && (!closed || p.closed), "无效", at([...key, "closed"]));
-        const nodesAt = [...key, "nodes"];
-        check(Array.isArray(p.nodes), "无效", at(nodesAt));
-        check(p.nodes.length >= (p.closed ? 3 : 2), p.closed ? "闭合曲线至少需要三个节点" : "曲线至少需要两个节点", at(nodesAt));
-        for (const [i, node] of p.nodes.entries()) {
-            const pos = [...nodesAt, i], field = (name: string) => at([...pos, name]);
-            check(record(node), "无效", at(pos));
-            rejectRetired(node, ["next", "autoIn", "autoOut"], at(pos));
-            check(typeof node.id === "string" && node.id, "无效", field("id"));
-            check(!ids.has(node.id), "重复“" + node.id + "”", field("id"));
-            ids.add(node.id);
-            check(point(node.p), "无效", field("p"));
-            check(node.mode === "corner" || node.mode === "auto" || node.mode === "manual", "无效", field("mode"));
-            if (!p.closed && i === 0) check(!Object.hasOwn(node, "in"), "开放曲线的首节点没有前一段", field("in"));
-            if (!p.closed && i === p.nodes.length - 1) for (const name of ["out", "bulge"])
-                check(!Object.hasOwn(node, name), "开放曲线的末节点没有后一段", field(name));
-            if (closed) check(!Object.hasOwn(node, "h"), "这里的节点不能有高度", field("h"));
-            if (node.bulge !== undefined) check(Number.isFinite(node.bulge) && node.bulge !== 0, "无效", field("bulge"));
+function validateCurve(value: unknown, at: (path: Address) => Location, key: Address, ids: Set<string>, closed: boolean, height: boolean, reference: boolean) {
+    check(record(value), "无效", at(key));
+    if (Object.hasOwn(value as object, "ref")) {
+        check(reference, "这里不能引用曲线", at([...key, "ref"]));
+        const ref = value as CurveRef;
+        check(typeof ref.ref === "string", "无效", at([...key, "ref"]));
+        check(!Object.hasOwn(ref, "nodes") && !Object.hasOwn(ref, "closed"), "是未知字段", at(key));
+        if (Object.hasOwn(ref, "offset")) check(point(ref.offset), "只能填写两个有限数", at([...key, "offset"]));
+        if (Object.hasOwn(ref, "h")) {
+            check(height, "这里的节点不能有高度", at([...key, "h"]));
+            check(record(ref.h), "无效", at([...key, "h"]));
         }
-        for (const [i, node] of p.nodes.entries()) {
-            const field = (name: string) => at([...nodesAt, i, name]);
-            if (node.mode === "manual") check(node.bulge === undefined && p.nodes[neighbor(p, i, -1) ?? -1]?.bulge === undefined,
-                "手动平滑节点不能和圆弧相邻", field("mode"));
-            for (const side of ["in", "out"] as const) {
-                if (Object.hasOwn(node, side)) {
-                    check(hasHandleSide(p, i, side), "和圆弧相邻的一侧不能有控制柄", field(side));
-                    check(node.mode !== "auto", "自动平滑节点不存储控制柄", field(side));
-                    check(point(node[side]), "无效", field(side));
-                }
-                else check(node.mode !== "manual", "手动平滑节点需要两侧控制柄", field(side));
+        return;
+    }
+    const p = value as Curve;
+    check(typeof p.closed === "boolean" && (!closed || p.closed), "无效", at([...key, "closed"]));
+    const nodesAt = [...key, "nodes"];
+    check(Array.isArray(p.nodes), "无效", at(nodesAt));
+    check(p.nodes.length >= (p.closed ? 3 : 2), p.closed ? "闭合曲线至少需要三个节点" : "曲线至少需要两个节点", at(nodesAt));
+    for (const [i, node] of p.nodes.entries()) {
+        const pos = [...nodesAt, i], field = (name: string) => at([...pos, name]);
+        check(record(node), "无效", at(pos));
+        check(typeof node.id === "string" && node.id, "无效", field("id"));
+        check(!ids.has(node.id), "重复“" + node.id + "”", field("id"));
+        ids.add(node.id);
+        check(point(node.p), "无效", field("p"));
+        check(node.mode === "corner" || node.mode === "auto" || node.mode === "manual", "无效", field("mode"));
+        if (!p.closed && i === 0) check(!Object.hasOwn(node, "in"), "开放曲线的首节点没有前一段", field("in"));
+        if (!p.closed && i === p.nodes.length - 1) for (const name of ["out", "bulge"])
+            check(!Object.hasOwn(node, name), "开放曲线的末节点没有后一段", field(name));
+        if (!height) check(!Object.hasOwn(node, "h"), "这里的节点不能有高度", field("h"));
+        if (node.bulge !== undefined) check(Number.isFinite(node.bulge) && node.bulge !== 0, "无效", field("bulge"));
+    }
+    for (const [i, node] of p.nodes.entries()) {
+        const field = (name: string) => at([...nodesAt, i, name]);
+        if (node.mode === "manual") check(node.bulge === undefined && p.nodes[neighbor(p, i, -1) ?? -1]?.bulge === undefined,
+            "手动平滑节点不能和圆弧相邻", field("mode"));
+        for (const side of ["in", "out"] as const) {
+            if (Object.hasOwn(node, side)) {
+                check(hasHandleSide(p, i, side), "和圆弧相邻的一侧不能有控制柄", field(side));
+                check(node.mode !== "auto", "自动平滑节点不存储控制柄", field(side));
+                check(point(node[side]), "无效", field(side));
             }
-            if (node.mode === "manual") {
-                const [ix, iy] = node.in!, [ox, oy] = node.out!;
-                const a = Math.hypot(ix, iy) || 1, b = Math.hypot(ox, oy) || 1;
-                check(Math.abs(ix / a * (oy / b) - iy / a * (ox / b)) < 1e-8 &&
-                    ix / a * (ox / b) + iy / a * (oy / b) <= 0, "无效", field("mode"));
-            }
+            else check(node.mode !== "manual", "手动平滑节点需要两侧控制柄", field(side));
+        }
+        if (node.mode === "manual") {
+            const [ix, iy] = node.in!, [ox, oy] = node.out!;
+            const a = Math.hypot(ix, iy) || 1, b = Math.hypot(ox, oy) || 1;
+            check(Math.abs(ix / a * (oy / b) - iy / a * (ox / b)) < 1e-8 &&
+                ix / a * (ox / b) + iy / a * (oy / b) <= 0, "无效", field("mode"));
         }
     }
+}
+
+export function validateSharedCurves(d: Design) {
+    check(record(d.curves), "无效", { kind: "project", path: ["curves"] });
+    for (const [id, entry] of Object.entries(d.curves)) {
+        const at = (path: Address): Location => ({ kind: "curve", id, path });
+        check(id && record(entry), "无效", at([]));
+        check(typeof entry.label === "string", "无效", at(["label"]));
+        validateCurve(entry.curve, at, ["curve"], new Set(), false, false, false);
+    }
+}
+
+export function validateCurves(n: GeoNode, index: number) {
+    const at = (path: Address): Location => ({ kind: "geo", id: n.id, index, path });
+    const curve = (value: unknown, key: Address, closed: boolean) => validateCurve(value, at, key, new Set(), closed, !closed, true);
     const c = n.construction;
-    if (c?.type === "free" && Array.isArray(c.paths)) c.paths.forEach((p, i) => curve(p, ["construction", "paths", i], true));
+    check(c?.type === "outline" || c?.type === "strip", "是未知取值", at(["construction", "type"]));
+    if (c.type === "outline") check(Array.isArray(c.outlines) && c.outlines.length, "无效", at(["construction", "outlines"]));
+    if (c?.type === "outline" && Array.isArray(c.outlines)) c.outlines.forEach((p, i) => curve(p, ["construction", "outlines", i], true));
     const f = n.function;
     if (f?.type === "coast") curve(f.shore, ["function", "shore"], true);
     if (f?.type === "slope" && f.kind === "path") curve(f.line, ["function", "line"], false);
@@ -78,7 +101,6 @@ export function validateGeo(d: ResolvedDesign, allowBrokenReferences = false) {
     for (const [id, field] of Object.entries(d.fields)) {
         const at = (path: Address) => ({ kind: "field" as const, id, path });
         check(id && record(field), "无效", at([]));
-        check(!Object.hasOwn(field, "default"), "已从 v5 移除", at(["default"]));
         check(typeof field.label === "string", "无效", at(["label"]));
         check(field.unit === undefined || typeof field.unit === "string", "无效", at(["unit"]));
         const { precision } = field;
@@ -102,16 +124,15 @@ export function validateGeo(d: ResolvedDesign, allowBrokenReferences = false) {
         validateCurves(n, index);
         const c = n.construction, f = n.function, spec = functionTable[f.type];
         const fn = (key: Address) => ["function", ...key];
-        valid(c && ["free", "strip"].includes(c.type), ["construction"]);
+        valid(c && ["outline", "strip"].includes(c.type), ["construction"]);
         valid(typeof n.field === "string" && n.field.length, ["field"]);
         if (!Object.hasOwn(d.fields, n.field)) missing(["field"], "找不到场“" + n.field + "”");
         valid(canWrite(f.type, n.field), ["field"]);
         valid(!spec.construction || c.type === spec.construction, ["construction", "type"]);
         const ps = functionParameters(f);
         if (!ps.some(p => p.type === "seed")) valid(!Object.hasOwn(f, "seed"), fn(["seed"]));
-        check(!Object.hasOwn(f, "noise"), "是未知字段", at(fn(["noise"])));
-        if (c.type === "free") {
-            valid(Array.isArray(c.paths) && c.paths.length > 0, ["construction", "paths"]);
+        if (c.type === "outline") {
+            valid(Array.isArray(c.outlines) && c.outlines.length > 0, ["construction", "outlines"]);
         }
         else {
             valid(Array.isArray(c.of) && [1, 2].includes(c.of.length) && c.of.every(id => typeof id === "string") && new Set(c.of).size === c.of.length, ["construction", "of"]);
@@ -124,7 +145,7 @@ export function validateGeo(d: ResolvedDesign, allowBrokenReferences = false) {
                     missing(["construction", "range"], "在同一路径上找不到“" + from + "”、“" + to + "”");
             }
         }
-        upperPaths.set(n.id, c.type === "free" ? c.paths : []);
+        upperPaths.set(n.id, c.type === "outline" ? c.outlines : []);
         if (f.type === "slope") valid(f.kind === "path" || f.kind === "radial", fn(["kind"]));
         for (const p of ps) {
             for (const key of functionParameterKeys(f, p)) {

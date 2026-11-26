@@ -1,24 +1,27 @@
 import { readAt, type Address } from "./address.ts";
-import { functionParameterApplies, functionParameterKeys, functionParameters, functionTable, legacyRidge, markParameters, matchesKey, parameterDefault, stripWidths, type NumericParameter } from "./functionTable.ts";
+import { expandKeys, functionParameterKeys, functionParameters, functionTable, markParameters, matchesKey, parameterDefault, stripWidths, type NumericParameter } from "./functionTable.ts";
+import { curveGraph, curveParameterName, isCurveRef } from "./curveReferences.ts";
 import { lineProfile } from "./polyline.ts";
 import { evaluate, fieldValue, references, type Value } from "./expression.ts";
 import { check, DesignError, quotedLocation, type DesignProblem, type Location } from "./problems.ts";
-import { type Design, type Expression, type GeoNode, type Curve, type ResolvedDesign } from "./v5.ts";
+import { type Design, type Expression, type GeoNode, type ResolvedDesign } from "./v5.ts";
 
 export { readAt, writeAt, type Address } from "./address.ts";
 export type Owner = "input" | "geo" | "mark";
 export type Slot = { key: string; owner: Owner; id: string; name: string; label: string; field: boolean; type: NumericParameter["type"];
-    path: Address; location: Location; value: Expression; virtual?: boolean; spec?: NumericParameter };
+    path: Address; resolvedPath: Address; location: Location; value: Expression; virtual?: boolean; spec?: NumericParameter };
 
 export function geoParameter(node: GeoNode, path: Address) {
     const [group, ...key] = path;
     const c = node.construction;
     if (group === "construction" && c.type === "strip") return stripWidths(c.of?.length === 2).find(p => matchesKey(p.key, key));
     if (group === "function" && Object.hasOwn(functionTable, node.function.type))
-        return functionParameters(node.function).find(p => matchesKey(p.key, key) && functionParameterApplies(node.function, p, key));
+        return functionParameters(node.function).find(p => matchesKey(p.key, key));
 }
 
 export function geoParameterName(d: Design, node: GeoNode, path: Address, context = true): string | undefined {
+    const curve = curveParameterName(path);
+    if (curve) return curve;
     const spec = geoParameter(node, path);
     if (!spec) return;
     const c = node.construction;
@@ -36,14 +39,14 @@ export function geoParameterName(d: Design, node: GeoNode, path: Address, contex
     return [...prefix, spec.label].join(path.includes("nodes") ? "." : " ");
 }
 
-export function parameters(d: Design, geoIndex?: number) {
+export function parameters(d: Design, geoIndex?: number, curves = curveGraph(d)) {
     const slots = new Map<string, Slot>();
     function add(location: Location & { kind: Owner; id: string }, name: string, root: Address, property: Address, label: string,
-        type: NumericParameter["type"], fallback: Expression, virtual = false, spec?: NumericParameter) {
+        type: NumericParameter["type"], fallback: Expression, virtual = false, spec?: NumericParameter, resolvedAt = location.path) {
         const path = [...root, ...location.path], input = readAt(d, path);
         const { kind: owner, id } = location;
         const key = owner + ":" + id + (property.length ? "." + property.join(".") : "");
-        slots.set(key, { key, owner, id, name, label, field: type === "field", type, location, path,
+        slots.set(key, { key, owner, id, name, label, field: type === "field", type, location, path, resolvedPath: [...root, ...resolvedAt],
             value: (input === undefined ? fallback : input) as Expression, virtual, spec });
     }
     if (geoIndex === undefined)
@@ -53,29 +56,37 @@ export function parameters(d: Design, geoIndex?: number) {
         const f = n.function, c = n.construction;
         const at = (path: Address): Location & { kind: "geo" } => ({ kind: "geo", id: n.id, index, path });
         check(f && Object.hasOwn(functionTable, f.type), "无效", at(["function", "type"]));
-        const addGeo = (path: Address, property: Address, p: NumericParameter, fallback = parameterDefault(p, n.id), virtual = false) => {
-            add(at(path), n.label, ["geoNodes", index], property, geoParameterName(d, n, path) ?? p.label, p.type, fallback, virtual, p);
+        const addGeo = (path: Address, property: Address, p: NumericParameter, fallback = parameterDefault(p, n.id), virtual = false, resolvedAt = path) => {
+            add(at(path), n.label, ["geoNodes", index], property, geoParameterName(d, n, resolvedAt) ?? p.label, p.type, fallback, virtual, p, resolvedAt);
         };
-        const profiles = new Map<Curve, ReturnType<typeof lineProfile>>();
         for (const p of functionParameters(f)) {
             if (p.type === "geometry") continue;
-            for (const key of functionParameterKeys(f, p)) {
-                let fallback = parameterDefault(p, n.id), virtual = false;
-                if (p.profile && readAt(f, key) === undefined) {
-                    const lineKey = key.slice(0, -3), line = readAt(f, lineKey) as Curve;
-                    const index = Number(key.at(-2)), ease = f.type === "mountain" ? !legacyRidge(f.ridges[Number(key[1])])
-                        : f.type === "slope" && f.kind === "path" && f.ease;
-                    if (line?.nodes.every(v => Array.isArray(v?.p))) {
-                        if (!profiles.has(line)) profiles.set(line, lineProfile(line, d.grid.step / 8));
-                        const profile = profiles.get(line)!;
-                        const span = profile.span(profile.nodeStation(index), ease);
-                        const ref = (j: number) => "{geo:" + n.id + "." + [...lineKey, "nodes", j, "h"].join(".") + "}";
-                        if (span) fallback = span.a === span.b ? ref(span.a.index) : ref(span.a.index) + " * " + (1 - span.t) + " + " + ref(span.b.index) + " * " + span.t;
-                        // Keep authored stops sparse so easing is applied across the whole span in the evaluator.
-                        virtual = !!ease && !!span;
+            if (!p.profile) {
+                for (const key of functionParameterKeys(f, p)) addGeo(["function", ...key], key, p);
+                continue;
+            }
+            const ease = f.type === "mountain" || f.type === "slope" && f.kind === "path" && f.ease;
+            for (const lineKey of expandKeys(f, p.key.slice(0, -3))) {
+                const slot = curves.slots.get("geo:" + n.id + "." + lineKey.join("."));
+                if (!slot?.value) continue;
+                const referenced = isCurveRef(slot.value), line = curves.materialize(slot);
+                const heightKey = (j: number): Address => referenced ? [...lineKey, "h", line.nodes[j].id] : [...lineKey, "nodes", j, "h"];
+                let profile: ReturnType<typeof lineProfile> | undefined;
+                for (const [j, v] of line.nodes.entries()) {
+                    const key = heightKey(j), resolvedAt = ["function", ...lineKey, "nodes", j, "h"];
+                    let fallback = parameterDefault(p, n.id), virtual = false;
+                    if (v.h === undefined) {
+                        profile ??= lineProfile(line, d.grid.step / 8);
+                        const span = profile.span(profile.nodeStation(j), ease);
+                        const ref = (k: number) => "{geo:" + n.id + "." + heightKey(k).join(".") + "}";
+                        if (span) {
+                            fallback = span.a === span.b ? ref(span.a.index) : ref(span.a.index) + " * " + (1 - span.t) + " + " + ref(span.b.index) + " * " + span.t;
+                            // Keep authored stops sparse so easing is applied across the whole span in the evaluator.
+                            virtual = !!ease;
+                        }
                     }
+                    addGeo(["function", ...key], key, p, fallback, virtual, resolvedAt);
                 }
-                addGeo(["function", ...key], key, p, fallback, virtual);
             }
         }
         if (c?.type === "strip") for (const p of stripWidths(c.of?.length === 2)) {
@@ -163,8 +174,8 @@ export function resolveParameterValues(slots: Iterable<Slot>, get: (key: string)
     return values;
 }
 
-export function resolveDesign(source: Design, slots = parameters(source)): ResolvedDesign {
-    const { get } = expressionGraph(source, slots), design = { ...source };
+export function resolveDesign(source: Design, slots?: Map<string, Slot>, curves = curveGraph(source)): ResolvedDesign {
+    const { get } = expressionGraph(source, slots ??= parameters(source, undefined, curves)), design = { ...source };
     // Unchanged branches retain identity for geometry caches and direct map edits.
     function replace(path: Address, value: unknown) {
         let original: object | undefined = source, target: object = design;
@@ -179,7 +190,8 @@ export function resolveDesign(source: Design, slots = parameters(source)): Resol
         }
         Reflect.set(target, path.at(-1)!, value);
     }
+    for (const slot of curves.slots.values()) if (isCurveRef(slot.value)) replace(slot.path, curves.materialize(slot));
     for (const [slot, result] of resolveParameterValues(slots.values(), get))
-        if (result !== readAt(source, slot.path)) replace(slot.path, result);
+        if (result !== readAt(design, slot.resolvedPath)) replace(slot.resolvedPath, result);
     return design as ResolvedDesign;
 }

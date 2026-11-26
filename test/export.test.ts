@@ -19,10 +19,10 @@ function loadExample() {
         { id: "D", label: "D", kind: "text", point: [2, 3], follow: "screen" },
         { id: "E", label: "E", kind: "text", point: [9, 8], follow: "map" });
     const c = design.geoNodes[0].construction;
-    if (c.type === "free") {
+    if (c.type === "outline") {
         const hole = polygon([[6, 5], [12, 5], [12, 10], [6, 10]]);
         for (const node of hole.nodes) node.id = "H" + node.id;
-        c.paths.push(hole);
+        c.outlines.push(hole);
     }
     design.geoNodes.push(layer("S", rect(-40, 6, -20, 10), { type: "flat", amount: -5 }),
         layer("B", rect(-40, 10, -20, 18), { type: "flat", amount: -3 }));

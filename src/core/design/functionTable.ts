@@ -1,6 +1,6 @@
 import { type Address, readAt, writeAt } from "./address.ts";
 import { fieldPrecision, heightId, seedId } from "./defaults.ts";
-import { type Expression, type FieldDeclaration, type GeoFunction, type Ridge } from "./v5.ts";
+import { type Expression, type FieldDeclaration, type GeoFunction } from "./v5.ts";
 import { shiftDecimal } from "../math/interval.ts";
 
 type Unit = "" | "m" | "m/m" | "%" | "px" | "field" | "field/m";
@@ -20,7 +20,6 @@ export interface NumericParameter extends ParameterBase {
     constraint?: Constraint;
     create?: Expression;
     profile?: true;
-    ridge?: "legacy" | "slope";
 }
 type GeometryDefault = "boundary" | "center" | "axis" | "draw-line" | "draw-point" | "empty";
 interface GeometryParameter extends ParameterBase { type: "geometry"; default: GeometryDefault }
@@ -38,7 +37,7 @@ interface FunctionSpec {
 
 const asKey = (key: string): Address => key.split(".").map(part => /^\d+$/.test(part) ? Number(part) : part);
 function number<S extends ParameterStep, D extends NumericParameter["default"]>(key: string, label: string, unit: Unit, step: S, value: D,
-    options: Partial<Pick<NumericParameter, "type" | "constraint" | "advanced" | "variant" | "create" | "profile" | "ridge">> = {}): NumericParameter & { step: S; default: D } {
+    options: Partial<Pick<NumericParameter, "type" | "constraint" | "advanced" | "variant" | "create" | "profile">> = {}): NumericParameter & { step: S; default: D } {
     return { key: asKey(key), label, unit, step, default: value, type: "number", advanced: false, ...options };
 }
 function geometry(key: string, label: string, value: GeometryDefault, variant?: GeometryParameter["variant"]): GeometryParameter {
@@ -49,16 +48,6 @@ const floor = number("floor", "作用下限", "m", 1, -1000);
 const sea = number("seaLevel", "海平面", "m", .1, 0);
 const feather = number("feather", "羽化宽度", "m", .1, 0, { constraint: "nonnegative" });
 const advanced = { advanced: true, constraint: "nonnegative" } as const;
-const legacy = { ridge: "legacy" } as const;
-const ridgeNoise = (key: string, label: string) => [
-    number("ridges.*." + key + ".amount", label + "幅度", "%", 1, 0, legacy),
-    number("ridges.*." + key + ".wavelength", label + "波长", "m", 1, 20, { ...legacy, constraint: "positive" })
-];
-
-export function legacyRidge(r: Ridge<Expression> | undefined) {
-    return r !== undefined && r.slope === undefined && (r.widths !== undefined || r.widthNoise !== undefined || r.heightNoise !== undefined);
-}
-
 export const slopeEndpointValues = [0, 2] as const;
 export const functionTable: Record<GeoFunction["type"], FunctionSpec> = {
     ground: { initial: true, writes: "any", reading: "none", parameters: [
@@ -78,10 +67,7 @@ export const functionTable: Record<GeoFunction["type"], FunctionSpec> = {
         number("blend", "山脊融合高度", "m", .1, 5, advanced),
         geometry("ridges.*.line", "山脊线", "draw-line"),
         number("ridges.*.line.nodes.*.h", "高度", "field", "field", 0, { profile: true }),
-        number("ridges.*.slope", "坡度", "m/m", .01, .75, { constraint: "positive", ridge: "slope" }),
-        number("ridges.*.widths.0", "左侧宽度", "m", .1, 5, { ...legacy, constraint: "positive" }),
-        number("ridges.*.widths.1", "右侧宽度", "m", .1, 5, { ...legacy, constraint: "positive" }),
-        ...ridgeNoise("widthNoise", "宽度起伏"), ...ridgeNoise("heightNoise", "高度起伏"),
+        number("ridges.*.slope", "坡度", "m/m", .01, .75, { constraint: "positive" }),
         geometry("peaks.*.at.p", "位置", "draw-point"),
         number("peaks.*.at.h", "高度", "field", "field", 0),
         number("peaks.*.radius", "半径", "m", .1, 5, { constraint: "positive" }),
@@ -189,14 +175,8 @@ export function expandKeys(root: object, key: Address): Address[] {
     return paths;
 }
 
-export function functionParameterApplies(f: GeoFunction, p: ParameterSpec, key: Address) {
-    if (p.type === "geometry" || !p.ridge || f.type !== "mountain") return true;
-    const ridge = f.ridges?.[Number(key[1])];
-    return !!ridge && (p.ridge === "legacy" ? legacyRidge(ridge) || readAt(f, key) !== undefined : !legacyRidge(ridge));
-}
-
 export function functionParameterKeys(f: GeoFunction, p: ParameterSpec) {
-    return expandKeys(f, p.key).filter(key => functionParameterApplies(f, p, key));
+    return expandKeys(f, p.key);
 }
 
 export function fillFunctionParameters(f: GeoFunction, prefix: Address = []) {

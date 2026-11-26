@@ -2,14 +2,15 @@ import { test } from "node:test";
 import { bindField, bindHeight, resolved } from "./expressionHelpers.ts";
 import assert from "node:assert/strict";
 import { fixtureOptions, readFixture } from "../configs/read-fixture.ts";
-import { syntheticDesign, rect, layer } from "./scenarios.ts";
+import { literalCurve, syntheticDesign, rect, layer } from "./scenarios.ts";
 import { type Design, type GeoFunction, type Point } from "../src/core/design/v5.ts";
+import { resolveDesign } from "../src/core/design/parameters.ts";
 import { parseDesign, serializeDesign } from "../src/core/design/model.ts";
 import { defaultInputRange } from "../src/core/design/defaults.ts";
 import { History } from "../src/core/edit/history.ts";
 import { addField, addInput, copyGeo, createStrip, removalUses, removalUseName, defaultFunction, deleteGeo, stripUsers, enableGeo,
     nodeIds, rangeUsers, removeDeclaration, reorderGeo, stripRange } from "../src/core/edit/geoNodes.ts";
-import { arcHandle, insertPathNode, moveHandle, penNode, setSegment, shapePath, translateGeo } from "../src/core/edit/paths.ts";
+import { arcHandle, insertPathNode, moveHandle, penNode, setNodeMode, setSegment, shapePath, translateGeo } from "../src/core/edit/paths.ts";
 import { defaultArcBulge, flattenPath, segmentType } from "../src/core/design/path.ts";
 import { copyGeometryItem, geoControls, geometryPath, removeGeometryItem } from "../src/core/edit/geoControls.ts";
 import { finishDraft, snapPoint } from "../src/app/state/geoTools.ts";
@@ -200,8 +201,8 @@ test("Function defaults preserve construction and drawn geometry retains its aut
     historyEdit(d, () => {
         finishDraft(d, t, { ...pending, tool: "slopeLine" });
         assert(n.function.type === "slope" && n.function.kind === "path");
-        assert.deepEqual(n.function.line.nodes.map(v => v.h !== undefined), [true, false, false, true]);
-        assert.deepEqual(n.function.line.nodes.map(v => v.h), [0, undefined, undefined, 2]);
+        assert.deepEqual(literalCurve(n.function.line).nodes.map(v => v.h !== undefined), [true, false, false, true]);
+        assert.deepEqual(literalCurve(n.function.line).nodes.map(v => v.h), [0, undefined, undefined, 2]);
     });
     historyEdit(d, () => {
         finishDraft(d, t, { ...pending, tool: "center" });
@@ -209,7 +210,7 @@ test("Function defaults preserve construction and drawn geometry retains its aut
     });
 });
 
-for (const construction of ["free", "strip"] as const) test("Default shore and slope switch immediately on " + construction + " regions", async t => {
+for (const construction of ["outline", "strip"] as const) test("Default shore and slope switch immediately on " + construction + " regions", async t => {
     await import("../configs/register-svelte.ts");
     const { Editor } = await import("../src/app/state/session.svelte.ts");
     const editor = new Editor(), d = syntheticDesign(), source = d.geoNodes[1];
@@ -226,20 +227,20 @@ for (const construction of ["free", "strip"] as const) test("Default shore and s
         assert.equal(editor.geoDraft, undefined);
         assert.equal(f.type, type);
         if (f.type === "coast") {
-            assert(f.shore.nodes.length >= 4);
-            if (construction === "free") assert.deepEqual(f.shore.nodes.map(v => v.p), [[-20.3, -13.4], [-7.7, -13.4], [-7.7, -2.5999999999999996], [-20.3, -2.5999999999999996]]);
-            else assert.notDeepEqual(f.shore.nodes.map(v => v.p), source.construction.type === "free" && source.construction.paths[0].nodes.map(v => v.p));
+            assert(literalCurve(f.shore).nodes.length >= 4);
+            if (construction === "outline") assert.deepEqual(literalCurve(f.shore).nodes.map(v => v.p), [[-20.3, -13.4], [-7.7, -13.4], [-7.7, -2.5999999999999996], [-20.3, -2.5999999999999996]]);
+            else assert.notDeepEqual(literalCurve(f.shore).nodes.map(v => v.p), source.construction.type === "outline" && literalCurve(source.construction.outlines[0]).nodes.map(v => v.p));
         }
         else {
             assert(f.type === "slope" && f.kind === "path");
-            assert.deepEqual(f.line.nodes.map(p => p.h), [0, 2]);
+            assert.deepEqual(literalCurve(f.line).nodes.map(p => p.h), [0, 2]);
             const shape = editor.project.terrain.regions.get(n.id)!.shape;
-            assert(f.line.nodes.every(v => shape.contains(v.p)));
-            if (construction === "free") assert.deepEqual(f.line.nodes.map(v => v.p), [[-19.6, -8], [-8.4, -8]]);
+            assert(literalCurve(f.line).nodes.every(v => shape.contains(v.p)));
+            if (construction === "outline") assert.deepEqual(literalCurve(f.line).nodes.map(v => v.p), [[-19.6, -8], [-8.4, -8]]);
             await editor.switchFunction(n, "slope", "radial");
             const radial = editor.project.design.geoNodes.find(v => v.id === n.id)!.function;
             assert(radial.type === "slope" && radial.kind === "radial");
-            if (construction === "free") assert.deepEqual(radial.center, [-14, -8]);
+            if (construction === "outline") assert.deepEqual(radial.center, [-14, -8]);
             await editor.navigate(false);
         }
         assert.equal(editor.history.index, 1);
@@ -288,8 +289,8 @@ test("Disabled layers match deletion byte for byte and active strips can still u
 test("Curves, handles, tangency, insertion and six-pixel snap use the editable geometry", () => {
     const d = syntheticDesign(), n = d.geoNodes[1], path = geometryPath(n, 0)!, t = generateTerrain(d);
     const near: Point = [path.nodes[0].p[0] + .5, path.nodes[0].p[1] + .5];
-    assert.deepEqual(snapPoint(t, d, near, 5), path.nodes[0].p);
-    assert.deepEqual(snapPoint(t, d, [-16, -14.5], 5), [-16, -14]);
+    assert.deepEqual(snapPoint(t, resolveDesign(d), near, 5), path.nodes[0].p);
+    assert.deepEqual(snapPoint(t, resolveDesign(d), [-16, -14.5], 5), [-16, -14]);
     historyEdit(d, () => setSegment(path, 1, "tangent"));
     assert.equal(segmentType(path, 1), "arc"); assert(Math.abs(path.nodes[1].bulge! - 1) < 1e-6);
     historyEdit(d, () => {
@@ -301,6 +302,7 @@ test("Curves, handles, tangency, insertion and six-pixel snap use the editable g
         setSegment(path, 1, "curve");
     });
     historyEdit(d, () => {
+        setNodeMode(path, 2, "manual");
         moveHandle(path, 2, "out", [-10, -8], false);
     });
     assert.equal(path.nodes[2].mode, "manual"); assert.equal(path.nodes.length, before);
@@ -341,8 +343,8 @@ test("Copying a mountain member preserves its geometry and the targets of existi
 
 test("The arc operation stores the default quarter-turn and an absent bulge leaves a line", () => {
     const d = syntheticDesign(), n = d.geoNodes[0], construction = n.construction;
-    assert(construction.type === "free");
-    const path = construction.paths[0], v = path.nodes[0];
+    assert(construction.type === "outline");
+    const path = literalCurve(construction.outlines[0]), v = path.nodes[0];
     v.bulge = defaultArcBulge;
     const expected = flattenPath(path, .02), control = geoControls(n).find(h => h.role === "arc");
     assert(control);

@@ -23,7 +23,7 @@ export class Project {
             const n = location?.kind === "geo" ? design.geoNodes[location.index!] : undefined;
             const c = n?.construction;
             const ref = c?.type === "strip" ? design.geoNodes.findLast(v => c.of.some(id => id === v.id))?.construction : c;
-            const point: Point = ref?.type === "free" ? ref.paths[0].nodes[0].p : [0, 0];
+            const point: Point = ref?.type === "outline" ? ref.outlines[0].nodes[0].p : [0, 0];
             return { kind: "geo-reference", severity: "error", point, geoNode: n?.id, label: n?.label, message, location };
         });
         return broken.size ? { ...design, geoNodes: design.geoNodes.map(n => broken.has(n.id) ? { ...n, disabled: true as const } : n) } : design;

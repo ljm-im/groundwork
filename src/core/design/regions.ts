@@ -187,15 +187,15 @@ export function nearbyBoundary(shape: RegionShape, p: Point, radius: number, tol
     return trace(shape, tolerance, expand([p[0], p[1], p[0], p[1]], radius + tolerance));
 }
 
-export function makeShape(node: GeoNode<number>, below: Map<string, RegionShape>, tolerance: number): RegionShape {
+export function makeShape(node: GeoNode<number, never>, below: Map<string, RegionShape>, tolerance: number): RegionShape {
     const c = node.construction;
-    if (c.type === "free") {
-        const paths = c.paths.map(p => flattenPath(p, tolerance));
-        const polygons = paths.map(path => ({ points: path.map(s => s.a) }));
+    if (c.type === "outline") {
+        const outlines = c.outlines.map(p => flattenPath(p, tolerance));
+        const polygons = outlines.map(path => ({ points: path.map(s => s.a) }));
         const areas: number[] = [];
         const area = (index: number) => areas[index] ??= polygonArea(polygons[index].points);
         return {
-            boundary: () => paths, box: bounds(polygons.flatMap(p => p.points)),
+            boundary: () => outlines, box: bounds(polygons.flatMap(p => p.points)),
             contains(p) {
                 let inside = false;
                 for (const polygon of polygons) if (insidePolygon(polygon, p)) inside = !inside;
@@ -253,7 +253,7 @@ export function makeShape(node: GeoNode<number>, below: Map<string, RegionShape>
 export function canvasGrid(d: Design, shapes: Map<string, RegionShape>) {
     const boxes = d.geoNodes.filter(n => !n.disabled && functionTable[n.function.type].initial).map(n => {
         const shape = shapes.get(n.id)!;
-        if (n.construction.type === "free") return shape.box;
+        if (n.construction.type === "outline") return shape.box;
         return bounds(shape.boundary().flatMap(path => path.flatMap(s => [s.a, s.b])));
     });
     const { step } = d.grid, low = (x: number) => Math.floor(x / step) * step, high = (x: number) => Math.ceil(x / step) * step;
@@ -334,8 +334,8 @@ function pathCenter(path: ClosedCurve, tolerance: number): Point {
     return [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2];
 }
 
-export function constructionCenter(c: Construction, step: number, grid?: Grid, region?: Region): Point {
-    if (c.type === "free" && c.paths.length === 1) return pathCenter(c.paths[0], step / 8);
+export function constructionCenter(c: Construction<number, never>, step: number, grid?: Grid, region?: Region): Point {
+    if (c.type === "outline" && c.outlines.length === 1) return pathCenter(c.outlines[0], step / 8);
     if (grid && region?.cells.length) {
         const sum: Point = [0, 0];
         for (const k of region.cells) {

@@ -10,9 +10,9 @@ import { withCurveMap } from "./curveMapFixture.ts";
 function scene() {
     const design = syntheticDesign(), outlines = rect(-43, -22, -6, 16);
     for (const [prefix, region] of [["hole", rect(-37, -16, -12, 10)], ["island", rect(-30, -8, -20, 3)]] as const) {
-        const path = region.paths[0];
+        const path = region.outlines[0];
         for (const node of path.nodes) node.id = prefix + node.id;
-        outlines.paths.push(path);
+        outlines.outlines.push(path);
     }
     const ridge = openCurve([{ p: [-43, 25], h: 12 }, { p: [-26, 28], h: 14 }, { p: [-9, 27], h: 7 }]);
     Object.assign(ridge.nodes[1], { mode: "manual", in: [-3, -9 / 17], out: [3, 9 / 17] });
@@ -161,7 +161,7 @@ export async function checkRound31Fix(url: string) {
         await click("#remove-dialog [value=remove]");
         await wait(() => {
             const owner = window.curveMapProbe.editor!.project.design.geoNodes.find(n => n.id === "A")!;
-            return owner.construction.type === "free" && owner.construction.paths.length === 2;
+            return owner.construction.type === "outline" && owner.construction.outlines.length === 2;
         });
         await saved(); await paint();
         assert.equal(geometryPath(page.owner(await authored(), "A"), 2), undefined);

@@ -7,7 +7,7 @@ import { ProjectMap } from "../../src/render/map.ts";
 import { mapColors } from "../../src/render/palette.ts";
 import { geoLabelPoint } from "../../src/render/labelLayout.ts";
 import { type Point } from "../../src/core/design/v5.ts";
-import { layer, rect, syntheticDesign } from "../scenarios.ts";
+import { literalCurve, layer, rect, syntheticDesign } from "../scenarios.ts";
 import { startChromium } from "./chromium.ts";
 import { installPickers } from "./filePickers.ts";
 import { checkAppearance } from "./appearance.ts";
@@ -22,6 +22,7 @@ import { checkSectionPlots } from "./sectionPlots.ts";
 import { checkNumericEditing } from "./numericEditing.ts";
 import { checkPenDrawing } from "./penDrawing.ts";
 import { checkMapOverlays } from "./mapOverlays.ts";
+import { checkCurveZoom, checkSharedCurves } from "./round37Curves.ts";
 import { checkCoarsePreview } from "./coarsePreview.ts";
 
 test("Editor interactions in Chromium", async t => {
@@ -44,6 +45,8 @@ test("Editor interactions in Chromium", async t => {
         await t.test("Pen drawing in Chromium", () => checkPenDrawing(url));
         await t.test("Map overlays in Chromium", () => checkMapOverlays(url));
         await t.test("Coarse numeric drag previews in Chromium", () => checkCoarsePreview(url));
+        await t.test("Curve handles and camera zoom in Chromium", () => checkCurveZoom(url));
+        await t.test("Shared curves and endpoint drawing in Chromium", () => checkSharedCurves(url));
     }
     finally {
         await server.close();
@@ -127,7 +130,7 @@ async function checkEditor(url: string) {
         assert.equal(await text("#properties .property-title h2"), "项目");
         assert.deepEqual(await evaluate(() => [...document.querySelectorAll("#properties h3")].map(h => h.textContent)), ["描述", "地形计算"]);
         await panel("inputs");
-        assert.deepEqual(await evaluate(() => [...document.querySelectorAll("#panel h3")].map(h => h.textContent)), ["输入", "场"]);
+        assert.deepEqual(await evaluate(() => [...document.querySelectorAll("#panel h3")].map(h => h.textContent)), ["输入", "场", "曲线"]);
         assert.deepEqual(await evaluate(() => [document.querySelector<HTMLElement>("[data-select-input]")?.dataset.selectInput,
             document.querySelector<HTMLElement>("[data-select-field]")?.dataset.selectField]), ["seed", "height"]);
         assert(await hasBuiltinMark("[data-select-input=seed]"));
@@ -358,7 +361,7 @@ async function checkEditor(url: string) {
         await saved();
         const slope = parseDesign(await disk(), true).geoNodes.find(n => n.id === "T")?.function;
         assert(slope?.type === "slope" && slope.kind === "path");
-        assert.deepEqual(slope.line.nodes.map(v => v.h), [0, 2]);
+        assert.deepEqual(literalCurve(slope.line).nodes.map(v => v.h), [0, 2]);
 
         console.log("Displayed field, undefined readings, and mark follow");
         await moveMap(.5, .5);
@@ -617,7 +620,7 @@ async function checkEditor(url: string) {
 
         await compareFinish(async () => {
             await tap(a, 1, "right");
-            await click(".context-menu [data-option=add-path]");
+            await click(".context-menu [data-option=add-outline]");
         }, true);
         await undo();
         await terrainTab();
@@ -654,11 +657,10 @@ async function checkEditor(url: string) {
         assert(mountain.type === "mountain" && mountain.ridges.length === 2);
         const [originalMember, copy] = mountain.ridges;
         assert.equal(originalMember.slope, .75);
-        assert.equal(originalMember.widths, undefined);
         assert.equal(await text("#properties [data-parameter$='.ridges.1.slope'] .param-name"), "坡度");
-        const copiedIds = new Set(copy.line.nodes.map(v => v.id));
-        assert(originalMember.line.nodes.every(v => !copiedIds.has(v.id)));
-        assert.deepEqual({ ...copy, line: { ...copy.line, nodes: copy.line.nodes.map((v, i) => ({ ...v, id: originalMember.line.nodes[i].id })) } }, originalMember);
+        const copiedIds = new Set(literalCurve(copy.line).nodes.map(v => v.id));
+        assert(literalCurve(originalMember.line).nodes.every(v => !copiedIds.has(v.id)));
+        assert.deepEqual({ ...copy, line: { ...copy.line, nodes: literalCurve(copy.line).nodes.map((v, i) => ({ ...v, id: literalCurve(originalMember.line).nodes[i].id })) } }, originalMember);
         assert.equal(await evaluate(() => [...document.querySelectorAll("#properties .subitem-toggle")]
             .find(button => button.textContent?.includes("山脊 2"))?.getAttribute("aria-expanded")), "true");
         await undo();
@@ -743,8 +745,8 @@ async function checkEditor(url: string) {
         await browser.mouse("mouseReleased", rimX, rimY);
         await selected(); await idle(); await saved();
         const circle = parseDesign(await disk()).geoNodes.find(n => !project.design.geoNodes.some(original => original.id === n.id));
-        assert(circle?.construction.type === "free");
-        const [circleBoundary] = circle.construction.paths;
+        assert(circle?.construction.type === "outline");
+        const [circleBoundary] = circle.construction.outlines.map(literalCurve);
         assert.equal(circleBoundary.nodes.length, 4);
         await wait(id => document.querySelector<HTMLElement>("[data-geo-node][aria-pressed=true]")?.dataset.geoNode === id, circle.id);
         await click("[data-property-tab=region]");
@@ -784,9 +786,9 @@ async function checkEditor(url: string) {
         await tap(at([-17, -12]), 1, "right");
         await click(".context-menu [data-option=insert-node]"); await idle(); await saved();
         const changed = parseDesign(await disk()).geoNodes.find(n => n.id === "A")!.construction;
-        assert(changed.type === "free" && changed.paths[0].nodes.length === 5);
-        assert(Math.abs(changed.paths[0].nodes[1].p[0] + 17) < .15);
-        assert.equal(changed.paths[0].nodes[1].p[1], -12);
+        assert(changed.type === "outline" && literalCurve(changed.outlines[0]).nodes.length === 5);
+        assert(Math.abs(literalCurve(changed.outlines[0]).nodes[1].p[0] + 17) < .15);
+        assert.equal(literalCurve(changed.outlines[0]).nodes[1].p[1], -12);
         await undo();
 
         await panel("marks"); await chooseTool("标记", "textMark"); await tap(at([-8, 25])); await idle(); await saved(); await selected();

@@ -33,22 +33,18 @@ export interface CurveNode<N = Expression> {
 }
 export interface Curve<N = Expression> { closed: boolean; nodes: CurveNode<N>[] }
 export type ClosedCurve = Curve<never> & { closed: true };
+export interface CurveRef<N = Expression> { ref: string; offset?: Point; h?: Record<string, N> }
+export interface SharedCurve { label: string; curve: Curve<never> }
+export type CurveValue<N = Expression, Ref = CurveRef<N>> = Curve<N> | Ref;
+type ClosedValue<Ref> = ClosedCurve | (Ref & CurveRef<never>);
 export interface Strip<N = Expression> {
     type: "strip";
     of: [string] | [string, string];
     widths: [N, N];
     range?: { from: string; to: string };
 }
-export type Construction<N = Expression> = { type: "free"; paths: ClosedCurve[] } | Strip<N>;
-export interface RidgeNoise<N> { amount: N; wavelength: N }
-export interface Ridge<N> {
-    line: Curve<N>;
-    slope?: N;
-    // Authored v5 ridges with widths keep their original profile and reference addresses.
-    widths?: [N, N];
-    widthNoise?: RidgeNoise<N>;
-    heightNoise?: RidgeNoise<N>;
-}
+export type Construction<N = Expression, Ref = CurveRef<N>> = { type: "outline"; outlines: ClosedValue<Ref>[] } | Strip<N>;
+export interface Ridge<N, Ref = CurveRef<N>> { line: CurveValue<N, Ref>; slope: N }
 export interface Peak<N> { at: { p: Point; h: N }; radius: N; noise: N; scale: N }
 export interface Erosion {
     /** Number of simulated droplets. */
@@ -73,43 +69,44 @@ export interface Erosion {
     radius: number;
 }
 
-export type GeoFunction<N = Expression> = (
+export type GeoFunction<N = Expression, Ref = CurveRef<N>> = (
     { type: "ground"; value: N } |
     { type: "flat"; amount: Expression; feather?: N } |
-    { type: "coast"; shore: ClosedCurve; roughness: Expression; harbor: { center: Point; span: N; radius: N } } |
-    { type: "mountain"; ridges: Ridge<N>[]; peaks: Peak<N>[]; floor?: N; crestRound?: N; footRound?: N; blend?: N } |
+    { type: "coast"; shore: ClosedValue<Ref>; roughness: Expression; harbor: { center: Point; span: N; radius: N } } |
+    { type: "mountain"; ridges: Ridge<N, Ref>[]; peaks: Peak<N>[]; floor?: N; crestRound?: N; footRound?: N; blend?: N } |
     { type: "cliff"; factor: Expression; seaLevel?: N } |
     ({ type: "erosion"; strength?: Expression; floor?: N; spacing?: N } & NumericProperties<Erosion, N>) |
     { type: "islets"; density: Expression; reach: N; threshold?: N; seaLevel?: N } |
-    { type: "slope"; kind: "path"; line: Curve<N>; ease?: boolean } |
+    { type: "slope"; kind: "path"; line: CurveValue<N, Ref>; ease?: boolean } |
     { type: "slope"; kind: "radial"; center: Point; radius: N; value: N; rate: N } |
     { type: "noise"; amplitude: Expression; scale: N; octaves?: N; feather?: N; warp?: N; warpScale?: N; carve?: N } |
     { type: "blend" | "split" } |
     { type: "batter"; grade: N }
 ) & { seed?: N };
-export interface GeoNode<N = Expression> extends MapLabel {
+export interface GeoNode<N = Expression, Ref = CurveRef<N>> extends MapLabel {
     disabled?: true;
     prompt?: string;
     field: string;
-    construction: Construction<N>;
-    function: GeoFunction<N>;
+    construction: Construction<N, Ref>;
+    function: GeoFunction<N, Ref>;
     fill?: string;
     outline?: boolean;
 }
 export interface FieldDeclaration { label: string; unit?: string; precision?: number }
-export interface DesignData<N> {
+export interface DesignData<N, Ref = CurveRef<N>> {
     version: 5;
     prompt?: string;
     grid: { step: number };
     inputs: Record<string, CustomInput<N>>;
     fields: Record<string, FieldDeclaration>;
-    geoNodes: GeoNode<N>[];
+    curves: Record<string, SharedCurve>;
+    geoNodes: GeoNode<N, Ref>[];
     sections: Section[];
     marks: Mark<N>[];
 }
 
 export interface Design extends DesignData<Expression> {}
-type ResolveFunction<F> = F extends GeoFunction<number> ? F & Required<Omit<F, "seed" | "ease">> : never;
-export type ResolvedFunction = ResolveFunction<GeoFunction<number>>;
-export type ResolvedGeoNode = Omit<GeoNode<number>, "function"> & { function: ResolvedFunction };
-export type ResolvedDesign = Omit<DesignData<number>, "geoNodes" | "marks"> & { geoNodes: ResolvedGeoNode[]; marks: Required<Mark<number>>[] };
+type ResolveFunction<F> = F extends GeoFunction<number, never> ? F & Required<Omit<F, "seed" | "ease">> : never;
+export type ResolvedFunction = ResolveFunction<GeoFunction<number, never>>;
+export type ResolvedGeoNode = Omit<GeoNode<number, never>, "function"> & { function: ResolvedFunction };
+export type ResolvedDesign = Omit<DesignData<number, never>, "geoNodes" | "marks"> & { geoNodes: ResolvedGeoNode[]; marks: Required<Mark<number>>[] };

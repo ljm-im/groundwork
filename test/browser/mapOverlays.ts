@@ -139,7 +139,7 @@ export async function checkMapOverlays(url: string) {
 async function checkOverlayPointers(url: string) {
     await withLayeredMap(url, "map-overlays", async ({ cdp, click, d, evaluate, fit, frame, key, openDesign, paint, panel, point, saved, screenshot, wait }) => {
         const overlaySelectors = ["#mode-hint", "#position", ".zoom-tools"];
-        const passThrough = ["#mode-hint", "#position", "#zoom-value"];
+        const passThrough = ["#mode-hint", "#position"];
         const park = async () => {
             await evaluate(() => window.scrollTo(0, 0));
             await paint();
@@ -239,7 +239,10 @@ async function checkOverlayPointers(url: string) {
             await panel("marks"); await click("[aria-label=新建标记]");
             await click(".creation-menu [data-option=scaleMark]");
             await park();
-            await tap(await point("#zoom-value")); await saved(); await paint();
+            await tap(await evaluate(() => {
+                const { left, top } = document.querySelector(".zoom-tools")!.getBoundingClientRect();
+                return [left + 2, top + 2];
+            })); await saved(); await paint();
             const added = (await authored(name)).marks.at(-1)!;
             assert.equal(added.kind, "scale");
             await uncovered(added.id);

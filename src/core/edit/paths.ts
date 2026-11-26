@@ -1,4 +1,5 @@
-import { type ClosedCurve, type Curve, type CurveNode, type GeoNode, type Point } from "../design/v5.ts";
+import { isCurveRef } from "../design/curveReferences.ts";
+import { type ClosedCurve, type Curve, type CurveValue, type Expression, type CurveNode, type GeoNode, type Point } from "../design/v5.ts";
 import { advance, bearing, distance, mixPoint, projection } from "../math/geometry.ts";
 import { arcGeometry, autoHandle, defaultArcBulge, flattenBezier, flattenSegment, handleOffset, hasHandleSide, neighbor, pathBezier,
     pathHandle, segmentType, splitBezier, type Bezier, type Segment, type SegmentType } from "../design/path.ts";
@@ -17,11 +18,22 @@ export function closedPen(nodes: CurveNode<never>[]): ClosedCurve {
     if (nodes.length < 3) throw Error("闭合曲线至少需要三个节点");
     return { closed: true, nodes };
 }
-export function penPath(nodes: CurveNode[], closed: boolean): Curve {
+export function penPath<N extends Expression>(nodes: CurveNode<N>[], closed: boolean): Curve<N> {
     const path = { closed, nodes: closed ? nodes : nodes.map(node => ({ ...node })) };
     if (!closed) cleanHandles(path);
     return path;
 }
+export const isEndpoint = (curve: Curve, index: number) =>
+    !curve.closed && (index === 0 || index === curve.nodes.length - 1);
+
+export function extendCurve(curve: Curve, nodes: CurveNode<never>[], start: number, closed: boolean) {
+    const additions = start === 0 ? nodes.toReversed().map(({ in: incoming, out: outgoing, ...node }) => ({
+        ...node, ...(outgoing && { in: outgoing }), ...(incoming && { out: incoming })
+    })) : nodes;
+    const original = curve.nodes.map(n => ({ ...n }));
+    return penPath(start === 0 ? [...additions, ...original] : [...original, ...additions], closed);
+}
+
 export function shapePath(tool: Exclude<ShapeTool, "pen">, a: Point, b: Point, id: () => string, end?: Point): ClosedCurve {
     const corner = (p: Point): CurveNode<never> => ({ id: id(), p, mode: "corner" });
     const arc = (p: Point, bulge: number): CurveNode<never> => ({ ...corner(p), bulge });
@@ -95,16 +107,11 @@ export function editWholeCurve(path: Curve, action: "auto" | "line") {
 export function moveHandle(path: Curve, i: number, side: Side, target: Point, independent: boolean) {
     if (!hasHandleSide(path, i, side)) return;
     const v = path.nodes[i], other = side === "in" ? "out" : "in";
+    if (v.mode === "auto") setNodeMode(path, i, canSetManual(path, i) ? "manual" : "corner");
     const delta = offset(target, v.p), size = Math.hypot(...delta);
-    if (independent && v.mode === "manual") {
-        v.mode = "corner";
-        v[side] = delta;
-        return;
-    }
-    const current = handleOffset(path, i, other), length = Math.hypot(...(current ?? [0, 0]));
-    v.mode = canSetManual(path, i) ? "manual" : "corner";
-    if (hasHandleSide(path, i, other)) {
-        v[other] = scale(delta, -length / (size || 1));
+    if (v.mode === "manual") {
+        if (independent) v.mode = "corner";
+        else if (size) v[other] = scale(delta, -Math.hypot(...v[other]!) / size);
     }
     v[side] = delta;
 }
@@ -280,28 +287,38 @@ export function nearestSegment(edges: Segment[], at: Point) {
     }
     return best;
 }
-export function translateCurve(path: Curve, delta: Point) {
+export function translateCurve(path: CurveValue, delta: Point) {
+    if (isCurveRef(path)) {
+        const [x = 0, y = 0] = path.offset ?? [];
+        const moved: Point = [x + delta[0], y + delta[1]];
+        if (moved.some(Boolean)) path.offset = moved;
+        else delete path.offset;
+        return;
+    }
     for (const v of path.nodes) {
         v.p[0] += delta[0];
         v.p[1] += delta[1];
     }
 }
-export function translateGeo(n: GeoNode, delta: Point) {
+export function translateGeo(n: GeoNode, delta: Point, inherited?: ReadonlySet<CurveValue>) {
     const move = (p: Point) => {
         p[0] += delta[0]; p[1] += delta[1];
     };
-    if (n.construction.type === "free") for (const path of n.construction.paths) translateCurve(path, delta);
+    const moveCurve = (curve: CurveValue) => {
+        if (!inherited?.has(curve)) translateCurve(curve, delta);
+    };
+    if (n.construction.type === "outline") for (const outline of n.construction.outlines) moveCurve(outline);
     const f = n.function;
     if (f.type === "coast") {
-        translateCurve(f.shore, delta);
+        moveCurve(f.shore);
         move(f.harbor.center);
     }
     if (f.type === "mountain") {
-        for (const ridge of f.ridges) translateCurve(ridge.line, delta);
+        for (const ridge of f.ridges) moveCurve(ridge.line);
         for (const peak of f.peaks) move(peak.at.p);
     }
     if (f.type === "slope") {
         if (f.kind === "radial") move(f.center);
-        else translateCurve(f.line, delta);
+        else moveCurve(f.line);
     }
 }

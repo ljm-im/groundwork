@@ -44,7 +44,7 @@ test("A local mountain preserves the underlying height differences along its bou
     const d = design([g, slope]), before = evaluateStack(d).fields.height.values;
     d.geoNodes.push(layer("M", rect(-12, -12, 12, 12), { type: "mountain",
         ridges: [{ line: openCurve([{ p: [-5, 0], h: 12 }, { p: [5, 0], h: 10 }]),
-            widths: [2, 3], widthNoise: { amount: 10, wavelength: 2 }, heightNoise: { amount: 10, wavelength: 4 } }],
+            slope: 3 }],
         peaks: [{ at: { p: [0, 3], h: 16 }, radius: 2, noise: .1, scale: 7 }] }));
     const t = evaluateStack(parseDesign(d)), after = t.fields.height.values, region = t.regions.get("M")!;
     assert(after[t.grid.index(0, 3)] > 12 && after[t.grid.index(-5, 0)] > 8);
@@ -86,7 +86,7 @@ test("Noise fades to zero at the boundary and reaches its full FBM amplitude ins
 });
 
 test("A field-bound noise amplitude leaves a zero disk intact and skips undefined input", () => {
-    const g = base(), disk = layer("Z", { type: "free", paths: [circle(6)] }, { type: "flat", amount: -4 }, "A");
+    const g = base(), disk = layer("Z", { type: "outline", outlines: [circle(6)] }, { type: "flat", amount: -4 }, "A");
     const n = layer("N", g.construction, { type: "noise", amplitude: "{field:A} * 0.5", scale: 7, octaves: 2 });
     const a = layer("A", g.construction, { type: "ground", value: 4 }, "A");
     const d = design([g, a, disk, n]); d.fields.A = { label: "A" };
@@ -111,11 +111,11 @@ test("Adaptive auto cubic vertices lie on the v4 Catmull-Rom curve", () => {
 });
 
 test("Bulge arcs cover the disk area and even-odd paths cut a hole", () => {
-    const g = base(); g.construction = { type: "free", paths: [circle(20)] };
+    const g = base(); g.construction = { type: "outline", outlines: [circle(20)] };
     const d = design([g], .5), full = evaluateStack(d);
     const area = full.fields.height.defined.reduce((a, b) => a + b, 0) * d.grid.step ** 2;
     assert(Math.abs(area / (Math.PI * 400) - 1) < .01);
-    g.construction.paths.push({ ...circle(7), nodes: circle(7).nodes.map(v => ({ ...v, id: "hole" + v.id })) });
+    g.construction.outlines.push({ ...circle(7), nodes: circle(7).nodes.map(v => ({ ...v, id: "hole" + v.id })) });
     const hole = evaluateStack(d);
     assert.equal(hole.fields.height.defined[hole.grid.index(0, 0)], 0);
     assert.equal(hole.fields.height.defined[hole.grid.index(12, 0)], 1);
@@ -146,7 +146,7 @@ test("Shared strips match touching and overlapping rectangles and ranges survive
     assert.deepEqual(mask(), before);
     const single = { type: "strip" as const, of: ["B"] as [string], widths: [1, 2] as Point, range: { from: "3", to: "0" } };
     band.construction = single;
-    const selected = mask(), p = right.paths[0];
+    const selected = mask(), p = right.outlines[0];
     delete (band.construction as { range?: unknown }).range;
     assert(mask().reduce((a, b) => a + b) > selected.reduce((a, b) => a + b));
     single.range = { from: "3", to: "0" };
@@ -207,9 +207,9 @@ test("Height diagnostics count uncovered cardinal pairs once and ignore non-heig
 
 test("Canvas and ordinary writes respect initializer order and independent holes", () => {
     const g = base(), c = rect(-50, -50, 50, 50);
-    const hole = rect(2, 2, 8, 8).paths[0];
-    assert(g.construction.type === "free");
-    g.construction.paths.push({ ...hole, nodes: hole.nodes.map(v => ({ ...v, id: "h" + v.id })) });
+    const hole = rect(2, 2, 8, 8).outlines[0];
+    assert(g.construction.type === "outline");
+    g.construction.outlines.push({ ...hole, nodes: hole.nodes.map(v => ({ ...v, id: "h" + v.id })) });
     const d = design([layer("early", c, { type: "flat", amount: 19 }), layer("color", c, { type: "flat", amount: 2, feather: 0 }, "f"), g,
         layer("T", rect(-50, -2, 2, 2), { type: "flat", amount: 10 })]);
     d.fields.f = { label: "F" };
@@ -228,7 +228,7 @@ test("Canvas and ordinary writes respect initializer order and independent holes
 test("A zero strength disk protects every cell of an eroded slope", () => {
     const all = rect(-24, -24, 24, 24);
     const d = design([base(), layer("S", all, { type: "slope", kind: "radial", center: [0, 0], value: 16, radius: 0, rate: -.3 }),
-        layer("P", { type: "free", paths: [circle(6)] }, { type: "flat", amount: -1 }, "f")]);
+        layer("P", { type: "outline", outlines: [circle(6)] }, { type: "flat", amount: -1 }, "f")]);
     d.fields.f = { label: "F" };
     d.geoNodes.unshift(layer("F", all, { type: "ground", value: 1 }, "f"));
     const before = evaluateStack(d);
@@ -252,34 +252,6 @@ test("All functions operate on a design with only the built-in field", () => {
     assert.deepEqual(Object.keys(a.terrain.fields), ["height"]);
 });
 
-test("Ridge variation follows distance, wavelength and seed independently of collinear vertices", () => {
-    const area = rect(-2, -8, 131, 8), line = openCurve([{ p: [.5, -.5], h: 10 }, { p: [128.5, -.5], h: 10 }]);
-    const ridge = { line, widths: [4, 4] as [number, number], widthNoise: { amount: 0, wavelength: 8 }, heightNoise: { amount: 0, wavelength: 8 } };
-    const mountain = { type: "mountain" as const, ridges: [ridge], peaks: [], seed: 12 };
-    const d = design([layer("A", area, { type: "ground", value: 0 }), layer("B", area, mountain)]);
-    const samples = (y: number) => {
-        const t = evaluateStack(d);
-        return Array.from({ length: 129 }, (_, x) => t.fields.height.values[t.grid.index(x, y)]);
-    };
-    for (const [key, y] of [["heightNoise", 0], ["widthNoise", 3]] as const) {
-        const straight = samples(y);
-        assert.equal(new Set(straight).size, 1);
-        ridge[key].amount = 25;
-        const short = samples(y);
-        assert(new Set(short).size > 8);
-        if (y === 0) assert(short.every(h => h >= 7.5 && h <= 12.5));
-        ridge[key].wavelength *= 2;
-        const long = samples(y);
-        // The entire waveform, including every zero crossing, stretches twofold.
-        assert.deepEqual(long.filter((_, i) => i % 2 === 0), short.slice(0, 65));
-        line.nodes.splice(1, 0, { id: "extra", p: [37.5, -.5], h: 10, mode: "corner" });
-        assert.deepEqual(samples(y), long);
-        mountain.seed++;
-        assert.notDeepEqual(samples(y), long);
-        line.nodes.splice(1, 1); ridge[key].amount = 0;
-    }
-});
-
 test("Slope ridges round the crown and foot, interpolate heights and merge at the saddle", () => {
     const area = rect(-50, -50, 50, 50), line = openCurve([
         { p: [-20, 0], h: 24 }, { p: [-10, 0] }, { p: [0, 0], h: 28 }, { p: [20, 0], h: 29 }
@@ -289,7 +261,6 @@ test("Slope ridges round the crown and foot, interpolate heights and merge at th
     const project = new Project(parseDesign(d)), f = project.resolved.geoNodes[1].function;
     assert(f.type === "mountain");
     assert.equal(f.ridges[0].line.nodes[1].h, undefined);
-    assert.equal(f.ridges[0].widths, undefined);
     const height = mountainProfile(f, .0625, 0);
     assert.equal(height(-10, 0, 0), 26);
     assert.equal(height(0, 0, 0), 28);

@@ -13,7 +13,7 @@
     let { editor }: { editor: session.Editor } = $props();
     let menu = $derived(editor.menu);
     let columns = $derived(menu?.issue ? issueMenuColumns(menu.issue) :
-        menu && editor.selection ? contextMenuColumns(editor.project.design, editor.selection, !!menu.map, menu.control) : []);
+        menu && editor.selection ? contextMenuColumns(editor.project.resolved, editor.selection, !!menu.map, menu.control) : []);
     function choose(id: string) {
         const action = columns.flat().flatMap(group => group.items).find(item => item.id === id);
         editor.menu = null;

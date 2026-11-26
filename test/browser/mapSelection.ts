@@ -74,7 +74,7 @@ export async function checkMapSelection(url: string) {
         const visible = await frame();
         await show(region); assert.deepEqual((await frame()).center, visible.center); assert.equal((await frame()).scale, visible.scale);
         await tap(await at([-26, 10]), 0, "right");
-        assert(await text(".context-menu [data-option=add-path]"));
+        assert(await text(".context-menu [data-option=add-outline]"));
         assert.equal(await text(".context-menu [data-option=show-in-view]"), "");
         await key("Escape");
         await panel("marks");
@@ -152,7 +152,7 @@ export async function checkMapSelection(url: string) {
         assert.equal(await text(".geometry-box[aria-label=山脊线][aria-pressed=true]"), "曲线（8 个节点）");
         await tap([30, 37]);
         assert.equal((await frame()).selection?.id, "M");
-        assert.deepEqual((await frame()).geometry, { kind: "path", index: 0 });
+        assert.deepEqual((await frame()).geometry, { kind: "outline", index: 0 });
         assert(await evaluate(() => !!document.querySelector("[data-property-tab=region][aria-pressed=true]") &&
             !!document.querySelector("[data-outline] [aria-current=true]")));
         assert.equal(await evaluate(() => {

@@ -34,7 +34,7 @@
         {#if editor.project}
             {#key inspected}
                 {#if editor.selection?.kind === "geoNode"}<GeoProperties {editor} />
-                {:else if editor.selection?.kind === "input" || editor.selection?.kind === "field"}<Declarations {editor} properties />
+                {:else if editor.selection?.kind === "input" || editor.selection?.kind === "field" || editor.selection?.kind === "curve"}<Declarations {editor} properties />
                 {:else if editor.selection?.kind === "mark"}<Marks {editor} properties />
                 {:else if editor.selection?.kind === "section"}<SectionProperties {editor} />
                 {:else}<Terrain {editor} />{/if}

@@ -1,7 +1,7 @@
 
 import { jsonPath, type Address } from "./address.ts";
 
-const collections = { geo: "geoNodes", input: "inputs", field: "fields", mark: "marks", section: "sections" } as const;
+const collections = { geo: "geoNodes", input: "inputs", field: "fields", curve: "curves", mark: "marks", section: "sections" } as const;
 export type Location = { kind: keyof typeof collections; id: string; index?: number; path: Address } | { kind: "project"; path: Address };
 export type DesignProblem = { message: string; location?: Location };
 
@@ -14,10 +14,6 @@ export function problemText({ message, location }: DesignProblem) {
     const root = location.kind === "project" ? [] : [collections[location.kind], location.index ?? location.id];
     const path = jsonPath([...root, ...location.path]);
     return path ? path + " " + message : message;
-}
-
-export function rejectRetired(value: object, names: string[], at: Location = { kind: "project", path: [] }) {
-    for (const name of names) check(!Object.hasOwn(value, name), "已从 v5 移除", { ...at, path: [...at.path, name] });
 }
 
 export class DesignError extends Error {

@@ -40,25 +40,20 @@ test("Geo references report their location and reject invalid field writers", ()
     assert.throws(() => parseDesign(d), /amount.*找不到自定义输入/);
     n.function = { type: "flat", amount: 1 }; n.construction = { type: "strip", of: ["N"], widths: [1, 1] };
     assert.throws(() => parseDesign(d), /of.*找不到下方/);
-    n.construction = p; p.paths.push(structuredClone(p.paths[0]));
-    assert.throws(() => parseDesign(d), /nodes\[0\].id 重复/);
-    p.paths.pop(); n.id = d.geoNodes[0].id;
+    n.construction = p;
+    p.outlines[0].nodes.push(structuredClone(p.outlines[0].nodes[0]));
+    assert.throws(() => parseDesign(d), /nodes\[4\].id 重复/);
+    p.outlines[0].nodes.pop(); n.id = d.geoNodes[0].id;
     assert.throws(() => parseDesign(d), /geoNodes\[2\].id/);
 });
 
-test("Noise validates its inputs and rejects the retired inline noise parameter", () => {
+test("Noise validates its inputs", () => {
     const d = syntheticDesign(), node = d.geoNodes[1];
     const fn = { type: "noise" as const, amplitude: 2, scale: 8 };
     for (const [key, value] of [["scale", 0], ["scale", Infinity], ["octaves", 0], ["octaves", 1.5], ["feather", -1],
         ["amplitude", "{field:missing}"]] as const) {
         node.function = { ...fn, [key]: value };
         assert.throws(() => parseDesign(d), error => error instanceof Error && error.message.includes("geoNodes[1].function." + key));
-    }
-    for (const surface of [{ type: "ground", value: 1 }, { type: "flat", amount: 1 },
-        { type: "slope", kind: "radial", value: 1, center: [0, 0], radius: 2, rate: .1 },
-        { type: "slope", kind: "path", line: openCurve([{ p: [0, 0], h: 1 }, { p: [2, 0], h: 2 }]) }]) {
-        Object.assign(node, { function: { ...surface, noise: { amplitude: 1 } } });
-        assert.throws(() => parseDesign(d), /geoNodes\[1\]\.function\.noise.*未知字段/);
     }
 });
 
@@ -69,7 +64,6 @@ test("Removing a referenced custom input lists every layer and mark location", (
     d.geoNodes.push(layer("C", rect(2, 2, 5, 5), { type: "flat", amount: "{input:A}", feather: 0 }));
     assert.throws(() => parseDesign(d), error => error instanceof Error &&
         ["geoNodes[1].function.amount", "geoNodes[2].function.amount", "marks[0].elevation"].every(p => error.message.includes(p)));
-    assert.throws(() => parseDesign({ ...syntheticDesign(), zones: [] }), /zones.*v5/);
 });
 
 test("Supported owners preserve optional prompts, whitespace and empty prompt omission", () => {
@@ -86,27 +80,10 @@ test("Supported owners preserve optional prompts, whitespace and empty prompt om
     assert.equal(serializeDesign(parseDesign(d)), before);
 });
 
-test("Retired input, label and increment spellings fail at their source", () => {
+test("Expressions reject unsupported reference namespaces", () => {
     const d = syntheticDesign();
-    d.sections.push({ id: "S", label: "S", points: [[0, 0], [1, 1]] });
-    d.marks.push({ id: "M", kind: "scale", label: "M", point: [1, 1], follow: "screen" });
-    assert.throws(() => parseDesign({ ...d, variables: {} }), /variables.*移除/);
-    assert.throws(() => parseDesign({ ...d, labels: [] }), /labels.*移除/);
-    assert.throws(() => parseDesign({ ...d, inputs: { A: { value: "{var:A}" } } }), /inputs.A.value.*无法识别/);
-    assert.throws(() => parseDesign({ ...d, geoNodes: [d.geoNodes[0], { ...d.geoNodes[1], function: { type: "flat", value: 2 } }] }), /function.value.*移除/);
-    for (const key of ["geoNodes", "sections", "marks"] as const) {
-        const invalid = structuredClone(d);
-        Object.assign(invalid[key][0], { name: "A" });
-        assert.throws(() => parseDesign(invalid), new RegExp(key + "\\[0\\]\\.name.*移除"));
-    }
-
-    for (const key of ["buildings", "nodes", "edges", "roadClasses", "routing", "vegetation"])
-        assert.throws(() => parseDesign({ ...d, [key]: [] }), new RegExp(key + ".*移除"));
-    for (const key of ["building", "offset", "spot", "minZoom", "titleOnly"])
-        assert.throws(() => parseDesign({ ...d, marks: [{ id: "M", label: "M", kind: "text", point: [1, 2], [key]: null }] }),
-            new RegExp("marks\\[0\\]\\." + key + ".*移除"));
-    for (const kind of ["building", "edge", "node"])
-        assert.throws(() => parseDesign({ ...d, inputs: { A: { value: "{" + kind + ":A.value}" } } }), /inputs.A.value.*未知的变量/);
+    for (const value of ["{var:A}", "{building:A.value}", "{edge:A.value}", "{node:A.value}"])
+        assert.throws(() => parseDesign({ ...d, inputs: { A: { value } } }), /inputs.A.value.*未知的变量/);
 });
 
 test("Labels omit their defaults and marks round-trip with expressions and anchors", () => {
@@ -192,15 +169,6 @@ test("Built-in seed, ranges and harbors materialize on read and omit their defau
     assert.throws(() => parseDesign({ ...raw, inputs: { A: { range: null, value: 1 } } }), /inputs.A/);
 });
 
-test("Section marks are rejected even when empty", () => {
-    const d = newDesign();
-    const s = { id: "A", label: "A", points: [[0, 0], [1, 1]] as [[number, number], [number, number]], marks: [] as unknown[] };
-    d.sections.push(s);
-    assert.throws(() => parseDesign(d), /sections\[0\].marks.*移除/);
-    s.marks.push([.5, "B"]);
-    assert.throws(() => parseDesign(d), /sections\[0\].marks.*移除/);
-});
-
 test("Only registered function IDs count as built-in", () => {
     assert(isBuiltinFunction("ground"));
     assert(!isBuiltinFunction("A"));
@@ -214,7 +182,7 @@ test("Built-in height is hydrated and reserved declaration metadata is protected
     const parsed = parseDesign(input);
     assert.deepEqual(parsed.fields.height, { label: "高度", unit: "m" });
     assert.equal(parsed.geoNodes[0].field, "height");
-    for (const [key, value] of [["label", "A"], ["unit", "s"], ["unit", undefined], ["default", 0]] as const) {
+    for (const [key, value] of [["label", "A"], ["unit", "s"], ["unit", undefined]] as const) {
         const fields = { height: { label: "高度", unit: "m", [key]: value } };
         assert.throws(() => parseDesign({ ...d, fields }), new RegExp("fields.height." + key));
     }

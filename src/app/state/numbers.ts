@@ -18,7 +18,8 @@ export function numberPreviewFactor(width: number, height: number) {
 }
 
 export type Range = [number, number, number];
-export function numericText(text: string, literal: boolean) {
+export function numericText(text: string, literal: boolean, unit = "") {
+    if (literal && unit && text.trimEnd().endsWith(unit)) text = text.trimEnd().slice(0, -unit.length);
     const trimmed = text.trim().replaceAll("×", "*").replaceAll("÷", "/").replaceAll("−", "-");
     if (literalPattern.test(trimmed) && Number.isFinite(Number(trimmed))) return Number(trimmed);
     if (literal) throw Error("这里只能输入一个数");
@@ -253,4 +254,9 @@ export function numericCaret(input: HTMLElement) {
     return { destroy() {
         resize.disconnect(); controller.abort();
     } };
+}
+
+export const zoomPercentRange: Range = [5, 3000, 1];
+export function validateZoom(value: number) {
+    if (!Number.isFinite(value) || value < zoomPercentRange[0] || value > zoomPercentRange[1]) throw Error("请输入 5% 到 3000% 之间的数字");
 }

@@ -5,13 +5,13 @@ import { resolveDesign } from "../src/core/design/parameters.ts";
 import { DesignError } from "../src/core/design/problems.ts";
 import { autoHandle, flattenPath, pathBezier, segmentType, splitBezier, type Bezier } from "../src/core/design/path.ts";
 import { numericProfile } from "../src/core/design/polyline.ts";
-import { type Curve, type Point } from "../src/core/design/v5.ts";
-import { defaultFunction, pathsOf } from "../src/core/edit/geoNodes.ts";
+import { type ClosedCurve, type Curve, type Point } from "../src/core/design/v5.ts";
+import { defaultFunction, curvesOf } from "../src/core/edit/geoNodes.ts";
 import { copyGeometryItem, insertCurveNode, removeCurveNode, removeCurveSegment } from "../src/core/edit/geoControls.ts";
 import { arcHandle, editWholeCurve, insertPathNode, moveHandle, penNode, penPath, removePathSegment, segmentRemovalIndex,
     setNodeMode, setSegment } from "../src/core/edit/paths.ts";
 import { distance, mixPoint, spline, stations } from "../src/core/math/geometry.ts";
-import { openCurve, syntheticDesign } from "./scenarios.ts";
+import { literalCurve, openCurve, syntheticDesign } from "./scenarios.ts";
 
 const at = (curve: Bezier, t: number) => splitBezier(curve, t)[0][3];
 const points: Point[] = [[1, 2], [5, 8], [10, 0], [14, 4], [22, 1]];
@@ -145,15 +145,15 @@ test("Insertion keeps automatic and mixed endpoints and splits arcs without hand
 
 test("Closed segment removal uses the length midpoint and keeps the types of the neighboring segments", () => {
     const d = syntheticDesign(), owner = d.geoNodes[1];
-    assert(owner.construction.type === "free");
-    const [path] = owner.construction.paths;
+    assert(owner.construction.type === "outline");
+    const path = literalCurve(owner.construction.outlines[0]);
     const [a, b, c, last] = path.nodes;
     assert.deepEqual(removePathSegment(path, 0), { id: a.id, p: [-14, -14], mode: "corner" });
     assert.deepEqual(path.nodes.map(n => n.id), [a.id, c.id, last.id]);
     assert.deepEqual(path.nodes.map((_, i) => segmentType(path, i)), ["line", "line", "line"]);
     const reopened = parseDesign(serializeDesign(d)).geoNodes[1].construction;
-    assert(reopened.type === "free");
-    assert.deepEqual(reopened.paths[0], path);
+    assert(reopened.type === "outline");
+    assert.deepEqual(reopened.outlines[0], path);
     assert.equal(removePathSegment(path, 0), undefined);
     setSegment(path, 0, "curve");
     assert.equal(segmentType(path, 0), "curve");
@@ -223,16 +223,6 @@ test("Merged endpoints share insertion's mode rule and keep the outside handles"
     assert.equal(withArc.nodes[0].bulge, .5);
 });
 
-test("Legacy drafts with retired automatic handle switches are rejected at the stored field", () => {
-    for (const key of ["autoIn", "autoOut"]) {
-        const d = syntheticDesign(), construction = d.geoNodes[1].construction;
-        assert(construction.type === "free");
-        const path = construction.paths[0];
-        Object.assign(path.nodes[1], { mode: "auto", [key]: false });
-        assert.throws(() => parseDesign(d), { message: "geoNodes[1].construction.paths[0].nodes[1]." + key + " 已从 v5 移除" });
-    }
-});
-
 test("Only the two end segments of an open path can be removed above its node limit", () => {
     const original = line("auto");
     setNodeMode(original, 1, "manual");
@@ -300,24 +290,47 @@ test("The open pen and handle drags only store usable handles", () => {
         { id: "B", p: [5, 4], mode: "manual", out: [1, -2], in: [-1, 2] },
         { id: "C", p: [10, 0], mode: "corner", in: [-2, 1] }
     ]);
-    setNodeMode(path, 1, "auto");
-    const regular = structuredClone(path);
-    moveHandle(regular, 1, "out", [6, 2], false);
-    moveHandle(path, 1, "out", [6, 2], true);
-    assert.deepEqual(path, regular);
-    assert.equal(path.nodes[1].mode, "manual");
-    const incoming = path.nodes[1].in;
-    moveHandle(path, 1, "out", [7, 1], true);
-    assert.deepEqual(path.nodes[1].in, incoming);
-    assert.equal(path.nodes[1].mode, "corner");
-    const corner = structuredClone(path);
-    moveHandle(corner, 1, "out", [8, 1], true);
-    moveHandle(path, 1, "out", [8, 1], false);
-    assert.deepEqual(path, corner);
-    assert.equal(path.nodes[1].mode, "manual");
+
     moveHandle(path, 0, "out", [3, 1], false);
     assert.equal(path.nodes[0].mode, "corner");
     assert(!Object.hasOwn(path.nodes[0], "in"));
+});
+
+for (const mode of ["corner", "auto", "manual"] as const) for (const alt of [false, true]) {
+    test("Dragging a " + mode + " handle with Alt=" + alt + " follows its original node type", () => {
+        const path = line(), pivot = path.nodes[1];
+        Object.assign(pivot, { in: [-2, 1], out: [2, -1] });
+        setNodeMode(path, 1, mode);
+        const frozen = structuredClone(path);
+        if (mode === "auto") setNodeMode(frozen, 1, "manual");
+        const other = frozen.nodes[1].in!, delta: Point = [4, 3];
+        moveHandle(path, 1, "out", [pivot.p[0] + delta[0], pivot.p[1] + delta[1]], alt);
+        assert.deepEqual(pivot.out, delta);
+        if (mode === "corner" || alt) {
+            assert.equal(pivot.mode, "corner");
+            assert.deepEqual(pivot.in, other);
+        }
+        else {
+            assert.equal(pivot.mode, "manual");
+            const length = Math.hypot(...other);
+            assert(distance(pivot.in!, [-length * .8, -length * .6]) < 1e-10);
+        }
+    });
+}
+
+test("An Alt split survives the next drag, and auto at an arc can only become a corner", () => {
+    const path = line("auto"), v = path.nodes[1];
+    moveHandle(path, 1, "out", [8, 13], true);
+    const other = v.in;
+    moveHandle(path, 1, "out", [8, 4], false);
+    assert.equal(v.mode, "corner");
+    assert.deepEqual(v.in, other);
+    path.nodes[0].bulge = .5;
+    setNodeMode(path, 1, "auto");
+    moveHandle(path, 1, "out", [10, 6], false);
+    assert.equal(v.mode, "corner");
+    assert.equal(v.in, undefined);
+    assert.deepEqual(v.out, [5, -2]);
 });
 
 test("Whole-curve operations preserve nodes and report when no edit is needed", () => {
@@ -346,9 +359,6 @@ test("Whole-curve operations preserve nodes and report when no edit is needed", 
 
 type Invalid = [string, string, (curve: Curve) => void];
 const invalid: Invalid[] = [
-    ["points", "已从 v5 移除", c => Object.assign(c, { points: [] })],
-    ["smooth", "已从 v5 移除", c => Object.assign(c, { smooth: false })],
-    ["nodes[0].next", "已从 v5 移除", c => Object.assign(c.nodes[0], { next: "line" })],
     ["nodes", "曲线至少需要两个节点", c => c.nodes.splice(1)],
     ["nodes", "闭合曲线至少需要三个节点", c => {
         c.closed = true;
@@ -377,7 +387,7 @@ const invalid: Invalid[] = [
     ["nodes[1].in", "自动平滑节点不存储控制柄", c => Object.assign(c.nodes[1], { mode: "auto", in: [-2, -1] })],
     ["nodes[1].out", "自动平滑节点不存储控制柄", c => Object.assign(c.nodes[1], { mode: "auto", out: [2, 1] })]
 ];
-test("Curve validation reports the precise field for retired, missing and unused data", () => {
+test("Curve validation reports the precise field for missing and invalid data", () => {
     for (const [path, message, change] of invalid) {
         const d = syntheticDesign(), curve = line();
         d.geoNodes[1].function = { type: "slope", kind: "path", line: curve };
@@ -385,10 +395,10 @@ test("Curve validation reports the precise field for retired, missing and unused
         assert.throws(() => parseDesign(d), { message: "geoNodes[1].function.line." + path + " " + message });
     }
     const d = syntheticDesign(), n = d.geoNodes[1];
-    assert(n.construction.type === "free");
-    const path = n.construction.paths[0];
+    assert(n.construction.type === "outline");
+    const path = literalCurve<ClosedCurve>(n.construction.outlines[0]);
     Object.assign(path.nodes[0], { h: 9 });
-    assert.throws(() => parseDesign(d), { message: "geoNodes[1].construction.paths[0].nodes[0].h 这里的节点不能有高度" });
+    assert.throws(() => parseDesign(d), { message: "geoNodes[1].construction.outlines[0].nodes[0].h 这里的节点不能有高度" });
     delete path.nodes[0].h;
     const shore = structuredClone(path);
     shore.nodes.forEach(v => v.id += "-shore");
@@ -401,13 +411,13 @@ test("Curve node IDs and positional height references survive insertion, removal
     const d = syntheticDesign(), n = d.geoNodes[1];
     const ridge = openCurve([{ p: [-20, -7], h: 2 }, { p: [-15, -8], h: 3 }, { p: [-10, -9], h: 5 }]);
     const f = defaultFunction("mountain");
-    assert(f.type === "mountain" && n.construction.type === "free");
+    assert(f.type === "mountain" && n.construction.type === "outline");
     n.function = f;
-    f.ridges.push({ line: ridge, widths: [3, 3], widthNoise: { amount: 0, wavelength: 20 }, heightNoise: { amount: 0, wavelength: 20 } });
+    f.ridges.push({ line: ridge, slope: 2 });
     const id = ridge.nodes[0].id;
-    ridge.nodes[0].id = n.construction.paths[0].nodes[0].id;
+    ridge.nodes[0].id = ridge.nodes[1].id;
     assert.throws(() => parseDesign(d), error => error instanceof DesignError &&
-        error.problems[0].location?.path.join(".") === "function.ridges.0.line.nodes.0.id");
+        error.problems[0].location?.path.join(".") === "function.ridges.0.line.nodes.1.id");
     ridge.nodes[0].id = id;
     ridge.closed = true;
     assert.doesNotThrow(() => parseDesign(d));
@@ -418,7 +428,7 @@ test("Curve node IDs and positional height references survive insertion, removal
     removeCurveNode(d, n, { role: "vertex", path: -1, index: 1, point: added.p });
     assert.equal(n.function.floor, "{geo:T.ridges.0.line.nodes.2.h}");
     copyGeometryItem(d, n, ["ridges"], 0);
-    const ids = pathsOf(n).flatMap(path => path.nodes.map(v => v.id));
+    const ids = curvesOf(n).flatMap(path => literalCurve(path).nodes.map(v => v.id));
     assert.equal(new Set(ids).size, ids.length);
     assert.doesNotThrow(() => parseDesign(d));
 });

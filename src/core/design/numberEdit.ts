@@ -87,8 +87,8 @@ export function numberEdits(design: Design, resolved: ResolvedDesign) {
         }
         return {
             address, value,
-            resolved: [...values].filter(([s, result]) => result !== readAt(resolved, s.path))
-                .map(([s, value]) => ({ address: s.path, value }))
+            resolved: [...values].filter(([s, result]) => result !== readAt(resolved, s.resolvedPath))
+                .map(([s, value]) => ({ address: s.resolvedPath, value }))
         };
     }
 

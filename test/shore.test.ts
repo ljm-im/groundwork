@@ -93,7 +93,7 @@ test("Cropped coast, cliff and islets match the full-canvas stack bit for bit", 
     for (const [i, [x, y]] of islands.entries()) {
         const region = rect(x - 14, y - 14, x + 14, y + 14);
         const inner = rect(x - 8, y - 8, x + 8, y + 8);
-        const path = inner.paths[0], shore = { ...path, nodes: path.nodes.map(node => ({ ...node, id: "shore-" + node.id })) };
+        const path = inner.outlines[0], shore = { ...path, nodes: path.nodes.map(node => ({ ...node, id: "shore-" + node.id })) };
         design.geoNodes.push(
             layer("G" + i, inner, { type: "ground", value: 5 + i }),
             layer("N" + i, rect(x - 13, y - 13, x - 3, y + 13), { type: "ground", value: 0 }, "B"),

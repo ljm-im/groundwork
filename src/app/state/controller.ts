@@ -3,9 +3,8 @@ import { commitFocusedInput, isEditableText } from "./pendingInput.ts";
 import { defaultFollow } from "../../core/design/v5.ts";
 import { distance } from "../../core/math/geometry.ts";
 import { moveHandle, sectionHandlePoint } from "../../core/edit/controls.ts";
-import { editControl, geometryPath, outlineParameterGeometry } from "../../core/edit/geoControls.ts";
-import { setNodeMode } from "../../core/edit/paths.ts";
-import { doubleClickTools, draftPointer, geoAt, snapPoint, updatePreview } from "./geoTools.ts";
+import { commitControl, editControl, followingCurves, outlineParameterGeometry } from "../../core/edit/geoControls.ts";
+import { doubleClickTools, draftPointer, snapPoint, updatePreview } from "./geoTools.ts";
 import { type GeoDraft } from "../../core/edit/types.ts";
 import { nextMapHit, type MapHit, type MapView } from "../../render/map.ts";
 import { errorText, type Issue, type Point } from "../types.ts";
@@ -33,22 +32,24 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
     canvas.addEventListener("wheel", ev => {
         ev.preventDefault();
         if (!editor.project || pinchScale) return;
+        const horizontal = ev.shiftKey && !ev.deltaY && !!ev.deltaX;
+        const deltaY = horizontal ? ev.deltaX : ev.deltaY, speed = ev.shiftKey ? .25 : 1;
         if (ev.ctrlKey || ev.metaKey) {
-            map.zoomAt(Math.exp(-Math.max(-100, Math.min(100, ev.deltaY)) * .012), ...localPoint(ev));
+            map.zoomAt(Math.exp(-Math.max(-100, Math.min(100, deltaY)) * .012 * speed), ...localPoint(ev));
             lastWheel = -Infinity;
             return;
         }
-        const y = Math.abs(ev.deltaY);
-        if (ev.deltaX) wheelMode = "pan";
-        else if (ev.timeStamp - lastWheel > 150) {
+        const y = Math.abs(deltaY);
+        if (ev.deltaX && !horizontal) wheelMode = "pan";
+        else if (horizontal || ev.timeStamp - lastWheel > 150) {
             const ticks = y > 0 && (y % 100 === 0 || y % 120 === 0 ||
         ((ev as WheelEvent & { wheelDeltaY?: number }).wheelDeltaY && Math.abs((ev as WheelEvent & { wheelDeltaY: number }).wheelDeltaY) % 120 === 0 && y >= 40));
             wheelMode = ev.deltaMode || ticks ? "zoom" : "pan";
         }
         lastWheel = ev.timeStamp;
         if (wheelMode === "zoom") {
-            const delta = ev.deltaY * (ev.deltaMode === 1 ? 32 : ev.deltaMode === 2 ? map.height : 1);
-            map.zoomAt(Math.exp(-Math.max(-500, Math.min(500, delta)) * .0015), ...localPoint(ev));
+            const delta = deltaY * (ev.deltaMode === 1 ? 32 : ev.deltaMode === 2 ? map.height : 1);
+            map.zoomAt(Math.exp(-Math.max(-500, Math.min(500, delta)) * .0015 * speed), ...localPoint(ev));
         }
         else {
             map.panTo([map.center[0] + ev.deltaX / map.scale, map.center[1] - ev.deltaY / map.scale]);
@@ -98,8 +99,8 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
     }
     function clickControl(view: MapView, hit: MapHit, alternate: boolean) {
         const c = hit.control;
-        if (c && c.path < 0 && (alternate || view.selection?.id !== hit.selection.id ||
-            view.geometry?.kind !== "path" || view.geometry.index !== c.path)) return { ...c, role: "curve" as const };
+        if (c && hit.selection.kind !== "curve" && c.path < 0 && (alternate || view.selection?.id !== hit.selection.id ||
+            view.geometry?.kind !== "curve" || view.geometry.index !== c.path)) return { ...c, role: "curve" as const };
         return c;
     }
     function updateHover() {
@@ -180,11 +181,12 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         const c = part?.role === "vertex" && part.path < 0 && hit !== control ? { ...part, role: "curve" as const } : part;
         selectHit(hit, c?.role === "segment" && c.path < 0 ? { ...c, role: "curve" } : c, true);
         if (c) {
-            const geo = geoAt(editor.project.design, selection.id);
-            if (c.role !== "body" || geo.construction.type === "free") {
-                const shape = view.project.terrain.regions.get(geo.id)?.shape;
-                const outlineGeometry = c.role === "outline" ? outlineParameterGeometry(geo, c.path, shape) : undefined;
-                editor.gesture = { geo, control: c, outlineGeometry, screen, pointer };
+            const geo = editor.geometryOwner(selection);
+            if (geo && (c.role !== "body" || !("curve" in geo) && geo.construction.type === "outline")) {
+                const outlineGeometry = c.role === "outline" && !("curve" in geo) ?
+                    outlineParameterGeometry(geo, c.path, view.project.terrain.regions.get(geo.id)?.shape) : undefined;
+                const followers = selection.kind === "geoNode" ? followingCurves(editor.curves, selection.id, c, outlineGeometry) : undefined;
+                editor.gesture = { geo, selection, control: c, independent: down.altKey, outlineGeometry, followers, screen, pointer };
             }
         }
         else if (h) {
@@ -268,10 +270,10 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         if (hit && !("issues" in hit) && hit.control) {
             const { control: c, selection: { id } } = hit;
             if (c.role === "segment") editor.insertNode(id, c);
-            if (c.role === "vertex") editor.editNode(id, n => {
-                const path = geometryPath(n, c.path)!;
-                setNodeMode(path, c.index, path.nodes[c.index].mode === "auto" ? "corner" : "auto");
-            });
+            if (c.role === "vertex") {
+                selectHit(hit, c);
+                editor.pathNodeMode(c);
+            }
         }
     }, { signal });
     canvas.addEventListener("pointermove", ev => {
@@ -331,17 +333,21 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             return;
         }
         if ("geo" in editor.gesture) {
-            const { geo, control, outlineGeometry } = editor.gesture, copy = structuredClone(geo);
+            const { geo, control, independent, outlineGeometry, followers } = editor.gesture, copy = structuredClone(geo);
             let at = p;
             if (control.role === "segment" || control.role === "curve") {
                 const start = map.world(...editor.gesture.screen);
                 at = [control.point[0] + p[0] - start[0], control.point[1] + p[1] - start[1]];
             }
             else if (control.role === "vertex" && !ev.ctrlKey)
-                at = snapPoint(editor.mapProject.terrain, editor.mapProject.design, p, map.scale, geo.id);
-            editControl(copy, control, at, ev.altKey, outlineGeometry);
+                at = snapPoint(editor.mapProject.terrain, editor.mapProject.design, p, map.scale, "curve" in geo ? undefined : geo.id);
+            editControl(copy, control, at, independent, outlineGeometry, "curve" in copy ? undefined : followers?.get(copy.id));
+            editor.dragFollowers = followers && { curves: followers, delta: [at[0] - control.point[0], at[1] - control.point[1]] };
+            editor.gesture.target = at;
             editor.dragCurve = control.path < 0 || control.role === "outline" ? control.path : undefined;
-            editor.dragNode = copy; return;
+            if ("curve" in copy) editor.dragShared = copy;
+            else editor.dragNode = copy;
+            return;
         }
         if ("section" in editor.gesture) {
             const { section, screen: origin } = editor.gesture, start = map.world(...origin);
@@ -402,10 +408,11 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
                 if (drag) await editor.moveLabel(g.label, drag.offset);
             }
             else if ("geo" in g) {
-                const copy = editor.dragNode;
-                if (copy) {
+                if (g.target) {
                     editor.dragCommitting = true;
-                    await editor.editNode(copy.id, n => Object.assign(n, copy));
+                    await editor.edit(d => {
+                        commitControl(d, g.selection, g.control, g.target!, g.independent, g.outlineGeometry);
+                    });
                 }
             }
             else {
@@ -421,7 +428,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         }
         finally {
             editor.dragNode = editor.dragMark = editor.dragLabel = editor.dragSection = undefined;
-            editor.dragCurve = undefined;
+            editor.dragShared = editor.dragFollowers = editor.dragCurve = undefined;
             editor.dragCommitting = false;
         }
     }

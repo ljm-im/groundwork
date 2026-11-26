@@ -33,7 +33,9 @@
         <div class="map-reading">
             <div class="zoom-tools map-chip" bind:this={zoomChip}>
                 <button class="icon-button" id="minus" aria-label="缩小" data-tip="缩小" onclick={() => editor.map.zoomAt(1 / 1.4)}><Icon name="minus" /></button>
-                <output id="zoom-value">{displayReading(zoom * 100, 1, "%")}</output>
+                <NumberInput {editor} label="缩放百分比" compact kind="literal" step={1} range={zoomPercentRange} unit="%" faceUnit stepButtons={false}
+                    attributes={{ id: "zoom-value" }} setting={{ value: Math.round(zoom * 100), retainDraft: true,
+                        change: value => editor.map.zoomAt(value / (100 * editor.map.zoomFactor())), validate: validateZoom }} />
                 <button class="icon-button" id="plus" aria-label="放大" data-tip="放大" onclick={() => editor.map.zoomAt(1.4)}><Icon name="plus" /></button>
                 <button class="icon-button" id="fit" aria-label="适应" data-tip="适应" onclick={() => editor.map.fit(editor.project.terrain)}><Icon name="fit" /></button>
             </div>
@@ -94,7 +96,12 @@
             padding: var(--space-1);
         }
         .zoom-tools button { pointer-events: auto; }
-        .zoom-tools output { min-width: var(--row-h); font-size: var(--text-xs); text-align: center; }
+        .zoom-tools #zoom-value { position: relative; width: 62px; flex: none; pointer-events: auto; font-size: var(--text-xs); }
+        .zoom-tools #zoom-value .number-box { height: var(--row-h); }
+        .zoom-tools #zoom-value .number-error {
+            position: absolute; bottom: calc(100% + var(--space-2)); right: 0; width: max-content; pointer-events: none;
+            padding: var(--space-1) var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-panel);
+        }
         .drawing-status {
             position: absolute;
             top: var(--space-3);
@@ -150,7 +157,7 @@
 
 <script lang="ts">
     import { onMount } from "svelte";
-    import { displayReading } from "../../core/design/display.ts";
+    import { validateZoom, zoomPercentRange } from "../state/numbers.ts";
     import { type Box } from "../../core/math/geometry.ts";
     import { type Theme } from "../../render/palette.ts";
     import { drawingHint, numberPreviewHint, positionReadings, readingRange } from "../state/mapText.ts";
@@ -159,6 +166,7 @@
     import * as session from "../state/session.svelte.ts";
     import Icon from "./Icon.svelte";
     import Messages from "./Messages.svelte";
+    import NumberInput from "./NumberInput.svelte";
 
     let { editor, theme }: { editor: session.Editor; theme: Theme } = $props();
     const penModes = [nodeModes[0], nodeModes[1]];

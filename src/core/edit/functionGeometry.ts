@@ -43,15 +43,15 @@ function measure(ring: Point[]) {
     return { area: Math.abs(area), center: [ox + x / (3 * area), oy + y / (3 * area)] as Point };
 }
 
-export function functionGeometry(c: Construction, shape: RegionShape, step: number, nextId: () => string) {
+export function functionGeometry(c: Construction<number, never>, shape: RegionShape, step: number, nextId: () => string) {
     const outline = shape.boundary();
-    const rings = c.type === "free" ? outline.map(path => path.map(e => e.a)) : closedContours(outline.flat(), step * 1e-6);
+    const rings = c.type === "outline" ? outline.map(path => path.map(e => e.a)) : closedContours(outline.flat(), step * 1e-6);
     const largest = rings.flatMap((ring, i) => ring.length < 3 ? [] : [{ ring, i, ...measure(ring) }]).sort((a, b) => b.area - a.area)[0];
     if (!largest?.area) throw Error("地件的区域没有面积");
     const { center } = largest;
     return { center,
         shore(): ClosedCurve {
-            if (c.type === "free") return { closed: true, nodes: c.paths[largest.i].nodes.map(n => ({ ...n, id: nextId(),
+            if (c.type === "outline") return { closed: true, nodes: c.outlines[largest.i].nodes.map(n => ({ ...n, id: nextId(),
                 p: mixPoint(center, n.p, .9),
                 ...(n.in && { in: [n.in[0] * .9, n.in[1] * .9] }),
                 ...(n.out && { out: [n.out[0] * .9, n.out[1] * .9] }) })) };

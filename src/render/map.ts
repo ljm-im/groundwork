@@ -1,4 +1,4 @@
-import { type GeoNode, type Mark, type TextMark, type Point } from "../core/design/v5.ts";
+import { type GeoNode, type Expression, type SharedCurve, type Mark, type TextMark, type Point } from "../core/design/v5.ts";
 import { displaySteps, markParameters } from "../core/design/functionTable.ts";
 import { fieldPrecision, heightId } from "../core/design/defaults.ts";
 import { type Issue, type Terrain } from "../core/design/results.ts";
@@ -8,10 +8,10 @@ import { type GridDisplay, type layerDefaults, pixelGridSpacing } from "../core/
 import { type Box } from "../core/math/geometry.ts";
 import { clamp, distance, nearest } from "../core/math/geometry.ts";
 import { objectIssues } from "../core/checks/issues.ts";
-import { hitGeoControl, hitOutlineVertex, hitParameterGeometries, hitPathSegment, parameterTarget, type GeoControl, type GeometryTarget } from "../core/edit/geoControls.ts";
+import { hitGeoControl, hitOutlineVertex, hitParameterGeometries, hitPathSegment, parameterTarget, type FollowingCurves, type GeoControl, type GeometryTarget } from "../core/edit/geoControls.ts";
 import { contourLabels, fieldContours } from "./fieldContours.ts";
 import { constrainGeoLabel, constrainSectionLabel, geoLabelPoint } from "./labelLayout.ts";
-import { drawGeoOverlay, drawHandle, drawParameterGeometry, showsParameterGeometry } from "./geoOverlay.ts";
+import { drawGeoOverlay, drawHandle, drawParameterGeometry, followsOutline, showsParameterGeometry } from "./geoOverlay.ts";
 import { baseMap, canvasText, contourStyle, interfaceColors, mapColors, overlay, type MapColors, type Theme } from "./palette.ts";
 import { displayReading, displayValue } from "../core/design/display.ts";
 import { sectionHandles } from "../core/edit/controls.ts";
@@ -65,7 +65,9 @@ export type MapView = Readonly<{
     objectGeometry?: Selection;
     vertex?: GeoControl;
     draft?: Readonly<GeoDraft>;
-    dragNode?: GeoNode;
+    dragNode?: GeoNode<Expression, never>;
+    dragShared?: SharedCurve;
+    dragFollowers?: { curves: FollowingCurves; delta: Point };
     dragCurve?: number;
     dragCommitting?: boolean;
     dragMark?: Readonly<{ id: string; point: Point }>;
@@ -93,15 +95,16 @@ function stroke(ctx: Context, points: Point[], color: string, width: number, das
 }
 
 const outlines = new WeakMap<Region, Path2D>();
-function regionOutline(region: Region, g: Grid) {
-    const cached = outlines.get(region);
+function regionOutline(region: Region, g: Grid, shifted?: { paths: ReadonlySet<number>; delta: Point }) {
+    const cached = !shifted && outlines.get(region);
     if (cached) return cached;
     const outline = new Path2D();
     if (!region.shape.cross) {
-        for (const edges of region.shape.boundary()) {
+        for (const [i, edges] of region.shape.boundary().entries()) {
             if (!edges.length) continue;
-            outline.moveTo(...edges[0].a);
-            for (const edge of edges) outline.lineTo(...edge.b);
+            const [dx, dy] = shifted?.paths.has(i) ? shifted.delta : [0, 0];
+            outline.moveTo(edges[0].a[0] + dx, edges[0].a[1] + dy);
+            for (const { b } of edges) outline.lineTo(b[0] + dx, b[1] + dy);
             outline.closePath();
         }
     }
@@ -128,7 +131,7 @@ function regionOutline(region: Region, g: Grid) {
             }
         }
     }
-    outlines.set(region, outline);
+    if (!shifted) outlines.set(region, outline);
     return outline;
 }
 
@@ -349,6 +352,11 @@ export class ProjectMap {
                 yield { selection: { kind: "section", id: s.id } };
         }
         const empty = !hasSamples(terrain), tolerance = grid.step / 8;
+        if (view.selection?.kind === "curve") {
+            const curve = design.curves[view.selection.id];
+            const control = curve && hitPathSegment(curve, p, scale, tolerance, view.geometry);
+            if (control) yield { selection: view.selection, control };
+        }
         for (let i = geoNodes.length - 1; i >= 0; i--) {
             const node = geoNodes[i], active = view.selection?.kind === "geoNode" && view.selection.id === node.id;
             if (showsParameterGeometry(view, node)) {
@@ -384,10 +392,11 @@ export class ProjectMap {
             const h = this.hitSectionHandle(view, screen, selection.id);
             if (h) return { selection: h, handle: h };
         }
-        if (selection?.kind === "geoNode") {
-            const node = view.project.design.geoNodes.find(n => n.id === selection.id);
+        if (selection?.kind === "geoNode" || selection?.kind === "curve") {
+            const design = view.project.design;
+            const node = selection.kind === "geoNode" ? design.geoNodes.find(n => n.id === selection.id) : design.curves[selection.id];
             const control = node && hitGeoControl(node, this.world(...screen), this.scale, view.geometry);
-            if (control) return geoHit(selection.id, control);
+            if (control) return selection.kind === "geoNode" ? geoHit(selection.id, control) : { selection, control };
         }
     }
     selectedBody(view: MapView, screen: Point): MapHit | undefined {
@@ -403,11 +412,16 @@ export class ProjectMap {
             if (section && nearest(...p, section.points).distance * this.scale <= sectionHitRadius)
                 return { selection: { kind: "section", id: selection.id } };
         }
+        if (selection.kind === "curve") {
+            const curve = project.design.curves[selection.id];
+            const control = curve && hitPathSegment(curve, p, this.scale, project.design.grid.step / 8, geometry);
+            if (control) return { selection, control };
+        }
         if (selection.kind === "geoNode") {
             const node = project.design.geoNodes.find(n => n.id === selection.id);
             if (!node) return;
             const tolerance = project.design.grid.step / 8;
-            if (geometry?.kind === "path" && geometry.index < 0) {
+            if (geometry?.kind === "curve" && geometry.index < 0) {
                 const segment = hitPathSegment(node, p, this.scale, tolerance, geometry);
                 if (segment) return geoHit(node.id, segment);
             }
@@ -454,17 +468,29 @@ export class ProjectMap {
             ctx.restore();
         }
         if (view.layers.grid) this.drawGrid(ctx, view, scale, base);
-        const draggedRegionId = (view.dragCurve === undefined || view.dragCurve >= 0) && view.dragNode?.construction.type === "free" ? view.dragNode.id : undefined;
+        const { dragNode, dragFollowers } = view;
+        const draggedRegionId = dragNode?.construction.type === "outline" &&
+            ((view.dragCurve ?? 0) >= 0 || followsOutline(dragFollowers?.curves.get(dragNode.id))) ? dragNode.id : undefined;
         const draggingOutline = draggedRegionId !== undefined && view.dragCurve !== undefined;
+        const movedOutlines = dragFollowers && new Map<string, Path2D>();
         for (const n of d.geoNodes) {
             if (n.disabled && !empty) continue;
-            if (!empty && !n.fill && !n.outline && !view.layers.geoNodes) continue;
+            const paths = dragFollowers?.curves.get(n.id), follows = n.id !== draggedRegionId && followsOutline(paths);
+            if (!follows && !empty && !n.fill && !n.outline && !view.layers.geoNodes) continue;
             const region = t.regions.get(n.id)!;
-            if (n.fill && !empty) drawRegionArea(ctx, region, g, n.fill);
-            if (n.id !== draggedRegionId && (empty || n.outline || view.layers.geoNodes)) {
-                ctx.strokeStyle = base.boundary;
+            const moved = follows ? regionOutline(region, g, { paths: paths!, delta: dragFollowers!.delta }) : undefined;
+            if (moved) movedOutlines!.set(n.id, moved);
+            if (n.fill && !empty) {
+                if (moved) {
+                    ctx.fillStyle = n.fill;
+                    ctx.fill(moved, "evenodd");
+                }
+                else drawRegionArea(ctx, region, g, n.fill);
+            }
+            if (n.id !== draggedRegionId && (moved || empty || n.outline || view.layers.geoNodes)) {
+                ctx.strokeStyle = moved ? colors.accentHover : base.boundary;
                 ctx.lineWidth = .6 / scale;
-                ctx.stroke(regionOutline(region, g));
+                ctx.stroke(moved ?? regionOutline(region, g));
             }
         }
         const contours = view.layers.contours && samples ? fieldContours(g, samples, fieldPrecision(d.fields[view.displayField]), scale) : undefined;
@@ -486,7 +512,7 @@ export class ProjectMap {
                 for (const edge of r.shape.spine) stroke(ctx, [edge.a, edge.b], outline.color, outline.width);
             }
             ctx.strokeStyle = id === draggedRegionId ? colors.dragOrigin : outline.color;
-            ctx.lineWidth = outline.width; ctx.stroke(regionOutline(r, g));
+            ctx.lineWidth = outline.width; ctx.stroke(movedOutlines?.get(id) ?? regionOutline(r, g));
         }
         this.drawIssueShapes(ctx, view, colors);
         ctx.restore();

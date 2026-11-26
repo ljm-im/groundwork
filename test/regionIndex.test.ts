@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { parseDesign } from "../src/core/design/model.ts";
+import { resolveDesign } from "../src/core/design/parameters.ts";
 import { makeShape, rasterRegion, regionMaskAt, trace, type RegionShape, type Segment } from "../src/core/design/regions.ts";
 import { type Construction, type Point, type Strip } from "../src/core/design/v5.ts";
 import { clamp, createGrid, distance, eachCell, mixPoint, projection } from "../src/core/math/geometry.ts";
 import { indexSegments } from "../src/core/math/segmentIndex.ts";
 import { random } from "../src/core/math/noise.ts";
-import { polygon, rect } from "./scenarios.ts";
+import { layer, polygon, rect, syntheticDesign } from "./scenarios.ts";
 
 function scan(p: Point, edges: Segment[], radius: number) {
     let best = Infinity, index = -1, at: Point | undefined;
@@ -22,7 +24,7 @@ function scan(p: Point, edges: Segment[], radius: number) {
 }
 
 const tolerance = .125;
-function shape(id: string, construction: Construction<number>, below = new Map<string, RegionShape>()) {
+function shape(id: string, construction: Construction<number, never>, below = new Map<string, RegionShape>()) {
     return makeShape({ id, label: id, field: "height", construction, function: { type: "ground", value: 0 } }, below, tolerance);
 }
 
@@ -66,8 +68,25 @@ test("Strip cross sections preserve the projected point and normal at equal dist
     }
 });
 
+test("A strip range takes the first outline containing both of its node IDs", () => {
+    const d = syntheticDesign();
+    d.curves.A = { label: "A", curve: rect(0, 0, 6, 3).outlines[0] };
+    const first = { ref: "{curve:A}", offset: [-12, 4] as Point }, second = { ref: "{curve:A}", offset: [8, -9] as Point };
+    const outlines = [first, second];
+    d.geoNodes.push(layer("A", { type: "outline", outlines }, { type: "flat", amount: 1 }),
+        layer("B", { type: "strip", of: ["A"], widths: [1, 2], range: { from: "0", to: "1" } }, { type: "blend" }));
+    const spine = () => {
+        const [source, strip] = resolveDesign(parseDesign(d)).geoNodes.slice(-2);
+        const upper = makeShape(source, new Map(), tolerance);
+        return makeShape(strip, new Map([["A", upper]]), tolerance).spine!.map(({ a, b }) => [a, b]);
+    };
+    assert.deepEqual(spine(), [[[-12, 4], [-6, 4]]]);
+    outlines.reverse();
+    assert.deepEqual(spine(), [[[8, -9], [14, -9]]]);
+});
+
 test("Nested strips trace the same ordered segments as a full scan", () => {
-    const a = shape("A", { type: "free", paths: [polygon([[-8, -4], [2, -7], [8, 3], [-3, 9]])] });
+    const a = shape("A", { type: "outline", outlines: [polygon([[-8, -4], [2, -7], [8, 3], [-3, 9]])] });
     const b = shape("B", rect(-7, -8, 10, 10));
     const c = shape("C", { type: "strip", of: ["A"], widths: [1, 2] }, new Map([["A", a]]));
     const dense = (region: RegionShape) => ({ ...region, reach: undefined, boundary: () => trace({ ...region, reach: undefined }, tolerance) });
@@ -84,7 +103,7 @@ test("Nested strips trace the same ordered segments as a full scan", () => {
 
 test("A compact mask matches the canvas-sized mask and keeps row-major indices", () => {
     const grid = createGrid({ xMin: -4, xMax: 7, yMin: -6, yMax: 8, step: .5 });
-    const region = shape("A", { type: "free", paths: [...rect(-5, -1, 2, 4).paths, ...rect(-2, 0, 1, 2).paths] });
+    const region = shape("A", { type: "outline", outlines: [...rect(-5, -1, 2, 4).outlines, ...rect(-2, 0, 1, 2).outlines] });
     const expected = new Uint8Array(grid.size), cells: number[] = [];
     eachCell(grid, region.box, 0, (k, x, y) => {
         if (region.contains([x, y])) {
