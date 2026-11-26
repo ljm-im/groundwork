@@ -21,7 +21,7 @@ export interface NumericParameter extends ParameterBase {
     create?: Expression;
     profile?: true;
 }
-type GeometryDefault = "boundary" | "center" | "axis" | "draw-line" | "draw-point" | "empty";
+type GeometryDefault = "boundary" | "center" | "draw-line" | "draw-point" | "empty";
 interface GeometryParameter extends ParameterBase { type: "geometry"; default: GeometryDefault }
 type ParameterSpec = NumericParameter | GeometryParameter;
 interface Toggle { key: Address; label: string; default: boolean }
@@ -33,7 +33,6 @@ interface FunctionSpec {
     readArea?: "canvas";
     construction?: "strip";
     parameters: readonly ParameterSpec[];
-    toggles?: readonly Toggle[];
 }
 
 const asKey = (key: string): Address => key.split(".").map(part => /^\d+$/.test(part) ? Number(part) : part);
@@ -50,6 +49,14 @@ const sea = number("seaLevel", "海平面", "m", .1, 0);
 const feather = number("feather", "羽化宽度", "m", .1, 0, { constraint: "nonnegative" });
 const advanced = { advanced: true, constraint: "nonnegative" } as const;
 export const slopeEndpointValues = [0, 2] as const;
+export const defaultNodeSlope = .75;
+export const smoothIncrement: Toggle = { key: ["ease"], label: "平滑增量过渡", default: false };
+const mountainLineParameters = (group: "ridges" | "valleys", label: string) => [
+    geometry(group, label, "empty"),
+    geometry(group + ".*.curve", label + "线", "draw-line"),
+    number(group + ".*.curve.nodes.*.h", "高度", "field", "field", 0, { profile: true }),
+    number(group + ".*.curve.nodes.*.slope", "坡度", "m/m", .01, defaultNodeSlope, { profile: true, constraint: "positive" })
+];
 export const functionTable: Record<GeoFunction["type"], FunctionSpec> = {
     ground: { name: "定值", initial: true, writes: "any", reading: "none", parameters: [
         number("value", "数值", "field", "field", 0)
@@ -62,13 +69,11 @@ export const functionTable: Record<GeoFunction["type"], FunctionSpec> = {
         number("harbor.span", "过渡宽度", "m", 1, 3, { constraint: "positive" }), seed
     ] },
     mountain: { name: "山脉", initial: false, writes: "height", reading: "point", parameters: [
-        floor, seed, geometry("ridges", "山脊", "empty"), geometry("peaks", "山峰", "empty"),
-        number("crestRound", "山顶圆角半径", "m", .1, 4, advanced),
-        number("footRound", "山脚过渡高度", "m", .1, 5, advanced),
-        number("blend", "山脊融合高度", "m", .1, 5, advanced),
-        geometry("ridges.*.curve", "山脊线", "draw-line"),
-        number("ridges.*.curve.nodes.*.h", "高度", "field", "field", 0, { profile: true }),
-        number("ridges.*.slope", "坡度", "m/m", .01, .75, { constraint: "positive" }),
+        floor, seed, ...mountainLineParameters("ridges", "山脊"), ...mountainLineParameters("valleys", "山谷"),
+        geometry("peaks", "山峰", "empty"),
+        number("crestRound", "圆角半径", "m", .1, 4, advanced),
+        number("footRound", "边缘过渡高度", "m", .1, 5, advanced),
+        number("blend", "融合高度", "m", .1, 5, advanced),
         geometry("peaks.*.at", "位置", "draw-point"),
         number("peaks.*.height", "高度", "field", "field", 0),
         number("peaks.*.radius", "半径", "m", .1, 5, { constraint: "positive" }),
@@ -101,13 +106,14 @@ export const functionTable: Record<GeoFunction["type"], FunctionSpec> = {
         number("amount", "增量", "field", "field", 1, { type: "field" }), feather
     ] },
     slope: { name: "坡面", initial: false, writes: "any", reading: "point", parameters: [
-        geometry("line", "坡线", "axis", "path"),
-        number("line.curve.nodes.*.h", "增量", "field", "field", slopeEndpointValues[0], { variant: "path", profile: true }),
+        geometry("lines", "坡线", "empty", "path"),
+        geometry("lines.*.curve", "坡线", "draw-line", "path"),
+        number("lines.*.curve.nodes.*.h", "增量", "field", "field", slopeEndpointValues[0], { variant: "path", profile: true }),
         geometry("center", "圆心", "center", "radial"),
         number("radius", "半径", "m", .1, 5, { variant: "radial" }),
         number("value", "增量", "field", "field", 2, { variant: "radial" }),
         number("rate", "径向变化率", "field/m", "field", -.2, { variant: "radial" })
-    ], toggles: [{ key: ["ease"], label: "平滑增量过渡", default: false }] },
+    ] },
     noise: { name: "噪声", initial: false, writes: "any", reading: "point", parameters: [
         number("amplitude", "振幅", "field", "field", 1, { type: "field" }),
         number("scale", "噪声尺度", "m", 1, 24, { constraint: "positive" }),
@@ -176,18 +182,13 @@ export function expandKeys(root: object, key: Address): Address[] {
     return paths;
 }
 
-export function functionParameterKeys(f: GeoFunction | GeoFunction<number, "resolved">, p: ParameterSpec, resolved = false) {
-    const key = resolved && f.type === "slope" && p.type !== "geometry" && p.profile ? p.key.filter(part => part !== "curve") : p.key;
-    return expandKeys(f, key);
-}
-
-export function fillFunctionParameters(f: GeoFunction, prefix: Address = []) {
-    for (const p of functionParameters(f)) {
+export function fillFunctionParameters(f: GeoFunction, prefix: Address = [], id?: string) {
+    for (const p of functionTable[f.type].parameters) {
         if (p.type === "geometry") {
             if (!prefix.length && p.default === "empty" && readAt(f, p.key) === undefined) writeAt(f, p.key, []);
         }
-        else if (!p.profile && typeof p.default !== "function") for (const key of functionParameterKeys(f, p))
-            if (prefix.every((part, i) => key[i] === part) && readAt(f, key) === undefined) writeAt(f, key, p.create ?? p.default);
+        else if (!p.profile && (id !== undefined || typeof p.default !== "function")) for (const key of expandKeys(f, p.key))
+            if (prefix.every((part, i) => key[i] === part) && readAt(f, key) === undefined) writeAt(f, key, p.create ?? parameterDefault(p, id ?? ""));
     }
     return f;
 }

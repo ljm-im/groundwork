@@ -3,7 +3,7 @@ import { defaultFunction } from "../../src/core/edit/geoNodes.ts";
 import { type Box } from "../../src/core/math/geometry.ts";
 import { type Design, type Point } from "../../src/core/design/v5.ts";
 import { parseDesign, serializeDesign } from "../../src/core/design/model.ts";
-import { layer, rect, syntheticDesign, openCurve } from "../scenarios.ts";
+import { withNodeSlope, layer, rect, syntheticDesign, openCurve } from "../scenarios.ts";
 import { startChromium, type Chromium } from "./chromium.ts";
 import { installPickers } from "./filePickers.ts";
 
@@ -92,8 +92,7 @@ function sampleDesign() {
     const mountain = defaultFunction("mountain");
     assert(mountain.type === "mountain");
     for (const y of [23, 27, 31]) {
-        mountain.ridges.push({ curve: openCurve([{ p: [-33, y], h: 5 }, { p: [-7, y], h: 5 }, { p: [18, y], h: 5 }], "corner", "ridge-" + y + "-"),
-            slope: 2 });
+        mountain.ridges.push({ curve: withNodeSlope(openCurve([{ p: [-33, y], h: 5 }, { p: [-7, y], h: 5 }, { p: [18, y], h: 5 }], "corner", "ridge-" + y + "-"), 2) });
     }
     d.geoNodes = [
         layer("G", rect(-60, -38, 60, 38), { type: "ground", value: 3 }),

@@ -22,6 +22,7 @@
         field: "M2 3h14v12H2z M2 7h14M2 11h14M7 3v12m4-12v12",
         function: "M3 13h3l3-9h4M5 8h7m0 2 4 5m0-5-4 5",
         property: "M3 13 8 4l5 9z M3 15h12",
+        outputValue: "M6 9a1.5 1.5 0 1 1-3 0 1.5 1.5 0 1 1 3 0z M6 9h9m-3-3 3 3-3 3",
         exclude: "M15.5 9a6.5 6.5 0 1 1-13 0 6.5 6.5 0 1 1 13 0z M4.4 13.6l9.2-9.2",
         marks: "M4 16V3m0 1c4-4 7 3 11-1v8c-4 4-7-3-11 1",
         section: "M3 5v8m0-4h12m0-4v8",

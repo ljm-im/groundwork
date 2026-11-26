@@ -6,7 +6,7 @@ import { arcHandle } from "../../src/core/edit/paths.ts";
 import { type Curve, type Point } from "../../src/core/design/v5.ts";
 import { distance } from "../../src/core/math/geometry.ts";
 import { mapColors, overlay, type Theme } from "../../src/render/palette.ts";
-import { layer, openCurve, rect, syntheticDesign } from "../scenarios.ts";
+import { withNodeSlope, layer, openCurve, rect, syntheticDesign } from "../scenarios.ts";
 import { withCurveMap } from "./curveMapFixture.ts";
 
 function segmentPoint(path: Curve, index: number, t = .5): Point {
@@ -23,7 +23,7 @@ function scene() {
     const mountain = defaultFunction("mountain");
     assert(mountain.type === "mountain");
     const ridge: Point[] = [[-43, 27], [-32, 31], [-18, 28], [-4, 32], [10, 25]];
-    mountain.ridges.push({ curve: openCurve(ridge.map((p, i) => ({ p, h: 5 + i })), "auto"), slope: 1 });
+    mountain.ridges.push({ curve: withNodeSlope(openCurve(ridge.map((p, i) => ({ p, h: 5 + i })), "auto"), 1) });
     mountain.peaks.push({ at: [11, 37], height: 9, radius: 8, noise: 0, scale: 1 });
     const shore = rect(28, 19, 51, 38).outlines[0].curve;
     for (const node of shore.nodes) node.id = "shore-" + node.id;
@@ -35,7 +35,7 @@ function scene() {
         layer("A", region, { type: "flat", amount: 1 }),
         layer("M", rect(-48, 18, 19, 42), mountain),
         layer("C", rect(23, 12, 54, 42), coast),
-        layer("S", rect(14, -29, 49, 3), { type: "slope", kind: "path", line: { curve: slope } })
+        layer("S", rect(14, -29, 49, 3), { type: "slope", kind: "path", lines: [{ curve: slope }], center: [0, 0], radius: 5, value: 2, rate: -.2 })
     ];
     design.sections = [{ id: "Q", label: "剖面线 Q", points: [[-44, -32], [9, -32]], showLabel: false }];
     return design;

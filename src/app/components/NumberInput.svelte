@@ -125,6 +125,7 @@
     import { type Expression } from "../../core/design/v5.ts";
     import { readAt, type Address } from "../../core/design/parameters.ts";
     import { evaluate, sampleValue } from "../../core/design/expression.ts";
+    import { parameterStep, parameterUnit } from "../../core/design/functionTable.ts";
     import { declarationEntries, isBuiltin } from "../../core/design/defaults.ts";
     import { adjustInputStep, adjustNumber, authoredCaret, caretOffsetAt, chipSpans, composingKey, editorSelection, flagOverflow,
         editorText, NumberDrag, numericCaret, numericText, referenceLabel, repeatButton, selectionOffsets, type Range } from "../state/numbers.ts";
@@ -167,7 +168,7 @@
     let tip = $derived(typeof shown === "string" ? (reading === undefined ? "= 未定义" :
         "= " + (result?.sampled ? displayReading(reading, step, unit) : displayValue(reading, step, unit))) : undefined);
     let cleanup: (() => void) | undefined, version = 0;
-    type Option = { key: string; name: string; icon: IconName; builtin?: boolean; branch?: boolean };
+    type Option = { key: string; name: string; reading?: string; icon: IconName; builtin?: boolean; branch?: boolean };
     type Group = { title: string; items: Option[] };
     let groups = $derived.by((): Group[] => {
         if (!opened) return [];
@@ -176,7 +177,12 @@
         const allowed = (key: string) => !excluded?.has(key);
         const leaves = [...slots.values()].filter(s => allowed(s.key) && (kind === "field" || !s.field || typeof editor.numberEdits.get(s.key) === "number"));
         if (parent) return [{ title: leaves.find(s => s.owner + ":" + s.id === parent)?.name ?? "属性",
-            items: leaves.filter(s => s.owner + ":" + s.id === parent).map(s => ({ key: s.key, name: s.label, icon: "property" as const })).filter(filter) }];
+            items: leaves.filter(s => s.owner + ":" + s.id === parent).map((s): Option => {
+                const declaration = s.location.kind === "geo" ? base.fields[base.geoNodes[s.location.index!].field] : undefined;
+                const reading = s.output && s.spec ? displayValue(editor.numberEdits.get(s.key) as number,
+                    parameterStep(s.spec, declaration), parameterUnit(s.spec, declaration?.unit)) : undefined;
+                return { key: s.key, name: s.label, icon: s.output ? "outputValue" : "property", reading };
+            }).filter(filter) }];
         const items: Option[] = declarationEntries("input", base.inputs).flatMap(([id, input]) => {
             const key = "input:" + id;
             return allowed(key) ? [{ key, name: input.label ?? id, icon: "inputs", builtin: isBuiltin("input", id) }] : [];

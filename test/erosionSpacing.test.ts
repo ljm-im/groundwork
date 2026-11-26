@@ -59,14 +59,14 @@ test("Coarse erosion averages partial blocks and interpolates changes only onto 
 });
 
 test("Erosion spacing defaults to half its own radius and supports an authored number or expression", () => {
-    const design = syntheticDesign(), fn = defaultFunction("erosion");
+    const design = syntheticDesign(), fn = defaultFunction("erosion", { id: "E" });
     assert(fn.type === "erosion");
     design.geoNodes.push(layer("E", design.geoNodes[0].construction, fn));
     const spec = functionTable.erosion.parameters.find(p => p.key[0] === "spacing");
     assert(spec && typeof spec.default === "function");
     assert.equal(spec.default("E"), "{geo:E.radius} / 2");
     assert.equal(parameters(design).get("geo:E.spacing")?.value, spec.default("E"));
-    assert.equal(Object.hasOwn(fn, "spacing"), false);
+    assert.equal(fn.spacing, "{geo:E.radius} / 2");
     const spacing = () => {
         const result = resolveDesign(parseDesign(design)).geoNodes.at(-1)!.function;
         assert(result.type === "erosion");
@@ -75,7 +75,7 @@ test("Erosion spacing defaults to half its own radius and supports an authored n
     assert.equal(spacing(), 1);
     fn.radius = 6;
     assert.equal(spacing(), 3);
-    assert(!serializeDesign(parseDesign(design)).includes("\"spacing\""));
+    assert.equal(JSON.parse(serializeDesign(parseDesign(design))).geoNodes.at(-1).function.spacing, "{geo:E.radius} / 2");
     fn.spacing = .4;
     fn.radius = 8;
     assert.equal(spacing(), .4);

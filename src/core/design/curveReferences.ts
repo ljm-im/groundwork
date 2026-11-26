@@ -1,10 +1,28 @@
 import { type Address } from "./address.ts";
 import { check, quotedLocation, type Location } from "./problems.ts";
-import { type Curve, type CurveHolder, type CurveRef, type CurveValue, type Design, type Expression, type GeoNode, type Held, type HolderRef, type Point } from "./v5.ts";
+import { type Curve, type CurveHolder, type CurveRef, type CurveValue, type Design, type GeoFunction, type GeoNode, type Held, type HolderRef, type NodeQuantity, type Point } from "./v5.ts";
 
-const holderLabels = { outline: "轮廓", ridge: "山脊", shore: "海岸线", line: "坡线" } as const;
+const holderLabels = { outline: "轮廓", ridge: "山脊", valley: "山谷", shore: "海岸线", line: "坡线" } as const;
 type HolderKind = keyof typeof holderLabels;
-type HolderValue = Held<CurveValue, { slope?: Expression }>;
+type HolderValue = Held<CurveValue, { ease?: boolean }>;
+export const profileGroups = {
+    ridges: { kind: "ridge", label: "山脊", tool: "ridge", curve: "山脊线" },
+    valleys: { kind: "valley", label: "山谷", tool: "valley", curve: "山谷线" },
+    lines: { kind: "line", label: "坡线", tool: "slopeLine", curve: "坡线" }
+} as const;
+export type ProfileGroup = keyof typeof profileGroups;
+export function profileGroupForTool(tool: string) {
+    return (Object.keys(profileGroups) as ProfileGroup[]).find(group => profileGroups[group].tool === tool);
+}
+export type FunctionMember = ProfileGroup | "peaks";
+export const memberLabel = (group: FunctionMember) => group === "peaks" ? "山峰" : profileGroups[group].label;
+export const profileGroupsFor = (f: Pick<GeoFunction, "type"> & { kind?: string }): ProfileGroup[] =>
+    f.type === "mountain" ? ["ridges", "valleys"] : f.type === "slope" && f.kind === "path" ? ["lines"] : [];
+export const profileIndex = (f: { type: GeoFunction["type"]; ridges?: readonly unknown[] }, group: ProfileGroup, index: number) =>
+    -1 - index - (group === "valleys" ? f.ridges?.length ?? 0 : 0);
+export const nodeQuantities = (kind: HolderKind): readonly NodeQuantity[] =>
+    kind === "ridge" || kind === "valley" ? ["h", "slope"] as const : kind === "line" ? ["h"] as const : [];
+
 
 interface ReferenceSlot {
     key: string;
@@ -15,11 +33,13 @@ interface ReferenceSlot {
 }
 export interface HolderSlot extends ReferenceSlot {
     kind: HolderKind;
+    index: number;
+    active: boolean;
     location: { kind: "geo"; id: string; index: number; path: Address };
     value: HolderValue;
 }
-type OwnedSlot = HolderSlot & { value: CurveHolder<CurveValue, { slope?: Expression }> };
-export type CurveSlot = ReferenceSlot & { closed: boolean; height: boolean } &
+type OwnedSlot = HolderSlot & { value: CurveHolder<CurveValue, { ease?: boolean }> };
+export type CurveSlot = ReferenceSlot & { closed: boolean } &
     ({ holder: HolderSlot } | { holder?: undefined; value: Curve<never> });
 
 export const isHolderRef = (value: HolderValue): value is HolderRef => "ref" in value;
@@ -38,57 +58,61 @@ export function curveParameterName(path: Address) {
     if (group === "construction" && name === "outlines" && typeof index === "number" && holder.length === 3)
         label = "轮廓 " + (index + 1);
     if (group === "function") {
-        if ((name === "line" || name === "shore") && holder.length === 2) label = holderLabels[name];
-        if (name === "ridges" && typeof index === "number" && holder.length === 3) label = "山脊 " + (index + 1);
+        if (name === "shore" && holder.length === 2) label = holderLabels.shore;
+        if (typeof name === "string" && Object.hasOwn(profileGroups, name) && typeof index === "number" && holder.length === 3) {
+            const group = profileGroups[name as ProfileGroup];
+            return group.label + " " + (index + 1) + (curve ? "." + group.curve : "");
+        }
     }
-    return label && (curve ? label + (name === "ridges" ? ".山脊线" : ".曲线") : label);
+    return label && (curve ? label + ".曲线" : label);
 }
 
 export function geoHolderSlots(n: GeoNode, index: number): HolderSlot[] {
     const slots: HolderSlot[] = [], c = n.construction, f = n.function;
-    function add(kind: HolderKind, path: Address, value: HolderValue) {
+    function add(kind: HolderKind, path: Address, value: HolderValue, controlIndex: number, active = true) {
         const property = path[0] === "function" ? path.slice(1) : path;
-        slots.push({ kind, key: "geo:" + n.id + "." + property.join("."), name: n.label, label: curveParameterName(path),
+        slots.push({ kind, index: controlIndex, active, key: "geo:" + n.id + "." + property.join("."), name: n.label, label: curveParameterName(path),
             path: ["geoNodes", index, ...path], location: { kind: "geo", id: n.id, index, path }, value });
     }
-    if (c?.type === "outline") c.outlines.forEach((value, i) => add("outline", ["construction", "outlines", i], value));
-    if (f?.type === "coast") add("shore", ["function", "shore"], f.shore);
-    if (f?.type === "mountain") f.ridges?.forEach((value, i) => add("ridge", ["function", "ridges", i], value));
-    if (f?.type === "slope" && f.kind === "path") add("line", ["function", "line"], f.line);
+    if (c?.type === "outline") c.outlines.forEach((value, i) => add("outline", ["construction", "outlines", i], value, i));
+    if (f?.type === "coast") add("shore", ["function", "shore"], f.shore, -1);
+    if (f?.type === "mountain") for (const group of ["ridges", "valleys"] as const)
+        f[group]?.forEach((value, i) => add(profileGroups[group].kind, ["function", group, i], value, profileIndex(f, group, i)));
+    if (f?.type === "slope") f.lines?.forEach((value, i) => add("line", ["function", "lines", i], value, -1 - i, f.kind === "path"));
     return slots;
 }
 
 function heldCurveSlot(holder: HolderSlot): CurveSlot {
     const path = [...holder.location.path, "curve"], closed = holder.kind === "outline" || holder.kind === "shore";
     return { holder, key: holder.key + ".curve", name: holder.name, label: curveParameterName(path), path: [...holder.path, "curve"],
-        location: { ...holder.location, path }, closed, height: !closed };
+        location: { ...holder.location, path }, closed };
 }
 
 export function sharedCurveSlot(d: Design, id: string): CurveSlot | undefined {
     if (!d.curves || !Object.hasOwn(d.curves, id)) return;
     const { label, curve } = d.curves[id];
     return { key: curveKey(id), name: label, path: ["curves", id, "curve"],
-        location: { kind: "curve", id, path: ["curve"] }, value: curve, closed: false, height: false };
+        location: { kind: "curve", id, path: ["curve"] }, value: curve, closed: false };
 }
 
 export function geometrySlot(d: Design, id: string, index: number, shared = false): CurveSlot | undefined {
     if (shared) return sharedCurveSlot(d, id);
     const at = d.geoNodes.findIndex(n => n.id === id);
     if (at < 0) return;
-    const holder = geoHolderSlots(d.geoNodes[at], at).find(slot => geometryIndex(slot) === index);
+    const holder = geoHolderSlots(d.geoNodes[at], at).find(slot => slot.active && slot.index === index);
     return holder && heldCurveSlot(holder);
 }
 
 export function geometryIndex(slot: HolderSlot | CurveSlot) {
-    const { path } = slot.location;
-    if (path[0] === "construction") return Number(path[2]);
-    if (path[1] === "ridges") return -1 - Number(path[2]);
-    return -1;
+    return "kind" in slot ? slot.index : slot.holder?.index ?? -1;
 }
 
 export function resolvedCurvePath(slot: CurveSlot): Address {
-    return slot.holder && slot.holder.kind !== "ridge" ? slot.holder.path : slot.path;
+    return slot.closed && slot.holder ? slot.holder.path : slot.path;
 }
+
+export const nodeQuantityPath = (index: number, id: string, quantity: NodeQuantity, referenced: boolean): Address =>
+    referenced ? [quantity, id] : ["nodes", index, quantity];
 
 export const referenceAt = (slot: ReferenceSlot) => ({ ...slot.location, path: [...slot.location.path, "ref"] });
 
@@ -115,6 +139,7 @@ export function curveGraph(d: Design) {
         check(!slots.has(key), "无效", at);
         check(target, "找不到" + holderLabel(slot) + "“" + ref + "”", at);
         check(slot.kind === target.kind, "只能引用同类" + holderLabel(slot), at);
+        check(!slot.active || target.active, "引用的" + holderLabel(slot) + "当前不可用", at);
         return target;
     }
     function visit<S extends ReferenceSlot, T>(slot: S, stack: S[], resolve: () => T): T {
@@ -148,6 +173,7 @@ export function curveGraph(d: Design) {
         const key = refKey(curve.ref) ?? "", target = slots.get(key), at = referenceAt(slot);
         check(!holders.has(key), "需要引用曲线", at);
         check(target, "找不到曲线“" + curve.ref + "”", at);
+        check(!slot.holder.active || target.holder?.active !== false, "引用的曲线当前不可用", at);
         return target;
     }
     function source(slot: CurveSlot): { slot: CurveSlot; curve: Curve } {
@@ -158,9 +184,11 @@ export function curveGraph(d: Design) {
         const result = target ? visit(slot, curveStack, () => source(target)) : { slot, curve: value(slot) as Curve };
         check(!slot.closed || result.curve.closed, "需要闭合曲线", referenceAt(slot));
         const curve = value(slot);
-        if (isCurveRef(curve) && curve.h && slot.holder && !isHolderRef(slot.holder.value)) {
+        if (isCurveRef(curve) && slot.holder && !isHolderRef(slot.holder.value)) {
             const ids = new Set(result.curve.nodes.map(n => n.id));
-            for (const id of Object.keys(curve.h)) check(ids.has(id), "找不到节点“" + id + "”", { ...slot.location, path: [...slot.location.path, "h", id] });
+            for (const key of ["h", "slope", "interpolate"] as const)
+                for (const id of Object.keys(curve[key] ?? {}))
+                    check(ids.has(id), "找不到节点“" + id + "”", { ...slot.location, path: [...slot.location.path, key, id] });
         }
         sources.set(slot.key, result);
         return result;
@@ -170,8 +198,11 @@ export function curveGraph(d: Design) {
         if (!isCurveRef(input)) return slot.holder && isHolderRef(slot.holder.value) ? structuredClone(curve) : curve;
         const copy = structuredClone(curve);
         for (const n of copy.nodes) {
-            if (input.h && Object.hasOwn(input.h, n.id)) n.h = input.h[n.id];
-            else delete n.h;
+            for (const key of ["h", "slope", "interpolate"] as const) {
+                delete n[key];
+                const map = input[key];
+                if (map && Object.hasOwn(map, n.id)) Object.assign(n, { [key]: map[n.id] });
+            }
         }
         return copy;
     }
@@ -195,7 +226,7 @@ export function curveGraph(d: Design) {
         return required;
     }
     function canUse(from: CurveSlot, candidate: CurveSlot) {
-        return !reaches(candidate, from.key) && (!needsClosed(from) || source(candidate).curve.closed);
+        return candidate.holder?.active !== false && !reaches(candidate, from.key) && (!needsClosed(from) || source(candidate).curve.closed);
     }
     function canUseHolder(from: CurveSlot, candidate: HolderSlot) {
         return from.holder?.kind === candidate.kind && canUse(from, ofHolder(candidate));
@@ -219,9 +250,9 @@ export function curveGraph(d: Design) {
             if (slot) return slot;
         }
     }
-    function parameterKey(key: string) {
+    function parameterKey(key: string, includeInactive = false) {
         const slot = parameterHolder(key);
-        return slot ? holder(slot).key + key.slice(slot.key.length) : key;
+        return slot && (slot.active || includeInactive) ? holder(slot).key + key.slice(slot.key.length) : key;
     }
     function* references() {
         for (const slot of holders.values()) {

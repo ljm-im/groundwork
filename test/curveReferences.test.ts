@@ -16,7 +16,7 @@ import { History } from "../src/core/edit/history.ts";
 import { penNode, retractHandle } from "../src/core/edit/paths.ts";
 import { type GeoDraft } from "../src/core/edit/types.ts";
 import { Project } from "../src/core/project.ts";
-import { layer, literalCurve, openCurve, rect, syntheticDesign } from "./scenarios.ts";
+import { withNodeSlope, layer, literalCurve, openCurve, rect, syntheticDesign } from "./scenarios.ts";
 
 const outline = (id: string, i = 0) => "geo:" + id + ".construction.outlines." + i;
 const ridge = (id: string, i = 0) => "geo:" + id + ".ridges." + i;
@@ -34,13 +34,13 @@ function fixture(): Design {
     const d = syntheticDesign();
     const first = geo(d, "T");
     first.construction = { type: "outline", outlines: [{ curve: structuredClone(base), offset: [2, -3] }, rect(13, 13, 17, 17).outlines[0]] };
-    first.function = { type: "mountain", ridges: [{ curve: structuredClone(line), offset: [2, 1], slope: "{input:A} / 4" }],
+    first.function = { type: "mountain", valleys: [], ridges: [{ curve: withNodeSlope(structuredClone(line), "{input:A} / 4"), offset: [2, 1] }],
         peaks: [{ at: [-16, -13], height: 18, radius: 4, noise: 0, scale: 1 }] };
     d.geoNodes.push(
         layer("A", { type: "outline", outlines: [ref(outline("T"))] }, { type: "noise", amplitude: 2, scale: 5 }),
-        layer("B", { type: "outline", outlines: [ref(outline("A"))] }, { type: "mountain", ridges: [ref(ridge("T"))], peaks: [] }),
+        layer("B", { type: "outline", outlines: [ref(outline("A"))] }, { type: "mountain", valleys: [], ridges: [ref(ridge("T"))], peaks: [] }),
         layer("C", { type: "outline", outlines: [{ curve: ref(shape(outline("B"))), offset: [9, 4] }] },
-            { type: "slope", kind: "path", line: { curve: { ...ref(shape(ridge("B"))), h: { v0: 3, v2: 6 } }, offset: [1, 4] } }),
+            { type: "slope", kind: "path", lines: [{ curve: { ...ref(shape(ridge("B"))), h: { v0: 3, v2: 6 } }, offset: [1, 4] }], center: [0, 0], radius: 5, value: 2, rate: -.2 }),
         layer("D", rect(-42, -20, 42, 20), { type: "coast", shore: { curve: ref(shape(outline("B"))), offset: [-3, 0] },
             roughness: 0, harbor: { center: [0, 0], span: 3, radius: 0 } })
     );
@@ -50,7 +50,7 @@ function fixture(): Design {
 test("Parsing expands same-object chains and applies each shape placement once", () => {
     const d = fixture();
     d.curves.ring = { label: "环", curve: structuredClone(base) };
-    d.inputs.grade = { value: "{geo:B.ridges.0.slope}", range: defaultInputRange("grade") };
+    d.inputs.grade = { value: "{geo:B.ridges.0.curve.nodes.0.slope}", range: defaultInputRange("grade") };
     const before = structuredClone(d), result = resolveDesign(parseDesign(d));
     assert.deepEqual(d, before);
     assert.deepEqual(positions(result, "T"), offset(base.nodes.map(n => n.p), [2, -3]));
@@ -63,10 +63,12 @@ test("Parsing expands same-object chains and applies each shape placement once",
     assert.deepEqual(m.ridges, t.ridges);
     assert.notEqual(m.ridges[0].curve, t.ridges[0].curve);
     assert.deepEqual(m.ridges[0].curve.nodes.map(n => n.h), [14, undefined, 22]);
-    assert.equal(s.line.nodes[0].h, 3);
-    assert.equal(s.line.nodes[2].h, 6);
-    assert(s.line.nodes[1].h! > 3 && s.line.nodes[1].h! < 6);
-    assert.deepEqual(s.line.nodes[0].p, [-15, -8]);
+    assert.equal(s.lines[0].curve.nodes[0].h, 3);
+    assert.equal(s.lines[0].curve.nodes[2].h, 6);
+    const middle = expressionGraph(d).get("geo:C.lines.0.curve.h.v1") as number;
+    assert(middle > 3 && middle < 6);
+    assert.equal(s.lines[0].curve.nodes[1].h, undefined);
+    assert.deepEqual(s.lines[0].curve.nodes[0].p, [-15, -8]);
     assert.equal(result.inputs.grade.value, 1.75);
     assert.doesNotMatch(JSON.stringify(result), /"(offset|ref)":/);
 
@@ -89,7 +91,7 @@ test("References and a hand-expanded design have identical field, mask and probl
     }
     for (const item of [n, geo(literal, "B")]) {
         assert(item.function.type === "mountain");
-        item.function.ridges[0] = { curve: structuredClone(m), slope: 1.75 };
+        item.function.ridges[0] = { curve: withNodeSlope(structuredClone(m), 1.75) };
     }
     const c = geo(literal, "C"), coast = geo(literal, "D").function;
     assert(c.construction.type === "outline" && c.function.type === "slope" && c.function.kind === "path" && coast.type === "coast");
@@ -97,7 +99,7 @@ test("References and a hand-expanded design have identical field, mask and probl
     const placed = shifted(line, [1, 4]);
     placed.nodes[0].h = 3;
     placed.nodes[2].h = 6;
-    c.function.line = { curve: placed };
+    c.function.lines[0] = { curve: placed };
     coast.shore = { curve: shifted(base, [-3, 0]) };
     const digest = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
     const bytes = (field: Float32Array | Uint8Array) => new Uint8Array(field.buffer, field.byteOffset, field.byteLength);
@@ -117,7 +119,7 @@ test("Curves reject missing, mismatched or cyclic references, invalid translatio
         writeAt(d, ["geoNodes", index, ...path.split(".").map(k => /^\d+$/.test(k) ? Number(k) : k)], value);
         assert.throws(() => parseDesign(d), error);
     }
-    const at = "construction.outlines.0", line = "function.line";
+    const at = "construction.outlines.0", line = "function.lines.0";
     rejects("A", at, ref(outline("Z")), /找不到轮廓/);
     rejects("T", at, ref(outline("B")), /引用成环.*T.轮廓 1.*B.轮廓 1.*A.轮廓 1/);
     rejects("T", at, { curve: ref(shape(outline("B"))) }, /引用成环/);
@@ -133,8 +135,8 @@ test("Curves reject missing, mismatched or cyclic references, invalid translatio
     rejects("A", at, { ...ref(outline("T")), offset: [0, 0] }, /outlines\[0\] 无效/);
     rejects("A", at, { ...ref(outline("T")), curve: base }, /outlines\[0\] 无效/);
     rejects("A", at, base, /outlines\[0\].curve 无效/);
-    rejects("T", "function.ridges.0", { line: base, slope: 1 }, /ridges\[0\].curve 无效/);
-    rejects("C", line, { curve: { ...ref(shape(ridge("T"))), offset: [0, 0] } }, /line.curve 无效/);
+    rejects("T", "function.ridges.0", { line: base, slope: 1 }, /ridges\[0\].slope 坡度必须写在节点上/);
+    rejects("C", line, { curve: { ...ref(shape(ridge("T"))), offset: [0, 0] } }, /lines\[0\].curve 无效/);
 });
 
 test("Moving either alias moves the same holder once and updates preview without moving shape-only placements", () => {
@@ -194,8 +196,8 @@ test("Shape edits subtract the current holder offset and shared curves cannot mo
 
 test("Numeric aliases share slope and stops while independent heights stay at each shape placement", () => {
     const d = fixture(), model = resolveDesign(d), edit = numberEdits(d, model);
-    const alias = ridge("B") + ".slope", slope = edit.slots.get(edit.key(alias))!;
-    assert.equal(slope.key, ridge("T") + ".slope");
+    const alias = shape(ridge("B")) + ".nodes.0.slope", slope = edit.slots.get(edit.key(alias))!;
+    assert.equal(slope.key, shape(ridge("T")) + ".nodes.0.slope");
     assert(!edit.slots.has(alias));
     assert.equal(edit.get(alias), 1.75);
     const changed = edit.validate(slope.path, 3);
@@ -205,11 +207,11 @@ test("Numeric aliases share slope and stops while independent heights stay at ea
 
     const stop = shape(ridge("B")) + ".nodes.0.h", canonical = edit.slots.get(edit.key(stop))!;
     assert.equal(edit.validate(canonical.path, 16).resolved.length, 2);
-    const graph = curveGraph(d), at = graph.slots.get("geo:C.line.curve")!;
+    const graph = curveGraph(d), at = graph.slots.get("geo:C.lines.0.curve")!;
     assert.equal(graph.offset(at)[0], 1);
     const numbers = expressionGraph(d), height = at.key + ".h.v0";
     assert.equal(numbers.get(height), 3);
-    assert.equal(numbers.slots.get(height)?.label, "节点 1.增量");
+    assert.equal(numbers.slots.get(height)?.label, "坡线 1.节点 1.增量");
 });
 
 test("References can be copied or unlinked without moving and indexed references follow list edits", () => {
@@ -226,15 +228,15 @@ test("References can be copied or unlinked without moving and indexed references
     assert.notEqual(b.construction.outlines[0], n.construction.outlines[0]);
     assert.throws(() => deleteGeo(d, "T"), /仍被引用/);
     d.curves.x = { curve: openCurve<never>(line.nodes.map(({ p }) => ({ p })), "corner", "v"), label: "X" };
-    n.function.ridges.splice(0, 0, { curve: d.curves.x.curve, slope: 2 });
-    n.function.ridges[1] = { curve: { ...ref("curve:x"), h: { v0: 10 } }, offset: [2, 1], slope: 1 };
+    n.function.ridges.splice(0, 0, { curve: withNodeSlope(d.curves.x.curve, 2) });
+    n.function.ridges[1] = { curve: { ...ref("curve:x"), h: { v0: 10, v2: 10 }, slope: { v0: 1, v2: 1 } }, offset: [2, 1] };
     b.function.ridges[0] = ref(ridge("T", 1));
-    c.function.line = { curve: ref(shape(ridge("T", 1))) };
+    c.function.lines[0] = { curve: { ...ref(shape(ridge("T", 1))), h: { v0: 0, v2: 2 } } };
     d.inputs.value = { value: "{" + shape(ridge("T", 1)) + ".h.v0}", range: defaultInputRange("value") };
     assert.throws(() => removeDeclaration(d, "curve", "x"), /仍被引用/);
     copyGeometryItem(d, n, ["ridges"], 0);
     assert.deepEqual(b.function.ridges[0], ref(ridge("T", 2)));
-    assert.deepEqual(c.function.line, { curve: ref(shape(ridge("T", 2))) });
+    assert.deepEqual(c.function.lines[0], { curve: { ...ref(shape(ridge("T", 2))), h: { v0: 0, v2: 2 } } });
     assert.equal(d.inputs.value.value, "{" + shape(ridge("T", 2)) + ".h.v0}");
     removeGeometryItem(d, n, ["ridges"], 0);
     assert.throws(() => removeGeometryItem(d, n, ["ridges"], 1), /仍被引用/);
@@ -271,9 +273,10 @@ test("Copies move curve links and node height keys within their own landform", (
     const first = literalCurve(construction.outlines[0]), nodeId = first.nodes[0].id;
     construction.outlines.push(ref(outline("T")), construction.outlines[0]);
     d.curves.external = { label: "外部曲线", curve: openCurve<never>([{ p: [1, 2] }, { p: [5, 6] }], "corner", "outer-") };
-    original.function = { type: "mountain", peaks: [], ridges: [
-        { curve: { ...ref(shape(outline("T", 1))), h: { [nodeId]: "{geo:T.ridges.0.slope}" } }, offset: [2, 0], slope: 2 },
-        { curve: { ...ref("curve:external"), h: { "outer-0": "{geo:G.value}" } }, slope: "{" + shape(ridge("T")) + ".h." + nodeId + "}" },
+    original.function = { type: "mountain", valleys: [], peaks: [], ridges: [
+        { curve: { ...ref(shape(outline("T", 1))), h: { [nodeId]: "{geo:T.ridges.0.curve.slope." + nodeId + "}" }, slope: { [nodeId]: 2 } }, offset: [2, 0] },
+        { curve: { ...ref("curve:external"), h: { "outer-0": "{geo:G.value}", "outer-1": 4 },
+            slope: { "outer-0": "{" + shape(ridge("T")) + ".h." + nodeId + "}", "outer-1": 2 } } },
         { ...ref(ridge("T")) }
     ] };
     const copy = copyGeo(d, original), c = copy.construction, f = copy.function;
@@ -283,29 +286,30 @@ test("Copies move curve links and node height keys within their own landform", (
     assert.notEqual(literalCurve(c.outlines[2]).nodes[0].id, nextNode);
     assert.deepEqual(c.outlines[1], ref(outline(copy.id)));
     const [a, b] = f.ridges;
-    assert(!isHolderRef(a) && isCurveRef(a.curve) && !isHolderRef(b));
-    assert.deepEqual(a.curve, { ...ref(shape(outline(copy.id, 1))), h: { [nextNode]: "{geo:" + copy.id + ".ridges.0.slope}" } });
-    assert.deepEqual(b.curve, { ...ref("curve:external"), h: { "outer-0": "{geo:G.value}" } });
-    assert.equal(b.slope, "{" + shape(ridge(copy.id)) + ".h." + nextNode + "}");
+    assert(!isHolderRef(a) && isCurveRef(a.curve) && !isHolderRef(b) && isCurveRef(b.curve));
+    assert.deepEqual(a.curve, { ...ref(shape(outline(copy.id, 1))), h: { [nextNode]: "{" + shape(ridge(copy.id)) + ".slope." + nextNode + "}" },
+        slope: { [nextNode]: 2 } });
+    assert.deepEqual(b.curve.h, { "outer-0": "{geo:G.value}", "outer-1": 4 });
+    assert.equal(b.curve.slope!["outer-0"], "{" + shape(ridge(copy.id)) + ".h." + nextNode + "}");
     assert.deepEqual(f.ridges[2], ref(ridge(copy.id)));
     const source = (resolveDesign(parseDesign(d)).geoNodes.find(n => n.id === copy.id)!).function;
     assert(source.type === "mountain");
     assert.equal(source.ridges[0].curve.nodes[0].h, 2);
-    assert.equal(source.ridges[1].slope, 2);
+    assert.equal(source.ridges[1].curve.nodes[0].slope, 2);
     assert(deleteGeo(d, "T"));
     assert.doesNotThrow(() => resolveDesign(parseDesign(d)));
 });
 
 test("A copied ridge uses its own slope and the shifted index of the following ridge", () => {
-    const d = syntheticDesign(), n = geo(d, "T"), link = "{geo:T.ridges.0.slope} + {geo:T.ridges.1.slope}";
-    n.function = { type: "mountain", peaks: [], ridges: [
-        { curve: openCurve<Expression>([{ p: [0, 0], h: link }, { p: [2, 4], h: 7 }]), slope: 2 },
-        { curve: structuredClone(line), slope: 3 }
+    const d = syntheticDesign(), n = geo(d, "T"), link = "{geo:T.ridges.0.curve.nodes.0.slope} + {geo:T.ridges.1.curve.nodes.0.slope}";
+    n.function = { type: "mountain", valleys: [], peaks: [], ridges: [
+        { curve: withNodeSlope(openCurve<Expression>([{ p: [0, 0], h: link }, { p: [2, 4], h: 7 }]), 2) },
+        { curve: withNodeSlope(structuredClone(line), 3) }
     ] };
     copyGeometryItem(d, n, ["ridges"], 0);
     const [original, copy] = n.function.ridges.map(literalCurve);
-    assert.equal(original.nodes[0].h, "{geo:T.ridges.0.slope} + {geo:T.ridges.2.slope}");
-    assert.equal(copy.nodes[0].h, "{geo:T.ridges.1.slope} + {geo:T.ridges.2.slope}");
+    assert.equal(original.nodes[0].h, "{geo:T.ridges.0.curve.nodes.0.slope} + {geo:T.ridges.2.curve.nodes.0.slope}");
+    assert.equal(copy.nodes[0].h, "{geo:T.ridges.1.curve.nodes.0.slope} + {geo:T.ridges.2.curve.nodes.0.slope}");
     assert.notEqual(original.nodes[0].id, copy.nodes[0].id);
     assert.equal(expressionGraph(d).get("geo:T.ridges.1.curve.nodes.0.h"), 5);
 });
@@ -381,14 +385,14 @@ test("Deleting a source node clears stops in direct and indirect shape reference
     assert(n.function.type === "mountain" && c.function.type === "slope" && c.function.kind === "path");
     const shared = openCurve<never>(line.nodes.map(({ p }) => ({ p })), "auto", "v");
     d.curves.source = { curve: shared, label: "来源" };
-    n.function.ridges[0] = { curve: { ...ref("curve:source"), h: { v0: 9, v1: 12 } }, slope: 2 };
-    assert(!isHolderRef(c.function.line));
-    c.function.line.curve = { ...ref(shape(ridge("B"))), h: { v1: 3, v2: 6 } };
+    n.function.ridges[0] = { curve: { ...ref("curve:source"), h: { v0: 9, v1: 12, v2: 15 }, slope: { v0: 2, v2: 2 } } };
+    assert(!isHolderRef(c.function.lines[0]));
+    c.function.lines[0].curve = { ...ref(shape(ridge("B"))), h: { v0: 1, v1: 3, v2: 6 } };
     const history = new History(d);
     const before = serializeDesign(d);
     removeCurveNode(d, { kind: "curve", id: "source" }, { role: "vertex", path: -1, index: 1, point: [0, 0] });
-    assert.deepEqual(n.function.ridges[0], { curve: { ...ref("curve:source"), h: { v0: 9 } }, slope: 2 });
-    assert.deepEqual(c.function.line.curve, { ...ref(shape(ridge("B"))), h: { v2: 6 } });
+    assert.deepEqual(n.function.ridges[0], { curve: { ...ref("curve:source"), h: { v0: 9, v2: 15 }, slope: { v0: 2, v2: 2 } } });
+    assert.deepEqual(c.function.lines[0].curve, { ...ref(shape(ridge("B"))), h: { v0: 1, v2: 6 } });
     assert.doesNotThrow(() => parseDesign(d));
     assert(history.record(d));
     assert.equal(serializeDesign(history.step(false)), before);
@@ -396,7 +400,7 @@ test("Deleting a source node clears stops in direct and indirect shape reference
 
 test("Continue drawing, redrawing and retracting a handle write back through a shape placement", () => {
     for (const endpoint of [0, 2]) for (const closed of [false, true]) {
-        const d = fixture(), history = new History(d), before = serializeDesign(d), graph = curveGraph(d), key = "geo:C.line.curve";
+        const d = fixture(), history = new History(d), before = serializeDesign(d), graph = curveGraph(d), key = "geo:C.lines.0.curve";
         const slot = graph.slots.get(key)!;
         const draft: GeoDraft = { tool: "continueCurve", owner: "C", ids: ["C"], nodes: [penNode("", [5, 7], [7, 8]), penNode("", [2, 8])],
             anchors: [], reverse: false, closed, curve: { key, name: "C.坡线", original: graph.materialize(slot), endpoint, pen: "terrain", requiredClosed: false } };
@@ -405,7 +409,8 @@ test("Continue drawing, redrawing and retracting a handle write back through a s
         assert.equal(edited.closed, closed);
         assert.equal(added[endpoint === 0 ? 0 : 1].id, last);
         assert.deepEqual(added.map(n => n.p), endpoint === 0 ? [[1, 4], [4, 3]] : [[4, 3], [1, 4]]);
-        assert(added.every(n => !Object.hasOwn(n, "h")));
+        assert(added.every(n => Number.isFinite(n.h) && (n.slope === "{input:A} / 4" || n.slope === 1.75)));
+        assert(added.some(n => n.interpolate?.includes("h")));
         assert.doesNotThrow(() => parseDesign(d));
         assert(history.record(d));
         assert.equal(serializeDesign(history.step(false)), before);
@@ -415,8 +420,9 @@ test("Continue drawing, redrawing and retracting a handle write back through a s
             Object.assign(curve, { closed: false, nodes: [penNode("a", local([6, 4])), penNode("b", local([9, 2]))] });
         });
         const c = geo(d, "C").function;
-        assert(c.type === "slope" && c.kind === "path" && !isHolderRef(c.line));
-        assert.deepEqual(c.line.curve, ref(shape(ridge("B"))));
+        assert(c.type === "slope" && c.kind === "path" && !isHolderRef(c.lines[0]));
+        assert(isCurveRef(c.lines[0].curve));
+        assert.deepEqual(c.lines[0].curve, { ...ref(shape(ridge("B"))), h: { a: 0, b: 2 } });
         assert.deepEqual(positions(resolveDesign(d), "C", -1), [[6, 4], [9, 2]]);
     }
 });

@@ -6,7 +6,7 @@ import { type GeoControl } from "../src/core/edit/geoControls.ts";
 import { defaultFunction } from "../src/core/edit/geoNodes.ts";
 import { type Selection } from "../src/core/edit/types.ts";
 import { type Point } from "../src/core/design/v5.ts";
-import { literalCurve, layer, openCurve, rect, syntheticDesign } from "./scenarios.ts";
+import { withNodeSlope, literalCurve, layer, openCurve, rect, syntheticDesign } from "./scenarios.ts";
 
 const selection = (id: string): Selection => ({ kind: "geoNode", id });
 const hit = (role: GeoControl["role"], path = 0, index = 0): GeoControl => ({ role, path, index, point: [0, 0] });
@@ -52,14 +52,14 @@ test("Contour, curve and region menus follow the actual geometry and semantic ow
     assert.deepEqual(names(strip), [["重选边", "复制地件", "禁用地件", "删除地件"]]);
 });
 
-test("Parameter geometry menus show member operations only for ridges and peaks", () => {
+test("Parameter geometry menus show member operations for profiles and peaks", () => {
     const d = syntheticDesign(), n = d.geoNodes[1], mountain = defaultFunction("mountain");
     const points: Point[] = [[0, 0], [4, 0], [4, 4], [0, 4]];
-    const ridge = openCurve(points.map(p => ({ p })));
+    const ridge = withNodeSlope(openCurve(points.map(p => ({ p, h: 0 }))), 1);
     ridge.nodes[0].bulge = .5;
     assert(mountain.type === "mountain");
     n.function = mountain;
-    mountain.ridges.push({ curve: structuredClone(ridge), slope: 2 }, { curve: ridge, slope: 1 });
+    mountain.ridges.push({ curve: withNodeSlope(structuredClone(ridge), 2) }, { curve: ridge });
     mountain.peaks.push({ at: [0, 0], height: 3, radius: 18, noise: 0, scale: 1 });
     const menu = (control?: GeoControl) => contextMenuColumns(resolveDesign(d), selection("T"), true, control);
     const first = menu(hit("segment", -2, 0));
@@ -75,10 +75,12 @@ test("Parameter geometry menus show member operations only for ridges and peaks"
     ridge.closed = true;
     assert.deepEqual(titles(menu(hit("segment", -2, 3))), [["线段类型", "线段", "闭合曲线"], ["山脊 2", "地件"]]);
 
-    n.function = { type: "slope", kind: "path", line: { curve: ridge } };
-    assert.deepEqual(titles(menu(hit("segment", -1, 3))), [["线段类型", "线段", "闭合曲线"], ["地件"]]);
-    ridge.closed = false;
-    assert.deepEqual(titles(menu(hit("vertex", -1, 1))), [["节点类型", "节点", "曲线"], ["地件"]]);
+    const slope = structuredClone(ridge);
+    slope.nodes.forEach(n => delete n.slope);
+    n.function = { type: "slope", kind: "path", lines: [{ curve: slope }], center: [0, 0], radius: 5, value: 2, rate: -.2 };
+    assert.deepEqual(titles(menu(hit("segment", -1, 3))), [["线段类型", "线段", "闭合曲线"], ["坡线 1", "地件"]]);
+    slope.closed = false;
+    assert.deepEqual(titles(menu(hit("vertex", -1, 1))), [["节点类型", "节点", "曲线"], ["坡线 1", "地件"]]);
     n.function = defaultFunction("coast", { shore: rect(0, 0, 4, 4).outlines[0].curve, center: [0, 0] });
     assert.deepEqual(titles(menu(hit("segment", -1))), [["线段类型", "线段", "闭合曲线"], ["地件"]]);
     assert.deepEqual(titles(menu(hit("parameter"))), [["地件"]]);

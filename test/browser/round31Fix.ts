@@ -4,7 +4,7 @@ import { pathHandle } from "../../src/core/design/path.ts";
 import { type PlacedGeoNode, type Point } from "../../src/core/design/v5.ts";
 import { distance, mixPoint } from "../../src/core/math/geometry.ts";
 import { mapColors, overlay, type Theme } from "../../src/render/palette.ts";
-import { layer, openCurve, rect, syntheticDesign } from "../scenarios.ts";
+import { withNodeSlope, layer, openCurve, rect, syntheticDesign } from "../scenarios.ts";
 import { withCurveMap } from "./curveMapFixture.ts";
 
 function scene() {
@@ -19,18 +19,18 @@ function scene() {
     design.geoNodes = [
         layer("G", rect(-57, -45, 57, 45), { type: "ground", value: 3 }),
         layer("A", outlines, {
-            type: "mountain",
+            type: "mountain", valleys: [],
             ridges: [
-                { curve: openCurve([{ p: [-38, -19], h: 4 }, { p: [-13, -18], h: 15 }], "corner", "outer-ridge-"), slope: 1 },
-                { curve: openCurve([{ p: [-29, -6], h: 7 }, { p: [-22, -6], h: 8 }], "corner", "island-ridge-"), slope: 1 },
-                { curve: openCurve([{ p: [-41, 14], h: 9 }, { p: [-28, 1], h: 7 }], "corner", "cross-ridge-"), slope: 1 }
+                { curve: withNodeSlope(openCurve([{ p: [-38, -19], h: 4 }, { p: [-13, -18], h: 15 }], "corner", "outer-ridge-"), 1) },
+                { curve: withNodeSlope(openCurve([{ p: [-29, -6], h: 7 }, { p: [-22, -6], h: 8 }], "corner", "island-ridge-"), 1) },
+                { curve: withNodeSlope(openCurve([{ p: [-41, 14], h: 9 }, { p: [-28, 1], h: 7 }], "corner", "cross-ridge-"), 1) }
             ],
             peaks: [{ at: [-22, 1], height: 11, radius: 8, noise: 0, scale: 1 },
                 { at: [-40, 9], height: 12, radius: 9, noise: 0, scale: 1 }]
         }),
         layer("M", rect(-48, 19, 31, 40), {
-            type: "mountain",
-            ridges: [{ curve: ridge, slope: 1 }],
+            type: "mountain", valleys: [],
+            ridges: [{ curve: withNodeSlope(ridge, 1) }],
             peaks: [{ at: [20, 31], height: 17, radius: 12, noise: 0, scale: 1 }]
         }),
         { ...layer("D", rect(23, -28, 43, -15), { type: "flat", amount: 3 }), disabled: true }

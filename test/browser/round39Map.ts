@@ -194,7 +194,7 @@ export function checkContourScales(url: string) {
     d.grid.step = .5;
     d.geoNodes = [layer("G", area, { type: "ground", value: 0 }),
         layer("S", structuredClone(area), { type: "slope", kind: "path",
-            line: { curve: openCurve([{ p: [-40, 0], h: -66 }, { p: [40, 0], h: 94 }]) } })];
+            lines: [{ curve: openCurve([{ p: [-40, 0], h: -66 }, { p: [40, 0], h: 94 }]) }], center: [0, 0], radius: 5, value: 2, rate: -.2 })];
     return withCurveMap(url, "round39-contour-scales", async page => {
         const { cdp, click, evaluate, key, paint, text, wait } = page;
         await click("[data-tab=layers]");

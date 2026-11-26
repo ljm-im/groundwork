@@ -13,7 +13,7 @@ import { mountainProfile } from "../src/core/terrain/mountain.ts";
 import { terrainIssues } from "../src/core/checks/terrain.ts";
 import { terrainSurface } from "../src/core/terrain/surface.ts";
 import { Project } from "../src/core/project.ts";
-import { erosion, layer, rect, syntheticDesign, openCurve } from "./scenarios.ts";
+import { withNodeSlope, erosion, layer, rect, syntheticDesign, openCurve } from "./scenarios.ts";
 
 function design(nodes: GeoNode[], step = 1) {
     const d = syntheticDesign();
@@ -41,11 +41,10 @@ test("A seed reproduces the final height field", () => {
 
 test("A local mountain preserves the underlying height differences along its boundary", () => {
     const g = base(), slope = layer("S", g.construction, { type: "slope", kind: "path",
-        line: { curve: openCurve([{ p: [-30, 0], h: 4 }, { p: [30, 0], h: 7 }]) } });
+        lines: [{ curve: openCurve([{ p: [-30, 0], h: 4 }, { p: [30, 0], h: 7 }]) }], center: [0, 0], radius: 5, value: 2, rate: -.2 });
     const d = design([g, slope]), before = evaluateStack(d).fields.height.values;
-    d.geoNodes.push(layer("M", rect(-12, -12, 12, 12), { type: "mountain",
-        ridges: [{ curve: openCurve([{ p: [-5, 0], h: 12 }, { p: [5, 0], h: 10 }]),
-            slope: 3 }],
+    d.geoNodes.push(layer("M", rect(-12, -12, 12, 12), { type: "mountain", valleys: [],
+        ridges: [{ curve: withNodeSlope(openCurve([{ p: [-5, 0], h: 12 }, { p: [5, 0], h: 10 }]), 3) }],
         peaks: [{ at: [0, 3], height: 16, radius: 2, noise: .1, scale: 7 }] }));
     const t = evaluateStack(parseDesign(d)), after = t.fields.height.values, region = t.regions.get("M")!;
     assert(after[t.grid.index(0, 3)] > 12 && after[t.grid.index(-5, 0)] > 8);
@@ -228,7 +227,7 @@ test("Canvas and ordinary writes respect initializer order and independent holes
 
 test("A zero strength disk protects every cell of an eroded slope", () => {
     const all = rect(-24, -24, 24, 24);
-    const d = design([base(), layer("S", all, { type: "slope", kind: "radial", center: [0, 0], value: 16, radius: 0, rate: -.3 }),
+    const d = design([base(), layer("S", all, { type: "slope", kind: "radial", lines: [], center: [0, 0], value: 16, radius: 0, rate: -.3 }),
         layer("P", { type: "outline", outlines: [{ curve: circle(6) }] }, { type: "flat", amount: -1 }, "f")]);
     d.fields.f = { label: "F" };
     d.geoNodes.unshift(layer("F", all, { type: "ground", value: 1 }, "f"));
@@ -242,9 +241,9 @@ test("A zero strength disk protects every cell of an eroded slope", () => {
 test("All functions operate on a design with only the built-in field", () => {
     const all = rect(-20, -20, 20, 20), nodes = [base(),
         layer("C", all, { type: "coast", shore: { curve: circle(12) }, roughness: 2, harbor: { center: [0, 0], radius: 0, span: 3 } }),
-        layer("M", all, { type: "mountain", ridges: [], peaks: [], floor: 0 }), layer("N", all, { type: "noise", amplitude: 1, scale: 8 }), layer("K", all, { type: "cliff", factor: .7 }),
+        layer("M", all, { type: "mountain", valleys: [], ridges: [], peaks: [], floor: 0 }), layer("N", all, { type: "noise", amplitude: 1, scale: 8 }), layer("K", all, { type: "cliff", factor: .7 }),
         layer("E", all, erosion), layer("I", all, { type: "islets", density: 1, reach: 5 }), layer("F", all, { type: "flat", amount: 5 }),
-        layer("A", all, { type: "flat", amount: 1, feather: 3 }), layer("S", all, { type: "slope", kind: "path", line: { curve: openCurve([{ p: [-2, 0], h: 2 }, { p: [2, 0], h: 3 }]) } })];
+        layer("A", all, { type: "flat", amount: 1, feather: 3 }), layer("S", all, { type: "slope", kind: "path", lines: [{ curve: openCurve([{ p: [-2, 0], h: 2 }, { p: [2, 0], h: 3 }]) }], center: [0, 0], radius: 5, value: 2, rate: -.2 })];
     for (const type of ["blend", "batter", "split"] as const)
         nodes.push(layer(type, { type: "strip", of: ["F"], widths: [2, 2] }, type === "batter" ? { type, grade: .4 } : { type }));
     const d = parseDesign(design(nodes)), a = new Project(d), b = new Project(parseDesign(d));
@@ -258,7 +257,7 @@ test("Slope ridges round the crown and foot, interpolate heights and merge at th
         { p: [-20, 0], h: 24 }, { p: [-10, 0] }, { p: [0, 0], h: 28 }, { p: [20, 0], h: 29 }
     ]);
     const d = design([layer("A", area, { type: "ground", value: 0 }),
-        layer("B", area, { type: "mountain", ridges: [{ curve: line, slope: "{input:A} / 10 + .05" }], peaks: [] })], .5);
+        layer("B", area, { type: "mountain", valleys: [], ridges: [{ curve: withNodeSlope(line, "{input:A} / 10 + .05") }], peaks: [] })], .5);
     const project = new Project(parseDesign(d)), f = project.resolved.geoNodes[1].function;
     assert(f.type === "mountain");
     assert.equal(f.ridges[0].curve.nodes[1].h, undefined);
@@ -277,7 +276,7 @@ test("Slope ridges round the crown and foot, interpolate heights and merge at th
         (height(0, foot, 0) - height(0, foot + .001, 0))) < 1e-6);
     assert.equal(height(0, 100, 4), 4);
 
-    const second = { slope: .75, curve: openCurve([{ p: [-20, 20], h: 28 }, { p: [20, 20], h: 28 }]) };
+    const second = { curve: withNodeSlope(openCurve([{ p: [-20, 20], h: 28 }, { p: [20, 20], h: 28 }]), .75) };
     const merged = mountainProfile({ ...f, ridges: [...f.ridges, second] }, .0625, 0);
     assert(Math.abs(merged(0, 10, 0) - height(0, 10, 0) - 1.25) < 1e-9);
 });
@@ -298,11 +297,11 @@ test("Noise gullies cut a bounded proportion of positive heights and leave the s
 
 test("Omitted mountain and erosion floors preserve cells at and below minus one thousand", () => {
     const area = rect(-12, -12, 12, 12);
-    const m = layer("M", area, { type: "mountain", ridges: [], peaks: [{ at: [0, 0], height: 5, radius: 3, noise: 0, scale: 12 }] });
+    const m = layer("M", area, { type: "mountain", valleys: [], ridges: [], peaks: [{ at: [0, 0], height: 5, radius: 3, noise: 0, scale: 12 }] });
     const e = layer("E", area, { ...erosion });
     for (const node of [m, e]) {
         const d = design([layer("A", area, { type: "ground", value: -1000 }),
-            layer("B", area, { type: "slope", kind: "path", line: { curve: openCurve([{ p: [-8, 0], h: -12 }, { p: [8, 0], h: 0 }]) } })]);
+            layer("B", area, { type: "slope", kind: "path", lines: [{ curve: openCurve([{ p: [-8, 0], h: -12 }, { p: [8, 0], h: 0 }]) }], center: [0, 0], radius: 5, value: 2, rate: -.2 })]);
         const before = evaluateStack(d).fields.height.values;
         d.geoNodes.push(node);
         const initial = evaluateStack(d).fields.height.values;

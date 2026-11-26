@@ -1,6 +1,6 @@
 <div class="parameter-row" class:with-action={!!action} {onmouseenter} {onmouseleave} {...attributes}>
     {#if forInput}<label class="param-name" class:disabled for={forInput}>{label}</label>
-    {:else if label}<span class="param-name">{label}</span>{/if}
+    {:else if label}<span class="param-name" class:with-icon={!!labelIcon}>{#if labelIcon}<Icon name={labelIcon} />{/if}{label}</span>{/if}
     <div class="parameter-control">
         {#if readOnlyValue !== undefined}
             <span class="read-only-value" role="textbox" aria-readonly="true" aria-label={label}>{readOnlyValue}</span>
@@ -16,6 +16,7 @@
     .parameter-action { grid-column: 4; grid-row: 1; display: flex; }
     label:not(.disabled) { cursor: pointer; }
     .disabled { color: var(--text-disabled); }
+    .with-icon { display: flex; align-items: center; gap: var(--space-1); }
     .read-only-value {
         display: flex;
         align-items: center;
@@ -32,8 +33,9 @@
 
 <script lang="ts">
     import { type Snippet } from "svelte";
-    let { label, unit = "", forInput, disabled = false, readOnlyValue, problem, attributes, children, action, onmouseenter, onmouseleave }: {
-        label?: string; unit?: string; forInput?: string; disabled?: boolean; readOnlyValue?: string;
+    import Icon, { type IconName } from "./Icon.svelte";
+    let { label, labelIcon, unit = "", forInput, disabled = false, readOnlyValue, problem, attributes, children, action, onmouseenter, onmouseleave }: {
+        label?: string; labelIcon?: IconName; unit?: string; forInput?: string; disabled?: boolean; readOnlyValue?: string;
         problem?: string; attributes?: Record<string, string>; children?: Snippet; action?: Snippet; onmouseenter?: () => void; onmouseleave?: () => void;
     } = $props();
 </script>

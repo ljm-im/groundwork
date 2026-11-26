@@ -1,5 +1,4 @@
-import { bounds, mixPoint } from "../math/geometry.ts";
-import { slopeEndpointValues } from "../design/functionTable.ts";
+import { mixPoint } from "../math/geometry.ts";
 import { type RegionShape, type Segment } from "../design/regions.ts";
 import { type Construction, type ClosedCurve, type Point } from "../design/v5.ts";
 
@@ -56,34 +55,6 @@ export function functionGeometry(c: Construction<number, "resolved">, shape: Reg
                 ...(n.in && { in: [n.in[0] * .9, n.in[1] * .9] }),
                 ...(n.out && { out: [n.out[0] * .9, n.out[1] * .9] }) })) };
             return { closed: true, nodes: largest.ring.map(p => ({ id: nextId(), p: mixPoint(center, p, .9), mode: "corner" })) };
-        },
-        line() {
-            const [x0, y0, x1, y1] = bounds(rings.flat());
-            const preferred = x1 - x0 >= y1 - y0 ? 0 : 1;
-            const crossLine = (axis: number, transverse: number) => {
-                const other = 1 - axis, at = (v: number): Point => axis === 0 ? [v, transverse] : [transverse, v];
-                const hits: number[] = [];
-                for (const ring of rings) for (const [i, a] of ring.entries()) {
-                    const b = ring[(i + 1) % ring.length];
-                    if ((a[other] > transverse) !== (b[other] > transverse))
-                        hits.push(a[axis] + (transverse - a[other]) / (b[other] - a[other]) * (b[axis] - a[axis]));
-                }
-                hits.sort((a, b) => a - b);
-                const intervals = hits.slice(0, -1).map((low, i) => ({ low, high: hits[i + 1] }))
-                    .filter(({ low, high }) => low < high && shape.contains(at((low + high) / 2)));
-                const proximity = ({ low, high }: { low: number; high: number }) => Math.max(low - center[axis], center[axis] - high, 0);
-                const span = intervals.sort((a, b) => proximity(a) - proximity(b) || (b.high - b.low) - (a.high - a.low))[0];
-                if (!span) return;
-                return [.1, .9].map(t => at(span.low + t * (span.high - span.low)));
-            };
-            const other = 1 - preferred;
-            let vertices = crossLine(preferred, center[other]) ?? crossLine(other, center[preferred]);
-            for (const [i, p] of largest.ring.entries()) {
-                if (vertices) break;
-                vertices = crossLine(preferred, (p[other] + largest.ring[(i + 1) % largest.ring.length][other]) / 2);
-            }
-            if (!vertices) throw Error("地件没有足够的空间放置坡线");
-            return { closed: false, nodes: vertices.map((p, i) => ({ id: nextId(), p, mode: "corner" as const, h: slopeEndpointValues[i] })) };
         }
     };
 }

@@ -9,7 +9,9 @@ const tabs = {
 } as const;
 
 export type PropertyTab = (typeof tabs)[keyof typeof tabs][number][0] | "general";
-export type SubitemGroup = "ridges" | "peaks" | "outlines" | "advanced";
+import { type FunctionMember } from "../../core/design/curveReferences.ts";
+
+export type SubitemGroup = FunctionMember | "outlines" | "advanced";
 
 export function propertyTabs(selection: Selection | null) {
     switch (selection?.kind) {

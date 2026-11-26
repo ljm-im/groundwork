@@ -1,8 +1,8 @@
-import { copyAt, readAt, type Address } from "./address.ts";
+import { readAt, type Address } from "./address.ts";
 import { defaultFieldPrecision, isBuiltin } from "./defaults.ts";
 import { gridStep, numericValid } from "./functionTable.ts";
-import { literalPattern, references } from "./expression.ts";
-import { expressionGraph, expressionLookup, parameters, resolveParameterValues, resolvedPaths, type Slot } from "./parameters.ts";
+import { literalPattern } from "./expression.ts";
+import { expressionGraph, expressionLookup, resolveParameterValues, resolvedPaths, slotDependencies, type Slot } from "./parameters.ts";
 import { check, type Location } from "./problems.ts";
 import { validFieldPrecision, validInputRange, validStripWidths } from "./validateGeo.ts";
 import { type Design, type Expression, type ResolvedDesign } from "./v5.ts";
@@ -35,7 +35,7 @@ export function numberEdits(design: Design, resolved: ResolvedDesign) {
     for (const slot of slots.values()) {
         byAddress.set(JSON.stringify(slot.path), slot);
         order.set(slot.key, order.size);
-        for (const ref of references(slot.value)) {
+        for (const ref of slotDependencies(slot)) {
             const key = graph.key(ref);
             const list = readers.get(key);
             if (list) list.push(slot.key);
@@ -44,7 +44,7 @@ export function numberEdits(design: Design, resolved: ResolvedDesign) {
     }
 
     function affected(roots: Iterable<string>) {
-        const dirty = new Set([...roots].map(graph.key));
+        const dirty = new Set([...roots].map(key => graph.key(key)));
         for (const key of dirty) for (const reader of readers.get(key) ?? []) dirty.add(reader);
         return dirty;
     }
@@ -53,16 +53,10 @@ export function numberEdits(design: Design, resolved: ResolvedDesign) {
         const slot = byAddress.get(JSON.stringify(address));
         if (!slot) return literalChange(design, address, value);
         if (typeof value === "string" && literalPattern.test(value.trim())) value = Number(value);
-        const replacements = new Map([[slot.key, { ...slot, value, virtual: false }]]);
-        if (slot.spec?.profile && readAt(design, address) === undefined) {
-            // Adding an authored stop can change how neighboring implicit stops are derived.
-            for (const [key, next] of parameters(copyAt(design, address, value), slot.location.kind === "geo" ? slot.location.index : undefined)) {
-                const prior = slots.get(key);
-                if (next.value !== prior?.value || next.virtual !== prior?.virtual) replacements.set(key, { ...next, virtual: !!next.virtual });
-            }
-        }
-        const dirty = affected(replacements.keys());
-        const lookup = (key: string) => replacements.get(key) ?? slots.get(key);
+        check(!slot.output, "请先覆盖插值", slot.location);
+        const replacement = { ...slot, value };
+        const dirty = affected([slot.key]);
+        const lookup = (key: string) => key === slot.key ? replacement : slots.get(key);
         const get = expressionLookup(design, lookup, key => dirty.has(key) ? undefined : graph.get(key), graph.key);
         const ordered = [...dirty].sort((a, b) => order.get(a)! - order.get(b)!);
         const values = resolveParameterValues(ordered.map(key => lookup(key)!), get);

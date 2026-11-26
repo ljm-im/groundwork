@@ -8,7 +8,7 @@ import { TerrainCache } from "../src/core/terrain/cache.ts";
 import { evaluateLayer, type FieldState } from "../src/core/terrain/functions.ts";
 import { makeShape, rasterRegion, regionMaskAt } from "../src/core/design/regions.ts";
 import { evaluateStack } from "../src/core/terrain/terrain.ts";
-import { erosion, layer, openCurve, polygon, rect, resolvedRect, syntheticDesign } from "./scenarios.ts";
+import { withNodeSlope, erosion, layer, openCurve, polygon, rect, resolvedRect, syntheticDesign } from "./scenarios.ts";
 
 const area = rect(-28, -25, 28, 25);
 const shore = polygon([[-16, -20], [16, -20], [18, 16], [-15, 19]]);
@@ -31,19 +31,19 @@ const stripRegion = rasterRegion(grid, makeShape({ field: "height", id: "B", lab
 const cases: Record<Fn["type"], Case> = {
     ground: { fn: { type: "ground", value: 2 }, changes: [[["value"], 4]] },
     flat: { fn: { type: "flat", amount: "{field:A} * 3", feather: 9 }, fieldInput: true, changes: [[["amount"], 1], [["feather"], 3]] },
-    slope: { fn: { type: "slope", kind: "path", line: { curve: line }, ease: true },
-        changes: [[["line", "curve", "nodes", 1, "p"], [0, 12]], [["line", "curve", "nodes", 0, "h"], 3], [["line", "curve", "nodes", 1, "h"], 11],
-            [["line", "curve", "nodes", 2, "h"], 6], [["line", "curve", "nodes", 1, "mode"], "corner"], [["ease"], false]] },
+    slope: { fn: { type: "slope", kind: "path", lines: [{ curve: line, ease: true }], center: [0, 0], radius: 5, value: 2, rate: -.2 },
+        changes: [[["lines", 0, "curve", "nodes", 1, "p"], [0, 12]], [["lines", 0, "curve", "nodes", 0, "h"], 3], [["lines", 0, "curve", "nodes", 1, "h"], 11],
+            [["lines", 0, "curve", "nodes", 2, "h"], 6], [["lines", 0, "curve", "nodes", 1, "mode"], "corner"], [["lines", 0, "ease"], false]] },
     noise: { fn: { type: "noise", amplitude: "{field:A}", scale: 8, seed: 3, octaves: 4, feather: 6 }, fieldInput: true,
         changes: [[["amplitude"], 1], [["scale"], 10], [["seed"], 5], [["octaves"], 2], [["feather"], 2]] },
     coast: { fn: { type: "coast", shore: { curve: shore }, roughness: "{field:A} * 16", harbor: { center: [-14, 8], radius: 3, span: 7 }, seed: 11 }, fieldInput: true,
         changes: [[["shore", "curve", "nodes", 0, "p"], [-5, -11]], [["roughness"], 2], [["harbor", "center"], [14, 16]], [["harbor", "radius"], 12],
             [["harbor", "span"], 25], [["seed"], 23]] },
-    mountain: { fn: { type: "mountain", floor: -5, seed: 16, ridges: [{ curve: line, slope: 1 }],
+    mountain: { fn: { type: "mountain", valleys: [], floor: -5, seed: 16, ridges: [{ curve: withNodeSlope(line, 1) }],
         peaks: [{ at: [11, -10], height: 24, radius: 5, noise: 1.4, scale: 8 }] },
     changes: [[["floor"], 10], [["seed"], 19], [["ridges", 0, "curve", "nodes", 1, "p"], [-6, 9]], [["ridges", 0, "curve", "nodes", 0, "h"], 8],
         [["ridges", 0, "curve", "nodes", 1, "h"], 12], [["ridges", 0, "curve", "nodes", 2, "h"], 15], [["ridges", 0, "curve", "nodes", 1, "mode"], "corner"],
-        [["ridges", 0, "slope"], 1.5], [["crestRound"], 2], [["footRound"], 2],
+        [["ridges", 0, "curve", "nodes", 1, "slope"], 1.5], [["crestRound"], 2], [["footRound"], 2],
         [["peaks", 0, "at"], [8, -14]], [["peaks", 0, "height"], 31], [["peaks", 0, "radius"], 8],
         [["peaks", 0, "noise"], 4], [["peaks", 0, "scale"], 6]] },
     cliff: { fn: { type: "cliff", factor: "{field:A} * .9", seaLevel: 0, seed: 3 }, fieldInput: true,
@@ -58,7 +58,7 @@ const cases: Record<Fn["type"], Case> = {
     batter: { fn: { type: "batter", grade: .7 }, changes: [[["grade"], 1.4]] }
 };
 
-const radial: Case = { fn: { type: "slope", kind: "radial", center: [2, 4], radius: 5, value: 2, rate: -.2 },
+const radial: Case = { fn: { type: "slope", kind: "radial", lines: [], center: [2, 4], radius: 5, value: 2, rate: -.2 },
     changes: [[["center"], [-2, 1]], [["radius"], 8], [["value"], 4], [["rate"], -.7]] };
 
 test("Every built-in function uses its parameters and ordinary functions read their lower fields", () => {

@@ -11,7 +11,7 @@ import { copyGeometryItem, insertCurveNode, removeCurveNode, removeCurveSegment 
 import { arcHandle, editWholeCurve, insertPathNode, moveHandle, penNode, penPath, removePathSegment, retractHandle, segmentRemovalIndex,
     setNodeMode, setSegment } from "../src/core/edit/paths.ts";
 import { distance, mixPoint, spline, stations } from "../src/core/math/geometry.ts";
-import { literalCurve, openCurve, syntheticDesign } from "./scenarios.ts";
+import { withNodeSlope, literalCurve, openCurve, syntheticDesign } from "./scenarios.ts";
 
 const at = (curve: Bezier, t: number) => splitBezier(curve, t)[0][3];
 const points: Point[] = [[1, 2], [5, 8], [10, 0], [14, 4], [22, 1]];
@@ -262,7 +262,7 @@ test("Segment removal averages heights and shifts references like node removal",
     path.nodes[1].h = "{input:A} * 2";
     path.nodes[2].h = 6;
     path.nodes[3].h = 10;
-    f.ridges.push({ curve: path, slope: 1 });
+    f.ridges.push({ curve: withNodeSlope(path, 1) });
     const control = { role: "segment" as const, path: -1, index: 1, point: path.nodes[1].p };
     f.floor = "{geo:T.ridges.0.curve.nodes.2.h}";
     const before = structuredClone(path);
@@ -279,7 +279,7 @@ test("Segment removal averages heights and shifts references like node removal",
     d.inputs.A.value = 9;
     const updated = resolveDesign(d).geoNodes[1].function;
     assert(updated.type === "mountain");
-    assert.equal(updated.ridges[0].curve.nodes[1].h, 12);
+    assert.equal(updated.ridges[0].curve.nodes[1].h, 10);
 });
 
 test("Merging a closed slope segment includes its interpolated increment", () => {
@@ -287,7 +287,7 @@ test("Merging a closed slope segment includes its interpolated increment", () =>
     const path = openCurve([{ p: [0, 0], h: 0 }, { p: [2, 0] }, { p: [6, 0], h: 27 },
         { p: [6, 6], h: 7 }, { p: [0, 6], h: 1 }]);
     path.closed = true;
-    n.function = { type: "slope", kind: "path", line: { curve: path }, ease: true };
+    n.function = { type: "slope", kind: "path", lines: [{ curve: path, ease: true }], center: [0, 0], radius: 5, value: 2, rate: -.2 };
     const merged = removeCurveSegment(d, n, { role: "segment", path: -1, index: 0, point: [1, 0] })!;
     assert.equal(merged.h, 3.5);
     assert.doesNotThrow(() => parseDesign(serializeDesign(d)));
@@ -424,9 +424,9 @@ const invalid: Invalid[] = [
 test("Curve validation reports the precise field for missing and invalid data", () => {
     for (const [path, message, change] of invalid) {
         const d = syntheticDesign(), curve = line();
-        d.geoNodes[1].function = { type: "slope", kind: "path", line: { curve: curve } };
+        d.geoNodes[1].function = { type: "slope", kind: "path", lines: [{ curve: curve }], center: [0, 0], radius: 5, value: 2, rate: -.2 };
         change(curve);
-        assert.throws(() => parseDesign(d), { message: "geoNodes[1].function.line.curve." + path + " " + message });
+        assert.throws(() => parseDesign(d), { message: "geoNodes[1].function.lines[0].curve." + path + " " + message });
     }
     const d = syntheticDesign(), n = d.geoNodes[1];
     assert(n.construction.type === "outline");
@@ -443,11 +443,11 @@ test("Curve validation reports the precise field for missing and invalid data", 
 
 test("Curve node IDs and positional height references survive insertion, removal and ridge copies", () => {
     const d = syntheticDesign(), n = d.geoNodes[1];
-    const ridge = openCurve([{ p: [-20, -7], h: 2 }, { p: [-15, -8], h: 3 }, { p: [-10, -9], h: 5 }]);
+    const ridge = withNodeSlope(openCurve([{ p: [-20, -7], h: 2 }, { p: [-15, -8], h: 3 }, { p: [-10, -9], h: 5 }]), 2);
     const f = defaultFunction("mountain");
     assert(f.type === "mountain" && n.construction.type === "outline");
     n.function = f;
-    f.ridges.push({ curve: ridge, slope: 2 });
+    f.ridges.push({ curve: ridge });
     const id = ridge.nodes[0].id;
     ridge.nodes[0].id = ridge.nodes[1].id;
     assert.throws(() => parseDesign(d), error => error instanceof DesignError &&

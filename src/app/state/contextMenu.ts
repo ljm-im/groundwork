@@ -1,8 +1,9 @@
+import { memberLabel, type FunctionMember } from "../../core/design/curveReferences.ts";
 import { isBuiltin } from "../../core/design/defaults.ts";
 import { neighbor, segmentType } from "../../core/design/path.ts";
 import { type Curve, type ResolvedDesign, type PlacedGeoNode } from "../../core/design/v5.ts";
 import { type Issue } from "../../core/design/results.ts";
-import { controlOwner, geometryPath, type GeoControl } from "../../core/edit/geoControls.ts";
+import { controlOwner, curveMember, geometryPath, type GeoControl } from "../../core/edit/geoControls.ts";
 import { canRemoveNode, canSetManual, isEndpoint, segmentRemovalIndex } from "../../core/edit/paths.ts";
 import { type Selection } from "../../core/edit/types.ts";
 import { geoAt } from "./geoTools.ts";
@@ -47,8 +48,8 @@ function geometryGroups(selection: Selection, control: GeoControl, curve: Curve,
     return groups;
 }
 
-function memberGroup(id: string, group: "ridges" | "peaks", index: number): Group {
-    const name = group === "ridges" ? "山脊" : "山峰";
+function memberGroup(id: string, group: FunctionMember, index: number): Group {
+    const name = memberLabel(group);
     return { title: name + " " + (index + 1), items: [
         { id: "copy-member", name: "复制" + name, icon: "copy", run: editor => editor.changeMember(id, group, index, true) },
         { id: "delete-member", name: "删除" + name, icon: "delete", danger: true, run: editor => editor.changeMember(id, group, index, false) }
@@ -71,9 +72,10 @@ function geoGroups(node: PlacedGeoNode, control?: GeoControl, handle?: HandleSid
             : { id: "reselect-strip", name: "重选边", icon: "strip", run: editor => editor.setTool("strip", id) };
         right.push({ title: "区域", items: [item] });
     }
-    if (f.type === "mountain" && control) {
-        if (geometry && control.path < 0) right.push(memberGroup(id, "ridges", -1 - control.path));
-        if (control.role === "parameter" && f.peaks[control.path - f.ridges.length])
+    if (control) {
+        const member = curveMember(f, control.path);
+        if (member) right.push(memberGroup(id, member.group, member.index));
+        if (f.type === "mountain" && control.role === "parameter" && f.peaks[control.path - f.ridges.length])
             right.push(memberGroup(id, "peaks", control.path - f.ridges.length));
     }
     return [left, right];

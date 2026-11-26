@@ -20,7 +20,7 @@
                     onclick={() => editor.removeCurvePart(editor.selection!, control)}><Icon name="delete" /></button>
             {/if}
         {/snippet}
-        {#if height && !segment}{@render height(index, id)}{/if}
+        {#if values && !segment}{@render values(index, id)}{/if}
         <CurvePartProperties {editor} {curve} {control} />
     </Subitem>
 {/if}
@@ -34,6 +34,6 @@
     import CurvePartProperties from "./CurvePartProperties.svelte";
     import Icon from "./Icon.svelte";
     import Subitem from "./Subitem.svelte";
-    let { editor, curve, path, height }: { editor: session.Editor; curve: Curve; path: number; height?: Snippet<[number, string]> } = $props();
+    let { editor, curve, path, values }: { editor: session.Editor; curve: Curve; path: number; values?: Snippet<[number, string]> } = $props();
     let control = $derived(editor.vertex);
 </script>

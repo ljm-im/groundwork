@@ -1,15 +1,16 @@
 import { readAt, writeAt, type Address } from "./address.ts";
-import { expandKeys, functionParameterKeys, functionParameters, functionTable, markParameters, matchesKey, parameterDefault, stripWidths, type NumericParameter } from "./functionTable.ts";
-import { curveGraph, curveParameterName, isCurveRef, resolvedCurvePath, type HolderSlot } from "./curveReferences.ts";
-import { lineProfile } from "./polyline.ts";
+import { expandKeys, functionParameters, functionTable, markParameters, matchesKey, parameterDefault, stripWidths, type NumericParameter } from "./functionTable.ts";
+import { curveGraph, curveParameterName, isCurveRef, nodeQuantityPath, resolvedCurvePath, type HolderSlot } from "./curveReferences.ts";
+import { interpolates, lineProfile, profileMix } from "./polyline.ts";
 import { evaluate, fieldValue, references, type Value } from "./expression.ts";
 import { check, DesignError, quotedLocation, type DesignProblem, type Location } from "./problems.ts";
-import { type Design, type Expression, type GeoNode, type ResolvedDesign } from "./v5.ts";
+import { type Design, type Expression, type GeoNode, type NodeQuantity, type ResolvedDesign } from "./v5.ts";
 
 export { readAt, writeAt, type Address } from "./address.ts";
 export type Owner = "input" | "geo" | "mark";
+type Interpolation = { from: string; to: string; t: number };
 export type Slot = { key: string; owner: Owner; id: string; name: string; label: string; field: boolean; type: NumericParameter["type"];
-    path: Address; resolvedPath: Address; aliases?: Address[]; location: Location; value: Expression; virtual?: boolean; spec?: NumericParameter };
+    path: Address; resolvedPath: Address; aliases?: Address[]; location: Location; value: Expression; output?: Interpolation | true; spec?: NumericParameter };
 
 export function geoParameter(node: GeoNode, path: Address) {
     const [group, ...key] = path;
@@ -31,7 +32,7 @@ export function geoParameterName(d: Design, node: GeoNode, path: Address, contex
         return (context ? label : "“" + label + "”") + "一侧";
     }
     const prefix: string[] = [];
-    for (const [key, label] of [["ridges", "山脊"], ["peaks", "山峰"], ["nodes", "节点"]] as const) {
+    for (const [key, label] of [["ridges", "山脊"], ["valleys", "山谷"], ["lines", "坡线"], ["peaks", "山峰"], ["nodes", "节点"]] as const) {
         const i = path.indexOf(key);
         if (i !== -1 && context && typeof path[i + 1] === "number")
             prefix.push(label + " " + (Number(path[i + 1]) + 1));
@@ -39,15 +40,15 @@ export function geoParameterName(d: Design, node: GeoNode, path: Address, contex
     return [...prefix, spec.label].join(path.includes("nodes") ? "." : " ");
 }
 
-export function parameters(d: Design, geoIndex?: number, curves = curveGraph(d)) {
+export function parameters(d: Design, geoIndex?: number, curves = curveGraph(d), includeInactive = false) {
     const slots = new Map<string, Slot>();
     function add(location: Location & { kind: Owner; id: string }, name: string, root: Address, property: Address, label: string,
-        type: NumericParameter["type"], fallback: Expression, virtual = false, spec?: NumericParameter, resolvedAt = location.path, aliases?: Address[]) {
+        type: NumericParameter["type"], fallback: Expression, output?: Slot["output"], spec?: NumericParameter, resolvedAt = location.path, aliases?: Address[]) {
         const path = [...root, ...location.path], input = readAt(d, path);
         const { kind: owner, id } = location;
         const key = owner + ":" + id + (property.length ? "." + property.join(".") : "");
         slots.set(key, { key, owner, id, name, label, field: type === "field", type, location, path, resolvedPath: [...root, ...resolvedAt],
-            value: (input === undefined ? fallback : input) as Expression, virtual, spec, aliases });
+            value: (output || input === undefined ? fallback : input) as Expression, output, spec, aliases });
     }
     if (geoIndex === undefined)
         for (const [id, v] of Object.entries(d.inputs)) add({ kind: "input", id, path: ["value"] }, v?.label ?? id, ["inputs", id], [], "当前值", "number", 0);
@@ -56,43 +57,38 @@ export function parameters(d: Design, geoIndex?: number, curves = curveGraph(d))
         const f = n.function, c = n.construction;
         const at = (path: Address): Location & { kind: "geo" } => ({ kind: "geo", id: n.id, index, path });
         check(f && Object.hasOwn(functionTable, f.type), "无效", at(["function", "type"]));
-        const addGeo = (path: Address, property: Address, p: NumericParameter, fallback = parameterDefault(p, n.id), virtual = false, resolvedAt = path, holder?: HolderSlot, labelAt = path) => {
-            const aliases = holder && curves.holderPlacements(holder).filter(item => item !== holder)
+        const addGeo = (path: Address, property: Address, p: NumericParameter, fallback = parameterDefault(p, n.id), output?: Slot["output"], resolvedAt = path, holder?: HolderSlot, labelAt = path) => {
+            const aliases = holder && curves.holderPlacements(holder).filter(item => item !== holder && item.active)
                 .map(item => [...item.path, ...resolvedAt.slice(holder.location.path.length)]);
             const name = geoParameterName(d, n, labelAt) ?? p.label;
-            add(at(path), n.label, ["geoNodes", index], property, name, p.type, fallback, virtual, p, resolvedAt, aliases);
+            add(at(path), n.label, ["geoNodes", index], property, name, p.type, fallback, output, p, resolvedAt, aliases);
         };
-        for (const p of functionParameters(f)) {
+        for (const p of includeInactive ? functionTable[f.type].parameters : functionParameters(f)) {
             if (p.type === "geometry") continue;
             if (!p.profile) {
-                for (const key of functionParameterKeys(f, p)) {
-                    const path = ["function", ...key];
-                    const holder = key[0] === "ridges" ? curves.holders.get("geo:" + n.id + "." + key.slice(0, 2).join(".")) : undefined;
-                    if (!holder || curves.holder(holder) === holder) addGeo(path, key, p, undefined, false, path, holder);
-                }
+                for (const key of expandKeys(f, p.key)) addGeo(["function", ...key], key, p);
                 continue;
             }
-            const ease = f.type === "mountain" || f.type === "slope" && f.kind === "path" && f.ease;
+            const quantity = p.key.at(-1) as NodeQuantity;
             for (const lineKey of expandKeys(f, p.key.slice(0, -3))) {
                 const slot = curves.slots.get("geo:" + n.id + "." + lineKey.join("."));
-                if (!slot?.holder || curves.holder(slot.holder) !== slot.holder) continue;
+                if (!slot?.holder) continue;
+                const owned = curves.holder(slot.holder);
+                if (owned !== slot.holder) continue;
+                const ease = owned.kind === "line" ? !!owned.value.ease : true;
                 const referenced = isCurveRef(curves.value(slot)), line = curves.materialize(slot);
-                const heightKey = (j: number): Address => referenced ? [...lineKey, "h", line.nodes[j].id] : [...lineKey, "nodes", j, "h"];
+                const keyFor = (j: number): Address => [...lineKey, ...nodeQuantityPath(j, line.nodes[j].id, quantity, referenced)];
                 let profile: ReturnType<typeof lineProfile> | undefined;
                 for (const [j, v] of line.nodes.entries()) {
-                    const key = heightKey(j), resolvedAt = [...resolvedCurvePath(slot).slice(2), "nodes", j, "h"];
-                    let fallback = parameterDefault(p, n.id), virtual = false;
-                    if (v.h === undefined) {
-                        profile ??= lineProfile(line, d.grid.step / 8);
+                    const key = keyFor(j), resolvedAt = [...resolvedCurvePath(slot).slice(2), "nodes", j, quantity];
+                    let output: Slot["output"];
+                    if (interpolates(v, quantity)) {
+                        profile ??= lineProfile(line, d.grid.step / 8, quantity);
                         const span = profile.span(profile.nodeStation(j), ease);
-                        const ref = (k: number) => "{geo:" + n.id + "." + heightKey(k).join(".") + "}";
-                        if (span) {
-                            fallback = span.a === span.b ? ref(span.a.index) : ref(span.a.index) + " * " + (1 - span.t) + " + " + ref(span.b.index) + " * " + span.t;
-                            // Keep authored stops sparse so easing is applied across the whole span in the evaluator.
-                            virtual = !!ease;
-                        }
+                        const ref = (k: number) => "geo:" + n.id + "." + keyFor(k).join(".");
+                        output = span ? { from: ref(span.a.index), to: ref(span.b.index), t: span.t } : true;
                     }
-                    addGeo(["function", ...key], key, p, fallback, virtual, resolvedAt, slot.holder, ["function", ...lineKey, "nodes", j, "h"]);
+                    addGeo(["function", ...key], key, p, undefined, output, resolvedAt, slot.holder, ["function", ...lineKey, "nodes", j, quantity]);
                 }
             }
         }
@@ -102,11 +98,14 @@ export function parameters(d: Design, geoIndex?: number, curves = curveGraph(d))
         }
     }
     if (geoIndex === undefined) d.marks.forEach((m, index) => {
+        if (!includeInactive && m.kind === "scale" && m.follow === "screen") return;
         const p = markParameters[m.kind];
-        add({ kind: "mark", id: m.id, index, path: p.key }, m.label, ["marks", index], p.key, p.label, p.type, p.default, false, p);
+        add({ kind: "mark", id: m.id, index, path: p.key }, m.label, ["marks", index], p.key, p.label, p.type, p.default, undefined, p);
     });
     return slots;
 }
+
+export const slotDependencies = (slot: Slot) => typeof slot.output === "object" ? [slot.output.from, slot.output.to] : references(slot.value);
 
 export const slotName = (s: Slot) => quotedLocation(s.name, s.owner === "input" ? undefined : s.label);
 export function canReference(slots: Map<string, Slot>, from: string | undefined, to: string) {
@@ -116,18 +115,27 @@ export function canReference(slots: Map<string, Slot>, from: string | undefined,
         if (seen.has(key)) return false;
         seen.add(key);
         const slot = slots.get(key);
-        return !!slot && references(slot.value).some(reaches);
+        return !!slot && slotDependencies(slot).some(reaches);
     }
     return !from || !reaches(to);
 }
-export function referenceSlots(d: Design, kind: Owner | "field", id: string) {
-    const curves = curveGraph(d), { slots, key } = expressionGraph(d, undefined, curves);
-    return [...slots.values()].filter(s => readAt(d, s.path) !== undefined && references(s.value).some(k => {
-        if (kind === "field") return k === "field:" + id;
-        const target = slots.get(key(k));
-        return target?.owner === kind && (target.id === id || kind === "geo" && !slots.has(k) && curves.parameterHolder(k)?.location.id === id);
-    }));
+export function parameterUsers(d: Design, match: (location: Location) => boolean, field?: string) {
+    const curves = curveGraph(d), slots = parameters(d, undefined, curves, true);
+    return [...slots.values()].filter(s => {
+        const formula = readAt(d, s.path);
+        return !match(s.location) && typeof formula === "string" && references(formula).some(ref => {
+            if (field !== undefined) return ref === "field:" + field;
+            const target = slots.get(curves.parameterKey(ref, true));
+            if (!target) return false;
+            const placement = curves.parameterHolder(ref);
+            return match(target.location) || !!placement && match({ ...placement.location,
+                path: [...placement.location.path, ...target.location.path.slice(placement.location.path.length)] });
+        });
+    });
 }
+
+export const referenceSlots = (d: Design, kind: Owner | "field", id: string) =>
+    parameterUsers(d, at => at.kind === kind && at.id === id, kind === "field" ? id : undefined);
 
 export function expressionLookup(d: Design, slot: (key: string) => Slot | undefined, unchanged?: (key: string) => Value | undefined, canonical = (key: string) => key) {
     const values = new Map<string, Value>(), visiting: string[] = [];
@@ -147,7 +155,7 @@ export function expressionLookup(d: Design, slot: (key: string) => Slot | undefi
         if (cycle >= 0) throw Error("引用成环：" + [...visiting.slice(cycle), key].map(k => slotName(slot(k)!)).join(" → "));
         visiting.push(key);
         try {
-            let value = evaluate(s.value, ref => {
+            let value = typeof s.output === "object" ? interpolation(s.output) : evaluate(s.value, ref => {
                 const result = get(ref);
                 if (!s.field && typeof result !== "number") {
                     const target = slot(canonical(ref));
@@ -163,6 +171,12 @@ export function expressionLookup(d: Design, slot: (key: string) => Slot | undefi
         finally {
             visiting.pop();
         }
+    }
+    function interpolation({ from, to, t }: Interpolation) {
+        const a = get(from) as number;
+        const value = from === to ? a : profileMix(a, get(to) as number, t);
+        if (!Number.isFinite(value)) throw Error("数值必须有限");
+        return value;
     }
     return get;
 }
@@ -187,7 +201,7 @@ export function resolveParameterValues(slots: Iterable<Slot>, get: (key: string)
             // Field references stay in the expression for evaluation on the layer's input grid.
             const result = typeof value === "number" ? value : String(slot.value).replace(/\{([^{}]+)\}/g,
                 (text, key: string) => key.startsWith("field:") ? text : "(" + resolvedReference(get(key)) + ")");
-            if (!slot.virtual) values.set(slot, result);
+            if (!slot.output) values.set(slot, result);
         }
         catch (error) {
             errors.push({ location: slot.location, message: (error as Error).message });
@@ -215,9 +229,20 @@ export function resolveDesign(source: Design, slots?: Map<string, Slot>, curves 
         writeAt(parent, [path.at(-1)!], value);
     }
     for (const holder of curves.holders.values()) {
-        const curve = curves.materialize(curves.ofHolder(holder));
-        replace(holder.path, holder.kind === "ridge" ? { curve, slope: curves.holder(holder).value.slope } : curve);
+        if (!holder.active) continue;
+        const slot = curves.ofHolder(holder), curve = curves.materialize(slot);
+        const { ease } = curves.holder(holder).value;
+        replace(holder.path, slot.closed ? curve : { curve, ...(ease && { ease }) });
     }
+    for (const [i, { function: f }] of source.geoNodes.entries()) if (f.type === "slope") {
+        if (f.kind === "radial") replace(["geoNodes", i, "function", "lines"], []);
+        else for (const p of functionTable.slope.parameters) if (p.variant === "radial" && p.type === "number")
+            replace(["geoNodes", i, "function", ...p.key], parameterDefault(p, source.geoNodes[i].id));
+    }
+    for (const [i, mark] of source.marks.entries()) if (mark.kind === "scale" && mark.follow === "screen")
+        replace(["marks", i, "length"], markParameters.scale.default);
+    for (const slot of all.values()) if (slot.output) for (const path of resolvedPaths(slot))
+        if (readAt(design, path) !== undefined) replace(path, undefined);
     for (const [slot, result] of resolveParameterValues(all.values(), get)) for (const path of resolvedPaths(slot))
         if (result !== readAt(design, path)) replace(path, result);
     return design as ResolvedDesign;

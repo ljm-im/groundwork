@@ -7,6 +7,7 @@ import { mapColors } from "../../src/render/palette.ts";
 import { geoLabelPoint } from "../../src/render/labelLayout.ts";
 import { type Point } from "../../src/core/design/v5.ts";
 import { literalCurve, layer, rect, syntheticDesign } from "../scenarios.ts";
+import { checkProfilesAndLabels } from "./round41.ts";
 import { createBrowserServer, startChromium } from "./chromium.ts";
 import { installPickers } from "./filePickers.ts";
 import { checkAppearance } from "./appearance.ts";
@@ -65,6 +66,7 @@ test("Editor interactions in Chromium", async t => {
         await t.test("Parameter overlays stay visible during drawing and use distinct strokes in Chromium", () => checkMapParameterOverlays(url));
         await t.test("A single outline highlights and segmented buttons keep their gap and keys in Chromium", () => checkSingleOutlineAndButtons(url));
         await t.test("Outline holes support hover, selection, cycling, menus and body dragging in Chromium", () => checkOutlineHoleHits(url));
+        await t.test("Node profiles, slope lines, valleys and localized inspector labels in Chromium", () => checkProfilesAndLabels(url));
     }
     finally {
         await server.close();
@@ -352,13 +354,13 @@ async function checkEditor(url: string) {
         await wait(() => !!document.querySelector("#properties button[aria-label=增量]"));
 
         console.log("Immediate function and slope form switches, with undo");
-        await choose("函数", "coast");
+        await choose("函数", "海岸");
         assert.equal(await evaluate(() => document.querySelector("[aria-label=海岸线]")?.getAttribute("aria-pressed")), "true");
         assert.match(await text("#mode-hint"), /单击选择/);
         await click("#undo"); await idle();
-        await wait(() => document.querySelector("button.choice-face[aria-label=函数] span")?.textContent === "flat");
-        await choose("函数", "slope");
-        assert.equal(await evaluate(() => document.querySelector("[aria-label=坡线]")?.getAttribute("aria-pressed")), "true");
+        await wait(() => document.querySelector("button.choice-face[aria-label=函数] span")?.textContent === "升降");
+        await choose("函数", "坡面");
+        assert(await evaluate(() => !!document.querySelector("[aria-label=添加坡线]") && !document.querySelector("[aria-label=坡线]")));
         assert.match(await text("#mode-hint"), /单击选择/);
         await choose("坡面形式", "径向");
         assert.equal(await text("[data-parameter$=\".function.rate\"] .unit"), "m/m");
@@ -381,7 +383,7 @@ async function checkEditor(url: string) {
         await saved();
         const slope = parseDesign(await disk(), true).geoNodes.find(n => n.id === "T")?.function;
         assert(slope?.type === "slope" && slope.kind === "path");
-        assert.deepEqual(literalCurve(slope.line).nodes.map(v => v.h), [0, 2]);
+        assert.deepEqual(slope.lines, []);
 
         console.log("Displayed field, undefined readings, and mark follow");
         await moveMap(.5, .5);
@@ -644,11 +646,11 @@ async function checkEditor(url: string) {
         }, true);
         await undo();
         await terrainTab();
-        await choose("函数", "coast");
+        await choose("函数", "海岸");
         await compareFinish(() => click("button[aria-label=重画海岸线]"), true);
-        await choose("函数", "slope");
-        await compareFinish(() => click("button[aria-label=重画坡线]"), false);
-        await choose("函数", "mountain");
+        await choose("函数", "坡面");
+        await compareFinish(() => click("button[aria-label=添加坡线]"), false);
+        await choose("函数", "山脉");
         await compareFinish(() => click("button[aria-label=添加山脊]"), false);
         const originalRidge = await disk();
         const ridgeOf = (bytes: string) => parseDesign(bytes, true).geoNodes.findLast(node => node.function.type === "mountain")!.function;
@@ -676,9 +678,7 @@ async function checkEditor(url: string) {
         const mountain = ridgeOf(await disk());
         assert(mountain.type === "mountain" && mountain.ridges.length === 2);
         const [originalMember, copy] = mountain.ridges;
-        assert("slope" in originalMember);
-        assert.equal(originalMember.slope, .75);
-        assert.equal(await text("#properties [data-parameter$='.ridges.1.slope'] .param-name"), "坡度");
+        assert.equal(literalCurve(originalMember).nodes[0].slope, .75);
         const copiedIds = new Set(literalCurve(copy).nodes.map(v => v.id));
         assert(literalCurve(originalMember).nodes.every(v => !copiedIds.has(v.id)));
         assert.deepEqual({ ...copy, curve: { ...literalCurve(copy), nodes: literalCurve(copy).nodes.map((v, i) => ({ ...v, id: literalCurve(originalMember).nodes[i].id })) } }, originalMember);
@@ -739,7 +739,7 @@ async function checkEditor(url: string) {
         const west = { ...layer("A", rect(-30, -12, 0, 12), { type: "flat", amount: 2 }), label: "西台" };
         west.showLabel = true;
         adjacent.geoNodes.push(west, { ...layer("B", rect(0, -12, 24, 12), { type: "flat", amount: 5 }), label: "东台" });
-        adjacent.marks.push({ id: "M", kind: "scale", label: "比例尺", point: [94, 120], follow: "screen" });
+        adjacent.marks.push({ id: "M", kind: "scale", label: "比例尺", point: [94, 120], follow: "screen", length: 10 });
         await evaluate(async bytes => {
             window.probe.openName = "editor-interactions.json";
             const root = await navigator.storage.getDirectory();

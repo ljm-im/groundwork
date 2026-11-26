@@ -3,7 +3,7 @@ import { pathHandle } from "../../src/core/design/path.ts";
 import { type Design, type Point } from "../../src/core/design/v5.ts";
 import { evaluateStack } from "../../src/core/terrain/terrain.ts";
 import { distance } from "../../src/core/math/geometry.ts";
-import { layer, literalCurve, openCurve, rect, syntheticDesign } from "../scenarios.ts";
+import { withNodeSlope, layer, literalCurve, openCurve, rect, syntheticDesign } from "../scenarios.ts";
 import { withCurveMap } from "./curveMapFixture.ts";
 
 const zoomFace = "#zoom-value .numeric-face";
@@ -18,11 +18,11 @@ function designFixture(): Design {
     d.curves.ridge = { label: "脊形", curve: openCurve<never>(sourcePoints.map(p => ({ p })), "auto", "r") };
     d.geoNodes.push(
         { ...layer("E", rect(9, -20, 26, -7), { type: "flat", amount: 3 }), label: "东台" },
-        { ...layer("M", rect(3, 9, 43, 40), { type: "mountain", ridges: [
-            { curve: openCurve([{ p: [6, 30], h: 6 }, { p: [30, 32], h: 8 }]), slope: 1 }
+        { ...layer("M", rect(3, 9, 43, 40), { type: "mountain", valleys: [], ridges: [
+            { curve: withNodeSlope(openCurve([{ p: [6, 30], h: 6 }, { p: [30, 32], h: 8 }]), 1) }
         ], peaks: [] }), label: "东山" },
         layer("S", rect(-43, 10, -7, 38), { type: "slope", kind: "path",
-            line: { curve: openCurve(slopePoints.map((p, i) => ({ p, ...(i !== 1 && { h: i + 1 }) })), "corner", "s") } })
+            lines: [{ curve: openCurve(slopePoints.map((p, i) => ({ p, ...(i !== 1 && { h: i + 1 }) })), "corner", "s") }], center: [0, 0], radius: 5, value: 2, rate: -.2 })
     );
     return d;
 }
@@ -254,8 +254,14 @@ export function checkSharedCurves(url: string) {
         }
         const equivalent = await authored(), f = owner(equivalent, "M").function;
         assert(f.type === "mountain");
-        assert.deepEqual(f.ridges[0], { curve: { ref: "{curve:ridge}", h: { r0: 12, r2: 19 } }, slope: 1 });
-        f.ridges[0] = { curve: openCurve(sourcePoints.map((p, i) => ({ p, ...(i !== 1 && { h: i ? 19 : 12 }) })), "auto", "r"), slope: 1 };
+        const holder = f.ridges[0];
+        assert("curve" in holder && "ref" in holder.curve && holder.curve.ref === "{curve:ridge}");
+        assert.equal(holder.curve.h?.r0, 12);
+        assert.equal(holder.curve.h?.r2, 19);
+        assert(Number.isFinite(holder.curve.h?.r1));
+        assert.deepEqual(holder.curve.slope, { r0: 1, r1: 1, r2: 1 });
+        assert.deepEqual(holder.curve.interpolate?.r1, ["h", "slope"]);
+        f.ridges[0] = { curve: withNodeSlope(openCurve(sourcePoints.map((p, i) => ({ p, ...(i !== 1 && { h: i ? 19 : 12 }) })), "auto", "r"), 1) };
         const expected = evaluateStack(equivalent).fields.height;
         assert.deepEqual(await terrain(), { values: Array.from(expected.values), defined: Array.from(expected.defined) });
 
@@ -285,13 +291,14 @@ export function checkSharedCurves(url: string) {
         await undo();
 
         await click("[data-geo-node=S]"); await click("[data-property-tab=function]");
+        await click(".part:has([aria-label=添加坡线]) .subitem-toggle");
         await click("[aria-label=坡线]"); await tap(slopePoints[2]);
         await click("[data-curve-node] [aria-label=继续画]");
         await tap([-18, 16], 2); await tap(slopePoints[0]); await saved(); await paint();
         const slope = owner(await authored(), "S").function;
         assert(slope.type === "slope" && slope.kind === "path");
-        const line = literalCurve(slope.line);
-        assert(line.closed && line.nodes.length === 4 && !Object.hasOwn(line.nodes[3], "h"));
+        const line = literalCurve(slope.lines[0]);
+        assert(line.closed && line.nodes.length === 4 && line.nodes[3].interpolate?.includes("h") && Number.isFinite(line.nodes[3].h));
         assert.deepEqual(line.nodes.slice(0, 3).map(n => n.p), slopePoints);
     }, designFixture());
 }

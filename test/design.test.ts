@@ -34,7 +34,7 @@ test("Geo references report their location and reject invalid field writers", ()
     n.field = "missing";
     assert.throws(() => parseDesign(d), /geoNodes\[2\].*field.*找不到/);
     n.field = "f"; d.fields.f = { label: "F" };
-    n.function = { type: "mountain", ridges: [], peaks: [] };
+    n.function = { type: "mountain", valleys: [], ridges: [], peaks: [] };
     assert.throws(() => parseDesign(d), /geoNodes\[2\].*field/);
     n.function = { type: "flat", feather: 0, amount: "{input:absent}" };
     assert.throws(() => parseDesign(d), /amount.*找不到自定义输入/);
@@ -49,7 +49,7 @@ test("Geo references report their location and reject invalid field writers", ()
 
 test("Peak height has its own numeric address and its position is a coordinate", () => {
     const d: Design = syntheticDesign(), n = d.geoNodes[1], at = [-18, -10] satisfies [number, number];
-    n.function = { type: "mountain", ridges: [], peaks: [{ at, height: "{input:A} + 10", radius: 3, scale: 1, noise: 0 }] };
+    n.function = { type: "mountain", valleys: [], ridges: [], peaks: [{ at, height: "{input:A} + 10", radius: 3, scale: 1, noise: 0 }] };
     d.inputs.B = { value: "{geo:T.peaks.0.height}", range: [0, 30, 1] };
     const parsed = parseDesign(serializeDesign(d)), resolved = resolveDesign(parsed);
     const mountain = resolved.geoNodes[1].function;
@@ -134,7 +134,7 @@ test("Labels omit their defaults and marks round-trip with expressions and ancho
     const switched = serializeDesign(saved);
     assert.deepEqual(parseDesign(switched).marks, saved.marks);
     assert.equal(serializeDesign(parseDesign(switched)), switched);
-    assert.throws(() => parseDesign({ ...saved, marks: [{ ...saved.marks[0], length: "0 - 1" }] }), /marks\[0\].length/);
+    assert.throws(() => parseDesign({ ...saved, marks: [{ ...saved.marks[0], follow: "map", length: "0 - 1" }] }), /marks\[0\].length/);
     assert.throws(() => parseDesign({ ...saved, marks: [{ ...saved.marks[1], showLabel: "false" }] }), /marks\[0\].showLabel/);
 });
 
@@ -158,7 +158,7 @@ test("Map names save and validate finite two-coordinate offsets", () => {
     }
 });
 
-test("Built-in seed, ranges and harbors materialize on read and omit their defaults on write", () => {
+test("Built-in seed and ranges materialize while zero-radius harbor parameters survive a save", () => {
     const d = syntheticDesign(), raw = JSON.parse(serializeDesign(d));
     delete raw.inputs.seed;
     delete raw.inputs.A.range;
@@ -171,7 +171,8 @@ test("Built-in seed, ranges and harbors materialize on read and omit their defau
     assert(f.type === "coast");
     assert.deepEqual(f.harbor, { center: [5, 4], radius: 0, span: 3 });
     const bytes = serializeDesign(hydrated);
-    assert.doesNotMatch(bytes, /"(?:range|harbor)"/);
+    assert.doesNotMatch(bytes, /"range"/);
+    assert.match(bytes, /"harbor"/);
     assert.equal(serializeDesign(parseDesign(bytes)), bytes);
     assert.deepEqual(parseDesign(bytes), hydrated);
     const disabled = generateTerrain(hydrated).fields.height.values;

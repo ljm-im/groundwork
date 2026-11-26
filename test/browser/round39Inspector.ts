@@ -123,7 +123,7 @@ export function checkInspectorActions(url: string) {
     const curve = openCurve<never>(ridgePoints.map(p => ({ p })), "corner", "ridge-");
     curve.nodes[1].bulge = .5;
     d.curves.ridge = { label: "一条需要截断长名称的共享山脊线", curve };
-    n.function = { type: "mountain", ridges: [{ curve: { ref: "{curve:ridge}", h: { "ridge-0": 7 } }, slope: 2 }], peaks: [] };
+    n.function = { type: "mountain", valleys: [], ridges: [{ curve: { ref: "{curve:ridge}", h: { "ridge-0": 7, "ridge-3": 7 }, slope: { "ridge-0": 2, "ridge-3": 2 } } }], peaks: [] };
     return withCurveMap(url, "round39-inspector-actions", async page => {
         const { click, evaluate, key, paint, tap, wait } = page;
         await resizeSplit(page, "right", 300, 0);
@@ -141,9 +141,10 @@ export function checkInspectorActions(url: string) {
         const ridgeRow = ".geometry-control:has([aria-label=山脊线])";
         if (!await evaluate(s => !!document.querySelector(s), ridgeRow)) await click("#properties .part:has([aria-label=添加山脊]) .subitem-toggle");
         await assertRow(page, ridgeRow, ":scope > button", 3);
-        await assertRow(page, "[data-parameter=\"geoNodes.1.function.ridges.0.slope\"]", ".number-box button", 4);
         await click(ridgeRow + " .geometry-box");
         await paint();
+        await tap(ridgePoints[0]);
+        await assertRow(page, "[data-parameter$=\".ridges.0.curve.slope.ridge-0\"]", ".number-box button", 4);
         await tap(arcHandle(ridgePoints[1], ridgePoints[2], .5), 2);
         await wait(() => !!document.querySelector("[aria-label=相切]"));
         await assertRow(page, ".parameter-row:has([aria-label=圆心角])", ".number-box button, .parameter-action button", 4);

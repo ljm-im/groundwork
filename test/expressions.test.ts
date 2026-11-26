@@ -11,7 +11,7 @@ import { defaultInputRange } from "../src/core/design/defaults.ts";
 import { numberEdits } from "../src/core/design/numberEdit.ts";
 import { TerrainCache } from "../src/core/terrain/cache.ts";
 import { generateTerrain } from "../src/core/terrain/terrain.ts";
-import { literalCurve, layer, rect, syntheticDesign, openCurve } from "./scenarios.ts";
+import { withNodeSlope, literalCurve, layer, rect, syntheticDesign, openCurve } from "./scenarios.ts";
 
 function referenceUses(d: Design, kind: Owner, id: string) {
     return referenceSlots(d, kind, id).map(s => slotName(s) + "（" + problemText({ location: s.location, message: "" }).trimEnd() + "）");
@@ -34,12 +34,11 @@ test("Arithmetic and linear fields observe precedence, signed scalars and undefi
 test("Author inputs form one graph across stacks, array parameters and marks", () => {
     const d: Design = syntheticDesign();
     d.geoNodes[1].function = { type: "ground", value: "{input:A}" };
-    d.geoNodes.push(layer("M", rect(-8, -8, 8, 8), { type: "mountain", peaks: [], ridges: [{
-        slope: "{input:b}",
-        curve: openCurve<Expression>([{ p: [0, 0], h: 2 }, { p: [2, 2], h: "{input:b}" }])
+    d.geoNodes.push(layer("M", rect(-8, -8, 8, 8), { type: "mountain", valleys: [], peaks: [], ridges: [{
+        curve: withNodeSlope(openCurve<Expression>([{ p: [0, 0], h: 2 }, { p: [2, 2], h: "{input:b}" }]), "{input:b}")
     }] }));
     d.inputs.b = { range: defaultInputRange("b"), value: "{geo:T.value} + 1" };
-    d.inputs.c = { range: defaultInputRange("c"), value: "{geo:M.ridges.0.slope} + 1" };
+    d.inputs.c = { range: defaultInputRange("c"), value: "{geo:M.ridges.0.curve.nodes.0.slope} + 1" };
     d.marks.push({ id: "B", label: "B", kind: "text", follow: "map", point: [1, 2], elevation: "{input:c} - 1" });
     const parsed = parseDesign(serializeDesign(d)), before = serializeDesign(parsed), numeric = resolveDesign(parsed);
     assert.equal(numeric.inputs.c.value, 9);
@@ -58,7 +57,7 @@ test("Author inputs form one graph across stacks, array parameters and marks", (
 test("Format and type errors identify the authored slot and cycles name every participant", () => {
     const d: Design = syntheticDesign(), a = d.geoNodes[0], b = d.geoNodes[1];
     a.function = { type: "ground", value: "{geo:T.value} + 1" };
-    b.function = { type: "slope", kind: "radial", center: [0, 0], radius: 1, value: "{geo:G.value}", rate: 0 };
+    b.function = { type: "slope", kind: "radial", lines: [], center: [0, 0], radius: 1, value: "{geo:G.value}", rate: 0 };
     assert.throws(() => parseDesign(d), /“G.数值” → “T.增量” → “G.数值”/);
     b.function.value = "{input:A}"; d.inputs.A.value = "{geo:G.value}";
     assert.throws(() => parseDesign(d), e => e instanceof Error && ["“G.数值”", "“T.增量”", "“A”", "引用成环"].every(v => e.message.includes(v)));
@@ -122,7 +121,7 @@ test("Field parameters can feed numeric slots until their transitive value conta
 test("Text and scale mark parameters are references in both directions of the numeric graph", () => {
     const d: Design = syntheticDesign();
     d.marks.push({ id: "M", kind: "text", label: "标高", point: [0, 0], follow: "map", elevation: "{input:A} + 1" },
-        { id: "S", kind: "scale", label: "长度", point: [0, 0], follow: "screen", length: "{mark:M.elevation} + 2" });
+        { id: "S", kind: "scale", label: "长度", point: [0, 0], follow: "map", length: "{mark:M.elevation} + 2" });
     d.geoNodes[1].function = { type: "flat", amount: "{mark:M.elevation}", feather: "{mark:S.length}" };
     const result = resolveDesign(parseDesign(serializeDesign(d))), fn = result.geoNodes[1].function;
     assert(fn.type === "flat");
@@ -152,41 +151,41 @@ test("Rounded per-layer seeds and transitive scalar inputs invalidate only their
     assert.deepEqual(after.fields.height.values, generateTerrain(d).fields.height.values); assert.deepEqual(cache.recomputed, [base.id, "N"]);
 });
 
-test("Omitted mountain slopes can be referenced and are checked at their authored slot", () => {
-    const d: Design = syntheticDesign(), mountain = { type: "mountain", peaks: [], ridges: [{
-        curve: openCurve([{ p: [0, 0], h: 2 }, { p: [5, 0], h: 2 }])
+test("Intermediate mountain slopes interpolate and mandatory endpoint slopes are validated", () => {
+    const d: Design = syntheticDesign(), mountain = { type: "mountain", valleys: [], peaks: [], ridges: [{
+        curve: openCurve([{ p: [0, 0], h: 2, slope: .5 }, { p: [2.5, 0], h: 2 }, { p: [5, 0], h: 2, slope: 1 }])
     }] };
     Object.assign(d.geoNodes[1], { function: mountain });
-    d.inputs.c = { range: defaultInputRange("c"), value: "{geo:T.floor} + {geo:T.seed} + {geo:T.ridges.0.slope}" };
+    d.inputs.c = { range: defaultInputRange("c"), value: "{geo:T.floor} + {geo:T.seed} + {geo:T.ridges.0.curve.nodes.1.slope}" };
     assert.equal(resolveDesign(parseDesign(d)).inputs.c.value, -999.25);
-    Object.assign(mountain.ridges[0], { slope: 0 });
-    assert.throws(() => parseDesign(d), /ridges\[0\].slope/);
+    delete mountain.ridges[0].curve.nodes[0].slope;
+    assert.throws(() => parseDesign(d), /首尾节点必须写明坡度/);
 });
 
 test("Geometry inputs expose concrete defaults without changing authored height stops", () => {
     const d: Design = syntheticDesign(), n = d.geoNodes[1];
-    n.function = { type: "slope", kind: "path", ease: true, line: { curve: openCurve([
+    n.function = { type: "slope", kind: "path", lines: [{ curve: openCurve([
         { p: [0, 0], h: 2 }, { p: [2, 0] }, { p: [8, 0], h: 10 }
-    ]) } };
-    d.inputs.b = { range: defaultInputRange("b"), value: "{geo:T.line.curve.nodes.1.h} + {geo:T.line.curve.nodes.0.h}" };
+    ]), ease: true }], center: [0, 0], radius: 5, value: 2, rate: -.2 };
+    d.inputs.b = { range: defaultInputRange("b"), value: "{geo:T.lines.0.curve.nodes.1.h} + {geo:T.lines.0.curve.nodes.0.h}" };
     const g = expressionGraph(d), resolved = resolveDesign(parseDesign(d)), t = resolved.geoNodes[1].function;
     assert(t.type === "slope" && t.kind === "path");
-    assert.equal(g.get("geo:T.line.curve.nodes.1.h"), 3.25);
+    assert.equal(g.get("geo:T.lines.0.curve.nodes.1.h"), 3.25);
     assert.equal(resolved.inputs.b.value, 5.25);
-    assert.equal(t.line.nodes[1].h, undefined);
+    assert.equal(t.lines[0].curve.nodes[1].h, undefined);
     const unchanged = generateTerrain(d).fields.height.values;
     const noMidpoint = structuredClone(d);
     const slope = noMidpoint.geoNodes[1].function;
     assert(slope.type === "slope" && slope.kind === "path");
     noMidpoint.inputs.b.value = resolved.inputs.b.value;
-    literalCurve(slope.line).nodes.splice(1, 1);
+    literalCurve(slope.lines[0]).nodes.splice(1, 1);
     assert.deepEqual(generateTerrain(noMidpoint).fields.height.values, unchanged);
-    assert.equal(literalCurve(n.function.line).nodes[1].h, undefined, "The source retains its two authored height stops");
-    const ridge = { curve: literalCurve(n.function.line), slope: 2 };
-    Object.assign(n, { function: { type: "mountain", ridges: [ridge], peaks: [] } });
+    assert.equal(literalCurve(n.function.lines[0]).nodes[1].h, undefined, "The source retains its two authored height stops");
+    const ridge = { curve: withNodeSlope(literalCurve(n.function.lines[0]), 2) };
+    Object.assign(n, { function: { type: "mountain", valleys: [], ridges: [ridge], peaks: [] } });
     d.inputs.b.value = "{geo:T.ridges.0.curve.nodes.1.h}";
     const parsed = parseDesign(d), m = resolveDesign(parsed).geoNodes[1].function;
     assert(m.type === "mountain"); assert.equal(m.floor, -1000);
-    assert.equal(m.ridges[0].slope, 2);
+    assert.equal(m.ridges[0].curve.nodes[0].slope, 2);
     assert.equal(resolveDesign(parsed).inputs.b.value, 3.25);
 });

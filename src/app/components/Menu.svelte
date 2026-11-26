@@ -24,6 +24,7 @@
                                 }} onclick={() => choose(item.id)}>
                                 {#if item.icon}<Icon name={item.icon} builtin={item.builtin} />{/if}
                                 {item.name}
+                                {#if item.reading}<small class="menu-reading">{item.reading}</small>{/if}
                                 {#if item.branch}<span class="sub-arrow"><Icon name="chevronRight" /></span>{/if}
                             </button>
                         {/each}
@@ -44,13 +45,14 @@
     .menu-separator { flex: none; align-self: stretch; width: 1px; background: var(--border); }
     .context-menu:global(.stacked) .menu-columns { flex-direction: column; }
     .context-menu:global(.stacked) .menu-separator { width: auto; height: 1px; margin: var(--space-1) var(--space-2); }
+    .menu-reading { margin-inline-start: auto; color: var(--text-secondary); white-space: nowrap; }
     .sub-arrow { margin-inline-start: auto; display: inline-flex; }
 </style>
 
 <script module lang="ts">
     import { type IconName } from "./Icon.svelte";
 
-    export interface MenuItem { id: string; name: string; icon?: IconName; builtin?: boolean; selected?: boolean; disabled?: boolean; danger?: boolean; branch?: boolean }
+    export interface MenuItem { id: string; name: string; reading?: string; icon?: IconName; builtin?: boolean; selected?: boolean; disabled?: boolean; danger?: boolean; branch?: boolean }
     export interface MenuGroup { title?: string; items: readonly MenuItem[] }
 </script>
 

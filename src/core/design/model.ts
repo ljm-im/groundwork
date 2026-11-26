@@ -3,11 +3,11 @@ import { defaultFieldPrecision, defaultInputRange, heightId, reserved, seedId } 
 import { constructionCenter, rasterRegion, shapeLayout } from "./regions.ts";
 import { distance } from "../math/geometry.ts";
 import { type WorkPool } from "../math/work.ts";
-import { point, record, validateCurves, validateGeo, validateSharedCurves } from "./validateGeo.ts";
+import { point, record, validateCurves, validateGeo, validateProfileEndpoints, validateSharedCurves } from "./validateGeo.ts";
 import { check, type Location } from "./problems.ts";
 import { fillFunctionParameters, gridStep, markParameters, numericValid } from "./functionTable.ts";
 import { curveGraph, geoHolderSlots, isHolderRef } from "./curveReferences.ts";
-import { literalPattern } from "./expression.ts";
+import { literalPattern, tokens } from "./expression.ts";
 import { parameters, resolveDesign, writeAt } from "./parameters.ts";
 
 export function parseDesign(text: unknown, allowBrokenReferences = false, pool?: WorkPool): Design {
@@ -38,7 +38,18 @@ export function parseDesign(text: unknown, allowBrokenReferences = false, pool?:
         check(mark.kind === "text" || mark.kind === "scale", "无效", at(["kind"]));
         if (mark.follow === undefined) mark.follow = defaultFollow(mark.kind);
         check(mark.follow === "screen" || mark.follow === "map", "无效", at(["follow"]));
-        if (mark.kind === "text") check(mark.showElevation === undefined || typeof mark.showElevation === "boolean", "无效", at(["showElevation"]));
+        if (mark.kind === "text") {
+            check(mark.showElevation === undefined || typeof mark.showElevation === "boolean", "无效", at(["showElevation"]));
+            if (mark.elevation === undefined) mark.elevation = markParameters.text.default;
+        }
+        else {
+            if (mark.length === undefined) mark.length = markParameters.scale.default;
+            if (mark.follow === "screen") {
+                if (typeof mark.length === "string" && !literalPattern.test(mark.length.trim())) tokens(mark.length);
+                else check(numericValid(markParameters.scale, Number(mark.length)) &&
+                    (typeof mark.length === "number" || typeof mark.length === "string"), "无效", at(["length"]));
+            }
+        }
     }
     check(record(d.inputs), "缺少输入声明");
     check(record(d.fields), "缺少场声明");
@@ -65,14 +76,16 @@ export function parseDesign(text: unknown, allowBrokenReferences = false, pool?:
             fillFunctionParameters(f, ["harbor"]);
         }
         if (f?.type === "mountain") {
-            if (Array.isArray(f.ridges)) f.ridges.forEach((ridge, j) => check(record(ridge), "无效", at(["function", "ridges", j])));
             if (Array.isArray(f.peaks)) f.peaks.forEach((peak, j) => check(record(peak), "无效", at(["function", "peaks", j])));
         }
+        if (f?.type === "erosion") check(f.spacing !== undefined, "缺少计算间距", at(["function", "spacing"]));
         validateCurves(node, index);
     }
-    const curves = curveGraph(d), slots = parameters(d, undefined, curves);
+    const curves = curveGraph(d);
+    validateProfileEndpoints(curves);
+    const slots = parameters(d, undefined, curves);
     for (const slot of slots.values()) {
-        if (typeof slot.value === "string" && literalPattern.test(slot.value.trim())) {
+        if (!slot.output && typeof slot.value === "string" && literalPattern.test(slot.value.trim())) {
             slot.value = Number(slot.value);
             writeAt(d, slot.path, slot.value);
         }
@@ -112,7 +125,7 @@ export function serializeDesign(d: Design | null) {
     const fields = new Set<object>(Object.values(d?.fields ?? {}));
     const marks = new Map<object, Design["marks"][number]["kind"]>(d?.marks.map(mark => [mark, mark.kind]));
     const ranges = new Map<object, number[]>(Object.entries(d?.inputs ?? {}).map(([id, input]) => [input, defaultInputRange(id)]));
-    const coasts = new Set<object>(d?.geoNodes.flatMap(node => node.function.type === "coast" ? [node.function] : []));
+    const lines = new Set<object>(d?.geoNodes.flatMap(node => node.function.type === "slope" ? node.function.lines : []));
     return JSON.stringify(d, function (this: object, key: string, value: unknown) {
         if (key === "prompt" && value === "" || key === "disabled" && value === false ||
             key === "showLabel" && value === !terrain.has(this)) return undefined;
@@ -125,7 +138,14 @@ export function serializeDesign(d: Design | null) {
         if (key === "follow" && kind && value === defaultFollow(kind)) return undefined;
         const range = ranges.get(this);
         if (key === "range" && range && Array.isArray(value) && value.length === range.length && range.every((v, i) => v === value[i])) return undefined;
-        if (key === "harbor" && coasts.has(this) && (value as { radius?: unknown } | undefined)?.radius === 0) return undefined;
+        if (key === "ease" && lines.has(this) && value === false) return undefined;
+        if (key === "interpolate") {
+            if (Array.isArray(value)) return value.length ? value : undefined;
+            if (value && typeof value === "object") {
+                const entries = Object.entries(value).filter(([, flags]) => flags.length);
+                return entries.length ? Object.fromEntries(entries) : undefined;
+            }
+        }
         return value;
     }, 2);
 }

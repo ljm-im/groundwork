@@ -3,7 +3,7 @@ import { type Point } from "../../src/core/design/v5.ts";
 import { defaultFunction } from "../../src/core/edit/geoNodes.ts";
 import { distance } from "../../src/core/math/geometry.ts";
 import { mapColors, overlay, type Theme } from "../../src/render/palette.ts";
-import { layer, openCurve, rect, syntheticDesign } from "../scenarios.ts";
+import { withNodeSlope, layer, openCurve, rect, syntheticDesign } from "../scenarios.ts";
 import { withCurveMap } from "./curveMapFixture.ts";
 
 type Page = Parameters<Parameters<typeof withCurveMap>[2]>[0];
@@ -26,7 +26,7 @@ export function checkMapParameterOverlays(url: string) {
     coast.harbor.radius = 10;
     design.geoNodes = [design.geoNodes[0], layer("C", rect(5, -30, 43, 28), coast),
         layer("M", rect(-41, -25, -5, 25), {
-            type: "mountain", ridges: [{ curve: ridge, slope: 1 }], peaks: [{ at: firstPeak, height: 7, radius: 8, noise: 0, scale: 1 }]
+            type: "mountain", valleys: [], ridges: [{ curve: withNodeSlope(ridge, 1) }], peaks: [{ at: firstPeak, height: 7, radius: 8, noise: 0, scale: 1 }]
         })];
     return withCurveMap(url, "round40-parameter-overlays", async page => {
         const { authored, cdp, click, evaluate, frame, key, paint, pixels, saved, tap, wait } = page;

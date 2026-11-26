@@ -1,16 +1,14 @@
 import { copyAt } from "../design/address.ts";
-import { parameters, readAt, slotName, writeAt, type Address } from "../design/parameters.ts";
-import { type Curve, type CurveValue, type Design, type Expression, type GeoNode, type PlacedGeoNode, type ResolvedDesign, type Held, type Point, type SharedCurve } from "../design/v5.ts";
-import { curveGraph, geometryIndex, geometrySlot, isCurveRef, isHolderRef, resolvedCurvePath, translateCurve } from "../design/curveReferences.ts";
+import { parameters, readAt, writeAt, type Address } from "../design/parameters.ts";
+import { type Curve, type CurveValue, type Design, type GeoNode, type PlacedGeoNode, type ResolvedDesign, type Held, type Point, type SharedCurve } from "../design/v5.ts";
+import { curveGraph, geometryIndex, geometrySlot, isCurveRef, isHolderRef, profileGroupsFor, profileIndex, resolvedCurvePath, translateCurve, type FunctionMember } from "../design/curveReferences.ts";
 import { editCurve, localPoint } from "./curveEdits.ts";
 import { type Selection } from "./types.ts";
-import { references } from "../design/expression.ts";
-import { lineProfile } from "../design/polyline.ts";
 import { arcHandle, canRemoveNode, insertPathNode, moveHandle, nearestSegment, removePathNode, removePathSegment,
-    segmentRemovalIndex, setBulge } from "./paths.ts";
+    setBulge } from "./paths.ts";
 import { flattenPath, flattenSegment, neighbor, pathHandle } from "../design/path.ts";
 import { distance } from "../math/geometry.ts";
-import { curveRemovalUses, nodeIds, requireUnused, retargetCopiedReferences } from "./geoNodes.ts";
+import { nodeIds, parameterRemovalUses, requireUnused, retargetCopiedReferences } from "./geoNodes.ts";
 
 export interface GeometryTarget { kind: "outline" | "curve" | "parameter"; index: number }
 export interface GeoControl {
@@ -60,13 +58,18 @@ export function geometryPath(n: CurveOwner, index: number): Curve | undefined {
     if ("curve" in n) return index === -1 ? n.curve : undefined;
     if (index >= 0) return n.construction.type === "outline" ? n.construction.outlines[index] : undefined;
     const f = n.function;
-    if (f.type === "mountain") return f.ridges[-1 - index]?.curve;
-    if (index === -1) {
-        if (f.type === "coast") return f.shore;
-        if (f.type === "slope" && f.kind === "path") return f.line;
-    }
+    if (f.type === "mountain") return (f.ridges[-1 - index] ?? f.valleys[-1 - index - f.ridges.length])?.curve;
+    if (f.type === "slope" && f.kind === "path") return f.lines[-1 - index]?.curve;
+    if (f.type === "coast" && index === -1) return f.shore;
 }
 
+export function curveMember(f: PlacedGeoNode["function"] | GeoNode["function"], path: number) {
+    for (const group of profileGroupsFor(f)) {
+        const index = profileIndex(f, group, 0) - path;
+        const size = f.type === "mountain" ? (group === "valleys" ? f.valleys.length : f.ridges.length) : f.type === "slope" ? f.lines.length : 0;
+        if (index >= 0 && index < size) return { group, index };
+    }
+}
 
 export function parameterPoints(n: CurveOwner | GeoNode): [number, Point][] {
     if ("curve" in n) return [];
@@ -80,7 +83,8 @@ export function parameterPoints(n: CurveOwner | GeoNode): [number, Point][] {
 export function pathEntries(n: CurveOwner): [number, Curve][] {
     if ("curve" in n) return [[-1, n.curve]];
     const paths: [number, Curve][] = n.construction.type === "outline" ? n.construction.outlines.map((p, i) => [i, p]) : [];
-    const count = n.function.type === "mountain" ? n.function.ridges.length : 1;
+    const f = n.function;
+    const count = f.type === "mountain" ? f.ridges.length + f.valleys.length : f.type === "slope" && f.kind === "path" ? f.lines.length : 1;
     for (let i = -1; i >= -count; i--) {
         const curve = geometryPath(n, i);
         if (curve) paths.push([i, curve]);
@@ -191,7 +195,7 @@ function movesPlacement({ role }: GeoControl) {
 
 function movedHolders(graph: ReturnType<typeof curveGraph>, id: string, control: GeoControl) {
     return new Set([...graph.holders.values()].filter(slot => slot.location.id === id &&
-        (control.role === "body" || geometryIndex(slot) === control.path)).map(graph.holder));
+        (slot.active || !isHolderRef(slot.value)) && (control.role === "body" || geometryIndex(slot) === control.path)).map(graph.holder));
 }
 
 function dragDelta(control: GeoControl, at: Point): Point {
@@ -210,6 +214,7 @@ function movePoints(n: GeoNode | PlacedGeoNode, control: GeoControl, at: Point) 
     if (control.role === "body") {
         const delta = dragDelta(control, at);
         for (const [, p] of parameterPoints(n)) [p[0], p[1]] = addOffset(p, delta);
+        if (n.function.type === "slope" && n.function.kind === "path") n.function.center = addOffset(n.function.center, delta);
     }
 }
 
@@ -244,7 +249,7 @@ export function controlPreview(d: Design, resolved: ResolvedDesign, graph: Retur
     const affected = moved ? [...moved].flatMap(holder => graph.holderPlacements(holder).map(graph.ofHolder)) :
         source ? [...graph.slots.values()].filter(item => graph.source(item).slot === source.slot) : [];
     const placements = affected.map(item => ({ item, offset: graph.offset(item), curve: placing ? graph.shape(item) : undefined }));
-    const origins = new Map(affected.flatMap(item => item.holder ? [[item.holder.location.id, resolved.geoNodes[item.holder.location.index]]] : []));
+    const origins = new Map(affected.flatMap(item => item.holder?.active ? [[item.holder.location.id, resolved.geoNodes[item.holder.location.index]]] : []));
     return at => {
         const nodes = new Map<string, { node: PlacedGeoNode; paths: Set<number> }>();
         if (selected && points) {
@@ -256,7 +261,7 @@ export function controlPreview(d: Design, resolved: ResolvedDesign, graph: Retur
         const edited = source ? structuredClone(source.curve) : undefined;
         if (edited && slot) moveCurveControl(edited, control, localPoint(graph.offset(slot), at), independent, delta);
         for (const { item, offset, curve } of placements) {
-            if (!item.holder) continue;
+            if (!item.holder?.active) continue;
             const owner = item.holder.location.id;
             const entry = nodes.get(owner) ?? { node: origins.get(owner)!, paths: new Set<number>() };
             const placed = translateCurve(curve ?? edited!, placing ? addOffset(offset, delta) : offset);
@@ -289,12 +294,7 @@ export function geometryItemCurveUses(d: Design, id: string, path: Address, inde
     const prefix = path[0] === "construction" ? [...path, index] : ["function", ...path, index];
     const matches = (location: { kind: string; id?: string; path: Address }) =>
         location.kind === "geo" && location.id === id && prefix.every((part, i) => location.path[i] === part);
-    const graph = curveGraph(d), slots = parameters(d, undefined, graph);
-    const key = "geo:" + id + "." + [...path, index].join(".") + ".";
-    const uses = curveRemovalUses(d, slot => matches(slot.location));
-    for (const slot of slots.values()) if (!matches(slot.location) && typeof readAt(d, slot.path) === "string" &&
-        references(slot.value).some(ref => ref.startsWith(key) && slots.has(graph.parameterKey(ref)))) uses.push({ kind: "parameter", slot });
-    return uses;
+    return parameterRemovalUses(d, matches);
 }
 
 export function removeGeometryItem(d: Design, n: GeoNode, path: Address, index: number) {
@@ -304,7 +304,7 @@ export function removeGeometryItem(d: Design, n: GeoNode, path: Address, index: 
     shiftGeometryReferences(d, n, path, index, -1);
     items.splice(index, 1);
 }
-export function copyGeometryItem(d: Design, n: GeoNode, path: ["ridges" | "peaks"], index: number) {
+export function copyGeometryItem(d: Design, n: GeoNode, path: [FunctionMember], index: number) {
     const items = readAt(n.function, path);
     if (!Array.isArray(items) || !items[index]) return;
     const { prefix, slots, belongs } = shiftGeometryReferences(d, n, path, index, 1);
@@ -315,7 +315,7 @@ export function copyGeometryItem(d: Design, n: GeoNode, path: ["ridges" | "peaks
         const address = slot.location.path.slice(length), value = readAt(copy, address);
         if (typeof value === "string") writeAt(copy, address, retargetCopiedReferences(value, from, to, (key, next) => belongs(key) ? next : key));
     }
-    const holder = path[0] === "ridges" ? copy as Held<CurveValue> : undefined;
+    const holder = path[0] === "peaks" ? undefined : copy as Held<CurveValue>;
     if (holder && !isHolderRef(holder) && !isCurveRef(holder.curve)) {
         const id = nodeIds(d);
         for (const v of holder.curve.nodes) v.id = id();
@@ -323,20 +323,19 @@ export function copyGeometryItem(d: Design, n: GeoNode, path: ["ridges" | "peaks
     items.splice(index + 1, 0, copy);
 }
 function shiftGeometryReferences(d: Design, n: GeoNode, path: Address, index: number, offset: -1 | 1) {
-    const graph = curveGraph(d), slots = parameters(d, undefined, graph), prefix = "geo:" + n.id + "." + path.join(".") + ".";
+    const graph = curveGraph(d), slots = parameters(d, undefined, graph, true), prefix = "geo:" + n.id + "." + path.join(".") + ".";
     function belongs(key: string) {
         const location = (slots.get(key) ?? graph.parameterHolder(key))?.location;
         return location?.kind === "geo" && location.id === n.id;
     }
-    const uses: string[] = [], edits: [Address, string][] = [];
+    const edits: [Address, string][] = [];
     const shifted = (key: string) => key.replace(/^(\d+)(?=\.|$)/, at => Number(at) > index ? String(Number(at) + offset) : at);
     for (const s of slots.values()) {
         const formula = readAt(d, s.path);
-        if (typeof formula !== "string" || offset === -1 && s.owner === "geo" && s.id === n.id && s.key.startsWith(prefix + index + ".")) continue;
+        if (typeof formula !== "string") continue;
         const next = formula.replace(/\{([^{}]+)\}/g, (text, ref: string) => {
-            if (!ref.startsWith(prefix) || !belongs(ref) || !slots.has(graph.parameterKey(ref))) return text;
+            if (!ref.startsWith(prefix) || !belongs(ref) || !slots.has(graph.parameterKey(ref, true))) return text;
             const [at, ...rest] = ref.slice(prefix.length).split(".");
-            if (offset === -1 && Number(at) === index) uses.push(slotName(s));
             return "{" + prefix + shifted([at, ...rest].join(".")) + "}";
         });
         if (next !== formula) edits.push([s.path, next]);
@@ -345,7 +344,6 @@ function shiftGeometryReferences(d: Design, n: GeoNode, path: Address, index: nu
         const next = prefix + shifted(target.key.slice(prefix.length));
         if (next !== target.key) edits.push([[...slot.path, "ref"], "{" + next + "}"]);
     }
-    if (uses.length) throw Error("仍被引用：\n" + [...new Set(uses)].join("\n"));
     for (const [address, formula] of edits) writeAt(d, address, formula);
     return { prefix, slots, belongs };
 }
@@ -366,39 +364,10 @@ export function removeCurveNode(d: Design, n: GeoNode | Selection, h: GeoControl
     });
 }
 
-function mixHeight(a: Expression, b: Expression, t: number): Expression {
-    if (!t || a === b) return a;
-    if (t === 1) return b;
-    if (typeof a === "number" && typeof b === "number") return a * (1 - t) + b * t;
-    return "(" + a + ") * " + (1 - t) + " + (" + b + ") * " + t;
-}
-
-function mergedHeight(d: Design, n: GeoNode, path: Curve, a: number, b: number) {
-    const start = path.nodes[a].h, end = path.nodes[b].h;
-    if (start !== undefined && end !== undefined) return mixHeight(start, end, .5);
-    const f = n.function, ease = f.type === "mountain" || f.type === "slope" && f.kind === "path" && f.ease;
-    const profile = lineProfile(path, d.grid.step / 8);
-    function height(index: number) {
-        const span = profile.span(profile.nodeStation(index), ease);
-        return path.nodes[index].h ?? (span ? mixHeight(span.a.h, span.b.h, span.t) : 0);
-    }
-    return mixHeight(height(a), height(b), .5);
-}
-
 export function removeCurveSegment(d: Design, n: GeoNode | Selection, control: GeoControl) {
-    const owner = selectedOwner(n), slot = geometrySlot(d, owner.id, control.path, owner.kind === "curve");
-    const source = slot && curveGraph(d).source(slot).slot;
-    return editCurve(d, owner, control.path, path => {
-        const removed = segmentRemovalIndex(path, control.index);
-        if (removed === undefined) return;
-        const geo = source?.holder && source.height && d.geoNodes[source.holder.location.index];
-        const height = geo && path.closed ? mergedHeight(d, geo, path, control.index, removed) : undefined;
-        const node = removePathSegment(path, control.index)!;
-        if (height !== undefined) node.h = height;
-        return node;
-    });
+    return editCurve(d, selectedOwner(n), control.path, path => removePathSegment(path, control.index), { mergeAt: control.index });
 }
 
 export function insertCurveNode(d: Design, n: GeoNode | Selection, h: GeoControl) {
-    return editCurve(d, selectedOwner(n), h.path, (path, local) => insertPathNode(path, h.index, local(h.point), nodeIds(d)()));
+    return editCurve(d, selectedOwner(n), h.path, (path, local) => insertPathNode(path, h.index, local(h.point), nodeIds(d)()), { insertAfter: h.index });
 }

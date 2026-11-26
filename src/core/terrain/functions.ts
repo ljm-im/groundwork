@@ -253,10 +253,17 @@ export function evaluateLayerCells(context: LayerCells, grid: Grid, shape: Regio
                     const base = f.value;
                     return (k, x, y) => source[k] + base + f.rate * (Math.hypot(x - f.center[0], y - f.center[1]) - f.radius);
                 }
-                const line = numericProfile(f.line, grid.step / 8);
+                if (!f.lines.length) return k => source[k];
+                const lines = f.lines.map(({ curve, ease }) => ({ profile: numericProfile(curve, grid.step / 8), ease }));
                 return (k, x, y) => {
-                    const hit = nearest(x, y, line.points);
-                    return source[k] + line.value(line.station(hit.segment, hit.t), f.ease);
+                    let distance = Infinity, increment = 0;
+                    for (const { profile, ease } of lines) {
+                        const hit = nearest(x, y, profile.points);
+                        if (hit.distance >= distance) continue;
+                        distance = hit.distance;
+                        increment = profile.value(profile.station(hit.segment, hit.t), ease);
+                    }
+                    return source[k] + increment;
                 };
             }
             case "noise": {

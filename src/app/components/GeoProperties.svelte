@@ -7,31 +7,61 @@
         onmouseenter={() => hover("parameter", index)} onmouseleave={clearHover}
         redraw={() => editor.setTool(redraw, n.id, member)} redrawing={editor.toolActive(redraw, n.id, member)} />
 {/snippet}
-{#snippet curveInput(label: string, curve: Curve, index: number, heightAt?: Address)}
+{#snippet curveInput(label: string, curve: Curve, index: number, profile?: { group: ProfileGroup; index: number })}
     {@const kind = index < 0 ? "curve" : "outline"}
     {@const slot = geometrySlot(d, n.id, index)!}
-    {@const referenced = heightAt && isCurveRef(editor.curves.value(slot))}
+    {@const referenced = isCurveRef(editor.curves.value(slot))}
     <GeometryInput {label} icon={curve.closed ? "closedPath" : "curve"} count={curve.nodes.length}
         active={editor.geometry?.kind === kind && editor.geometry.index === index}
         onclick={() => editor.focusGeometry({ kind, index })} onmouseenter={() => hover(kind, index)} onmouseleave={clearHover}
         redraw={() => editor.drawCurve(slot.key)} redrawing={editor.curveToolActive(slot.key)}
         reference={{ editor, slot, name: index >= 0 ? slot.holder?.label : label }} />
-    {#if heightAt}
+    {#if profile?.group === "lines"}
+        {@const holder = editor.curves.holder(slot.holder!)}
+        <CheckboxRow label={smoothIncrement.label} checked={holder.value.ease ?? smoothIncrement.default}
+            change={ease => editor.setLineEase(slot.key, ease)} />
+    {/if}
+    {#if profile}
         <CheckboxRow label="闭合" checked={curve.closed} disabled={curve.nodes.length < 3}
             change={closed => editor.setCurveClosed(n.id, index, closed)} />
     {/if}
     <SelectedCurvePart {editor} {curve} path={index}>
-        {#snippet height(i, id)}
-            {#if heightAt}{@render param([...heightAt, ...(referenced ? ["h", id] : ["nodes", i, "h"])])}{/if}
+        {#snippet values(i, id)}
+            {#if profile}
+                {@const quantities = nodeQuantities(profileGroups[profile.group].kind)}
+                {#each quantities as quantity (quantity)}
+                    {@const address = [profile.group, profile.index, "curve", ...nodeQuantityPath(i, id, quantity, referenced)]}
+                    {@const label = quantity === "slope" ? "坡度" : profile.group === "lines" ? "增量" : "高度"}
+                    {#if !needsNodeValue(curve, i)}
+                        <CheckboxRow label={"覆盖" + label + "插值"} checked={!interpolates(curve.nodes[i], quantity)}
+                            change={value => editor.setNodeOverride(slot.key, i, quantity, value)} />
+                    {/if}
+                    {@render param(address)}
+                {/each}
+            {/if}
         {/snippet}
     </SelectedCurvePart>
 {/snippet}
-{#snippet memberActions(group: "ridges" | "peaks", index: number)}
-    {@const name = group === "ridges" ? "山脊" : "山峰"}
+{#snippet memberActions(group: FunctionMember, index: number)}
+    {@const name = memberLabel(group)}
     {@const copy = "复制" + name}
     {@const remove = "删除" + name}
     <button class="icon-button" aria-label={copy} data-tip={copy} onclick={() => editor.changeMember(n.id, group, index, true)}><Icon name="copy" /></button>
     <button class="icon-button danger" aria-label={remove} data-tip={remove} onclick={() => editor.changeMember(n.id, group, index, false)}><Icon name="delete" /></button>
+{/snippet}
+{#snippet profileMembers(group: ProfileGroup, count: number)}
+    {@const spec = profileGroups[group]}
+    <Part title={spec.label}>
+        {#snippet actions()}<AddButton label={"添加" + spec.label} active={editor.toolActive(spec.tool, n.id)} action={() => editor.setTool(spec.tool, n.id)} />{/snippet}
+        {#each Array(count).keys() as j (editor.subitemKey(n.id, group, j))}
+            {@const path = profileIndex(f, group, j)}
+            <Subitem label={spec.label + " " + (j + 1)} open={editor.subitemOpen(n.id, group, j)} onclick={() => editor.toggleSubitem(n.id, group, j)}
+                onmouseenter={() => hover("curve", path)} onmouseleave={clearHover}>
+                {#snippet actions()}{@render memberActions(group, j)}{/snippet}
+                {@render curveInput(spec.curve, geometryPath(resolved, path)!, path, { group, index: j })}
+            </Subitem>
+        {/each}
+    </Part>
 {/snippet}
 <PropertyPane {editor}>
     {#snippet title()}
@@ -85,12 +115,6 @@
                         {@render curveInput(p.label, geometryPath(resolved, -1)!, -1)}
                     {:else if f.type === "coast"}
                         {@render geometry(p.label, 0, "harbor")}
-                    {:else if f.type === "slope" && f.kind === "path"}
-                        {@render curveInput(p.label, geometryPath(resolved, -1)!, -1, ["line", "curve"])}
-                        {#each functionTable.slope.toggles ?? [] as toggle (toggle.label)}
-                            <CheckboxRow label={toggle.label} checked={Boolean(readAt(f, toggle.key) ?? toggle.default)}
-                                change={value => editor.editNode(n.id, item => writeAt(item.function, toggle.key, value))} />
-                        {/each}
                     {:else if f.type === "slope"}
                         {@render geometry(p.label, 0, "center")}
                     {/if}
@@ -104,19 +128,8 @@
                 </Part>
             {/if}
             {#if f.type === "mountain"}
-                <Part title="山脊">
-                    {#snippet actions()}<AddButton label="添加山脊" active={editor.toolActive("ridge", n.id)} action={() => editor.setTool("ridge", n.id)} />{/snippet}
-                    {#each f.ridges.keys() as j (editor.subitemKey(n.id, "ridges", j))}
-                        <Subitem label={"山脊 " + (j + 1)} open={editor.subitemOpen(n.id, "ridges", j)} onclick={() => editor.toggleSubitem(n.id, "ridges", j)}
-                            onmouseenter={() => hover("curve", -1 - j)} onmouseleave={clearHover}>
-                            {#snippet actions()}{@render memberActions("ridges", j)}{/snippet}
-                            {@render curveInput(geoParameter(n, ["function", "ridges", j, "curve"])!.label, geometryPath(resolved, -1 - j)!, -1 - j, ["ridges", j, "curve"])}
-                            {#each memberParameters("ridges", j) as key (key.join("."))}
-                                {@render param(key)}
-                            {/each}
-                        </Subitem>
-                    {/each}
-                </Part>
+                {@render profileMembers("ridges", f.ridges.length)}
+                {@render profileMembers("valleys", f.valleys.length)}
                 <Part title="山峰">
                     {#snippet actions()}<AddButton label="添加山峰" active={editor.toolActive("peak", n.id)} action={() => editor.setTool("peak", n.id)} />{/snippet}
                     {#each f.peaks.keys() as j (editor.subitemKey(n.id, "peaks", j))}
@@ -130,6 +143,8 @@
                         </Subitem>
                     {/each}
                 </Part>
+            {:else if f.type === "slope" && f.kind === "path"}
+                {@render profileMembers("lines", f.lines.length)}
             {/if}
         {:else}<ObjectProblems {editor} />{/if}
     {/snippet}
@@ -138,13 +153,14 @@
 <script lang="ts">
     import * as session from "../state/session.svelte.ts";
     import { allowedFunctions } from "../../core/edit/geoNodes.ts";
-    import { geometrySlot, isCurveRef } from "../../core/design/curveReferences.ts";
+    import { geometrySlot, isCurveRef, memberLabel, nodeQuantities, nodeQuantityPath, profileGroups, profileIndex, type FunctionMember, type ProfileGroup } from "../../core/design/curveReferences.ts";
     import { type Curve, type GeoFunction, type Strip } from "../../core/design/v5.ts";
     import { declarationEntries, isBuiltin } from "../../core/design/defaults.ts";
-    import { canWrite, functionParameters, functionTable, isBuiltinFunction } from "../../core/design/functionTable.ts";
+    import { canWrite, functionParameters, functionTable, isBuiltinFunction, smoothIncrement } from "../../core/design/functionTable.ts";
     import { geoAt } from "../state/geoTools.ts";
     import { type DrawTool } from "../../core/edit/types.ts";
-    import { geoParameter, readAt, writeAt, type Address } from "../../core/design/parameters.ts";
+    import { geoParameter, type Address } from "../../core/design/parameters.ts";
+    import { interpolates, needsNodeValue } from "../../core/design/polyline.ts";
     import { geometryPath, type GeoControl } from "../../core/edit/geoControls.ts";
     import Icon from "./Icon.svelte";
     import AddButton from "./AddButton.svelte";
@@ -169,9 +185,8 @@
     let specs = $derived(functionParameters(f));
     let mainParameters = $derived(specs.filter(p => !p.advanced && !p.key.includes("*") && (p.type !== "geometry" || p.default !== "empty")));
     let advancedParameters = $derived(specs.filter(p => p.advanced));
-    function memberParameters(group: "ridges" | "peaks", i: number) {
-        return specs.filter(p => p.key[0] === group && p.type !== "geometry" && p.key.slice(2).every(part => part !== "*") && p.key.at(-1) !== "h")
-            .map(p => [group, i, ...p.key.slice(2)]).filter(key => geoParameter(n, ["function", ...key]));
+    function memberParameters(group: "peaks", i: number) {
+        return specs.flatMap(p => p.key[0] === group && p.type !== "geometry" ? [[group, i, ...p.key.slice(2)]] : []);
     }
     function hover(role: GeoControl["role"], path: number, index = 0) {
         editor.hoverSelection({ kind: "geoNode", id: n.id }, { role, path, index });

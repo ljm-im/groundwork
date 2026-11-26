@@ -19,14 +19,14 @@ import { makeShape, rasterRegion, regionMaskAt } from "../src/core/design/region
 import { clampMarkPoint, nextMapHit, ProjectMap } from "../src/render/map.ts";
 import { testProjectModel, testTerrainClient } from "./computeFixture.ts";
 import { render } from "svelte/server";
-import { coveredLandformPoints, layer, openCurve, overlappingLandforms, polygon, rect, resolvedRect, syntheticDesign } from "./scenarios.ts";
+import { withNodeSlope, coveredLandformPoints, layer, openCurve, overlappingLandforms, polygon, rect, resolvedRect, syntheticDesign } from "./scenarios.ts";
 
 test("Overlapping map objects cycle in paint order, including separate geometries of the same terrain", async () => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
     const design = syntheticDesign(), point: [number, number] = [-14, -8];
     design.geoNodes.push(layer("M", rect(-25, -17, 5, 3), {
-        type: "mountain", peaks: [{ at: point, height: 12, radius: 20, noise: 0, scale: 1 }],
-        ridges: [{ curve: openCurve([{ p: [-23, -8] }, { p: [-4, -8] }]), slope: 2 }]
+        type: "mountain", valleys: [], peaks: [{ at: point, height: 12, radius: 20, noise: 0, scale: 1 }],
+        ridges: [{ curve: withNodeSlope(openCurve([{ p: [-23, -8] }, { p: [-4, -8] }]), 2) }]
     }));
     design.sections = [{ id: "Q", label: "Q", points: [[-24, -8], [1, -8]] }];
     const project = new Project(design), map: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), { width: 1000, height: 700 });
@@ -116,7 +116,7 @@ test("Map gestures use only related alignment points and Shift and Ctrl bypass n
     const line = openCurve(nodes.map((p, i) => ({ p, h: 4 + i })));
     line.nodes[1].out = [3, 0];
     design.geoNodes.push(layer("M", rect(-39, 0, 36, 38), {
-        type: "mountain", ridges: [{ curve: line, slope: 1 }], peaks: [{ at: [0, 28], height: 5, radius: 8, noise: 0, scale: 1 }]
+        type: "mountain", valleys: [], ridges: [{ curve: withNodeSlope(line, 1) }], peaks: [{ at: [0, 28], height: 5, radius: 8, noise: 0, scale: 1 }]
     }), layer("A", rect(10, 40, 20, 45), { type: "flat", amount: 1 }), layer("B", rect(40, 16, 44, 24), { type: "flat", amount: 1 }));
     design.sections.push({ id: "Q", label: "Q", points: [[-28, 30], [-16, 29]] });
     const project = new Project(design), editor = new Editor(testTerrainClient());
@@ -383,7 +383,7 @@ test("Drawing or canceling a parameter keeps its owner and activates only the co
     const { draftPointer } = await import("../src/app/state/geoTools.ts");
     const { geoControls } = await import("../src/core/edit/geoControls.ts");
     const editor = new Editor(testTerrainClient()), design = syntheticDesign(), n = design.geoNodes[1];
-    n.function = { type: "mountain", ridges: [], peaks: [] };
+    n.function = { type: "mountain", valleys: [], ridges: [], peaks: [] };
     Object.assign(editor, { map: Object.assign(Object.create(ProjectMap.prototype), { width: 800, height: 450, center: [0, 0], scale: 4 }) });
     t.mock.method(editor, "reconcileProject", () => {});
     t.mock.method(editor.files, "remember", () => {});
@@ -604,7 +604,7 @@ function islandDesign() {
         c.outlines.push(outline);
     }
     n.construction = c;
-    n.function = { type: "slope", kind: "path", line: { curve: openCurve([{ p: [-15, -27], h: 2 }, { p: [5, -27], h: 7 }]) } };
+    n.function = { type: "slope", kind: "path", lines: [{ curve: openCurve([{ p: [-15, -27], h: 2 }, { p: [5, -27], h: 7 }]) }], center: [0, 0], radius: 5, value: 2, rate: -.2 };
     return d;
 }
 
@@ -651,8 +651,8 @@ test("Dragging nested outlines moves only their own geometry and preserves selec
         [[-14, -12], [-5, -8]], [[-26, -12], [-5, -12]], [[-28, -27], [8, -27]], [[-28, -25], [14, -25]]
     ] as [number, number][][];
     design.geoNodes[1].function = {
-        type: "mountain",
-        ridges: ridges.map((points, i) => ({ curve: openCurve(points.map((p, j) => ({ p, h: 5 + j })), "corner", i + "-ridge-"), slope: 1 })),
+        type: "mountain", valleys: [],
+        ridges: ridges.map((points, i) => ({ curve: withNodeSlope(openCurve(points.map((p, j) => ({ p, h: 5 + j })), "corner", i + "-ridge-"), 1) })),
         peaks: [{ at: [-8, -7], height: 12, radius: 8, noise: 0, scale: 1 },
             { at: [0, -28], height: 9, radius: 6, noise: 0, scale: 1 }]
     };

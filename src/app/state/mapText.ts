@@ -23,6 +23,7 @@ const hints: Record<Tool, string> = {
     addOutline: closedPenHint,
     shore: closedPenHint,
     ridge: lineHint,
+    valley: lineHint,
     slopeLine: lineHint,
     peak: "单击放置山峰",
     center: "单击选择圆心",
@@ -47,15 +48,16 @@ export function drawingStatus(mode: Exclude<Tool, "select">, name: string, owner
         addOutline: ["给" + label + "添加轮廓", pen, true],
         shore: ["重画" + label + "的海岸线", pen, true],
         ridge: [member === undefined ? "给" + label + "添加山脊" : "重画" + label + "的山脊线", lineEnd, true],
+        valley: [member === undefined ? "给" + label + "添加山谷" : "重画" + label + "的山谷线", lineEnd, true],
         peak: [member === undefined ? "给" + label + "添加山峰" : "移动" + label + "的山峰", point, false],
-        slopeLine: ["重画" + label + "的坡线", lineEnd, true],
+        slopeLine: [member === undefined ? "给" + label + "添加坡线" : "重画" + label + "的坡线", lineEnd, true],
         center: ["选择" + label + "的圆心", point, false],
         harbor: ["选择" + label + "的港湾圆心", point, false],
         textMark: ["新建文字标记", point, false],
         scaleMark: ["新建比例尺", point, false],
         section: ["新建剖面线", "单击起点和终点", false],
         sharedCurve: ["新建曲线", lineEnd, true],
-        redrawCurve: ["重画" + label, curve?.requiredClosed ? pen : lineEnd, true],
+        redrawCurve: [curve?.redrawTitle ?? "重画" + label, curve?.requiredClosed ? pen : lineEnd, true],
         continueCurve: ["继续画" + label, continueEnd + "，Esc 取消", true]
     };
     const [title, end, finish] = text[mode];

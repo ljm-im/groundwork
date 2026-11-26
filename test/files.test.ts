@@ -4,6 +4,8 @@ import { test } from "node:test";
 import "../configs/register-svelte.ts";
 import assert from "node:assert/strict";
 import { fixtureOptions, readFixture } from "../configs/read-fixture.ts";
+import { markParameters } from "../src/core/design/functionTable.ts";
+import { type Design } from "../src/core/design/v5.ts";
 import { Project } from "../src/core/project.ts";
 import { parseDesign, serializeDesign } from "../src/core/design/model.ts";
 import { FileWrites } from "../src/app/state/fileWrites.ts";
@@ -13,7 +15,8 @@ test("Authored and default designs survive a JSON round trip", fixtureOptions("r
     const author = parseDesign(original);
     const current = await readFixture("round14-land.json");
     const design = parseDesign(current);
-    const raw = JSON.parse(current);
+    const raw: Design = JSON.parse(current);
+    for (const mark of raw.marks) if (mark.kind === "text" && mark.elevation === undefined) mark.elevation = markParameters.text.default;
     assert.deepEqual(JSON.parse(serializeDesign(design)), raw);
     assert.deepEqual(parseDesign(serializeDesign(author)), author);
 });

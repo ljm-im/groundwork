@@ -562,7 +562,7 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
         await seed("sparse.json", JSON.stringify(sparse));
         await set({ openName: "sparse.json" }); await click("#open"); await filename("sparse.json");
         await click("[data-tab=terrain]");
-        assert.match(await evaluate(() => document.querySelector("[data-geo-node=\"T\"]")!.textContent!), /flat\s*\+\s*1\b/);
+        assert.match(await evaluate(() => document.querySelector("[data-geo-node=\"T\"]")!.textContent!), /升降\s*\+\s*1\b/);
         await click("[data-geo-node=\"T\"]");
         await click("[data-property-tab=function]");
         assert.match(await evaluate(() => document.querySelector("[data-parameter$=\".function.amount\"] .numeric-face")!.textContent!.trim()), /^1(?:\.0+)?$/);

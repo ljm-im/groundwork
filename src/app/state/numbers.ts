@@ -110,7 +110,7 @@ export function referenceLabel(key: string, d: Design, slots: Map<string, Slot>)
     if (kind === "field") return { icon: "field" as const, builtin: isBuiltin("field", id), name: d.fields[id]?.label ?? id };
     const s = slots.get(key);
     if (kind === "input") return { icon: "inputs" as const, builtin: isBuiltin("input", id), name: d.inputs[id]?.label ?? id };
-    return { icon: "property", builtin: false, name: s?.name ?? id, property: s?.label } as const;
+    return { icon: s?.output ? "outputValue" : "property", builtin: false, name: s?.name ?? id, property: s?.label } as const;
 }
 // A reference chip occupies one caret stop and serializes to its full JSON reference.
 export function editorText(node: Node): string {

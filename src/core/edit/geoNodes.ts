@@ -1,9 +1,9 @@
 import { curveGraph, curveSlotName, geoHolderSlots, isCurveRef, isHolderRef, type CurveSlot, type HolderSlot } from "../design/curveReferences.ts";
-import { quotedLocation } from "../design/problems.ts";
+import { quotedLocation, type Location } from "../design/problems.ts";
 import { type Design, type GeoFunction, type GeoNode, type ClosedCurve, type Curve, type Point, type Strip } from "../design/v5.ts";
 import { defaultInputRange, heightId, isBuiltin } from "../design/defaults.ts";
 import { canWrite, fillFunctionParameters, functionTable, stripWidths } from "../design/functionTable.ts";
-import { parameters, readAt, referenceSlots, slotName, writeAt, type Slot } from "../design/parameters.ts";
+import { parameters, parameterUsers, readAt, referenceSlots, slotName, writeAt, type Slot } from "../design/parameters.ts";
 
 export function nextId(used: Iterable<string>, prefix: string) {
     const ids = new Set(used);
@@ -75,7 +75,7 @@ export function copyGeo(d: Design, original: GeoNode) {
     copy.label += " 副本";
 
     const from = "geo:" + original.id, to = "geo:" + copy.id, source = curveGraph(d);
-    const slots = parameters(d, undefined, source);
+    const slots = parameters(d, undefined, source, true);
     function inside(target: Slot | HolderSlot | CurveSlot | undefined) {
         return target?.location.kind === "geo" && target.location.id === original.id;
     }
@@ -87,8 +87,7 @@ export function copyGeo(d: Design, original: GeoNode) {
         const { key, value, location } = holder;
         if (isHolderRef(value)) holder.value = { ref: geometryRef(value.ref) };
         else if (isCurveRef(value.curve)) {
-            const { ref, h } = value.curve;
-            holder.value = { ...value, curve: { ref: geometryRef(ref), ...(h && { h: { ...h } }) } };
+            holder.value = { ...value, curve: { ...value.curve, ref: geometryRef(value.curve.ref) } };
         }
         else {
             const curve = { ...value.curve, nodes: value.curve.nodes.map(node => ({ ...node })) };
@@ -103,26 +102,32 @@ export function copyGeo(d: Design, original: GeoNode) {
         const slot = graph.slots.get(key);
         return slot && renames.get(graph.source(slot).slot.key)?.ids;
     }
-    function remapHeight(key: string, next: string) {
+    function remapNodeValue(key: string, next: string) {
         if (!inside(slots.get(key) ?? source.parameterHolder(key))) return key;
         const holder = graph.parameterHolder(next);
         if (!holder) return next;
-        const curve = holder.key + ".curve", height = curve + ".h.";
-        if (!next.startsWith(height)) return next;
-        const id = sourceIds(curve)?.get(next.slice(height.length));
-        return id === undefined ? next : height + id;
+        const curve = holder.key + ".curve";
+        for (const q of ["h", "slope"]) {
+            const prefix = curve + "." + q + ".";
+            if (!next.startsWith(prefix)) continue;
+            const id = sourceIds(curve)?.get(next.slice(prefix.length));
+            return id === undefined ? next : prefix + id;
+        }
+        return next;
     }
     for (const slot of slots.values()) if (slot.owner === "geo" && slot.id === original.id) {
         const { path } = slot.location, value = readAt(copy, path);
-        if (typeof value === "string") writeAt(copy, path, retargetCopiedReferences(value, from, to, remapHeight));
+        if (typeof value === "string") writeAt(copy, path, retargetCopiedReferences(value, from, to, remapNodeValue));
     }
-    const heights = holders.flatMap(({ key, value }) => {
-        if (isHolderRef(value) || !isCurveRef(value.curve) || !value.curve.h) return [];
+    for (const { key, value } of holders) {
+        if (isHolderRef(value) || !isCurveRef(value.curve)) continue;
         const ids = sourceIds(key + ".curve");
-        if (!ids) return [];
-        return [{ curve: value.curve, h: Object.fromEntries(Object.entries(value.curve.h).map(([id, h]) => [ids.get(id) ?? id, h])) }];
-    });
-    for (const { curve, h } of heights) curve.h = h;
+        if (!ids) continue;
+        for (const part of ["h", "slope", "interpolate"] as const) {
+            const values = value.curve[part];
+            if (values) Object.assign(value.curve, { [part]: Object.fromEntries(Object.entries(values).map(([id, v]) => [ids.get(id) ?? id, v])) });
+        }
+    }
     for (const { curve, ids } of renames.values()) for (const node of curve.nodes) node.id = ids.get(node.id)!;
     return insert(d, copy, original.id);
 }
@@ -170,9 +175,13 @@ export function curveRemovalUses(d: Design, matches: (slot: CurveSlot | HolderSl
         matches(target) && !matches(slot) ? [{ kind: "curve" as const, slot }] : []);
 }
 
+export function parameterRemovalUses(d: Design, match: (location: Location) => boolean): RemovalUse[] {
+    return [...curveRemovalUses(d, slot => match(slot.location)), ...parameterUsers(d, match).map(slot => ({ kind: "parameter" as const, slot }))];
+}
+
 export function removalUses(d: Design, kind: "geo" | "input" | "field" | "curve" | "mark", id: string): RemovalUse[] {
     const uses: RemovalUse[] = kind === "curve" ? [] : referenceSlots(d, kind, id)
-        .filter(slot => slot.owner !== kind || slot.id !== id).map(slot => ({ kind: "parameter", slot }));
+        .map(slot => ({ kind: "parameter", slot }));
     if (kind === "curve") return curveRemovalUses(d, slot => slot.location.kind === "curve" && slot.location.id === id);
     if (kind === "geo") uses.push(...curveRemovalUses(d, slot => slot.location.kind === "geo" && slot.location.id === id));
     if (kind === "geo") return [...uses, ...stripUsers(d, id).map(node => ({ kind: "strip" as const, node }))];
@@ -217,17 +226,17 @@ export function allowedFunctions(n: GeoNode) {
     });
 }
 
-export function defaultFunction(type: GeoFunction["type"], geometry: { shore?: ClosedCurve; line?: Curve; center?: Point; slope?: "path" | "radial" } = {}): GeoFunction {
+export function defaultFunction(type: GeoFunction["type"], geometry: { shore?: ClosedCurve; center?: Point; slope?: "path" | "radial"; id?: string } = {}): GeoFunction {
     let f;
     if (type === "coast") {
         if (!geometry.shore || !geometry.center) throw Error("海岸线或港湾圆心缺失");
         f = { type, shore: { curve: geometry.shore }, harbor: { center: geometry.center } };
     }
     else if (type === "slope") {
-        if (geometry.slope === "radial" && geometry.center) f = { type, kind: "radial", center: geometry.center };
-        else if (geometry.line) f = { type, kind: "path", line: { curve: geometry.line } };
-        else throw Error("坡面几何缺失");
+        if (!geometry.center) throw Error("坡面圆心缺失");
+        f = { type, kind: geometry.slope ?? "path", center: geometry.center, lines: [] };
     }
     else f = { type };
-    return fillFunctionParameters(f as GeoFunction);
+    if (type === "erosion" && !geometry.id) throw Error("侵蚀需要地件 ID");
+    return fillFunctionParameters(f as GeoFunction, [], geometry.id);
 }

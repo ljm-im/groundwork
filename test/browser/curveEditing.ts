@@ -46,7 +46,7 @@ async function checkDrawnCurves(url: string) {
     const design = syntheticDesign(), filename = "drawn-curve-editing.json";
     const mountain = { ...layer("M", rect(-45, -33, 12, 30), defaultFunction("mountain")), label: "山" };
     const slope = { ...layer("S", rect(17, -24, 53, 24), {
-        type: "slope", kind: "path", line: { curve: openCurve([{ p: [20, -18], h: 0 }, { p: [49, -18], h: 2 }]) }
+        type: "slope", kind: "path", lines: [{ curve: openCurve([{ p: [20, -18], h: 0 }, { p: [49, -18], h: 2 }]) }], center: [0, 0], radius: 5, value: 2, rate: -.2
     }), label: "坡面" };
     design.geoNodes = [layer("G", rect(-60, -47, 60, 47), { type: "ground", value: 4 }), mountain, slope];
     design.sections = [{ id: "Q", label: "剖面线 Q", points: [[-48, -37], [35, -37]], showLabel: false }];
