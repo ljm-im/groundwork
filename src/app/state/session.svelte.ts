@@ -21,6 +21,7 @@ import { canRemoveNode, cleanHandles, editWholeCurve, isEndpoint, retractHandle,
 import { drawingReady, drawingTools, finishCurveDraft, finishDraft, geoAt, startCurveDrawing, startDrawing, updatePreview } from "./geoTools.ts";
 import { type DrawTool, type GeoDraft } from "../../core/edit/types.ts";
 import { markParameters } from "../../core/design/functionTable.ts";
+import { revealInPanel } from "./layout.ts";
 import { functionGeometry } from "../../core/edit/functionGeometry.ts";
 import { bulgeFromDegrees, neighbor, segmentNeighbor, type SegmentType } from "../../core/design/path.ts";
 import { sampleField } from "../../core/design/results.ts";
@@ -401,13 +402,13 @@ export class Editor {
             if (!pane || this.geometry !== geometry || this.selectedPart !== selectedPart || this.selection?.id !== owner || this.propertyTab !== propertyTab) return;
             if (selectedPart?.role === "outline") {
                 const outline = [...pane.querySelectorAll<HTMLElement>("[data-outline]")].find(row => row.dataset.outline === selectedPart.nodeId);
-                outline?.querySelector(".subitem-heading")?.scrollIntoView({ block: "nearest" });
+                revealInPanel(pane, outline?.querySelector(".subitem-heading"));
                 return;
             }
             const row = selectedPart?.role === "vertex" ? pane.querySelector<HTMLElement>("[data-curve-node]") :
                 selectedPart?.role === "segment" ? pane.querySelector<HTMLElement>("[data-curve-segment]") : undefined;
             const visible = row && row.offsetHeight > pane.clientHeight ? row.querySelector(".subitem-heading") : row;
-            (visible ?? pane.querySelector(".geometry-box[aria-pressed=true]"))?.scrollIntoView({ block: "nearest" });
+            revealInPanel(pane, visible ?? pane.querySelector(".geometry-box[aria-pressed=true]"));
         });
     }
     toolActive(mode: Tool, owner?: string, member?: number) {
@@ -896,7 +897,7 @@ export class Editor {
             void tick().then(() => {
                 const field = Array.from(this.properties?.querySelectorAll<HTMLElement>("[data-parameter]") ?? [])
                     .find(el => el.dataset.parameter === address);
-                field?.scrollIntoView({ block: "nearest" });
+                revealInPanel(this.properties, field);
             });
         } };
     }
@@ -1081,7 +1082,7 @@ export class Editor {
             const indices = new Set(issues.map(issue => this.project.issues.indexOf(issue)));
             const row = Array.from(this.panel?.querySelectorAll<HTMLElement>("[data-issue]") ?? [])
                 .find(el => indices.has(Number(el.dataset.issue)));
-            row?.scrollIntoView({ block: "nearest" });
+            revealInPanel(this.panel, row);
         });
     }
     private selectIssues(issues: Issue[]) {
