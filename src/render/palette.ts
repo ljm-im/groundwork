@@ -93,10 +93,9 @@ const contourLineColors = (rgb: string) => contourLines.map(({ opacity }) => `rg
 
 export const contourStyle = {
     minSpacing: 5,
-    labelSpacing: 18,
+    labelGap: 48,
     labelLength: 80,
     labelInset: 40,
-    labelRank: 2,
     lines: contourLines,
     zeroWidth: 1.4,
     light: { lines: contourLineColors("16 28 28"), zero: "#64909a" },

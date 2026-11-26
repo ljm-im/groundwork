@@ -44,8 +44,37 @@ test("Zero crosses signed cells and other lines only gain labels at the specifie
     assert.deepEqual(trace(row, 2, .01), [zero]);
     assert.deepEqual(trace(row, 2, 20, Infinity), [zero]);
     assert.deepEqual(trace(row, 2, 20, 1, [1, 1, 1, 0]), []);
-    assert(trace([9, 11, 9, 11], 2, 36).find(s => s.value === 10)?.label);
-    assert.equal(trace([9, 11, 9, 11], 2, 35).find(s => s.value === 10)?.label, false);
+    assert(trace([9, 11, 9, 11], 2, 10).find(s => s.value === 10)?.label);
+    assert.equal(trace([9, 11, 9, 11], 2, 9).find(s => s.value === 10)?.label, false);
+});
+
+test("Contour labels follow the drawn interval at three scales on the same slope", () => {
+    for (const [scale, drawn, multiple] of [[1024, .1, .2], [25.6, 1, 10], [2.56, 10, 100]]) {
+        const size = Math.ceil(500 / scale) + 2;
+        const grid = createGrid({ xMin: 0, xMax: size, yMin: 0, yMax: size, step: 1 });
+        const values = Float32Array.from({ length: size * size }, (_, k) => 4 * grid.x(k % size));
+        const samples = { values, defined: new Uint8Array(values.length).fill(1) };
+        const levels = new Map<number, { value: number; tier: number; links: Parameters<typeof connectContourLinks>[2] }>();
+        const drawnValues = new Set<number>();
+        traceContours(grid, samples, .1, scale, (_rank, value, from, to, label, { level, tier, edges, spacing }) => {
+            drawnValues.add(value);
+            if (label) assert(Math.abs(value / multiple - Math.round(value / multiple)) < 1e-9);
+            let line = levels.get(level);
+            if (!line) levels.set(level, line = { value, tier, links: [] });
+            line.links.push({ from, to, edges, spacing });
+        }, true);
+        const ordered = [...drawnValues].sort((a, b) => a - b);
+        assert(Math.abs(ordered[1] - ordered[0] - drawn) < 1e-9);
+        const lines = [...levels.values()].flatMap(({ value, tier, links }) => connectContourLinks(value, tier, links));
+        const xMin = grid.x(0), yMin = grid.y(size - 1);
+        const placed = contourLabels(lines, 500, 500, ([x, y]) => [(x - xMin) * scale, (y - yMin) * scale], () => [32, 14])
+            .sort((a, b) => a.point[0] - b.point[0]);
+        assert(placed.length >= 2, "Expected more than one label for interval " + drawn);
+        for (const [i, { value, point }] of placed.entries()) {
+            assert(Math.abs(value / multiple - Math.round(value / multiple)) < 1e-9);
+            if (i) assert(point[0] - placed[i - 1].point[0] >= contourStyle.labelGap);
+        }
+    }
 });
 
 const labels = (lines: ContourLine[]) => contourLabels(lines, 500, 300, p => p, () => [32, 14]);
@@ -53,7 +82,7 @@ const labels = (lines: ContourLine[]) => contourLabels(lines, 500, 300, p => p, 
 test("Grid edges connect one long line and keep adjacent equal values separate", () => {
     const links = [65, 85].flatMap((y, row) => Array.from({ length: 20 }, (_, i) => ({
         edges: [row * 30 + i, row * 30 + i + 1] as [number, number],
-        from: [i * 20, y] as [number, number], to: [(i + 1) * 20, y] as [number, number], spacing: i === 10 ? 40 : 18
+        from: [i * 20, y] as [number, number], to: [(i + 1) * 20, y] as [number, number], spacing: i === 10 ? 64 : 48
     })));
     const lines = connectContourLinks(20, 3, links);
     assert.deepEqual(lines.map(line => line.spans.length), [20, 20]);
@@ -64,18 +93,18 @@ test("A closed contour can be labeled once and distance on screen controls visib
     const points: [number, number][] = [[100, 60], [180, 60], [180, 140], [100, 140]];
     const lines = connectContourLinks(10, 2, points.map((from, index) => {
         const next = (index + 1) % points.length;
-        return { edges: [index, next], from, to: points[next], spacing: 24 };
+        return { edges: [index, next], from, to: points[next], spacing: 56 };
     }));
     assert.equal(lines.length, 1);
     assert.deepEqual(lines[0].spans[0].from, lines[0].spans.at(-1)!.to);
     assert.equal(labels(lines).length, 1);
-    assert.equal(labels([{ value: 10, tier: 2, spans: [{ from: [-100, 60], to: [75, 60], spacing: 24 }] }]).length, 0);
-    assert.equal(labels([{ value: 10, tier: 2, spans: [{ from: [50, 30], to: [250, 30], spacing: 24 }] }]).length, 0);
+    assert.equal(labels([{ value: 10, tier: 2, spans: [{ from: [-100, 60], to: [75, 60], spacing: 56 }] }]).length, 0);
+    assert.equal(labels([{ value: 10, tier: 2, spans: [{ from: [50, 30], to: [250, 30], spacing: 56 }] }]).length, 0);
 });
 
 test("Overlapping contour numbers keep the higher multiple and break ties in placement order", () => {
     const line = (value: number, tier: number, y: number): ContourLine => ({
-        value, tier, spans: [{ from: [120, y], to: [380, y], spacing: 30 }]
+        value, tier, spans: [{ from: [120, y], to: [380, y], spacing: 56 }]
     });
     const placed = labels([line(30, 2, 100), line(10, 2, 101), line(20, 3, 105)]);
     assert.deepEqual(placed.map(label => label.value), [20]);

@@ -85,14 +85,17 @@ export function traceContours(grid: Grid, samples: FieldSamples, base: number, s
     if (cols < 1 || rows < 1) return;
     const { steepest, maximum } = cellSlopes(grid, samples);
     if (!maximum) return;
-    const minChange = contourStyle.minSpacing / (step * scale), labelChange = contourStyle.labelSpacing / (step * scale);
-    const intervals = contourIntervals(base, maximum * minChange);
+    const minChange = contourStyle.minSpacing / (step * scale), labelChange = contourStyle.labelGap / (step * scale);
+    const intervals = contourIntervals(base, 2 * Math.max(base, maximum * labelChange));
     for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
         const change = steepest[j * cols + i];
         if (!change) continue;
         const k = j * width + i, a = v[k], b = v[k + 1], c = v[k + 1 + width], d = v[k + width];
         const low = Math.min(a, b, c, d), high = Math.max(a, b, c, d);
         const index = contourIntervalIndex(intervals, change * minChange), interval = intervals[index];
+        const labelMinimum = change * labelChange;
+        const labelIndex = Math.max(index + 1, contourIntervalIndex(intervals, labelMinimum));
+        const labelSpacing = intervals[labelIndex] / labelMinimum * contourStyle.labelGap;
         const first = Math.ceil(low / interval), last = Math.floor(high / interval);
         const x = grid.x(i), y = grid.y(j), right = grid.x(i + 1), bottom = grid.y(j + 1);
         for (let n = first; n <= last; n++) {
@@ -108,8 +111,8 @@ export function traceContours(grid: Grid, samples: FieldSamples, base: number, s
             if (points.length === 4 && (a - level) * (c - level) < (b - level) * (d - level))
                 points.push(points.shift()!);
             const tier = n === 0 ? -1 : contourTier(n, index), rank = n === 0 ? zeroRank : Math.min(tier, zeroRank - 1);
-            const label = rank !== zeroRank && rank >= contourStyle.labelRank && interval >= change * labelChange;
-            const spacing = interval / change * (step * scale), levelIndex = n === 0 ? 0 : Math.round(level / base);
+            const label = n !== 0 && tier >= labelIndex;
+            const spacing = label ? labelSpacing : 0, levelIndex = n === 0 ? 0 : Math.round(level / base);
             for (let p = 0; p < points.length; p += 2) {
                 const [fromEdge, from] = points[p], [toEdge, to] = points[p + 1];
                 if (connectCorners || from[0] !== to[0] || from[1] !== to[1])
@@ -183,19 +186,19 @@ function clip(a: Point, b: Point, box: Box): [number, number] | undefined {
 
 export function contourLabels(lines: readonly ContourLine[], width: number, height: number, screen: (p: Point) => Point,
     measure: (value: number) => Point) {
-    const { labelInset, labelRank, labelSpacing, labelLength } = contourStyle;
+    const { labelInset, labelGap, labelLength } = contourStyle;
     const viewport: Box = [0, 0, width, height], interior: Box = [labelInset, labelInset, width - labelInset, height - labelInset];
     const center: Point = [width / 2, height / 2];
     const accepted: { value: number; point: Point; box: Box }[] = [];
     if (interior[0] >= interior[2] || interior[1] >= interior[3]) return accepted;
-    for (const { value, spans } of lines.filter(line => line.tier >= labelRank).sort((a, b) => b.tier - a.tier)) {
+    for (const { value, spans } of lines.toSorted((a, b) => b.tier - a.tier)) {
         let length = 0, bestSpacing = 0, bestDistance = Infinity, point: Point | undefined;
         for (const { from, to, spacing } of spans) {
             const a = screen(from), b = screen(to), visible = clip(a, b, viewport);
             if (!visible) continue;
             const pixels = distance(a, b);
             length += pixels * (visible[1] - visible[0]);
-            if (!pixels || spacing < labelSpacing || spacing < bestSpacing) continue;
+            if (!pixels || spacing < labelGap || spacing < bestSpacing) continue;
             const inset = clip(a, b, interior);
             if (!inset || inset[0] === inset[1]) continue;
             const candidate = mixPoint(a, b, (inset[0] + inset[1]) / 2), gap = distance(center, candidate);
@@ -232,7 +235,8 @@ export function fieldContours(grid: Grid, samples: FieldSamples, precision: numb
         line.links.push({ edges, from, to, spacing });
     }, true);
     const domain = { grid, defined };
-    const lines = [...levels.values()].flatMap(({ value, tier, links }) => connectContourLinks(value, tier, links, domain));
+    const lines = [...levels.values()].flatMap(({ value, tier, links }) =>
+        links.some(link => link.spacing >= contourStyle.labelGap) ? connectContourLinks(value, tier, links, domain) : []);
     const rendered = { grid, defined, precision, scale, base, paths, lines };
     contours.set(samples.values, rendered);
     return rendered;
