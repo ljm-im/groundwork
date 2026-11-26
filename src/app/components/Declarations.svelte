@@ -47,7 +47,7 @@
                 removeLabel="删除曲线" remove={() => editor.removeElement(h!)} />
         {/snippet}
         <Part>
-            <GeometryInput label="值" {icon} count={item.curve.nodes.length} active={editor.geometry?.kind === "curve"}
+            <GeometryInput label="曲线" {icon} count={item.curve.nodes.length} active={editor.geometry?.kind === "curve"}
                 onclick={() => editor.focusGeometry({ kind: "curve", index: -1 })}
                 redraw={() => editor.drawCurve(key)} redrawing={editor.curveToolActive(key)} />
             <SelectedCurvePart {editor} curve={item.curve} path={-1} />
