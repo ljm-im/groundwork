@@ -8,7 +8,7 @@ import { references } from "../design/expression.ts";
 import { lineProfile } from "../design/polyline.ts";
 import { arcHandle, canRemoveNode, insertPathNode, moveHandle, nearestSegment, removePathNode, removePathSegment,
     segmentRemovalIndex, setBulge } from "./paths.ts";
-import { flattenPath, neighbor, pathHandle } from "../design/path.ts";
+import { flattenPath, flattenSegment, neighbor, pathHandle } from "../design/path.ts";
 import { distance } from "../math/geometry.ts";
 import { curveRemovalUses, nodeIds, requireUnused, retargetCopiedReferences } from "./geoNodes.ts";
 
@@ -178,8 +178,15 @@ export function* hitParameterGeometries(n: PlacedGeoNode, p: Point, scale: numbe
 export function hitPathSegment(n: CurveOwner, p: Point, scale: number, tolerance: number, target?: GeometryTarget) {
     return hitSegments(editablePaths(n, target), p, scale, tolerance);
 }
-function movesPlacement({ role, path }: GeoControl) {
-    return role === "body" || role === "outline" || role === "curve" || role === "segment" && path < 0;
+export function hitSelectedSegment(owner: CurveOwner, part: GeoControl, at: Point, scale: number, tolerance: number) {
+    const curve = geometryPath(owner, part.path);
+    if (!curve) return;
+    const hit = nearestSegment(flattenSegment(curve, part.index, displayCurveTolerance(tolerance, scale)), at);
+    if (hit && hit.distance * scale <= segmentRadius) return { ...part, point: hit.point };
+}
+
+function movesPlacement({ role }: GeoControl) {
+    return role === "body" || role === "outline" || role === "curve";
 }
 
 function movedHolders(graph: ReturnType<typeof curveGraph>, id: string, control: GeoControl) {
@@ -206,9 +213,16 @@ function movePoints(n: GeoNode | PlacedGeoNode, control: GeoControl, at: Point) 
     }
 }
 
-function moveCurveControl(path: Curve, h: GeoControl, at: Point, independent: boolean) {
+function moveCurveControl(path: Curve, h: GeoControl, at: Point, independent: boolean, delta: Point) {
     const v = path.nodes[h.index];
     if (h.role === "vertex") v.p = at;
+    if (h.role === "segment") {
+        const next = neighbor(path, h.index, 1);
+        if (next !== undefined) {
+            v.p = addOffset(v.p, delta);
+            path.nodes[next].p = addOffset(path.nodes[next].p, delta);
+        }
+    }
     if (h.role === "in" || h.role === "out") moveHandle(path, h.index, h.role, at, independent);
     if (h.role === "arc") setBulge(v, path.nodes[neighbor(path, h.index, 1)!].p, at);
 }
@@ -222,7 +236,7 @@ export function controlPreview(d: Design, resolved: ResolvedDesign, graph: Retur
     selection: Selection, control: GeoControl, independent: boolean): ((at: Point) => ControlPreview) | undefined {
     const { id } = selection, selected = resolved.geoNodes.find(n => n.id === id);
     const placing = movesPlacement(control), shared = selection.kind === "curve";
-    const slot = !placing && control.role !== "parameter" && control.role !== "segment" ? geometrySlot(d, id, control.path, shared) : undefined;
+    const slot = !placing && control.role !== "parameter" ? geometrySlot(d, id, control.path, shared) : undefined;
     const source = slot && graph.source(slot);
     const moved = placing && !shared ? movedHolders(graph, id, control) : undefined;
     const points = selected && (control.role === "parameter" || control.role === "body" && parameterPoints(selected).length > 0);
@@ -240,7 +254,7 @@ export function controlPreview(d: Design, resolved: ResolvedDesign, graph: Retur
         }
         const delta = dragDelta(control, at);
         const edited = source ? structuredClone(source.curve) : undefined;
-        if (edited && slot) moveCurveControl(edited, control, localPoint(graph.offset(slot), at), independent);
+        if (edited && slot) moveCurveControl(edited, control, localPoint(graph.offset(slot), at), independent, delta);
         for (const { item, offset, curve } of placements) {
             if (!item.holder) continue;
             const owner = item.holder.location.id;
@@ -268,7 +282,7 @@ export function commitControl(d: Design, selection: Selection, control: GeoContr
             else delete value.offset;
         }
     }
-    else if (control.role !== "segment") editCurve(d, selection, control.path, (curve, local) => moveCurveControl(curve, control, local(at), independent));
+    else editCurve(d, selection, control.path, (curve, local) => moveCurveControl(curve, control, local(at), independent, dragDelta(control, at)));
 }
 
 export function geometryItemCurveUses(d: Design, id: string, path: Address, index: number) {

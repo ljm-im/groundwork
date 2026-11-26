@@ -5,6 +5,7 @@ import { finishCurveDraft } from "../src/app/state/geoTools.ts";
 import { curveGraph, isCurveRef, isHolderRef } from "../src/core/design/curveReferences.ts";
 import { defaultInputRange } from "../src/core/design/defaults.ts";
 import { parseDesign, serializeDesign } from "../src/core/design/model.ts";
+import { flattenSegment } from "../src/core/design/path.ts";
 import { numberEdits } from "../src/core/design/numberEdit.ts";
 import { expressionGraph, resolveDesign, writeAt } from "../src/core/design/parameters.ts";
 import { type Design, type Expression, type Point, type ResolvedDesign } from "../src/core/design/v5.ts";
@@ -183,7 +184,7 @@ test("Shape edits subtract the current holder offset and shared curves cannot mo
     assert.deepEqual(preview.nodes.get("T")?.node.construction, geo(moved, "T").construction);
 
     d.curves.x = { curve: structuredClone(base), label: "X" };
-    const h = { kind: "curve" as const, id: "x" }, whole: GeoControl = { ...control, role: "segment", path: -1 };
+    const h = { kind: "curve" as const, id: "x" }, whole: GeoControl = { ...control, role: "curve", path: -1 };
     setCurveReference(d, shape(outline("C")), "curve:x");
     const before = serializeDesign(d);
     assert.equal(controlPreview(d, resolveDesign(d), curveGraph(d), h, whole, false), undefined);
@@ -316,6 +317,52 @@ test("A strip copy keeps its range on the source landform", () => {
     const strip = createStrip(d, ["T"], range), copy = copyGeo(d, strip);
     assert.deepEqual(copy.construction, strip.construction);
     assert.doesNotThrow(() => parseDesign(d));
+});
+
+test("A segment drag translates only its two endpoints and keeps node modes and handles", () => {
+    const delta: Point = [2, -3];
+    for (const mode of ["corner", "manual", "auto"] as const) {
+        const d = syntheticDesign(), n = geo(d, "T");
+        assert(n.construction.type === "outline");
+        const path = literalCurve(n.construction.outlines[0]);
+        const a = path.nodes[1], b = path.nodes[2];
+        a.mode = b.mode = mode;
+        if (mode === "corner") a.bulge = .5;
+        if (mode === "manual") {
+            Object.assign(a, { in: [-1, -3], out: [2, 6] });
+            Object.assign(b, { in: [3, -3], out: [-4, 4] });
+        }
+        const before = structuredClone(path), samples = flattenSegment(path, 1, .05);
+        const control: GeoControl = { role: "segment", path: 0, index: 1, point: [0, 0] };
+        commitControl(d, selection(n.id), control, delta, false);
+        const edited = literalCurve(n.construction.outlines[0]);
+        assert.deepEqual(edited.nodes.map(node => ({ ...node, p: undefined })), before.nodes.map(node => ({ ...node, p: undefined })));
+        assert.deepEqual(edited.nodes.map(node => node.p), before.nodes.map((node, i) =>
+            i === 1 || i === 2 ? [node.p[0] + delta[0], node.p[1] + delta[1]] : node.p));
+        if (mode !== "auto") {
+            const after = flattenSegment(edited, 1, .05);
+            assert.equal(after.length, samples.length);
+            for (const [i, { a, b }] of samples.entries()) for (const [j, next] of [a, b].entries()) {
+                const p = j === 0 ? after[i].a : after[i].b;
+                assert(Math.hypot(p[0] - next[0] - delta[0], p[1] - next[1] - delta[1]) < 1e-9);
+            }
+        }
+    }
+});
+
+test("Dragging a segment at a shape reference previews and edits the source through the placement", () => {
+    const d = fixture(), original = resolveDesign(d), copy = structuredClone(geo(d, "C").construction);
+    const controls: GeoControl = { role: "segment", path: 0, index: 0, point: [-5, -11] };
+    const delta: Point = [3, 4], target: Point = [-2, -7];
+    const preview = controlPreview(d, original, curveGraph(d), selection("C"), controls, false)!(target);
+    commitControl(d, selection("C"), controls, target, false);
+    const after = resolveDesign(d);
+    assert.deepEqual(geo(d, "C").construction, copy);
+    for (const id of ["T", "A", "B", "C"]) {
+        const points = positions(original, id);
+        assert.deepEqual(positions(after, id), [...offset(points.slice(0, 2), delta), ...points.slice(2)]);
+        assert.deepEqual(geometryPath(preview.nodes.get(id)!.node, 0)!.nodes.map(n => n.p), positions(after, id));
+    }
 });
 
 test("Round-tripping indexed outline links keeps same-object and curve paths distinct", () => {

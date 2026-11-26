@@ -8,7 +8,7 @@ import { type GridDisplay, type layerDefaults, pixelGridSpacing } from "../core/
 import { type Box } from "../core/math/geometry.ts";
 import { clamp, distance, nearest } from "../core/math/geometry.ts";
 import { objectIssues } from "../core/checks/issues.ts";
-import { hitGeoControl, hitOutlineVertex, hitParameterGeometries, hitPathSegment, parameterTarget, type ControlPreview, type GeoControl, type GeometryTarget } from "../core/edit/geoControls.ts";
+import { hitGeoControl, hitOutlineVertex, hitParameterGeometries, hitPathSegment, hitSelectedSegment, parameterTarget, type ControlPreview, type GeoControl, type GeometryTarget } from "../core/edit/geoControls.ts";
 import { flattenPath } from "../core/design/path.ts";
 import { contourLabels, fieldContours } from "./fieldContours.ts";
 import { constrainGeoLabel, constrainSectionLabel, geoLabelPoint } from "./labelLayout.ts";
@@ -411,6 +411,13 @@ export class ProjectMap {
             const control = node && hitGeoControl(node, this.world(...screen), this.scale, view.geometry);
             if (control) return selection.kind === "geoNode" ? geoHit(selection.id, control) : { selection, control };
         }
+    }
+    selectedSegment(view: MapView, screen: Point): MapHit | undefined {
+        const { selection, vertex, project: { design } } = view;
+        if (vertex?.role !== "segment" || !selection) return;
+        const owner = selection.kind === "curve" ? design.curves[selection.id] : design.geoNodes.find(n => n.id === selection.id);
+        const control = owner && hitSelectedSegment(owner, vertex, this.world(...screen), this.scale, design.grid.step / 8);
+        if (control) return { selection, control };
     }
     selectedBody(view: MapView, screen: Point): MapHit | undefined {
         const { selection, project, geometry } = view;

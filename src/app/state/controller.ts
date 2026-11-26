@@ -171,19 +171,27 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
     function beginSelectionDrag(down: PointerEvent, screen: Point) {
         if (!editor.mapCurrent) return;
         const view = editor.mapView!, p = map.world(...screen), pointer = down.pointerId;
-        const control = map.selectedControl(view, screen);
-        const label = !control && !map.markHits(...screen).next().value && map.hitLabel(...screen);
+        const control = map.selectedControl(view, screen), segment = control ? undefined : map.selectedSegment(view, screen);
+        const label = !control && !segment && !map.markHits(...screen).next().value && map.hitLabel(...screen);
         if (label) {
             const { kind, id, point } = label;
             editor.gesture = { label: { kind, id }, offset: [point[0] - p[0], point[1] - p[1]], screen, pointer };
             return;
         }
-        const hit = control ?? map.selectedBody(view, screen) ?? map.objectHits(view, screen, "select").next().value;
+        const body = !control && !segment ? map.selectedBody(view, screen) : undefined;
+        const top = !control && !segment ? map.objectHits(view, screen, "select").next().value : undefined;
+        const parameter = top?.selection.kind === "geoNode" && top.selection.id === body?.selection.id &&
+            top.control && (top.control.path < 0 || top.control.role === "parameter");
+        const hit = control ?? segment ?? (parameter ? top : body ?? top);
         if (!hit) return;
         const { selection, control: part, handle: h } = hit;
-        const c = part?.role === "vertex" && part.path < 0 && hit !== control ? { ...part, role: "curve" as const } : part;
-        if (selection.kind === "curve" && (c?.role === "curve" || c?.role === "segment")) return;
-        selectHit(hit, c?.role === "segment" && c.path < 0 ? { ...c, role: "curve" } : c, true);
+        let c = part;
+        if (part?.role === "segment" && hit !== segment)
+            c = { ...part, role: part.path < 0 ? "curve" : "body" };
+        else if (part?.role === "vertex" && part.path < 0 && hit !== control)
+            c = { ...part, role: "curve" };
+        if (selection.kind === "curve" && c?.role === "curve") return;
+        selectHit(hit, c, true);
         if (c) {
             const { design, resolved } = editor.project;
             const independent = down.altKey, preview = controlPreview(design, resolved, editor.curves, selection, c, independent);
