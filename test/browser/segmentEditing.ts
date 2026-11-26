@@ -204,14 +204,33 @@ export async function checkSegmentEditing(url: string) {
 
         await evaluate(() => document.querySelector<HTMLCanvasElement>("#map")!.focus());
         await key("s");
+        assert(await evaluate(() => {
+            const canvas = document.activeElement!;
+            const { outlineStyle, boxShadow } = getComputedStyle(canvas);
+            return canvas.id === "map" && outlineStyle === "none" && boxShadow === "none";
+        }));
         await tap(outline.nodes[0].p, 0, "right");
         assert.deepEqual((await menuGroups()).map(column => column.map(group => group[0])), [["节点类型", "节点", "闭合曲线"],
             ["轮廓 1", "区域", "地件"]]);
         assert.equal((await frame()).vertex?.role, "vertex");
         assert(await evaluate(() => document.activeElement?.matches(".context-menu") && !document.querySelector(".context-menu button:focus-visible")));
+        const { outlineStyle, boxShadow, popupShadow } = await evaluate(selector => {
+            const sample = document.body.appendChild(document.createElement("div"));
+            sample.style.boxShadow = "var(--shadow-pop)";
+            const popupShadow = getComputedStyle(sample).boxShadow;
+            sample.remove();
+            const { outlineStyle, boxShadow } = getComputedStyle(document.querySelector(selector)!);
+            return { outlineStyle, boxShadow, popupShadow };
+        }, menu);
+        assert.equal(outlineStyle, "none");
+        assert.equal(boxShadow, popupShadow);
+        await screenshot("round40-menu-container-focus");
         await key("ArrowDown");
         assert.deepEqual(await active(), ["corner", 0]);
-        assert(await evaluate(() => document.activeElement?.matches(".context-menu button:focus-visible")));
+        assert(await evaluate(() => {
+            const item = document.activeElement!;
+            return item.matches(".context-menu button:focus-visible") && getComputedStyle(item).boxShadow.includes("inset");
+        }));
         await key("Escape");
         await tap(inside, 0, "right");
         assert.deepEqual(await menuGroups(), [regionGroups]);
