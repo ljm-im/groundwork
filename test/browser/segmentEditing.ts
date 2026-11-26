@@ -165,7 +165,7 @@ export async function checkSegmentEditing(url: string) {
         console.log("Map menu ownership, compact layout and keyboard navigation");
         await tap(edge, 0, "right");
         const regionGroups = [
-            ["轮廓 1", "复制轮廓", "删除轮廓"], ["区域", "添加轮廓"], ["地件", "复制地件", "禁用地件", "删除地件"]
+            ["轮廓 1", "删除轮廓"], ["区域", "添加轮廓"], ["地件", "复制地件", "禁用地件", "删除地件"]
         ];
         const outlineGroups = [
             [["线段类型", "直线", "曲线", "圆弧"], ["线段", "插入节点", "删除线段"], ["闭合曲线", "全部节点改为自动平滑", "全部线段改为直线"]],
@@ -195,7 +195,7 @@ export async function checkSegmentEditing(url: string) {
         await key("ArrowRight");
         assert.deepEqual(await active(), [nearest, 1]);
         await key("End"); await key("ArrowDown");
-        assert.deepEqual(await active(), ["copy-outline", 1]);
+        assert.deepEqual(await active(), ["delete-outline", 1]);
         await key("ArrowLeft");
         assert.deepEqual(await active(), ["line", 0]);
         await key("Escape");

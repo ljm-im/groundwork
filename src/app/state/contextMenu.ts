@@ -60,12 +60,9 @@ function geoGroups(node: PlacedGeoNode, control?: GeoControl, handle?: HandleSid
     const geometry = control?.role === "vertex" || control?.role === "segment" ? geometryPath(node, control.path) : undefined;
     const left = control && geometry ? geometryGroups({ kind: "geoNode", id }, control, geometry, handle) : [], right: Group[] = [];
     const outline = control && control.path >= 0 && (geometry || control.role === "outline") ? control.path : undefined;
-    if (outline !== undefined && c.type === "outline") {
-        const index = outline;
-        right.push({ title: "轮廓 " + (index + 1), items: [
-            { id: "copy-outline", name: "复制轮廓", icon: "copy", run: editor => editor.changeMember(id, "outlines", index, true) },
-            ...(c.outlines.length < 2 ? [] : [{ id: "delete-outline", name: "删除轮廓", icon: "delete" as const, danger: true,
-                run: (editor: Editor) => editor.removeOutline(id, index) }])
+    if (outline !== undefined && c.type === "outline" && c.outlines.length > 1) {
+        right.push({ title: "轮廓 " + (outline + 1), items: [
+            { id: "delete-outline", name: "删除轮廓", icon: "delete", danger: true, run: editor => editor.removeOutline(id, outline) }
         ] });
     }
     if (!control || control.role === "body" || outline !== undefined) {

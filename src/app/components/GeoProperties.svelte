@@ -51,8 +51,7 @@
                         <Subitem label={"轮廓 " + (i + 1)} open={editor.subitemOpen(n.id, "outlines", i)} onclick={() => editor.toggleSubitem(n.id, "outlines", i)}
                             outline={outline.nodes[0].id} selected={editor.outline === i} onmouseenter={() => hover("outline", i)} onmouseleave={clearHover}>
                             {#snippet actions()}
-                                <button class="icon-button" aria-label="复制轮廓" data-tip="复制轮廓" onclick={() => editor.changeMember(n.id, "outlines", i, true)}><Icon name="copy" /></button>
-                                {#if c.type === "outline" && c.outlines.length > 1}
+                                {#if c.outlines.length > 1}
                                     <button class="icon-button danger" aria-label="删除轮廓" data-tip="删除轮廓" onclick={() => editor.removeOutline(n.id, i)}><Icon name="delete" /></button>
                                 {/if}
                             {/snippet}

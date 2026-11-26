@@ -24,7 +24,7 @@ test("Contour, curve and region menus follow the actual geometry and semantic ow
         assert.deepEqual(titles(groups), [["节点类型", "节点", "闭合曲线"], semantic]);
         const handleAction = role === "vertex" ? [] : ["收回控制柄"];
         assert.deepEqual(names(groups), [["尖角", "自动平滑", "手动平滑", ...handleAction, "删除节点", ...curveActions],
-            ["复制轮廓", "删除轮廓", "添加轮廓", "复制地件", "禁用地件", "删除地件"]]);
+            ["删除轮廓", "添加轮廓", "复制地件", "禁用地件", "删除地件"]]);
         assert.equal(groups[0][0].items[0].selected, true);
     }
     for (const role of ["segment", "arc"] as const) {
@@ -40,12 +40,12 @@ test("Contour, curve and region menus follow the actual geometry and semantic ow
     }
     assert.deepEqual(titles(menu(hit("body"))), [["区域", "地件"]]);
     assert.deepEqual(titles(menu(hit("outline", 1))), [["轮廓 2", "区域", "地件"]]);
-    assert.deepEqual(names(menu(hit("outline", 1))), [["复制轮廓", "删除轮廓", "添加轮廓", "复制地件", "禁用地件", "删除地件"]]);
+    assert.deepEqual(names(menu(hit("outline", 1))), [["删除轮廓", "添加轮廓", "复制地件", "禁用地件", "删除地件"]]);
     n.construction.outlines.pop();
     literalCurve(n.construction.outlines[0]).nodes.pop();
-    assert.deepEqual(titles(menu(hit("vertex"))), [["节点类型", "闭合曲线"], ["轮廓 1", "区域", "地件"]]);
+    assert.deepEqual(titles(menu(hit("vertex"))), [["节点类型", "闭合曲线"], ["区域", "地件"]]);
     assert.deepEqual(menu(hit("segment"))[0][1].items.map(i => i.name), ["插入节点"]);
-    assert.deepEqual(titles(menu(hit("outline"))), [["轮廓 1", "区域", "地件"]]);
+    assert.deepEqual(titles(menu(hit("outline"))), [["区域", "地件"]]);
     d.geoNodes.push(layer("S", { type: "strip", of: ["T"], widths: [1, 2] }, { type: "blend" }));
     const strip = contextMenuColumns(resolveDesign(d), selection("S"), true, hit("body"));
     assert.deepEqual(titles(strip), [["区域", "地件"]]);

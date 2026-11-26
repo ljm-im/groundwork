@@ -296,11 +296,11 @@ export class Editor {
         }
         this.subitemStates = next;
     }
-    changeMember(owner: string, group: "ridges" | "peaks" | "outlines", index: number, copy: boolean) {
-        const d = this.project.design, path = group === "outlines" ? ["construction", group] : [group];
+    changeMember(owner: string, group: "ridges" | "peaks", index: number, copy: boolean) {
+        const d = this.project.design, path: [typeof group] = [group];
         if (!copy) {
             const uses = geometryItemCurveUses(d, owner, path, index);
-            const label = (group === "outlines" ? "轮廓 " : group === "ridges" ? "山脊 " : "山峰 ") + (index + 1);
+            const label = (group === "ridges" ? "山脊 " : "山峰 ") + (index + 1);
             if (uses.length) return this.blockRemoval(label, uses.map(use => this.removalItem(use)));
         }
         return this.edit(d => {

@@ -304,18 +304,18 @@ export function removeGeometryItem(d: Design, n: GeoNode, path: Address, index: 
     shiftGeometryReferences(d, n, path, index, -1);
     items.splice(index, 1);
 }
-export function copyGeometryItem(d: Design, n: GeoNode, path: Address, index: number) {
-    const items = readAt(path[0] === "construction" ? n : n.function, path);
+export function copyGeometryItem(d: Design, n: GeoNode, path: ["ridges" | "peaks"], index: number) {
+    const items = readAt(n.function, path);
     if (!Array.isArray(items) || !items[index]) return;
     const { prefix, slots, belongs } = shiftGeometryReferences(d, n, path, index, 1);
     const copy = structuredClone(items[index]);
     const from = prefix + index, to = prefix + (index + 1);
-    const length = path.length + (path[0] === "construction" ? 1 : 2);
+    const length = path.length + 2;
     for (const slot of slots.values()) if (slot.owner === "geo" && slot.id === n.id && slot.key.startsWith(from + ".")) {
         const address = slot.location.path.slice(length), value = readAt(copy, address);
         if (typeof value === "string") writeAt(copy, address, retargetCopiedReferences(value, from, to, (key, next) => belongs(key) ? next : key));
     }
-    const holder = path[0] === "ridges" || path[0] === "construction" ? copy as Held<CurveValue> : undefined;
+    const holder = path[0] === "ridges" ? copy as Held<CurveValue> : undefined;
     if (holder && !isHolderRef(holder) && !isCurveRef(holder.curve)) {
         const id = nodeIds(d);
         for (const v of holder.curve.nodes) v.id = id();

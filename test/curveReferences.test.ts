@@ -365,19 +365,15 @@ test("Dragging a segment at a shape reference previews and edits the source thro
     }
 });
 
-test("Round-tripping indexed outline links keeps same-object and curve paths distinct", () => {
+test("Deleting an earlier outline shifts indexed same-object and shape links", () => {
     const d = fixture(), t = geo(d, "T"), a = geo(d, "A"), c = geo(d, "C");
     assert(t.construction.type === "outline" && a.construction.type === "outline" && c.construction.type === "outline");
     a.construction.outlines[0] = ref(outline("T", 1));
     c.construction.outlines[0] = { curve: ref(shape(outline("T", 1))) };
-    copyGeometryItem(d, t, ["construction", "outlines"], 0);
-    assert.deepEqual(a.construction.outlines[0], ref(outline("T", 2)));
-    assert.deepEqual(c.construction.outlines[0], { curve: ref(shape(outline("T", 2))) });
-    assert.notDeepEqual(literalCurve(t.construction.outlines[0]).nodes.map(n => n.id), literalCurve(t.construction.outlines[1]).nodes.map(n => n.id));
     removeGeometryItem(d, t, ["construction", "outlines"], 0);
-    assert.deepEqual(a.construction.outlines[0], ref(outline("T", 1)));
-    assert.deepEqual(c.construction.outlines[0], { curve: ref(shape(outline("T", 1))) });
-    assert.throws(() => removeGeometryItem(d, t, ["construction", "outlines"], 1), /仍被引用/);
+    assert.deepEqual(a.construction.outlines[0], ref(outline("T", 0)));
+    assert.deepEqual(c.construction.outlines[0], { curve: ref(shape(outline("T", 0))) });
+    assert.throws(() => removeGeometryItem(d, t, ["construction", "outlines"], 0), /仍被引用/);
 });
 
 test("Deleting a source node clears stops in direct and indirect shape references in one history entry", () => {
