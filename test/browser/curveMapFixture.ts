@@ -13,6 +13,7 @@ import { installPickers } from "./filePickers.ts";
 
 type View = import("../../src/render/map.ts").MapView;
 interface Stroke { points: Point[]; dash: number[]; color: string; width: number; alpha: number }
+interface Arc { point: Point; radius: number }
 interface Reading { text: string; y: number; top: number; bottom: number; baseline: string; align: string }
 interface Frame {
     origin: Point; localOrigin: Point; scale: number; selection: View["selection"]; hovered?: View["hovered"];
@@ -21,6 +22,7 @@ interface Frame {
 interface Probe {
     editor?: import("../../src/app/state/session.svelte.ts").Editor;
     frame?: Frame; strokes: Stroke[]; pathStrokes: { color: string; width: number; hits?: boolean[] }[];
+    arcStrokes: (Arc & Omit<Stroke, "points">)[];
     pathChecks?: Point[];
     dots: { point: Point; color: string }[]; ticks: Reading[]; mapText: string[]; release?: () => void;
 }
@@ -29,7 +31,7 @@ declare global {
 }
 
 async function observeCurveMap() {
-    const probe: Probe = { strokes: [], pathStrokes: [], dots: [], ticks: [], mapText: [] };
+    const probe: Probe = { strokes: [], pathStrokes: [], arcStrokes: [], dots: [], ticks: [], mapText: [] };
     window.curveMapProbe = probe;
     const mapModule = "/src/render/map.ts", editorModule = "/src/app/state/session.svelte.ts";
     const { ProjectMap } = await import(mapModule) as typeof import("../../src/render/map.ts");
@@ -41,11 +43,11 @@ async function observeCurveMap() {
     };
     const ctx = CanvasRenderingContext2D.prototype;
     const { beginPath, moveTo, lineTo, arc, fill, stroke, clearRect, fillText } = ctx;
-    let points: Point[] = [], dot: Point | undefined;
+    let points: Point[] = [], circle: Arc | undefined;
     ctx.beginPath = function () {
         if (this.canvas.id === "map") {
             points = [];
-            dot = undefined;
+            circle = undefined;
         }
         beginPath.call(this);
     };
@@ -58,11 +60,11 @@ async function observeCurveMap() {
         lineTo.call(this, x, y);
     };
     ctx.arc = function (x, y, r, start, end, ccw) {
-        if (this.canvas.id === "map") dot = [x, y];
+        if (this.canvas.id === "map") circle = { point: [x, y], radius: r };
         arc.call(this, x, y, r, start, end, ccw);
     };
     ctx.fill = function (...args: [path?: Path2D | CanvasFillRule, rule?: CanvasFillRule]) {
-        if (this.canvas.id === "map" && !args.length && dot) probe.dots.push({ point: dot, color: String(this.fillStyle) });
+        if (this.canvas.id === "map" && !args.length && circle) probe.dots.push({ point: circle.point, color: String(this.fillStyle) });
         Reflect.apply(fill, this, args);
     };
     ctx.stroke = function (...args: [Path2D?]) {
@@ -71,8 +73,11 @@ async function observeCurveMap() {
                 probe.pathStrokes.push({ color: String(this.strokeStyle), width: this.lineWidth * this.getTransform().a / devicePixelRatio,
                     hits: probe.pathChecks?.map(([x, y]) => this.isPointInStroke(args[0]!, x * devicePixelRatio, y * devicePixelRatio)) });
             }
-            else if (points.length >= 2) probe.strokes.push({ points: points.slice(), dash: this.getLineDash(), color: String(this.strokeStyle),
-                width: this.lineWidth, alpha: this.globalAlpha });
+            else if (points.length >= 2 || circle) {
+                const style = { dash: this.getLineDash(), color: String(this.strokeStyle), width: this.lineWidth, alpha: this.globalAlpha };
+                if (points.length >= 2) probe.strokes.push({ points: points.slice(), ...style });
+                else if (circle) probe.arcStrokes.push({ ...circle, ...style });
+            }
         }
         Reflect.apply(stroke, this, args);
     };
@@ -94,6 +99,7 @@ async function observeCurveMap() {
     ProjectMap.prototype.draw = function (view, theme) {
         probe.strokes = [];
         probe.pathStrokes = [];
+        probe.arcStrokes = [];
         probe.dots = [];
         probe.mapText = [];
         draw.call(this, view, theme);

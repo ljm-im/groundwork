@@ -24,6 +24,7 @@ import { checkMapOverlays } from "./mapOverlays.ts";
 import { checkCurvePlacements } from "./curvePlacements.ts";
 import { checkInspectorActions, checkNarrowInspector, checkParameterSources } from "./round39Inspector.ts";
 import { checkContourScales, checkDrawingConstraints, checkSegmentDragAndGuides } from "./round39Map.ts";
+import { checkMapParameterOverlays, checkOutlineHoleHits, checkSingleOutlineAndButtons } from "./round40.ts";
 import { checkCurveZoom, checkSharedCurves } from "./round37Curves.ts";
 import { checkCoarsePreview } from "./coarsePreview.ts";
 import { checkWorkerTerrain } from "./workerTerrain.ts";
@@ -61,6 +62,9 @@ test("Editor interactions in Chromium", async t => {
         await t.test("Selected segments move and show active alignment guides in Chromium", () => checkSegmentDragAndGuides(url));
         await t.test("Shift drawing constraints in Chromium", () => checkDrawingConstraints(url));
         await t.test("Contour labels at three camera scales in Chromium", () => checkContourScales(url));
+        await t.test("Parameter overlays stay visible during drawing and use distinct strokes in Chromium", () => checkMapParameterOverlays(url));
+        await t.test("A single outline highlights and segmented buttons keep their gap and keys in Chromium", () => checkSingleOutlineAndButtons(url));
+        await t.test("Outline holes support hover, selection, cycling, menus and body dragging in Chromium", () => checkOutlineHoleHits(url));
     }
     finally {
         await server.close();
