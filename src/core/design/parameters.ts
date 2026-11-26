@@ -121,11 +121,11 @@ export function canReference(slots: Map<string, Slot>, from: string | undefined,
     return !from || !reaches(to);
 }
 export function referenceSlots(d: Design, kind: Owner | "field", id: string) {
-    const { slots, key } = expressionGraph(d);
+    const curves = curveGraph(d), { slots, key } = expressionGraph(d, undefined, curves);
     return [...slots.values()].filter(s => readAt(d, s.path) !== undefined && references(s.value).some(k => {
         if (kind === "field") return k === "field:" + id;
         const target = slots.get(key(k));
-        return target?.owner === kind && (target.id === id || kind === "geo" && k.startsWith("geo:" + id + ".") && key(k) !== k);
+        return target?.owner === kind && (target.id === id || kind === "geo" && !slots.has(k) && curves.parameterHolder(k)?.location.id === id);
     }));
 }
 

@@ -3,7 +3,7 @@ import { quotedLocation } from "../design/problems.ts";
 import { type Design, type GeoFunction, type GeoNode, type ClosedCurve, type Curve, type Point, type Strip } from "../design/v5.ts";
 import { defaultInputRange, heightId, isBuiltin } from "../design/defaults.ts";
 import { canWrite, fillFunctionParameters, functionTable, stripWidths } from "../design/functionTable.ts";
-import { referenceSlots, slotName, type Slot } from "../design/parameters.ts";
+import { parameters, readAt, referenceSlots, slotName, writeAt, type Slot } from "../design/parameters.ts";
 
 export function nextId(used: Iterable<string>, prefix: string) {
     const ids = new Set(used);
@@ -64,11 +64,66 @@ export function createStrip(d: Design, ids: string[], range?: Strip["range"]) {
     const construction = stripConstruction(d, ids, range);
     return insert(d, { ...identity(d), field: heightId, construction, function: { type: ids.length === 1 ? "blend" : "split" } }, construction.of[0]);
 }
+export function retargetCopiedReferences(formula: string, from: string, to: string, remap: (key: string, next: string) => string) {
+    return formula.replace(/\{([^{}]+)\}/g, (text, key: string) =>
+        key === from || key.startsWith(from + ".") ? "{" + remap(key, to + key.slice(from.length)) + "}" : text);
+}
+
 export function copyGeo(d: Design, original: GeoNode) {
     const copy = structuredClone(original), id = nodeIds(d);
     copy.id = identity(d).id;
     copy.label += " 副本";
-    for (const curve of curvesOf(copy)) for (const v of curve.nodes) v.id = id();
+
+    const from = "geo:" + original.id, to = "geo:" + copy.id, source = curveGraph(d);
+    const slots = parameters(d, undefined, source);
+    function inside(target: Slot | HolderSlot | CurveSlot | undefined) {
+        return target?.location.kind === "geo" && target.location.id === original.id;
+    }
+    const geometryRef = (ref: string) => retargetCopiedReferences(ref, from, to, (key, next) =>
+        inside(source.holders.get(key) ?? source.slots.get(key)) ? next : key);
+    const holders = geoHolderSlots(copy, d.geoNodes.length);
+    const renames = new Map<string, { curve: Curve; ids: Map<string, string> }>();
+    for (const holder of holders) {
+        const { key, value, location } = holder;
+        if (isHolderRef(value)) holder.value = { ref: geometryRef(value.ref) };
+        else if (isCurveRef(value.curve)) {
+            const { ref, h } = value.curve;
+            holder.value = { ...value, curve: { ref: geometryRef(ref), ...(h && { h: { ...h } }) } };
+        }
+        else {
+            const curve = { ...value.curve, nodes: value.curve.nodes.map(node => ({ ...node })) };
+            holder.value = { ...value, curve };
+            renames.set(key + ".curve", { curve, ids: new Map(curve.nodes.map(node => [node.id, id()])) });
+        }
+        writeAt(copy, location.path, holder.value);
+    }
+
+    const graph = curveGraph({ ...d, geoNodes: [...d.geoNodes, copy] });
+    function sourceIds(key: string) {
+        const slot = graph.slots.get(key);
+        return slot && renames.get(graph.source(slot).slot.key)?.ids;
+    }
+    function remapHeight(key: string, next: string) {
+        if (!inside(slots.get(key) ?? source.parameterHolder(key))) return key;
+        const holder = graph.parameterHolder(next);
+        if (!holder) return next;
+        const curve = holder.key + ".curve", height = curve + ".h.";
+        if (!next.startsWith(height)) return next;
+        const id = sourceIds(curve)?.get(next.slice(height.length));
+        return id === undefined ? next : height + id;
+    }
+    for (const slot of slots.values()) if (slot.owner === "geo" && slot.id === original.id) {
+        const { path } = slot.location, value = readAt(copy, path);
+        if (typeof value === "string") writeAt(copy, path, retargetCopiedReferences(value, from, to, remapHeight));
+    }
+    const heights = holders.flatMap(({ key, value }) => {
+        if (isHolderRef(value) || !isCurveRef(value.curve) || !value.curve.h) return [];
+        const ids = sourceIds(key + ".curve");
+        if (!ids) return [];
+        return [{ curve: value.curve, h: Object.fromEntries(Object.entries(value.curve.h).map(([id, h]) => [ids.get(id) ?? id, h])) }];
+    });
+    for (const { curve, h } of heights) curve.h = h;
+    for (const { curve, ids } of renames.values()) for (const node of curve.nodes) node.id = ids.get(node.id)!;
     return insert(d, copy, original.id);
 }
 export function enableGeo(n: GeoNode, enabled: boolean) {
@@ -116,7 +171,8 @@ export function curveRemovalUses(d: Design, matches: (slot: CurveSlot | HolderSl
 }
 
 export function removalUses(d: Design, kind: "geo" | "input" | "field" | "curve", id: string): RemovalUse[] {
-    const uses: RemovalUse[] = kind === "curve" ? [] : referenceSlots(d, kind, id).map(slot => ({ kind: "parameter", slot }));
+    const uses: RemovalUse[] = kind === "curve" ? [] : referenceSlots(d, kind, id)
+        .filter(slot => slot.owner !== kind || slot.id !== id).map(slot => ({ kind: "parameter", slot }));
     if (kind === "curve") return curveRemovalUses(d, slot => slot.location.kind === "curve" && slot.location.id === id);
     if (kind === "geo") uses.push(...curveRemovalUses(d, slot => slot.location.kind === "geo" && slot.location.id === id));
     if (kind === "geo") return [...uses, ...stripUsers(d, id).map(node => ({ kind: "strip" as const, node }))];

@@ -212,13 +212,16 @@ export function curveGraph(d: Design) {
         }
         return placements.get(holder(slot).key)!;
     }
-    function parameterKey(key: string) {
-        if (!key.startsWith("geo:")) return key;
+    function parameterHolder(key: string) {
+        if (!key.startsWith("geo:")) return;
         for (let i = key.lastIndexOf("."); i !== -1; i = key.lastIndexOf(".", i - 1)) {
             const slot = holders.get(key.slice(0, i));
-            if (slot) return holder(slot).key + key.slice(i);
+            if (slot) return slot;
         }
-        return key;
+    }
+    function parameterKey(key: string) {
+        const slot = parameterHolder(key);
+        return slot ? holder(slot).key + key.slice(slot.key.length) : key;
     }
     function* references() {
         for (const slot of holders.values()) {
@@ -232,5 +235,5 @@ export function curveGraph(d: Design) {
         }
     }
     return { slots, holders, holder, ofHolder, value, offset, source, shape, materialize, canUse, canUseHolder, reaches, needsClosed,
-        holderPlacements, parameterKey, references };
+        holderPlacements, parameterHolder, parameterKey, references };
 }

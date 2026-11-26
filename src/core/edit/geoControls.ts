@@ -10,7 +10,7 @@ import { arcHandle, canRemoveNode, insertPathNode, moveHandle, nearestSegment, r
     segmentRemovalIndex, setBulge } from "./paths.ts";
 import { flattenPath, neighbor, pathHandle } from "../design/path.ts";
 import { distance } from "../math/geometry.ts";
-import { curveRemovalUses, nodeIds, requireUnused } from "./geoNodes.ts";
+import { curveRemovalUses, nodeIds, requireUnused, retargetCopiedReferences } from "./geoNodes.ts";
 
 export interface GeometryTarget { kind: "outline" | "curve" | "parameter"; index: number }
 export interface GeoControl {
@@ -293,8 +293,14 @@ export function removeGeometryItem(d: Design, n: GeoNode, path: Address, index: 
 export function copyGeometryItem(d: Design, n: GeoNode, path: Address, index: number) {
     const items = readAt(path[0] === "construction" ? n : n.function, path);
     if (!Array.isArray(items) || !items[index]) return;
-    shiftGeometryReferences(d, n, path, index, 1);
+    const { prefix, slots, belongs } = shiftGeometryReferences(d, n, path, index, 1);
     const copy = structuredClone(items[index]);
+    const from = prefix + index, to = prefix + (index + 1);
+    const length = path.length + (path[0] === "construction" ? 1 : 2);
+    for (const slot of slots.values()) if (slot.owner === "geo" && slot.id === n.id && slot.key.startsWith(from + ".")) {
+        const address = slot.location.path.slice(length), value = readAt(copy, address);
+        if (typeof value === "string") writeAt(copy, address, retargetCopiedReferences(value, from, to, (key, next) => belongs(key) ? next : key));
+    }
     const holder = path[0] === "ridges" || path[0] === "construction" ? copy as Held<CurveValue> : undefined;
     if (holder && !isHolderRef(holder) && !isCurveRef(holder.curve)) {
         const id = nodeIds(d);
@@ -304,13 +310,17 @@ export function copyGeometryItem(d: Design, n: GeoNode, path: Address, index: nu
 }
 function shiftGeometryReferences(d: Design, n: GeoNode, path: Address, index: number, offset: -1 | 1) {
     const graph = curveGraph(d), slots = parameters(d, undefined, graph), prefix = "geo:" + n.id + "." + path.join(".") + ".";
+    function belongs(key: string) {
+        const location = (slots.get(key) ?? graph.parameterHolder(key))?.location;
+        return location?.kind === "geo" && location.id === n.id;
+    }
     const uses: string[] = [], edits: [Address, string][] = [];
     const shifted = (key: string) => key.replace(/^(\d+)(?=\.|$)/, at => Number(at) > index ? String(Number(at) + offset) : at);
     for (const s of slots.values()) {
         const formula = readAt(d, s.path);
         if (typeof formula !== "string" || offset === -1 && s.owner === "geo" && s.id === n.id && s.key.startsWith(prefix + index + ".")) continue;
         const next = formula.replace(/\{([^{}]+)\}/g, (text, ref: string) => {
-            if (!ref.startsWith(prefix) || !slots.has(graph.parameterKey(ref))) return text;
+            if (!ref.startsWith(prefix) || !belongs(ref) || !slots.has(graph.parameterKey(ref))) return text;
             const [at, ...rest] = ref.slice(prefix.length).split(".");
             if (offset === -1 && Number(at) === index) uses.push(slotName(s));
             return "{" + prefix + shifted([at, ...rest].join(".")) + "}";
@@ -323,6 +333,7 @@ function shiftGeometryReferences(d: Design, n: GeoNode, path: Address, index: nu
     }
     if (uses.length) throw Error("仍被引用：\n" + [...new Set(uses)].join("\n"));
     for (const [address, formula] of edits) writeAt(d, address, formula);
+    return { prefix, slots, belongs };
 }
 export function removeParameterPoint(d: Design, n: GeoNode, h: GeoControl) {
     const f = n.function;

@@ -2,15 +2,15 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
 import { finishCurveDraft } from "../src/app/state/geoTools.ts";
-import { curveGraph, isHolderRef } from "../src/core/design/curveReferences.ts";
+import { curveGraph, isCurveRef, isHolderRef } from "../src/core/design/curveReferences.ts";
 import { defaultInputRange } from "../src/core/design/defaults.ts";
 import { parseDesign, serializeDesign } from "../src/core/design/model.ts";
 import { numberEdits } from "../src/core/design/numberEdit.ts";
 import { expressionGraph, resolveDesign, writeAt } from "../src/core/design/parameters.ts";
-import { type Design, type Point, type ResolvedDesign } from "../src/core/design/v5.ts";
+import { type Design, type Expression, type Point, type ResolvedDesign } from "../src/core/design/v5.ts";
 import { editCurveSource, setCurveReference } from "../src/core/edit/curveEdits.ts";
 import { commitControl, controlPreview, copyGeometryItem, geometryPath, removeCurveNode, removeGeometryItem, type GeoControl } from "../src/core/edit/geoControls.ts";
-import { copyGeo, deleteGeo, removeDeclaration } from "../src/core/edit/geoNodes.ts";
+import { copyGeo, createStrip, deleteGeo, removeDeclaration } from "../src/core/edit/geoNodes.ts";
 import { History } from "../src/core/edit/history.ts";
 import { penNode, retractHandle } from "../src/core/edit/paths.ts";
 import { type GeoDraft } from "../src/core/edit/types.ts";
@@ -246,6 +246,76 @@ test("References can be copied or unlinked without moving and indexed references
     setCurveReference(d, shape(ridge("T", 1)));
     assert.deepEqual(positions(resolveDesign(d), "T", -2), positions(beforeUnlink, "T", -2));
     assert.deepEqual(literalCurve(n.function.ridges[1]).nodes[0].h, 10);
+});
+
+test("Landform copies rebase their own numeric references and leave external readers and sources intact", () => {
+    const d: Design = syntheticDesign(), original = geo(d, "T");
+    d.geoNodes.push(layer("T.external", rect(14, 10, 20, 20), { type: "ground", value: 4 }));
+    original.function = { type: "flat", amount: "{geo:T.feather} + {geo:T.external.value}", feather: 2 };
+    d.inputs.reader = { value: "{geo:T.amount}", range: defaultInputRange("reader") };
+    const copy = copyGeo(d, original);
+    assert(copy.function.type === "flat");
+    assert.equal(copy.function.amount, "{geo:" + copy.id + ".feather} + {geo:T.external.value}");
+    assert.equal(expressionGraph(d).get("geo:" + copy.id + ".amount"), 6);
+    assert.equal(d.inputs.reader.value, "{geo:T.amount}");
+    assert.throws(() => deleteGeo(d, "T"), /仍被引用/);
+    delete d.inputs.reader;
+    assert(deleteGeo(d, "T"));
+    assert.equal(expressionGraph(d).get("geo:" + copy.id + ".amount"), 6);
+});
+
+test("Copies move curve links and node height keys within their own landform", () => {
+    const d = syntheticDesign(), original = geo(d, "T"), construction = original.construction;
+    assert(construction.type === "outline");
+    const first = literalCurve(construction.outlines[0]), nodeId = first.nodes[0].id;
+    construction.outlines.push(ref(outline("T")), construction.outlines[0]);
+    d.curves.external = { label: "外部曲线", curve: openCurve<never>([{ p: [1, 2] }, { p: [5, 6] }], "corner", "outer-") };
+    original.function = { type: "mountain", peaks: [], ridges: [
+        { curve: { ...ref(shape(outline("T", 1))), h: { [nodeId]: "{geo:T.ridges.0.slope}" } }, offset: [2, 0], slope: 2 },
+        { curve: { ...ref("curve:external"), h: { "outer-0": "{geo:G.value}" } }, slope: "{" + shape(ridge("T")) + ".h." + nodeId + "}" },
+        { ...ref(ridge("T")) }
+    ] };
+    const copy = copyGeo(d, original), c = copy.construction, f = copy.function;
+    assert(c.type === "outline" && f.type === "mountain");
+    const nextNode = literalCurve(c.outlines[0]).nodes[0].id;
+    assert.notEqual(nextNode, nodeId);
+    assert.notEqual(literalCurve(c.outlines[2]).nodes[0].id, nextNode);
+    assert.deepEqual(c.outlines[1], ref(outline(copy.id)));
+    const [a, b] = f.ridges;
+    assert(!isHolderRef(a) && isCurveRef(a.curve) && !isHolderRef(b));
+    assert.deepEqual(a.curve, { ...ref(shape(outline(copy.id, 1))), h: { [nextNode]: "{geo:" + copy.id + ".ridges.0.slope}" } });
+    assert.deepEqual(b.curve, { ...ref("curve:external"), h: { "outer-0": "{geo:G.value}" } });
+    assert.equal(b.slope, "{" + shape(ridge(copy.id)) + ".h." + nextNode + "}");
+    assert.deepEqual(f.ridges[2], ref(ridge(copy.id)));
+    const source = (resolveDesign(parseDesign(d)).geoNodes.find(n => n.id === copy.id)!).function;
+    assert(source.type === "mountain");
+    assert.equal(source.ridges[0].curve.nodes[0].h, 2);
+    assert.equal(source.ridges[1].slope, 2);
+    assert(deleteGeo(d, "T"));
+    assert.doesNotThrow(() => resolveDesign(parseDesign(d)));
+});
+
+test("A copied ridge uses its own slope and the shifted index of the following ridge", () => {
+    const d = syntheticDesign(), n = geo(d, "T"), link = "{geo:T.ridges.0.slope} + {geo:T.ridges.1.slope}";
+    n.function = { type: "mountain", peaks: [], ridges: [
+        { curve: openCurve<Expression>([{ p: [0, 0], h: link }, { p: [2, 4], h: 7 }]), slope: 2 },
+        { curve: structuredClone(line), slope: 3 }
+    ] };
+    copyGeometryItem(d, n, ["ridges"], 0);
+    const [original, copy] = n.function.ridges.map(literalCurve);
+    assert.equal(original.nodes[0].h, "{geo:T.ridges.0.slope} + {geo:T.ridges.2.slope}");
+    assert.equal(copy.nodes[0].h, "{geo:T.ridges.1.slope} + {geo:T.ridges.2.slope}");
+    assert.notEqual(original.nodes[0].id, copy.nodes[0].id);
+    assert.equal(expressionGraph(d).get("geo:T.ridges.1.curve.nodes.0.h"), 5);
+});
+
+test("A strip copy keeps its range on the source landform", () => {
+    const d = syntheticDesign(), original = geo(d, "T").construction;
+    assert(original.type === "outline");
+    const nodes = literalCurve(original.outlines[0]).nodes, range = { from: nodes[0].id, to: nodes[1].id };
+    const strip = createStrip(d, ["T"], range), copy = copyGeo(d, strip);
+    assert.deepEqual(copy.construction, strip.construction);
+    assert.doesNotThrow(() => parseDesign(d));
 });
 
 test("Round-tripping indexed outline links keeps same-object and curve paths distinct", () => {
