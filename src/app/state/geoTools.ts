@@ -6,11 +6,13 @@ import { curveGraph, curveSlotName, geometrySlot } from "../../core/design/curve
 import { editCurveSource } from "../../core/edit/curveEdits.ts";
 import { writeAt } from "../../core/design/address.ts";
 import { type DrawTool, type GeoDraft } from "../../core/edit/types.ts";
-import { closedPen, extendCurve, nearestSegment, penNode, penPath, shapePath } from "../../core/edit/paths.ts";
+import { closedPen, extendCurve, penNode, penPath, shapePath } from "../../core/edit/paths.ts";
 import { addSharedCurve, createOutline, createStrip, defaultFunction, nodeIds, stripConstruction, stripRange, tenth } from "../../core/edit/geoNodes.ts";
 import { distance } from "../../core/math/geometry.ts";
-import { constructionCenter, makeShape, nearbyBoundary } from "../../core/design/regions.ts";
+import { constructionCenter, makeShape } from "../../core/design/regions.ts";
 import { sampleField, type Terrain } from "../../core/design/results.ts";
+import { directionRay, squareCorner } from "../../core/edit/snapping.ts";
+import { mapSnapTargets, parameterSnapGroup, type SnapModifiers } from "./mapSnaps.ts";
 type Editor = import("./session.svelte.ts").Editor;
 
 export const drawingTools: DrawTool[] = ["pen", "rect", "circle", "sector", "strip", "addOutline", "shore", "ridge", "peak", "slopeLine", "center", "harbor", "section", "sharedCurve", "redrawCurve", "continueCurve"];
@@ -77,10 +79,7 @@ export function updatePreview(e: Editor, draft: GeoDraft) {
     }
     else if (doubleClickTools.includes(tool) && (nodes.length || draft.curve?.endpoint !== undefined)) {
         const preview = [...nodes];
-        if (draft.down) {
-            const drag = draft.downRaw && cursor && distance(draft.downRaw, cursor) * e.map.scale > 3 ? cursor : undefined;
-            preview.push(drawingNode(e, draft.down, drag));
-        }
+        if (draft.down) preview.push(drawingNode(e, draft.down, draft.handle));
         else if (cursor) preview.push(drawingNode(e, cursor));
         const continued = draft.curve?.endpoint;
         draft.path = continued === undefined ? penPath(preview, closedTools.includes(tool) || !!draft.curve?.requiredClosed) :
@@ -89,7 +88,7 @@ export function updatePreview(e: Editor, draft: GeoDraft) {
 }
 
 function drawingNode(e: Editor, point: Point, drag?: Point) {
-    if (drag) return penNode("", point, drag);
+    if (drag && distance(point, drag)) return penNode("", point, drag);
     return { id: "", p: point, mode: e.penNodeMode ?? "corner" } as const;
 }
 
@@ -113,25 +112,32 @@ function pickStripPoint(e: Editor, draft: GeoDraft, at: Point, alt: boolean) {
     else if (canPickSource && !alt) pickSource();
 }
 
-export function snapPoint(t: Terrain, design: ResolvedDesign, at: Point, scale: number, except?: string): Point {
-    const nodes = design.geoNodes.filter(n => n.id !== except);
-    let nearest: Point | undefined, gap = 6 / scale;
-    for (const n of nodes) if (n.construction.type === "outline") for (const path of n.construction.outlines) for (const v of path.nodes) {
-        const here = distance(at, v.p);
-        if (here <= gap) {
-            nearest = v.p; gap = here;
-        }
-    }
-    if (nearest) return [...nearest];
-    for (const n of nodes) {
-        const shape = t.regions.get(n.id)?.shape;
-        if (!shape || at[0] < shape.box[0] - gap || at[0] > shape.box[2] + gap || at[1] < shape.box[1] - gap || at[1] > shape.box[3] + gap) continue;
-        const hit = nearestSegment(nearbyBoundary(shape, at, gap, .5 / scale).flat(), at);
-        if (hit && hit.distance <= gap) {
-            nearest = hit.point; gap = hit.distance;
-        }
-    }
-    return nearest ?? at;
+function drawingSnap(e: Editor, draft: GeoDraft) {
+    const { snap } = mapSnapTargets(e), { tool, owner, member, curve } = draft;
+    const design = e.project.design;
+    const path = tool === "shore" || tool === "slopeLine" ? -1 : tool === "ridge" && member !== undefined ? -1 - member : undefined;
+    const slot = curve ? e.curves.slots.get(curve.key) : owner && path !== undefined ? geometrySlot(design, owner, path) : undefined;
+    const source = slot && e.curves.source(slot).slot;
+    const f = owner ? design.geoNodes.find(n => n.id === owner)?.function : undefined;
+    const index = tool === "harbor" && f?.type === "coast" || tool === "center" && f?.type === "slope" && f.kind === "radial" ? 0 :
+        tool === "peak" && f?.type === "mountain" && member !== undefined ? f.ridges.length + member : undefined;
+    const exclude = source ? { group: source.key, indices: curve?.endpoint === undefined ? undefined : [curve.endpoint] } :
+        owner && index !== undefined ? { group: parameterSnapGroup(owner), indices: [index] } : undefined;
+    return (point: Point, ev: SnapModifiers, origin?: Point) =>
+        snap(point, e.map.scale, { disabled: ev.ctrlKey, ray: ev.shiftKey && origin ? directionRay(origin, point) : undefined, exclude });
+}
+
+const draftSnaps = new WeakMap<GeoDraft, ReturnType<typeof drawingSnap>>();
+function snapDraft(e: Editor, draft: GeoDraft, raw: Point, draggingHandle: boolean, ev: SnapModifiers) {
+    if (draft.tool === "strip") return { point: raw };
+    let snap = draftSnaps.get(draft);
+    if (!snap) draftSnaps.set(draft, snap = drawingSnap(e, draft));
+    const { tool, down, nodes, curve, start } = draft;
+    const previous = nodes.at(-1)?.p ?? (curve?.endpoint !== undefined ? curve.original.nodes[curve.endpoint].p : undefined);
+    const origin = draggingHandle ? down : tool === "rect" || tool === "sector" ? start :
+        tool === "section" || doubleClickTools.includes(tool) ? previous : undefined;
+    const point = tool === "rect" && origin && ev.shiftKey ? squareCorner(origin, raw) : raw;
+    return snap(point, ev, origin);
 }
 
 export function finishCurveDraft(d: Design, draft: GeoDraft) {
@@ -236,12 +242,15 @@ function closingPoint(draft: GeoDraft, at: Point, scale: number) {
     return nodes.length >= 3 && distance(at, nodes[0].p) * scale < 7;
 }
 
-export function draftPointer(e: Editor, phase: "down" | "move" | "up", raw: Point, ev: PointerEvent) {
+export function draftPointer(e: Editor, phase: "down" | "move" | "up", raw: Point, ev: SnapModifiers & { altKey: boolean }) {
     const draft = e.geoDraft;
     if (!draft) return false;
-    const { tool } = draft;
-    const at = !ev.ctrlKey && doubleClickTools.includes(tool) && !(phase === "move" && draft.down) ?
-        snapPoint(e.mapProject.terrain, e.mapProject.design, raw, e.map.scale, draft.owner) : raw;
+    const { tool, downRaw } = draft;
+    const pen = doubleClickTools.includes(tool);
+    const dragged = phase !== "down" && !!downRaw && distance(downRaw, raw) * e.map.scale > 3;
+    const result = snapDraft(e, draft, raw, pen && dragged, ev), at = result.point;
+    e.snapGuides = phase === "up" ? undefined : result.guides;
+    draft.handle = pen && dragged ? at : undefined;
     if (phase === "down") {
         draft.down = at;
         draft.downRaw = raw;
@@ -251,10 +260,9 @@ export function draftPointer(e: Editor, phase: "down" | "move" | "up", raw: Poin
     if (phase !== "up") {
         updatePreview(e, draft); return true;
     }
-    const down = draft.down, downRaw = draft.downRaw;
-    draft.down = draft.downRaw = undefined;
+    const down = draft.down;
+    draft.down = draft.downRaw = draft.handle = undefined;
     if (!down || !downRaw) return true;
-    const dragged = distance(downRaw, raw) * e.map.scale > 3;
     let complete = false;
     if (tool === "strip") pickStripPoint(e, draft, at, ev.altKey);
     else if (tool === "rect" || tool === "circle" || tool === "sector") {
@@ -270,13 +278,12 @@ export function draftPointer(e: Editor, phase: "down" | "move" | "up", raw: Poin
         }
         else complete = true;
     }
-    else if (doubleClickTools.includes(tool) && !dragged && closingPoint(draft, downRaw, e.map.scale)) {
+    else if (pen && !dragged && closingPoint(draft, downRaw, e.map.scale)) {
         draft.closed = true;
         complete = true;
     }
     else {
-        const drag = doubleClickTools.includes(tool) && dragged ? raw : undefined;
-        const node = doubleClickTools.includes(tool) ? drawingNode(e, down, drag) : penNode("", down);
+        const node = pen ? drawingNode(e, down, dragged ? at : undefined) : penNode("", down);
         if (pointTools.includes(tool)) {
             draft.nodes = [node];
             complete = true;

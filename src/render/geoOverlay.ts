@@ -4,8 +4,38 @@ import { flattenPath, flattenSegment } from "../core/design/path.ts";
 import { type Point, type PlacedGeoNode } from "../core/design/v5.ts";
 import { type Segment } from "../core/design/regions.ts";
 import { overlay, type MapColors } from "./palette.ts";
+import { type SnapGuide } from "../core/edit/snapping.ts";
 
 type HandleState = "normal" | "hovered" | "selected";
+
+export function drawSnapGuides(map: ProjectMap, guides: readonly SnapGuide[], accent: string) {
+    const { ctx } = map;
+    ctx.save();
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = 1;
+    ctx.lineCap = "butt";
+    for (const guide of guides) {
+        ctx.beginPath();
+        if (guide.kind === "point") ctx.arc(...map.screen(guide.point), 6, 0, 2 * Math.PI);
+        else {
+            const from = map.screen(guide.from), to = map.screen(guide.to);
+            ctx.setLineDash([4, 4]);
+            ctx.moveTo(...from);
+            ctx.lineTo(...to);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.beginPath();
+            for (const [x, y] of [from, to]) {
+                ctx.moveTo(x - 2, y - 2);
+                ctx.lineTo(x + 2, y + 2);
+                ctx.moveTo(x - 2, y + 2);
+                ctx.lineTo(x + 2, y - 2);
+            }
+        }
+        ctx.stroke();
+    }
+    ctx.restore();
+}
 
 export function drawHandle(ctx: CanvasRenderingContext2D, colors: MapColors, x: number, y: number, state: HandleState = "normal", control = false) {
     ctx.beginPath();

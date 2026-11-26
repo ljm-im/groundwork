@@ -12,8 +12,8 @@ function roundedPoint(p: Point): Point {
     return [Math.round(p[0] * 100) / 100, Math.round(p[1] * 100) / 100];
 }
 
-export function sectionHandlePoint(section: Section, index: number, p: Point): Point | undefined {
-    const point = roundedPoint(p);
+export function sectionHandlePoint(section: Section, index: number, p: Point, exact = false): Point | undefined {
+    const point = exact ? p : roundedPoint(p);
     if (distance(point, section.points[1 - index]) >= 1) return point;
 }
 

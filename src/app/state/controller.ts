@@ -4,7 +4,8 @@ import { defaultFollow } from "../../core/design/v5.ts";
 import { distance } from "../../core/math/geometry.ts";
 import { moveHandle, sectionHandlePoint } from "../../core/edit/controls.ts";
 import { commitControl, controlPreview } from "../../core/edit/geoControls.ts";
-import { doubleClickTools, draftPointer, snapPoint, updatePreview } from "./geoTools.ts";
+import { doubleClickTools, draftPointer, updatePreview } from "./geoTools.ts";
+import { controlSnap, sectionSnap, type SnapModifiers } from "./mapSnaps.ts";
 import { type GeoDraft } from "../../core/edit/types.ts";
 import { nextMapHit, type MapHit, type MapView } from "../../render/map.ts";
 import { errorText, type Issue, type Point } from "../types.ts";
@@ -28,6 +29,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
     const dragThreshold = 3;
     let hoverFrame = 0, hoverPoint: Point | undefined, hoverAlternate = false;
     let pointerInside = false, spaceHeld = false;
+    let lastPointer: { screen: Point; pointerId: number } | undefined;
     canvas.addEventListener("pointerenter", () => pointerInside = true, { signal });
     canvas.addEventListener("wheel", ev => {
         ev.preventDefault();
@@ -195,12 +197,12 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         if (c) {
             const { design, resolved } = editor.project;
             const independent = down.altKey, preview = controlPreview(design, resolved, editor.curves, selection, c, independent);
-            if (preview) editor.gesture = { preview, selection, control: c, independent, screen, pointer };
+            if (preview) editor.gesture = { preview, selection, control: c, independent, origin: p, snap: controlSnap(editor, selection, c), screen, pointer };
         }
         else if (h) {
             const mark = h.kind === "mark" ? editor.project.design.marks.find(m => m.id === h.id)! : undefined;
             const at = mark ? map.markCoordinate(screen, mark.follow) : p;
-            editor.gesture = { handle: h, offset: [h.point[0] - at[0], h.point[1] - at[1]], screen, pointer };
+            editor.gesture = { handle: h, offset: [h.point[0] - at[0], h.point[1] - at[1]], snap: sectionSnap(editor, h), screen, pointer };
         }
         else if (selection.kind === "section") {
             const section = editor.project.design.sections.find(s => s.id === selection.id)!;
@@ -265,7 +267,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         if (draft && doubleClickTools.includes(draft.tool)) {
             ev.preventDefault();
             if (editor.geoDraft === draft) {
-                draft.down = draft.downRaw = undefined;
+                draft.down = draft.downRaw = draft.handle = undefined;
                 if (first) draft.nodes.splice(first.nodeCount);
                 updatePreview(editor, draft);
                 void editor.completeDrawing();
@@ -291,6 +293,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
     canvas.addEventListener("pointermove", ev => {
         if (!editor.project) return;
         const screen = localPoint(ev), p = map.world(...screen);
+        lastPointer = { screen, pointerId: ev.pointerId };
         pointerInside = screen[0] >= 0 && screen[0] < map.width && screen[1] >= 0 && screen[1] < map.height;
         editor.readPosition(pointerInside ? p : undefined);
         if (editor.tool === "select" && pointerInside) {
@@ -325,7 +328,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         }
         moveGesture(ev, screen, p);
     }, { signal });
-    function moveGesture(ev: PointerEvent, screen: Point, p: Point) {
+    function moveGesture(ev: SnapModifiers & { pointerId: number }, screen: Point, p: Point) {
         if (!editor.gesture) return;
         if (editor.gesture.pointer !== ev.pointerId) return;
         if ("pan" in editor.gesture) {
@@ -345,14 +348,11 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             return;
         }
         if ("preview" in editor.gesture) {
-            const { selection, control, preview } = editor.gesture;
-            let at = p;
-            if (control.role === "segment" || control.role === "curve") {
-                const start = map.world(...editor.gesture.screen);
-                at = [control.point[0] + p[0] - start[0], control.point[1] + p[1] - start[1]];
-            }
-            else if (control.role === "vertex" && !ev.ctrlKey)
-                at = snapPoint(editor.mapProject.terrain, editor.mapProject.design, p, map.scale, selection.kind === "geoNode" ? selection.id : undefined);
+            const { control, origin, preview, snap } = editor.gesture;
+            const target: Point = [control.point[0] + (p[0] - origin[0]), control.point[1] + (p[1] - origin[1])];
+            const result = snap?.(target, ev);
+            const at = result?.point ?? target;
+            editor.snapGuides = result?.guides;
             editor.dragPreview = preview(at);
             editor.gesture.target = at;
             editor.dragCurve = control.role !== "body" && control.role !== "parameter" ? control.path : undefined;
@@ -372,7 +372,9 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             editor.dragMark = { id: h.id, point: target }; return;
         }
         const section = d.sections.find(s => s.id === h.id)!, index = h.index!;
-        const point = sectionHandlePoint(section, index, target);
+        const result = editor.gesture.snap?.(target, ev);
+        const point = sectionHandlePoint(section, index, result?.point ?? target, ev.shiftKey || !!result?.snapped);
+        editor.snapGuides = point ? result?.guides : undefined;
         if (point) {
             const points = [...section.points] as typeof section.points;
             points[index] = point;
@@ -382,6 +384,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
 
     canvas.addEventListener("pointerleave", () => {
         pointerInside = false;
+        if (!editor.gesture && !editor.geoDraft?.down) editor.snapGuides = undefined;
         cancelAnimationFrame(hoverFrame); hoverFrame = 0;
         hoverPoint = undefined;
         editor.readPosition();
@@ -403,6 +406,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         if (!editor.gesture || editor.gesture.pointer !== ev.pointerId) return;
         const g = editor.gesture;
         editor.gesture = null;
+        editor.snapGuides = undefined;
         if (canvas.hasPointerCapture(ev.pointerId)) canvas.releasePointerCapture(ev.pointerId);
         canvas.style.cursor = spaceHeld ? "grab" : "";
         if ("pan" in g) {
@@ -454,6 +458,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         void finishGesture(ev);
     }
     canvas.addEventListener("pointerup", ev => {
+        if (!editor.gesture || editor.gesture.pointer === ev.pointerId) editor.snapGuides = undefined;
         if (firstClick && press?.down.pointerId === ev.pointerId) {
             const moved = distance(localPoint(ev), localPoint(press.down)) > 3;
             if (press.state === "double" || (!moved && (press.state === "pending" || press.drawing?.draft === firstClick.draft))) {
@@ -473,6 +478,22 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
     canvas.addEventListener("auxclick", ev => ev.preventDefault(), { signal });
     document.addEventListener("keydown", hoverModifier, { signal });
     document.addEventListener("keyup", hoverModifier, { signal });
+    function refreshSnap(ev: KeyboardEvent) {
+        if ((ev.key !== "Shift" && ev.key !== "Control") || !lastPointer || editor.busy || spaceHeld) return;
+        const { screen, pointerId } = lastPointer, at = map.world(...screen), gesture = editor.gesture;
+        if (gesture && "snap" in gesture && gesture.snap && gesture.changed)
+            moveGesture({ pointerId, shiftKey: ev.shiftKey, ctrlKey: ev.ctrlKey }, screen, at);
+        else if (pointerInside && editor.geoDraft && !gesture && (!press || press.state === "active")) {
+            try {
+                draftPointer(editor, "move", at, ev);
+            }
+            catch (error) {
+                editor.message(errorText(error));
+            }
+        }
+    }
+    document.addEventListener("keydown", refreshSnap, { signal });
+    document.addEventListener("keyup", refreshSnap, { signal });
     document.addEventListener("keyup", ev => {
         if (ev.key === " ") stopSpacePan();
     }, { signal });

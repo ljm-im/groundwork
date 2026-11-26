@@ -303,7 +303,7 @@ test("Drawing or canceling a parameter keeps its owner and activates only the co
     const { geoControls } = await import("../src/core/edit/geoControls.ts");
     const editor = new Editor(testTerrainClient()), design = syntheticDesign(), n = design.geoNodes[1];
     n.function = { type: "mountain", ridges: [], peaks: [] };
-    Object.assign(editor, { map: { scale: 4 } });
+    Object.assign(editor, { map: Object.assign(Object.create(ProjectMap.prototype), { width: 800, height: 450, center: [0, 0], scale: 4 }) });
     t.mock.method(editor, "reconcileProject", () => {});
     t.mock.method(editor.files, "remember", () => {});
     await editor.replace(design); editor.history = new History(design);

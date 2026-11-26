@@ -22,6 +22,7 @@ import { drawingReady, drawingTools, finishCurveDraft, finishDraft, geoAt, start
 import { type DrawTool, type GeoDraft } from "../../core/edit/types.ts";
 import { markParameters } from "../../core/design/functionTable.ts";
 import { revealInPanel } from "./layout.ts";
+import { type SnapGuide } from "../../core/edit/snapping.ts";
 import { functionGeometry } from "../../core/edit/functionGeometry.ts";
 import { bulgeFromDegrees, neighbor, segmentNeighbor, type SegmentType } from "../../core/design/path.ts";
 import { sampleField } from "../../core/design/results.ts";
@@ -91,6 +92,7 @@ export class Editor {
     dragNode = $derived(this.selection?.kind === "geoNode" ? this.dragPreview?.nodes.get(this.selection.id)?.node : undefined);
     dragShared = $derived(this.dragPreview?.shared);
     dragCurve = $state<number>();
+    snapGuides = $state.raw<readonly SnapGuide[]>();
     dragCommitting = $state(false);
     dragMark = $state.raw<{ id: string; point: Point }>();
     dragLabel = $state.raw<LabelPreview>();
@@ -157,7 +159,7 @@ export class Editor {
             hoverPart: this.resolvePart(this.hovered, this.hoveredPart),
             draft: draft && { ...draft, nodes: [...draft.nodes], ids: [...draft.ids], anchors: [...draft.anchors] },
             dragNode: this.dragNode, dragShared: this.dragShared, dragNodes: this.dragPreview?.nodes, dragCurve: this.dragCurve,
-            dragCommitting: this.dragCommitting, dragMark: this.dragMark, dragLabel: this.dragLabel,
+            snapGuides: this.snapGuides, dragCommitting: this.dragCommitting, dragMark: this.dragMark, dragLabel: this.dragLabel,
             displayField: this.displayField,
             layers: { ...this.layers }, grid: { ...this.displayGrid }, referencedGeo: this.hoverRefs,
             selectedIssues: this.selectedIssues, issueStart: this.issueStart
@@ -426,6 +428,7 @@ export class Editor {
         this.objectGeometry = undefined;
         this.menu = null;
         this.geoDraft = undefined;
+        this.snapGuides = undefined;
         this.clearControl();
         this.tool = mode;
         if (mode !== "select") this.hoverSelection();

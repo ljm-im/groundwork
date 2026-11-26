@@ -14,7 +14,7 @@ import { addField, addInput, copyGeo, createStrip, removalUses, removalUseName, 
 import { arcHandle, insertPathNode, moveHandle, penNode, setNodeMode, setSegment, shapePath } from "../src/core/edit/paths.ts";
 import { defaultArcBulge, flattenPath, segmentType } from "../src/core/design/path.ts";
 import { copyGeometryItem, geoControls, commitControl, removeGeometryItem } from "../src/core/edit/geoControls.ts";
-import { finishDraft, snapPoint } from "../src/app/state/geoTools.ts";
+import { finishDraft } from "../src/app/state/geoTools.ts";
 import { type GeoDraft, type DrawTool } from "../src/core/edit/types.ts";
 import { TerrainCache } from "../src/core/terrain/cache.ts";
 import { generateTerrain } from "../src/core/terrain/terrain.ts";
@@ -288,11 +288,8 @@ test("Disabled layers match deletion byte for byte and active strips can still u
     assert(!new Project(d).terrain.fields.height.defined.some(Boolean));
 });
 
-test("Curves, handles, tangency, insertion and six-pixel snap use the editable geometry", () => {
-    const d = syntheticDesign(), n = d.geoNodes[1], path = (n.construction.type === "outline" ? literalCurve(n.construction.outlines[0]) : undefined)!, t = generateTerrain(d);
-    const near: Point = [path.nodes[0].p[0] + .5, path.nodes[0].p[1] + .5];
-    assert.deepEqual(snapPoint(t, resolveDesign(d), near, 5), path.nodes[0].p);
-    assert.deepEqual(snapPoint(t, resolveDesign(d), [-16, -14.5], 5), [-16, -14]);
+test("Curves, handles, tangency and insertion use the editable geometry", () => {
+    const d = syntheticDesign(), n = d.geoNodes[1], path = (n.construction.type === "outline" ? literalCurve(n.construction.outlines[0]) : undefined)!;
     historyEdit(d, () => setSegment(path, 1, "tangent"));
     assert.equal(segmentType(path, 1), "arc"); assert(Math.abs(path.nodes[1].bulge! - 1) < 1e-6);
     historyEdit(d, () => {

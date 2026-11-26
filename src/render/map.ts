@@ -12,10 +12,11 @@ import { hitGeoControl, hitOutlineVertex, hitParameterGeometries, hitPathSegment
 import { flattenPath } from "../core/design/path.ts";
 import { contourLabels, fieldContours } from "./fieldContours.ts";
 import { constrainGeoLabel, constrainSectionLabel, geoLabelPoint } from "./labelLayout.ts";
-import { drawGeoOverlay, drawHandle, drawParameterGeometry, hasOutlinePreview, showsParameterGeometry } from "./geoOverlay.ts";
+import { drawGeoOverlay, drawHandle, drawParameterGeometry, drawSnapGuides, hasOutlinePreview, showsParameterGeometry } from "./geoOverlay.ts";
 import { baseMap, canvasText, contourStyle, interfaceColors, mapColors, overlay, type MapColors, type Theme } from "./palette.ts";
 import { displayReading, displayValue } from "../core/design/display.ts";
 import { sectionHandles } from "../core/edit/controls.ts";
+import { type SnapGuide } from "../core/edit/snapping.ts";
 import { relief } from "./relief.ts";
 import { fieldFill } from "./fieldFill.ts";
 
@@ -71,6 +72,7 @@ export type MapView = Readonly<{
     dragNodes?: ControlPreview["nodes"];
     dragCurve?: number;
     dragCommitting?: boolean;
+    snapGuides?: readonly SnapGuide[];
     dragMark?: Readonly<{ id: string; point: Point }>;
     dragLabel?: Readonly<LabelPreview>;
     selectedIssues?: readonly Issue[];
@@ -553,6 +555,7 @@ export class ProjectMap {
         this.drawLabels(ctx, view, colors);
         this.drawMarks(ctx, view, colors);
         if (contours && view.layers.contourLabels) this.drawContourLabels(ctx, contours, colors);
+        if (view.snapGuides?.length) drawSnapGuides(this, view.snapGuides, colors.accent);
     }
     private drawContourLabels(ctx: Context, contours: ReturnType<typeof fieldContours>, colors: MapColors) {
         const { base, lines } = contours, camera = [...this.center, this.width, this.height] as const;

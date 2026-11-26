@@ -9,5 +9,5 @@ export type DrawTool = ShapeTool | "strip" | "addOutline" | "shore" | "ridge" | 
 export interface GeoDraft {
     tool: DrawTool; owner?: string; member?: number; ids: string[]; nodes: CurveNode<never>[]; anchors: string[]; reverse: boolean;
     curve?: { key: string; name: string; original: Curve; pen: "boundary" | "terrain"; requiredClosed: boolean; endpoint?: number };
-    down?: Point; downRaw?: Point; start?: Point; sizing?: boolean; radius?: Point; cursor?: Point; path?: Curve; closed?: boolean; spine?: Segment[]; spineRange?: string;
+    down?: Point; downRaw?: Point; handle?: Point; start?: Point; sizing?: boolean; radius?: Point; cursor?: Point; path?: Curve; closed?: boolean; spine?: Segment[]; spineRange?: string;
 }
