@@ -91,12 +91,13 @@
         .map-reading { grid-area: 2 / 3 / 4 / 4; min-width: 0; display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-2); pointer-events: none; }
         .zoom-tools {
             display: flex;
+            max-width: 100%;
             align-items: center;
             gap: var(--space-1);
             padding: var(--space-1);
         }
         .zoom-tools button { pointer-events: auto; }
-        .zoom-tools #zoom-value { position: relative; width: 62px; flex: none; pointer-events: auto; font-size: var(--text-xs); }
+        .zoom-tools #zoom-value { position: relative; flex: 0 1 62px; width: 62px; min-width: 0; pointer-events: auto; font-size: var(--text-xs); }
         .zoom-tools #zoom-value .number-box { height: var(--row-h); }
         .zoom-tools #zoom-value .number-error {
             position: absolute; bottom: calc(100% + var(--space-2)); right: 0; width: max-content; pointer-events: none;
@@ -144,7 +145,7 @@
         #position[hidden] { display: block; visibility: hidden; }
         @container map-column (max-width: 680px) {
             .map-wrap {
-                grid-template-columns: minmax(0, 1fr) max-content;
+                grid-template-columns: minmax(0, 1fr) minmax(0, max-content);
                 grid-template-rows: minmax(0, 1fr) auto auto minmax(24px, auto);
             }
             .map-reading { display: contents; }

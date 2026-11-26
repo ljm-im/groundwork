@@ -1,6 +1,6 @@
 <FieldRow {label} forInput={id} {onmouseenter} {onmouseleave}>
-    <div class="geometry-control" class:has-reference={!!reference} bind:this={box}>
-        <button {id} class="input-box geometry-box" aria-label={label} aria-pressed={active} data-tip={source ? source.name : summary} {onclick}>
+    <div class="geometry-control input-box" bind:this={box}>
+        <button {id} class="geometry-box" aria-label={label} aria-pressed={active} data-tip={source ? source.name : summary} {onclick}>
             {#if source}<ReferenceChip curve={source} />
             {:else}<Icon name={icon} />
                 <span>{summary ?? (icon === "point" ? "点" : icon === "section" ? "线段" :
@@ -22,17 +22,10 @@
 </FieldRow>
 
 <style>
-    .geometry-control { display: flex; position: relative; }
-    .geometry-box { width: 100%; min-width: 0; justify-content: flex-start; }
-    .geometry-box span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .geometry-box[aria-pressed="true"] { color: var(--accent); background: var(--bg-selected); border-color: var(--accent); }
-    .geometry-control:has(.geometry-redraw) .geometry-box { padding-inline-end: var(--icon-button); }
-    .geometry-control.has-reference .geometry-box { padding-inline-end: var(--icon-button); }
-    .geometry-control.has-reference:has(.geometry-redraw) .geometry-box { padding-inline-end: calc(2 * var(--icon-button)); }
-    .geometry-reference { position: absolute; inset: 0 0 auto auto; }
-    .geometry-control:has(.geometry-redraw) .geometry-reference { inset-inline-end: var(--icon-button); }
-    .geometry-box :global(.ref-chip) { min-width: 0; }
-    .geometry-redraw { position: absolute; inset: 0 0 auto auto; }
+    .geometry-control { display: flex; align-items: center; padding: 0; }
+    .geometry-box { flex: 1; min-width: 0; min-height: 0; height: 100%; justify-content: flex-start; padding-inline: var(--space-1); border: 0; background: transparent; overflow: hidden; }
+    .geometry-box span, .geometry-box :global(.ref-chip > span) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .geometry-control:has(.geometry-box[aria-pressed="true"]) { color: var(--accent); background: var(--bg-selected); border-color: var(--accent); }
 </style>
 
 <script lang="ts">

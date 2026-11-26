@@ -155,7 +155,8 @@ input[type="radio"]:checked::after {
 
 .parameter-row {
     display: grid;
-    grid-template-columns: var(--name-w) minmax(0, 1fr) var(--unit-w);
+    --parameter-name-width: min(var(--name-w), 36%);
+    grid-template-columns: var(--parameter-name-width) minmax(0, 1fr) min(var(--unit-w), 12%);
     align-items: center;
     gap: var(--space-1);
     min-height: var(--control-h);

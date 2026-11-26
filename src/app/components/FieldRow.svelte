@@ -12,7 +12,7 @@
 </div>
 
 <style>
-    .parameter-row.with-action { grid-template-columns: var(--name-w) minmax(0, 1fr) max-content var(--icon-button); }
+    .parameter-row.with-action { grid-template-columns: var(--parameter-name-width) minmax(0, 1fr) max-content var(--icon-button); }
     .parameter-action { grid-column: 4; grid-row: 1; display: flex; }
     label:not(.disabled) { cursor: pointer; }
     .disabled { color: var(--text-disabled); }
