@@ -41,10 +41,10 @@
     {@const icon = item.curve.closed ? "closedPath" : "curve"}
     <PropertyPane {editor}>
         {#snippet title()}
-            <PropertyTitle name={item.label} {icon} label="曲线名称" rename={name => editor.edit(d => {
+            <PropertyTitle name={item.label} {icon} category="曲线" label="曲线名称" rename={name => editor.edit(d => {
                 d.curves[h!.id].label = name;
             })}
-                removeLabel="删除曲线" remove={() => editor.removeElement(h!)} />
+                remove={() => editor.removeElement(h!)} />
         {/snippet}
         <Part>
             <GeometryInput label="曲线" {icon} count={item.curve.nodes.length} active={editor.geometry?.kind === "curve"}
@@ -61,7 +61,7 @@
         {@const builtin = isBuiltin(h.kind, h.id)}
         <PropertyPane {editor}>
             {#snippet title()}
-                <PropertyTitle name={item.label ?? h!.id} icon={variable ? "inputs" : "field"} label={variable ? "自定义输入名称" : "场名称"}
+                <PropertyTitle name={item.label ?? h!.id} category={variable ? "输入" : "场"} icon={variable ? "inputs" : "field"} label={variable ? "自定义输入名称" : "场名称"}
                     {builtin} rename={!builtin ? name => editor.edit(d => {
                         d[table][h!.id].label = name;
                     }) : undefined}

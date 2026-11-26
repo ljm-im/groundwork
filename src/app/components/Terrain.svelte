@@ -1,5 +1,5 @@
 <PropertyPane {editor}>
-    {#snippet title()}<PropertyTitle name="项目" icon="project" />{/snippet}
+    {#snippet title()}<PropertyTitle name="项目" category="项目" icon="project" />{/snippet}
     <Description {editor} target={{ group: "design" }} />
     <Part title="地形计算"><NumberInput {editor} label={gridStep.label} unit={gridStep.unit} step={gridStep.step} kind="literal" address={gridStep.key} /></Part>
 </PropertyPane>

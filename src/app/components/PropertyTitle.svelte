@@ -6,8 +6,8 @@
     {:else}<h2>{name}</h2>{/if}
     {#snippet actions()}
         {#if toggle}<button class="icon-button" data-tip={toggleTitle} aria-label={toggleTitle} aria-pressed={disabled} onclick={toggle}><Icon name="exclude" /></button>{/if}
-        {#if copy}<button class="icon-button" data-tip={"复制“" + name + "”"} aria-label={"复制“" + name + "”"} onclick={copy}><Icon name="copy" /></button>{/if}
-        {#if remove}<button class="icon-button danger" data-action="delete" data-tip={removeLabel ?? "删除“" + name + "”"} aria-label={removeLabel ?? "删除“" + name + "”"} onclick={remove}><Icon name="delete" /></button>{/if}
+        {#if copy}<button class="icon-button" data-tip={"复制" + category} aria-label={"复制" + category} onclick={copy}><Icon name="copy" /></button>{/if}
+        {#if remove}<button class="icon-button danger" data-action="delete" data-tip={"删除" + category} aria-label={"删除" + category} onclick={remove}><Icon name="delete" /></button>{/if}
     {/snippet}
 </Heading>
 
@@ -33,11 +33,11 @@
     import Icon, { type IconName } from "./Icon.svelte";
     import Heading from "./Heading.svelte";
     import { pendingInput } from "../state/pendingInput.ts";
-    let { icon, name, label = "名称", rename, remove, removeLabel, copy, toggle, builtin = false, disabled = false }: {
-        icon: IconName; builtin?: boolean; name: string; label?: string; rename?: (name: string) => void;
-        remove?: () => void; removeLabel?: string; copy?: () => void; toggle?: () => void; disabled?: boolean;
+    let { icon, name, category, label = "名称", rename, remove, copy, toggle, builtin = false, disabled = false }: {
+        icon: IconName; builtin?: boolean; name: string; category: string; label?: string; rename?: (name: string) => void;
+        remove?: () => void; copy?: () => void; toggle?: () => void; disabled?: boolean;
     } = $props();
-    let toggleTitle = $derived((disabled ? "启用“" : "禁用“") + name + "”");
+    let toggleTitle = $derived((disabled ? "启用" : "禁用") + category);
     let input = $state<HTMLInputElement>(null!);
     function commit() {
         const text = input.value.trim();

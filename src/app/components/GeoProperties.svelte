@@ -35,7 +35,7 @@
 {/snippet}
 <PropertyPane {editor}>
     {#snippet title()}
-        <PropertyTitle name={n.label} icon="terrain" rename={name => editor.editNode(n.id, item => item.label = name)} disabled={!!n.disabled}
+        <PropertyTitle name={n.label} category="地件" icon="terrain" rename={name => editor.editNode(n.id, item => item.label = name)} disabled={!!n.disabled}
             toggle={() => editor.toggle(n.id)} copy={() => editor.duplicate(n.id)} remove={() => editor.removeGeo(n.id)} />
     {/snippet}
     {#snippet children(tab)}

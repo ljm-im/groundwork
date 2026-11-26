@@ -1,7 +1,7 @@
 {#if mark}
     <PropertyPane {editor}>
         {#snippet title()}
-            <PropertyTitle name={mark.label} icon={markIcon[mark.kind]} rename={label => editor.edit(d => {
+            <PropertyTitle name={mark.label} category={mark.kind === "scale" ? "比例尺" : "文字标记"} icon={markIcon[mark.kind]} rename={label => editor.edit(d => {
                 d.marks[index].label = label;
             })} copy={() => editor.copyMark(mark!.id)} remove={() => editor.removeSelected()} />
         {/snippet}

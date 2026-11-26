@@ -1,6 +1,6 @@
 <PropertyPane {editor}>
     {#snippet title()}
-        <PropertyTitle name={section.label} icon="sectionMark" rename={label => editor.edit(d => {
+        <PropertyTitle name={section.label} category="剖面线" icon="sectionMark" rename={label => editor.edit(d => {
             d.sections.find(s => s.id === section.id)!.label = label;
         })} remove={() => editor.removeSelected()} />
     {/snippet}
