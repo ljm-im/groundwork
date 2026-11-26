@@ -22,6 +22,8 @@ import { checkNumericEditing } from "./numericEditing.ts";
 import { checkPenDrawing } from "./penDrawing.ts";
 import { checkMapOverlays } from "./mapOverlays.ts";
 import { checkCurvePlacements } from "./curvePlacements.ts";
+import { checkInspectorActions, checkNarrowInspector, checkParameterSources } from "./round39Inspector.ts";
+import { checkContourScales, checkDrawingConstraints, checkSegmentDragAndGuides } from "./round39Map.ts";
 import { checkCurveZoom, checkSharedCurves } from "./round37Curves.ts";
 import { checkCoarsePreview } from "./coarsePreview.ts";
 import { checkWorkerTerrain } from "./workerTerrain.ts";
@@ -53,6 +55,12 @@ test("Editor interactions in Chromium", async t => {
         await t.test("Curve handles and camera zoom in Chromium", () => checkCurveZoom(url));
         await t.test("Shared curves and endpoint drawing in Chromium", () => checkSharedCurves(url));
         await t.test("Same-object and shape-only curve references in Chromium", () => checkCurvePlacements(url));
+        await t.test("Narrow map interactions preserve the window scroll position in Chromium", () => checkNarrowInspector(url));
+        await t.test("Inspector actions fit the minimum sidebar width in Chromium", () => checkInspectorActions(url));
+        await t.test("Numeric menus use current field values and list marks in Chromium", () => checkParameterSources(url));
+        await t.test("Selected segments move and show active alignment guides in Chromium", () => checkSegmentDragAndGuides(url));
+        await t.test("Shift drawing constraints in Chromium", () => checkDrawingConstraints(url));
+        await t.test("Contour labels at three camera scales in Chromium", () => checkContourScales(url));
     }
     finally {
         await server.close();

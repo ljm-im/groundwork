@@ -22,14 +22,14 @@ interface Probe {
     editor?: import("../../src/app/state/session.svelte.ts").Editor;
     frame?: Frame; strokes: Stroke[]; pathStrokes: { color: string; width: number; hits?: boolean[] }[];
     pathChecks?: Point[];
-    dots: { point: Point; color: string }[]; ticks: Reading[]; release?: () => void;
+    dots: { point: Point; color: string }[]; ticks: Reading[]; mapText: string[]; release?: () => void;
 }
 declare global {
     interface Window { curveMapProbe: Probe }
 }
 
 async function observeCurveMap() {
-    const probe: Probe = { strokes: [], pathStrokes: [], dots: [], ticks: [] };
+    const probe: Probe = { strokes: [], pathStrokes: [], dots: [], ticks: [], mapText: [] };
     window.curveMapProbe = probe;
     const mapModule = "/src/render/map.ts", editorModule = "/src/app/state/session.svelte.ts";
     const { ProjectMap } = await import(mapModule) as typeof import("../../src/render/map.ts");
@@ -81,6 +81,7 @@ async function observeCurveMap() {
         clearRect.apply(this, args);
     };
     ctx.fillText = function (text, x, y, width) {
+        if (this.canvas.id === "map") probe.mapText.push(text);
         if (this.canvas.closest("#plots")) {
             const metrics = this.measureText(text);
             probe.ticks.push({ text, y, top: y - metrics.actualBoundingBoxAscent, bottom: y + metrics.actualBoundingBoxDescent,
@@ -94,6 +95,7 @@ async function observeCurveMap() {
         probe.strokes = [];
         probe.pathStrokes = [];
         probe.dots = [];
+        probe.mapText = [];
         draw.call(this, view, theme);
         const localOrigin = this.screen([0, 0]), box = this.canvas.getBoundingClientRect();
         probe.frame = {
@@ -131,7 +133,10 @@ function sample() {
 
 function curveMap(browser: Chromium, design: Design, name: string, url: string) {
     const { cdp, click, evaluate, wait, saved } = browser;
-    const frame = () => evaluate(() => window.curveMapProbe.frame!);
+    const frame = () => evaluate((): Frame => {
+        const current = window.curveMapProbe.frame!, { left, top } = document.querySelector("#map")!.getBoundingClientRect();
+        return { ...current, origin: [left + current.localOrigin[0], top + current.localOrigin[1]] };
+    });
     const paint = () => evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
     const disk = () => evaluate(name => window.disk(name), name);
     const text = (selector: string) => evaluate(s => document.querySelector<HTMLElement>(s)?.innerText.trim() ?? "", selector);
