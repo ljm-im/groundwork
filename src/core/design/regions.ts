@@ -32,7 +32,7 @@ export interface Region {
 
 type OrientedEdge = Segment & { normal: Point };
 export type ShapeData =
-    { type: "free"; box: Box; polygons: { points: Point[] }[]; paths: Segment[][] } |
+    { type: "outline"; box: Box; polygons: { points: Point[] }[]; outlines: Segment[][] } |
     { type: "strip"; box: Box; edges: OrientedEdge[]; widths: [number, number]; firstInside: boolean;
         upperId?: string; lowerId?: string; reach: number; contour?: Segment[][] };
 
@@ -289,12 +289,12 @@ export function nearbyBoundary(shape: RegionShape, p: Point, radius: number, tol
     return trace(shape, tolerance, expand([p[0], p[1], p[0], p[1]], radius + tolerance));
 }
 
-export function makeShapeData(node: GeoNode<number>, below: ReadonlyMap<string, RegionShape>, tolerance: number): ShapeData {
+export function makeShapeData(node: GeoNode<number, never>, below: ReadonlyMap<string, RegionShape>, tolerance: number): ShapeData {
     const c = node.construction;
-    if (c.type === "free") {
-        const paths = c.paths.map(p => flattenPath(p, tolerance));
-        const polygons = paths.map(path => ({ points: path.map(s => s.a) }));
-        return { type: "free", paths, polygons, box: bounds(polygons.flatMap(p => p.points)) };
+    if (c.type === "outline") {
+        const outlines = c.outlines.map(p => flattenPath(p, tolerance));
+        const polygons = outlines.map(path => ({ points: path.map(s => s.a) }));
+        return { type: "outline", outlines, polygons, box: bounds(polygons.flatMap(p => p.points)) };
     }
     const references = [...below.keys()].filter(id => c.of.some(ref => ref === id));
     const upperId = references.at(-1), lowerId = references.length === 2 ? references[0] : undefined;
@@ -313,11 +313,11 @@ export function makeShapeData(node: GeoNode<number>, below: ReadonlyMap<string, 
         edges: oriented, widths: c.widths, firstInside, upperId, lowerId, reach };
 }
 
-function fromFree({ box, paths, polygons }: Extract<ShapeData, { type: "free" }>): RegionShape {
+function fromOutlines({ box, outlines, polygons }: Extract<ShapeData, { type: "outline" }>): RegionShape {
     const areas: number[] = [];
     const area = (index: number) => areas[index] ??= polygonArea(polygons[index].points);
     return {
-        box, boundary: () => paths,
+        box, boundary: () => outlines,
         contains(p) {
             let inside = false;
             for (const polygon of polygons) if (insidePolygon(polygon, p)) inside = !inside;
@@ -372,7 +372,7 @@ export function rebuildShape(data: ShapeData, below: ReadonlyMap<string, RegionS
         const parent = id === undefined ? undefined : below.get(id);
         return parent ? [{ id: id!, parent, revision: geometry.get(parent)?.reference.revision }] : [];
     });
-    const shape = data.type === "free" ? fromFree(data) : fromStrip(data, below.get(data.upperId!), below.get(data.lowerId!), tolerance, pool);
+    const shape = data.type === "outline" ? fromOutlines(data) : fromStrip(data, below.get(data.upperId!), below.get(data.lowerId!), tolerance, pool);
     if (parents.every(({ revision }) => revision !== undefined)) {
         geometry.set(shape, {
             reference: { revision: ++shapeRevision, data, tolerance, below: parents.map(({ id, revision }) => [id, revision!]) },
@@ -382,14 +382,14 @@ export function rebuildShape(data: ShapeData, below: ReadonlyMap<string, RegionS
     return shape;
 }
 
-export function makeShape(node: GeoNode<number>, below: ReadonlyMap<string, RegionShape>, tolerance: number, pool?: WorkPool) {
+export function makeShape(node: GeoNode<number, never>, below: ReadonlyMap<string, RegionShape>, tolerance: number, pool?: WorkPool) {
     return rebuildShape(makeShapeData(node, below, tolerance), below, tolerance, pool);
 }
 
 export function canvasGrid(d: Design, shapes: Map<string, RegionShape>) {
     const boxes = d.geoNodes.filter(n => !n.disabled && functionTable[n.function.type].initial).map(n => {
         const shape = shapes.get(n.id)!;
-        if (n.construction.type === "free") return shape.box;
+        if (n.construction.type === "outline") return shape.box;
         return bounds(shape.boundary().flatMap(path => path.flatMap(s => [s.a, s.b])));
     });
     const { step } = d.grid, low = (x: number) => Math.floor(x / step) * step, high = (x: number) => Math.ceil(x / step) * step;
@@ -423,7 +423,7 @@ export function sampleRasterRows({ left, top, width, height, mask, counts, rows 
     let count = 0;
     for (let j = start; j < end; j++) {
         const y = grid.y(top + j), row = j * width;
-        if (data?.type === "free") {
+        if (data?.type === "outline") {
             crossings.length = 0;
             for (const { points } of data.polygons) {
                 for (let i = 0, last = points.length - 1; i < points.length; last = i++) {
@@ -547,8 +547,8 @@ function pathCenter(path: ClosedCurve, tolerance: number): Point {
     return [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2];
 }
 
-export function constructionCenter(c: Construction, step: number, grid?: Grid, region?: Region): Point {
-    if (c.type === "free" && c.paths.length === 1) return pathCenter(c.paths[0], step / 8);
+export function constructionCenter(c: Construction<number, never>, step: number, grid?: Grid, region?: Region): Point {
+    if (c.type === "outline" && c.outlines.length === 1) return pathCenter(c.outlines[0], step / 8);
     if (grid && region?.cells.length) {
         const sum: Point = [0, 0];
         for (const k of region.cells) {

@@ -1,18 +1,21 @@
-import { type Design, type GeoNode, type Point } from "../../core/design/v5.ts";
+import { type Design, type GeoNode, type Point, type ResolvedDesign } from "../../core/design/v5.ts";
 import { heightId } from "../../core/design/defaults.ts";
 import { fillFunctionParameters, slopeEndpointValues } from "../../core/design/functionTable.ts";
+import { resolveDesign } from "../../core/design/parameters.ts";
+import { curveSlotName } from "../../core/design/curveReferences.ts";
+import { editCurveSource } from "../../core/edit/curveEdits.ts";
 import { writeAt } from "../../core/design/address.ts";
 import { type DrawTool, type GeoDraft } from "../../core/edit/types.ts";
-import { closedPen, nearestSegment, penNode, penPath, shapePath } from "../../core/edit/paths.ts";
-import { createFree, createStrip, defaultFunction, nodeIds, stripConstruction, stripRange, tenth } from "../../core/edit/geoNodes.ts";
+import { closedPen, extendCurve, nearestSegment, penNode, penPath, shapePath } from "../../core/edit/paths.ts";
+import { addSharedCurve, createOutline, createStrip, defaultFunction, nodeIds, stripConstruction, stripRange, tenth } from "../../core/edit/geoNodes.ts";
 import { distance } from "../../core/math/geometry.ts";
 import { constructionCenter, makeShape, nearbyBoundary } from "../../core/design/regions.ts";
 import { sampleField, type Terrain } from "../../core/design/results.ts";
 type Editor = import("./session.svelte.ts").Editor;
 
-export const drawingTools: DrawTool[] = ["pen", "rect", "circle", "sector", "strip", "addPath", "shore", "ridge", "peak", "slopeLine", "center", "harbor", "section"];
-const closedTools: DrawTool[] = ["pen", "addPath", "shore"];
-export const doubleClickTools: DrawTool[] = [...closedTools, "ridge", "slopeLine"];
+export const drawingTools: DrawTool[] = ["pen", "rect", "circle", "sector", "strip", "addOutline", "shore", "ridge", "peak", "slopeLine", "center", "harbor", "section", "sharedCurve", "redrawCurve", "continueCurve"];
+const closedTools: DrawTool[] = ["pen", "addOutline", "shore"];
+export const doubleClickTools: DrawTool[] = [...closedTools, "ridge", "slopeLine", "sharedCurve", "redrawCurve", "continueCurve"];
 const pointTools: DrawTool[] = ["peak", "center", "harbor"];
 
 export function startDrawing(e: Editor, tool: DrawTool, owner?: string, member?: number): GeoDraft {
@@ -25,15 +28,25 @@ export function startDrawing(e: Editor, tool: DrawTool, owner?: string, member?:
     return { tool, owner, member, ids, nodes: [], anchors: [], reverse: false };
 }
 
+export function startCurveDrawing(e: Editor, tool: "redrawCurve" | "continueCurve", key: string, endpoint?: number): GeoDraft {
+    const graph = e.curves, slot = graph.slots.get(key)!;
+    const owner = slot.location.kind === "geo" ? slot.location.id : undefined;
+    const draft = startDrawing(e, tool, owner);
+    draft.curve = { key, endpoint, name: curveSlotName(slot), original: graph.materialize(slot),
+        pen: slot.location.kind === "curve" || slot.location.path[0] === "construction" ? "boundary" : "terrain", requiredClosed: slot.closed };
+    return draft;
+}
+
 export function drawingReady(draft: GeoDraft) {
     const { tool, nodes, ids, anchors } = draft;
     if (tool === "strip") return ids.length > 0 && anchors.length !== 1;
-    if (closedTools.includes(tool)) return nodes.length >= 3;
-    if (tool === "ridge" || tool === "slopeLine" || tool === "section") return nodes.length >= 2;
+    if (tool === "continueCurve") return !!nodes.length || !!draft.closed;
+    if (closedTools.includes(tool) || draft.curve?.requiredClosed) return nodes.length >= 3;
+    if (tool === "ridge" || tool === "slopeLine" || tool === "section" || tool === "sharedCurve" || tool === "redrawCurve") return nodes.length >= 2;
     if (pointTools.includes(tool)) return !!nodes.length;
     return true;
 }
-function stripSource(d: Design, draft: GeoDraft) {
+function stripSource(d: ResolvedDesign, draft: GeoDraft) {
     return d.geoNodes.findLast(n => draft.ids.includes(n.id));
 }
 function stripPreview(e: Editor, draft: GeoDraft) {
@@ -62,14 +75,16 @@ export function updatePreview(e: Editor, draft: GeoDraft) {
         }
         catch { /* The drag has not defined an area yet. */ }
     }
-    else if (doubleClickTools.includes(tool) && nodes.length) {
+    else if (doubleClickTools.includes(tool) && (nodes.length || draft.curve?.endpoint !== undefined)) {
         const preview = [...nodes];
         if (draft.down) {
             const drag = draft.downRaw && cursor && distance(draft.downRaw, cursor) * e.map.scale > 3 ? cursor : undefined;
             preview.push(drawingNode(e, draft.down, drag));
         }
         else if (cursor) preview.push(drawingNode(e, cursor));
-        draft.path = penPath(preview, closedTools.includes(tool));
+        const continued = draft.curve?.endpoint;
+        draft.path = continued === undefined ? penPath(preview, closedTools.includes(tool) || !!draft.curve?.requiredClosed) :
+            extendCurve(draft.curve!.original, preview, continued, !!draft.closed);
     }
 }
 
@@ -87,8 +102,8 @@ function pickStripPoint(e: Editor, draft: GeoDraft, at: Point, alt: boolean) {
         return true;
     };
     if (alt && canPickSource && pickSource()) return;
-    const source = stripSource(e.project.design, draft);
-    const nodes = source?.construction.type === "free" ? source.construction.paths.flatMap(p => p.nodes) : [];
+    const source = stripSource(e.project.resolved, draft);
+    const nodes = source?.construction.type === "outline" ? source.construction.outlines.flatMap(p => p.nodes) : [];
     const v = nodes.filter(v => distance(v.p, at) * e.map.scale <= 9).sort((a, b) => distance(a.p, at) - distance(b.p, at))[0];
     if (v) {
         const next = draft.anchors.length === 1 ? [...draft.anchors, v.id] : [v.id];
@@ -98,10 +113,10 @@ function pickStripPoint(e: Editor, draft: GeoDraft, at: Point, alt: boolean) {
     else if (canPickSource && !alt) pickSource();
 }
 
-export function snapPoint(t: Terrain, design: Design, at: Point, scale: number, except?: string): Point {
+export function snapPoint(t: Terrain, design: ResolvedDesign, at: Point, scale: number, except?: string): Point {
     const nodes = design.geoNodes.filter(n => n.id !== except);
     let nearest: Point | undefined, gap = 6 / scale;
-    for (const n of nodes) if (n.construction.type === "free") for (const path of n.construction.paths) for (const v of path.nodes) {
+    for (const n of nodes) if (n.construction.type === "outline") for (const path of n.construction.outlines) for (const v of path.nodes) {
         const here = distance(at, v.p);
         if (here <= gap) {
             nearest = v.p; gap = here;
@@ -117,6 +132,27 @@ export function snapPoint(t: Terrain, design: Design, at: Point, scale: number, 
         }
     }
     return nearest ?? at;
+}
+
+export function finishCurveDraft(d: Design, draft: GeoDraft) {
+    const id = nodeIds(d);
+    const nodes = draft.nodes.map(v => ({ ...v, id: id() }));
+    if (draft.tool === "sharedCurve") return addSharedCurve(d, penPath<never>(nodes, !!draft.closed));
+    const { key, endpoint, requiredClosed } = draft.curve!;
+    editCurveSource(d, key, (curve, local) => {
+        for (const node of nodes) node.p = local(node.p);
+        if (endpoint !== undefined) {
+            Object.assign(curve, extendCurve(curve, nodes, endpoint, !!draft.closed));
+            return;
+        }
+        const replacement = penPath(nodes, requiredClosed || !!draft.closed);
+        for (const [i, node] of replacement.nodes.entries()) {
+            const previous = curve.nodes[i];
+            if (previous?.h !== undefined) node.h = previous.h;
+        }
+        Object.assign(curve, replacement);
+    });
+    return nodes.at(-1)?.id;
 }
 
 export function finishDraft(d: Design, terrain: Terrain, draft: GeoDraft) {
@@ -139,7 +175,7 @@ export function finishDraft(d: Design, terrain: Terrain, draft: GeoDraft) {
         if (draft.nodes.length < (closed ? 3 : 2)) throw Error(closed ? "闭合曲线至少需要三个节点" : "曲线至少需要两个节点");
         const id = nodeIds(d), line = penPath(draft.nodes.map(v => ({ ...v, id: id() })), closed);
         for (const [i, v] of line.nodes.entries()) {
-            const h = previous?.nodes[i]?.h ?? (tool === "ridge" ? tenth(sampleField(terrain, heightId, v.p)) :
+            const h = (previous && "nodes" in previous ? previous.nodes[i]?.h : undefined) ?? (tool === "ridge" ? tenth(sampleField(terrain, heightId, v.p)) :
                 i === 0 ? slopeEndpointValues[0] : i === line.nodes.length - 1 ? slopeEndpointValues[1] : undefined);
             if (h !== undefined) v.h = h;
         }
@@ -181,14 +217,23 @@ export function finishDraft(d: Design, terrain: Terrain, draft: GeoDraft) {
     if (tool === "shore" && n) {
         if (n.function.type === "coast") n.function.shore = path;
         else n.function = defaultFunction("coast", { shore: path,
-            center: constructionCenter(n.construction, d.grid.step, terrain.grid, terrain.regions.get(n.id)) });
+            center: constructionCenter(resolveDesign(d).geoNodes.find(v => v.id === n.id)!.construction, d.grid.step, terrain.grid, terrain.regions.get(n.id)) });
         return n;
     }
-    if (tool === "addPath" && n?.construction.type === "free") {
-        n.construction.paths.push(path); return n;
+    if (tool === "addOutline" && n?.construction.type === "outline") {
+        n.construction.outlines.push(path); return n;
     }
-    return createFree(d, path, draft.ids[0]);
+    return createOutline(d, path, draft.ids[0]);
 }
+function closingPoint(draft: GeoDraft, at: Point, scale: number) {
+    const { curve, nodes } = draft;
+    if (curve?.endpoint !== undefined) {
+        const original = curve.original.nodes, other = original[curve.endpoint === 0 ? original.length - 1 : 0];
+        return original.length + nodes.length >= 3 && distance(at, other.p) * scale < 7;
+    }
+    return nodes.length >= 3 && distance(at, nodes[0].p) * scale < 7;
+}
+
 export function draftPointer(e: Editor, phase: "down" | "move" | "up", raw: Point, ev: PointerEvent) {
     const draft = e.geoDraft;
     if (!draft) return false;
@@ -223,7 +268,7 @@ export function draftPointer(e: Editor, phase: "down" | "move" | "up", raw: Poin
         }
         else complete = true;
     }
-    else if (doubleClickTools.includes(tool) && !dragged && draft.nodes.length >= 3 && distance(downRaw, draft.nodes[0].p) * e.map.scale < 7) {
+    else if (doubleClickTools.includes(tool) && !dragged && closingPoint(draft, downRaw, e.map.scale)) {
         draft.closed = true;
         complete = true;
     }
@@ -246,6 +291,6 @@ export function draftPointer(e: Editor, phase: "down" | "move" | "up", raw: Poin
     if (complete) void e.completeDrawing();
     return true;
 }
-export function geoAt(d: Design, id: string): GeoNode {
+export function geoAt<N extends GeoNode>(d: { geoNodes: N[] }, id: string): N {
     return d.geoNodes.find(n => n.id === id)!;
 }

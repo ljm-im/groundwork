@@ -3,7 +3,7 @@ import { neighbor, segmentType } from "../../core/design/path.ts";
 import { type Curve, type Design, type GeoNode } from "../../core/design/v5.ts";
 import { type Issue } from "../../core/design/results.ts";
 import { geometryPath, type GeoControl } from "../../core/edit/geoControls.ts";
-import { canRemoveNode, canSetManual, segmentRemovalIndex } from "../../core/edit/paths.ts";
+import { canRemoveNode, canSetManual, isEndpoint, segmentRemovalIndex } from "../../core/edit/paths.ts";
 import { type Selection } from "../../core/edit/types.ts";
 import { geoAt } from "./geoTools.ts";
 import { nodeModes, segmentTypes } from "./inspector.ts";
@@ -13,16 +13,18 @@ type MenuItem = import("../components/Menu.svelte").MenuItem;
 type Action = MenuItem & { run: (editor: Editor) => void };
 interface Group { title: string; items: Action[] }
 
-function geometryGroups(id: string, control: GeoControl, curve: Curve): Group[] {
+function geometryGroups(selection: Selection, control: GeoControl, curve: Curve): Group[] {
     const groups: Group[] = [], { index } = control, node = curve.nodes[index];
     if (control.role === "vertex") {
         groups.push({ title: "节点类型", items: nodeModes.map(([id, name, icon]) => ({
             id, name, icon, selected: node.mode === id, disabled: id === "manual" && !canSetManual(curve, index),
             run: editor => editor.pathNodeMode(control, id)
         })) });
-        if (canRemoveNode(curve)) groups.push({ title: "节点", items: [
-            { id: "delete-node", name: "删除节点", icon: "delete", danger: true, run: editor => editor.removeGeo(id, control) }
-        ] });
+        const items: Action[] = [];
+        if (isEndpoint(curve, index)) items.push({ id: "continue-curve", name: "继续画", icon: "pen", run: editor => editor.continueCurve(control) });
+        if (canRemoveNode(curve)) items.push({ id: "delete-node", name: "删除节点", icon: "delete", danger: true,
+            run: editor => editor.removeCurvePart(selection, control) });
+        if (items.length) groups.push({ title: "节点", items });
     }
     else {
         const type = segmentType(curve, index);
@@ -31,9 +33,9 @@ function geometryGroups(id: string, control: GeoControl, curve: Curve): Group[] 
         }));
         if (type === "arc") types.push({ id: "tangent", name: "相切", icon: "tangent",
             disabled: neighbor(curve, index, -1) === undefined, run: editor => editor.segment(control, "tangent") });
-        const items: Action[] = [{ id: "insert-node", name: "插入节点", icon: "nodeCorner", run: editor => editor.insertNode(id, control) }];
+        const items: Action[] = [{ id: "insert-node", name: "插入节点", icon: "nodeCorner", run: editor => editor.insertNode(selection.id, control) }];
         if (segmentRemovalIndex(curve, index) !== undefined) items.push(
-            { id: "delete-segment", name: "删除线段", icon: "delete", danger: true, run: editor => editor.removeGeo(id, control) });
+            { id: "delete-segment", name: "删除线段", icon: "delete", danger: true, run: editor => editor.removeCurvePart(selection, control) });
         groups.push({ title: "线段类型", items: types }, { title: "线段", items });
     }
     groups.push({ title: curve.closed ? "闭合曲线" : "曲线", items: [
@@ -54,17 +56,19 @@ function memberGroup(id: string, group: "ridges" | "peaks", index: number): Grou
 function geoGroups(node: GeoNode, control?: GeoControl): [Group[], Group[]] {
     const id = node.id, c = node.construction, f = node.function;
     const geometry = control?.role === "vertex" || control?.role === "segment" ? geometryPath(node, control.path) : undefined;
-    const left = control && geometry ? geometryGroups(id, control, geometry) : [], right: Group[] = [];
+    const left = control && geometry ? geometryGroups({ kind: "geoNode", id }, control, geometry) : [], right: Group[] = [];
     const outline = control && control.path >= 0 && (geometry || control.role === "outline") ? control.path : undefined;
-    if (outline !== undefined && c.type === "free" && c.paths.length > 1) {
+    if (outline !== undefined && c.type === "outline") {
         const index = outline;
         right.push({ title: "轮廓 " + (index + 1), items: [
-            { id: "delete-path", name: "删除轮廓", icon: "delete", danger: true, run: editor => editor.removePath(id, index) }
+            { id: "copy-outline", name: "复制轮廓", icon: "copy", run: editor => editor.changeMember(id, "outlines", index, true) },
+            ...(c.outlines.length < 2 ? [] : [{ id: "delete-outline", name: "删除轮廓", icon: "delete" as const, danger: true,
+                run: (editor: Editor) => editor.removeOutline(id, index) }])
         ] });
     }
     if (!control || control.role === "body" || outline !== undefined) {
-        const item: Action = c.type === "free"
-            ? { id: "add-path", name: "添加轮廓", icon: "plus", run: editor => editor.setTool("addPath", id) }
+        const item: Action = c.type === "outline"
+            ? { id: "add-outline", name: "添加轮廓", icon: "plus", run: editor => editor.setTool("addOutline", id) }
             : { id: "reselect-strip", name: "重选边", icon: "strip", run: editor => editor.setTool("strip", id) };
         right.push({ title: "区域", items: [item] });
     }
@@ -87,6 +91,10 @@ export function contextMenuColumns(design: Design, h: Selection, map: boolean, c
     if ((kind === "input" || kind === "field") && isBuiltin(kind, id)) return [];
     const node = kind === "geoNode" ? geoAt(design, id) : undefined;
     const [left, right] = node && map ? geoGroups(node, control) : [[], []];
+    if (kind === "curve" && map && control && (control.role === "vertex" || control.role === "segment")) {
+        const shared = design.curves[id];
+        if (shared) left.push(...geometryGroups(h, control, shared.curve));
+    }
     const items: Action[] = [];
     let title: string;
     if (!map && (kind === "geoNode" || kind === "mark" || kind === "section"))
@@ -101,7 +109,7 @@ export function contextMenuColumns(design: Design, h: Selection, map: boolean, c
         title = design.marks.find(mark => mark.id === id)?.kind === "scale" ? "比例尺" : "文字标记";
         items.push({ id: "copy", name: "复制" + title, icon: "copy", run: editor => editor.copyMark(id) });
     }
-    else title = kind === "section" ? "剖面线" : kind === "input" ? "输入" : "场";
+    else title = kind === "section" ? "剖面线" : kind === "input" ? "输入" : kind === "curve" ? "曲线" : "场";
     items.push({ id: "delete", name: "删除" + title, icon: "delete", danger: true, run: editor => editor.removeElement(h) });
     right.push({ title, items });
     return left.length ? [left, right] : [right];

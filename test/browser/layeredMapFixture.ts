@@ -43,11 +43,11 @@ async function observeLayeredMap() {
         };
         if (probe.watch) {
             const node = view.project.design.geoNodes.find(n => n.id === "A")!, preview = view.dragNode?.construction;
-            if (node.construction.type === "free") {
+            if (node.construction.type === "outline") {
                 const [x, y] = this.screen(probe.watch).map(p => Math.floor(p * this.dpr));
                 const oldPixel = [...this.ctx.getImageData(x, y, 1, 1).data].slice(0, 3);
-                probe.drag.push({ projectPosition: node.construction.paths[0].nodes[0].p, committing: !!view.dragCommitting,
-                    previewPosition: preview?.type === "free" ? preview.paths[0].nodes[0].p : undefined, oldPixel });
+                probe.drag.push({ projectPosition: node.construction.outlines[0].nodes[0].p, committing: !!view.dragCommitting,
+                    previewPosition: preview?.type === "outline" ? preview.outlines[0].nodes[0].p : undefined, oldPixel });
             }
         }
     };
@@ -93,7 +93,7 @@ function sampleDesign() {
     assert(mountain.type === "mountain");
     for (const y of [23, 27, 31]) {
         mountain.ridges.push({ line: openCurve([{ p: [-33, y], h: 5 }, { p: [-7, y], h: 5 }, { p: [18, y], h: 5 }], "corner", "ridge-" + y + "-"),
-            widths: [3, 3], widthNoise: { amount: 0, wavelength: 10 }, heightNoise: { amount: 0, wavelength: 10 } });
+            slope: 2 });
     }
     d.geoNodes = [
         layer("G", rect(-60, -38, 60, 38), { type: "ground", value: 3 }),

@@ -24,6 +24,35 @@
                 select={() => editor.focus("field", id)} onmenu={builtin ? undefined : (x, y) => editor.openMenu({ kind: "field", id }, x, y)} />
         {:else}<EmptyState search />{/each}
     </Part>
+    <Part title="曲线">
+        {#snippet actions()}
+            <AddButton label="新建曲线" attributes={{ "data-add": "curve" }} active={editor.toolActive("sharedCurve")} action={startCurve} />
+        {/snippet}
+        {#each curves as [id, item] (id)}
+            {@const target = { kind: "curve" as const, id }}
+            <ListRow icon={item.curve.closed ? "closedPath" : "curve"} name={item.label} attributes={{ "data-select-curve": id }}
+                selected={h?.kind === "curve" && h.id === id} select={() => editor.focus("curve", id)}
+                onmenu={(x, y) => editor.openMenu(target, x, y)} onmouseenter={() => editor.hoverSelection(target)} onmouseleave={() => editor.hoverSelection()} />
+        {:else}<EmptyState search={!!editor.variableFilter.trim()} text="没有曲线" />{/each}
+    </Part>
+{:else if h?.kind === "curve" && d.curves[h.id]}
+    {@const item = d.curves[h.id]}
+    {@const key = curveKey(h.id)}
+    {@const icon = item.curve.closed ? "closedPath" : "curve"}
+    <PropertyPane {editor}>
+        {#snippet title()}
+            <PropertyTitle name={item.label} {icon} label="曲线名称" rename={name => editor.edit(d => {
+                d.curves[h!.id].label = name;
+            })}
+                removeLabel="删除曲线" remove={() => editor.removeElement(h!)} />
+        {/snippet}
+        <Part>
+            <GeometryInput label="值" {icon} count={item.curve.nodes.length} active={editor.geometry?.kind === "curve"}
+                onclick={() => editor.focusGeometry({ kind: "curve", index: -1 })}
+                redraw={() => editor.drawCurve(key)} redrawing={editor.curveToolActive(key)} />
+            <SelectedCurvePart {editor} curve={item.curve} path={-1} />
+        </Part>
+    </PropertyPane>
 {:else if h?.kind === "input" || h?.kind === "field"}
     {@const variable = h.kind === "input"}
     {@const table = variable ? "inputs" : "fields"}
@@ -72,6 +101,7 @@
 <script lang="ts">
     import * as session from "../state/session.svelte.ts";
     import { defaultFieldPrecision, declarationEntries, fieldPrecision, isBuiltin } from "../../core/design/defaults.ts";
+    import { curveKey } from "../../core/design/curveReferences.ts";
     import { displayValue } from "../../core/design/display.ts";
     import { matchesSearch } from "../state/inspector.ts";
     import { pendingInput } from "../state/pendingInput.ts";
@@ -82,12 +112,19 @@
     import FieldRow from "./FieldRow.svelte";
     import PropertyPane from "./PropertyPane.svelte";
     import PropertyTitle from "./PropertyTitle.svelte";
+    import GeometryInput from "./GeometryInput.svelte";
+    import SelectedCurvePart from "./SelectedCurvePart.svelte";
     import NumberInput from "./NumberInput.svelte";
     let { editor, properties = false }: { editor: session.Editor; properties?: boolean } = $props();
     let d = $derived(editor.project.design), h = $derived(editor.selection);
     const matches = (id: string, name: string) => matchesSearch(editor.variableFilter, name + " " + id);
     let inputs = $derived(declarationEntries("input", d.inputs).filter(([id, input]) => matches(id, input.label ?? id)));
     let fields = $derived(declarationEntries("field", d.fields).filter(([id, field]) => matches(id, field.label)));
+    let curves = $derived(Object.entries(d.curves).filter(([, item]) => matchesSearch(editor.variableFilter, item.label)));
+    function startCurve() {
+        editor.setTool("sharedCurve");
+        editor.map.canvas.focus({ preventScroll: true });
+    }
     function commitUnit(id: string, text: string) {
         const unit = text.trim();
         if (unit === (d.fields[id].unit ?? "")) return;

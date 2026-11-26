@@ -13,7 +13,7 @@ import { ThreadPool } from "../src/compute/pool.ts";
 import { countBlocks, type CountBlocks } from "./parallelBlocks.ts";
 import { erosion, layer, polygon, rect, syntheticDesign } from "./scenarios.ts";
 
-function geometry(id: string, construction: Construction<number>): GeoNode<number> {
+function geometry(id: string, construction: Construction<number, never>): GeoNode<number, never> {
     return { id, label: id, field: "height", construction, function: { type: "ground", value: 0 } };
 }
 
@@ -21,10 +21,10 @@ test("Free scanlines use the same even-odd mask and row-major cells as individua
     const grid = createGrid({ xMin: -6, xMax: 6, yMin: -6, yMax: 6, step: 1 });
     const a = polygon([[-4.5, -3.5], [5.5, -3.5], [5.5, -1.5], [.5, -1.5], [.5, 3.5], [-4.5, 3.5]]);
     const b = polygon([[-4.5, -4.5], [4.5, 4.5], [4.5, -4.5], [-4.5, 4.5]]);
-    const hole = rect(-3.5, -2.5, -1.5, 1.5).paths[0], overlap = rect(-2.5, -2.5, 1.5, .5).paths[0];
+    const hole = rect(-3.5, -2.5, -1.5, 1.5).outlines[0], overlap = rect(-2.5, -2.5, 1.5, .5).outlines[0];
     const sliver = polygon([[.5 - 1e-14, -1.5], [.5 + 1e-14, -1.5], [.5 + 1e-15, 4.5]]);
-    for (const paths of [[a], [b], [a, hole, overlap], [a, b, sliver], [sliver]]) {
-        const shape = makeShape(geometry("A", { type: "free", paths }), new Map(), grid.step / 8);
+    for (const outlines of [[a], [b], [a, hole, overlap], [a, b, sliver], [sliver]]) {
+        const shape = makeShape(geometry("A", { type: "outline", outlines }), new Map(), grid.step / 8);
         const region = rasterRegion(grid, shape), { left, top, width, height } = region;
         const mask = new Uint8Array(region.mask.length), cells: number[] = [];
         for (let j = 0; j < height; j++) {
@@ -39,11 +39,11 @@ test("Free scanlines use the same even-odd mask and row-major cells as individua
     }
 });
 
-test("A cloned ShapeData rebuilds free outlines, strip sides and multi-level strip geometry", () => {
+test("A cloned ShapeData rebuilds outlines, strip sides and multi-level strip geometry", () => {
     const tolerance = .12, original = new Map<string, RegionShape>(), rebuilt = new Map<string, RegionShape>(), next = random(32);
     const nodes = [
-        geometry("A", rect(-20, -10, 2, 18) as Construction<number>),
-        geometry("B", rect(2, -10, 16, 18) as Construction<number>),
+        geometry("A", rect(-20, -10, 2, 18)),
+        geometry("B", rect(2, -10, 16, 18)),
         geometry("C", { type: "strip", of: ["A", "B"], widths: [4, 5] }),
         geometry("D", { type: "strip", of: ["C"], widths: [3, 2] }),
         geometry("E", { type: "strip", of: ["B", "C"], widths: [2, 1] })

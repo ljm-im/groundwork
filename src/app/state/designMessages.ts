@@ -1,4 +1,5 @@
 import { geoParameterName, type Address } from "../../core/design/parameters.ts";
+import { curveParameterName } from "../../core/design/curveReferences.ts";
 import { DesignError, quotedLocation, type DesignProblem } from "../../core/design/problems.ts";
 import { gridStep, markParameters } from "../../core/design/functionTable.ts";
 import { type Design } from "../../core/design/v5.ts";
@@ -28,7 +29,10 @@ export function designProblemText({ location, message }: DesignProblem, d: Desig
     if (kind === "geo") {
         const n = d.geoNodes.find(n => n.id === id);
         label = n?.label;
-        property = (n && geoParameterName(d, n, path)) ?? geoProperty(path);
+        let curve = path;
+        if (path.at(-2) === "h") curve = path.slice(0, -2);
+        else if (path.at(-1) === "ref" || path.at(-1) === "offset") curve = path.slice(0, -1);
+        property = (n && geoParameterName(d, n, path)) ?? curveParameterName(curve) ?? geoProperty(path);
     }
     else if (kind === "mark") {
         const mark = d.marks.find(m => m.id === id);
@@ -36,6 +40,7 @@ export function designProblemText({ location, message }: DesignProblem, d: Desig
         if (mark && key === markParameters[mark.kind].key[0]) property = markParameters[mark.kind].label;
         else if (key === "follow") property = "跟随";
     }
+    else if (kind === "curve") label = d.curves[id]?.label;
     else if (kind === "section") label = d.sections.find(s => s.id === id)?.label;
     else {
         label = (kind === "field" ? d.fields[id] : d.inputs[id])?.label;

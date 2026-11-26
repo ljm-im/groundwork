@@ -25,8 +25,7 @@ test("Overlapping map objects cycle in paint order, including separate geometrie
     const design = syntheticDesign(), point: [number, number] = [-14, -8];
     design.geoNodes.push(layer("M", rect(-25, -17, 5, 3), {
         type: "mountain", peaks: [{ at: { p: point, h: 12 }, radius: 20, noise: 0, scale: 1 }],
-        ridges: [{ line: openCurve([{ p: [-23, -8] }, { p: [-4, -8] }]), widths: [10, 10],
-            widthNoise: { amount: 0, wavelength: 10 }, heightNoise: { amount: 0, wavelength: 10 } }]
+        ridges: [{ line: openCurve([{ p: [-23, -8] }, { p: [-4, -8] }]), slope: 2 }]
     }));
     design.sections = [{ id: "Q", label: "Q", points: [[-24, -8], [1, -8]] }];
     const project = new Project(design), map: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), { width: 1000, height: 700 });
@@ -46,7 +45,7 @@ test("Overlapping map objects cycle in paint order, including separate geometrie
     assert.equal(nextMapHit(hits, { kind: "geoNode", id: "other" }), hits[0]);
     for (const [i, hit] of hits.entries()) {
         const geometry = i === 3 ? { kind: "parameter" as const, index: 1 } :
-            i === 4 ? { kind: "path" as const, index: -1 } : undefined;
+            i === 4 ? { kind: "curve" as const, index: -1 } : undefined;
         assert.equal(nextMapHit(hits, hit.selection, geometry), hits[(i + 1) % hits.length]);
     }
     editor.layers.geoNodes = false;
@@ -322,7 +321,7 @@ test("Drawing or canceling a parameter keeps its owner and activates only the co
         assert.equal(editor.history.index, cancel ? 0 : 1);
     }
     const owner = editor.project.design.geoNodes[1], target = editor.geometry;
-    assert.deepEqual(target, { kind: "path", index: -1 });
+    assert.deepEqual(target, { kind: "curve", index: -1 });
     const handles = geoControls(owner, target);
     assert.equal(handles.filter(c => c.role === "vertex").length, 3);
     assert(handles.some(c => c.role === "in" || c.role === "out"));
@@ -380,12 +379,12 @@ test("Zoom stays between 5 and 3000 percent and keeps its anchor fixed", () => {
 
 test("Terrain labels use the even-odd centroid, the nearest cell in a hole and the strip midpoint", () => {
     const grid = createGrid({ xMin: -12, xMax: 12, yMin: -12, yMax: 12, step: 1 });
-    const make = (paths: ReturnType<typeof polygon>[]) => makeShape({ field: "height", id: "A", label: "A", construction: { type: "free", paths }, function: { type: "ground", value: 0 } }, new Map(), .125);
-    const outer = rect(-8, -6, 8, 6).paths[0], hole = rect(-2, -2, 2, 2).paths[0];
+    const make = (outlines: ReturnType<typeof polygon>[]) => makeShape({ field: "height", id: "A", label: "A", construction: { type: "outline", outlines }, function: { type: "ground", value: 0 } }, new Map(), .125);
+    const outer = rect(-8, -6, 8, 6).outlines[0], hole = rect(-2, -2, 2, 2).outlines[0];
     const holed = make([outer, hole]), point = geoLabelPoint(rasterRegion(grid, holed), grid)!;
     assert(holed.contains(point));
     assert.equal(Math.hypot(...point), Math.hypot(2.5, .5));
-    const crossing = make([rect(-9, -3, 0, 3).paths[0], rect(-3, -1, 4, 1).paths[0]]);
+    const crossing = make([rect(-9, -3, 0, 3).outlines[0], rect(-3, -1, 4, 1).outlines[0]]);
     const centroid = geoLabelPoint(rasterRegion(grid, crossing), grid)!;
     assert(distance(centroid, [-109 / 28, 0]) < 1e-9);
     const shape = makeShape({ field: "height", id: "B", label: "B", function: { type: "blend" },
@@ -520,9 +519,9 @@ test("Selected segments follow their starting node through edits, undo and redo"
 function islandDesign() {
     const d = syntheticDesign(), n = d.geoNodes[1], c = rect(-30, -30, 10, 10);
     for (const [prefix, shape] of [["hole", rect(-22, -22, 4, 4)], ["island", rect(-15, -15, -2, -2)]] as const) {
-        const outline = shape.paths[0];
+        const outline = shape.outlines[0];
         for (const node of outline.nodes) node.id = prefix + node.id;
-        c.paths.push(outline);
+        c.outlines.push(outline);
     }
     n.construction = c;
     n.function = { type: "slope", kind: "path", line: openCurve([{ p: [-15, -27], h: 2 }, { p: [5, -27], h: 7 }]) };
@@ -558,8 +557,8 @@ test("Nested outlines use their own area and expand a selected landform's place 
     }
 
     const crossed = rect(-10, -10, 10, 10), bow = polygon([[-14, -14], [14, 14], [-14, 14], [14, -14]]);
-    const small = rect(-4, -6, 4, 6).paths[0];
-    crossed.paths.push(bow, small);
+    const small = rect(-4, -6, 4, 6).outlines[0];
+    crossed.outlines.push(bow, small);
     const overlapping = makeShape({ id: "X", label: "X", field: "height", construction: crossed,
         function: { type: "ground", value: 1 } }, new Map(), .1);
     assert.deepEqual(overlapping.containingOutlines!([0, 5]), [2, 1, 0]);
@@ -627,7 +626,7 @@ test("Dragging nested outlines moves only their own geometry and preserves selec
             geometryPath(original, i)?.nodes.map(({ p: [x, y] }) => [x + 2, y - 3]));
     assert.deepEqual(moved.function.peaks[1], original.function.peaks[1]);
     assert.deepEqual(moved.function.peaks[0].at.p, [-6, -10]);
-    editor.removePath("T", 1);
+    editor.removeOutline("T", 1);
     editor.removal?.perform?.();
     await editor.finishWork();
     editor.removal = null;
@@ -653,7 +652,7 @@ test("Dragging nested outlines moves only their own geometry and preserves selec
     assert.equal(editor.outline, 1);
     await editor.navigate(true);
     assert.equal(editor.outline, undefined);
-    editor.focusGeometry({ kind: "path", index: 0 });
+    editor.focusGeometry({ kind: "outline", index: 0 });
     editor.removeSelected();
     assert.equal(editor.removal, null);
     assert.equal(editor.outline, 0);

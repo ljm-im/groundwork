@@ -6,7 +6,7 @@ const defaults: PenNodes = { boundary: "corner", terrain: "auto" };
 const key = "groundwork/pen-node-v1";
 
 export function penNodeGroup(tool: DrawTool | undefined): keyof PenNodes | undefined {
-    if (tool === "pen" || tool === "addPath") return "boundary";
+    if (tool === "pen" || tool === "addOutline" || tool === "sharedCurve") return "boundary";
     if (tool === "shore" || tool === "ridge" || tool === "slopeLine") return "terrain";
 }
 

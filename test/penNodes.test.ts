@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { penNodeGroup, readPenNodes, savePenNodes } from "../src/app/state/penNodes.ts";
 
 test("Pen drawing tools share their own boundary or terrain preference", () => {
-    for (const tool of ["pen", "addPath"] as const) assert.equal(penNodeGroup(tool), "boundary");
+    for (const tool of ["pen", "addOutline"] as const) assert.equal(penNodeGroup(tool), "boundary");
     for (const tool of ["shore", "ridge", "slopeLine"] as const) assert.equal(penNodeGroup(tool), "terrain");
     assert.equal(penNodeGroup("rect"), undefined);
     assert.equal(penNodeGroup(undefined), undefined);

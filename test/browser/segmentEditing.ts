@@ -17,15 +17,15 @@ function segmentPoint(path: Curve, index: number, t = .5): Point {
 }
 
 function scene() {
-    const design = syntheticDesign(), region = rect(-45, -18, -10, 12), hole = rect(-36, -8, -25, 4).paths[0];
+    const design = syntheticDesign(), region = rect(-45, -18, -10, 12), hole = rect(-36, -8, -25, 4).outlines[0];
     for (const node of hole.nodes) node.id = "hole-" + node.id;
-    region.paths.push(hole);
+    region.outlines.push(hole);
     const mountain = defaultFunction("mountain");
     assert(mountain.type === "mountain");
     const ridge: Point[] = [[-43, 27], [-32, 31], [-18, 28], [-4, 32], [10, 25]];
     mountain.ridges.push({ line: openCurve(ridge.map((p, i) => ({ p, h: 5 + i })), "auto"), slope: 1 });
     mountain.peaks.push({ at: { p: [11, 37], h: 9 }, radius: 8, noise: 0, scale: 1 });
-    const shore = rect(28, 19, 51, 38).paths[0];
+    const shore = rect(28, 19, 51, 38).outlines[0];
     for (const node of shore.nodes) node.id = "shore-" + node.id;
     shore.nodes[0].bulge = .35;
     const coast = defaultFunction("coast", { shore, center: [42, 34] });
@@ -165,7 +165,7 @@ export async function checkSegmentEditing(url: string) {
         console.log("Map menu ownership, compact layout and keyboard navigation");
         await tap(edge, 0, "right");
         const regionGroups = [
-            ["轮廓 1", "删除轮廓"], ["区域", "添加轮廓"], ["地件", "复制地件", "禁用地件", "删除地件"]
+            ["轮廓 1", "复制轮廓", "删除轮廓"], ["区域", "添加轮廓"], ["地件", "复制地件", "禁用地件", "删除地件"]
         ];
         const outlineGroups = [
             [["线段类型", "直线", "曲线", "圆弧"], ["线段", "插入节点", "删除线段"], ["闭合曲线", "全部节点改为自动平滑", "全部线段改为直线"]],
@@ -195,7 +195,7 @@ export async function checkSegmentEditing(url: string) {
         await key("ArrowRight");
         assert.deepEqual(await active(), [nearest, 1]);
         await key("End"); await key("ArrowDown");
-        assert.deepEqual(await active(), ["delete-path", 1]);
+        assert.deepEqual(await active(), ["copy-outline", 1]);
         await key("ArrowLeft");
         assert.deepEqual(await active(), ["line", 0]);
         await key("Escape");

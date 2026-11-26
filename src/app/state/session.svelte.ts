@@ -7,16 +7,18 @@ import { readDisplaySettings, saveDisplaySettings } from "./layers.ts";
 import { type GridDisplay } from "../../core/edit/display.ts";
 import { bounds, type Box } from "../../core/math/geometry.ts";
 import { heightId, isBuiltin } from "../../core/design/defaults.ts";
-import { defaultFollow, type GeoNode, type GeoFunction, type CurveNode, type Section } from "../../core/design/v5.ts";
+import { defaultFollow, type Curve, type GeoNode, type GeoFunction, type CurveNode, type Section, type SharedCurve } from "../../core/design/v5.ts";
 import { geoParameter, slotName, type Slot } from "../../core/design/parameters.ts";
 import { numberEdits, type NumberChange } from "../../core/design/numberEdit.ts";
+import { curveGraph, curveSlotName, geometryIndex, geometrySlot, type CurveSlot } from "../../core/design/curveReferences.ts";
+import { editCurve, setCurveReference } from "../../core/edit/curveEdits.ts";
 import { type GeoControl, type GeometryHover, type GeometryPart, type GeometrySelection, type GeometryTarget, controlOwner, copyGeometryItem,
-    geometryHover, geometryPath, geometrySelection, insertCurveNode, parameterTarget, removeCurveNode, removeCurveSegment, removeGeometryItem,
+    geometryHover, geometryItemCurveUses, geometryPath, geometrySelection, insertCurveNode, parameterTarget, removeCurveNode, removeCurveSegment, removeGeometryItem,
     removeParameterPoint, resolveGeometrySelection } from "../../core/edit/geoControls.ts";
-import { addInput, addField, copyGeo, defaultFunction, deleteGeo, enableGeo, isLastInitializer, nextId, nodeIds, rangeUsers,
+import { addInput, addField, copyGeo, curveRemovalUses, defaultFunction, deleteGeo, enableGeo, isLastInitializer, nextId, nodeIds, rangeUsers,
     removalUses, removeDeclaration, requiredInitializer, type RemovalUse } from "../../core/edit/geoNodes.ts";
-import { canRemoveNode, cleanHandles, editWholeCurve, segmentRemovalIndex, setNodeMode, setSegment } from "../../core/edit/paths.ts";
-import { drawingReady, drawingTools, finishDraft, geoAt, startDrawing, updatePreview } from "./geoTools.ts";
+import { canRemoveNode, cleanHandles, editWholeCurve, isEndpoint, segmentRemovalIndex, setNodeMode, setSegment } from "../../core/edit/paths.ts";
+import { drawingReady, drawingTools, finishCurveDraft, finishDraft, geoAt, startCurveDrawing, startDrawing, updatePreview } from "./geoTools.ts";
 import { type DrawTool, type GeoDraft } from "../../core/edit/types.ts";
 import { markParameters } from "../../core/design/functionTable.ts";
 import { functionGeometry } from "../../core/edit/functionGeometry.ts";
@@ -53,13 +55,13 @@ export class Editor {
     tool = $state<Tool>("select");
     geoDraft = $state<GeoDraft>();
     private penNodes = $state.raw(readPenNodes());
-    private penGroup = $derived(penNodeGroup(this.geoDraft?.tool));
+    private penGroup = $derived(this.geoDraft?.curve?.pen ?? penNodeGroup(this.geoDraft?.tool));
     penNodeMode = $derived(this.penGroup && this.penNodes[this.penGroup]);
     drawing = $derived.by(() => {
         if (this.tool === "select") return;
         const { owner, member } = this.geoDraft ?? {};
         const d = this.project.design, names = this.tool === "strip" ? this.geoDraft?.ids.map(id => geoAt(d, id).label) : undefined;
-        return drawingStatus(this.tool, owner ? geoAt(d, owner).label : "", owner, member, names);
+        return drawingStatus(this.tool, this.geoDraft?.curve?.name ?? (owner ? geoAt(d, owner).label : ""), owner, member, names, this.geoDraft?.curve);
     });
     drawingReady = $derived(this.geoDraft ? drawingReady(this.geoDraft) : false);
     selection = $state.raw<Selection | null>(null);
@@ -84,7 +86,9 @@ export class Editor {
     private resolvedPart = $derived(this.resolvePart(this.selection, this.selectedPart));
     outline = $derived(this.resolvedPart?.role === "outline" ? this.resolvedPart.path : undefined);
     vertex = $derived(this.resolvedPart?.role === "outline" || this.resolvedPart?.role === "curve" ? undefined : this.resolvedPart);
-    dragNode = $state.raw<GeoNode>();
+    dragNode = $state.raw<GeoNode<Expression, never>>();
+    dragShared = $state.raw<SharedCurve>();
+    dragFollowers = $state.raw<MapView["dragFollowers"]>();
     dragCurve = $state<number>();
     dragCommitting = $state(false);
     dragMark = $state.raw<{ id: string; point: Point }>();
@@ -116,6 +120,7 @@ export class Editor {
     revealProperties?: () => void;
     revealSections?: () => void;
     gesture: Gesture | null = null;
+    curves = $derived(curveGraph(this.project.design));
     numberEdits = $derived(numberEdits(this.project.design, this.project.resolved));
     private pendingNumber?: { source: ProjectModel; change: NumberChange; version: number };
     private numberVersion = 0;
@@ -150,7 +155,8 @@ export class Editor {
             geometry: this.geometry, objectGeometry: this.objectGeometry, vertex: this.vertex, outline: this.outline,
             hoverPart: this.resolvePart(this.hovered, this.hoveredPart),
             draft: draft && { ...draft, nodes: [...draft.nodes], ids: [...draft.ids], anchors: [...draft.anchors] },
-            dragNode: this.dragNode, dragCurve: this.dragCurve, dragCommitting: this.dragCommitting, dragMark: this.dragMark, dragLabel: this.dragLabel,
+            dragNode: this.dragNode, dragShared: this.dragShared, dragFollowers: this.dragFollowers, dragCurve: this.dragCurve,
+            dragCommitting: this.dragCommitting, dragMark: this.dragMark, dragLabel: this.dragLabel,
             displayField: this.displayField,
             layers: { ...this.layers }, grid: { ...this.displayGrid }, referencedGeo: this.hoverRefs,
             selectedIssues: this.selectedIssues, issueStart: this.issueStart
@@ -186,9 +192,13 @@ export class Editor {
         this.canRedo = this.history.canRedo;
         this.files.syncHistory(changed);
     }
+    geometryOwner(selection: Selection | null | undefined): GeoNode<Expression, never> | SharedCurve | undefined {
+        const d = this.project.resolved;
+        if (selection?.kind === "geoNode") return geoAt(d, selection.id);
+        if (selection?.kind === "curve") return d.curves[selection.id];
+    }
     private resolvePart(selection: Selection | null | undefined, part?: GeometryHover) {
-        if (!part || selection?.kind !== "geoNode") return;
-        const owner = geoAt(this.project.design, selection.id);
+        const owner = part && this.geometryOwner(selection);
         if (owner) return resolveGeometrySelection(owner, part);
     }
     private editSelection(): EditSelection | null {
@@ -202,6 +212,7 @@ export class Editor {
             case "section": return exists(d.sections);
             case "input": return Object.hasOwn(d.inputs, h.id);
             case "field": return Object.hasOwn(d.fields, h.id);
+            case "curve": return Object.hasOwn(d.curves, h.id);
         }
     }
     private restoreSelection(state: EditSelection | null) {
@@ -213,7 +224,7 @@ export class Editor {
         }
         const { part, ...selection } = state;
         this.setSelection(selection);
-        if (selection.kind === "geoNode" && part) this.selectPart(selection.id, part);
+        if (part) this.selectPart(selection, part);
     }
     private clearControl() {
         this.selectedPart = undefined;
@@ -260,8 +271,8 @@ export class Editor {
     subitemOpen(owner: string, group: SubitemGroup, index?: number) {
         const open = this.subitemStates.get(this.subitemKey(owner, group, index));
         if (open !== undefined) return open;
-        const construction = group === "paths" ? geoAt(this.project.design, owner)?.construction : undefined;
-        return construction?.type === "free" && construction.paths.length === 1;
+        const construction = group === "outlines" ? geoAt(this.project.design, owner)?.construction : undefined;
+        return construction?.type === "outline" && construction.outlines.length === 1;
     }
     toggleSubitem(owner: string, group: SubitemGroup, index?: number, open = !this.subitemOpen(owner, group, index)) {
         this.subitemStates = new Map(this.subitemStates).set(this.subitemKey(owner, group, index), open);
@@ -272,20 +283,26 @@ export class Editor {
         this.memberGroup(owner, group).splice(index, 1);
         this.subitemStates = next;
     }
-    private clearSubitems(owner: string, includePaths = false) {
+    private clearSubitems(owner: string, includeOutlines = false) {
         const next = new Map(this.subitemStates);
         next.delete(this.subitemKey(owner, "advanced"));
-        for (const group of includePaths ? ["ridges", "peaks", "paths"] : ["ridges", "peaks"]) {
+        for (const group of includeOutlines ? ["ridges", "peaks", "outlines"] : ["ridges", "peaks"]) {
             const key = group + ":" + owner;
             for (const id of this.memberKeys.get(key) ?? []) next.delete(id);
             this.memberKeys.delete(key);
         }
         this.subitemStates = next;
     }
-    changeMember(owner: string, group: "ridges" | "peaks", index: number, copy: boolean) {
+    changeMember(owner: string, group: "ridges" | "peaks" | "outlines", index: number, copy: boolean) {
+        const d = this.project.design, path = group === "outlines" ? ["construction", group] : [group];
+        if (!copy) {
+            const uses = geometryItemCurveUses(d, owner, path, index);
+            const label = (group === "outlines" ? "轮廓 " : group === "ridges" ? "山脊 " : "山峰 ") + (index + 1);
+            if (uses.length) return this.blockRemoval(label, uses.map(use => this.removalItem(use)));
+        }
         return this.edit(d => {
             const change = copy ? copyGeometryItem : removeGeometryItem;
-            change(d, geoAt(d, owner), [group], index);
+            change(d, geoAt(d, owner), path, index);
         }, () => {
             if (copy) {
                 const keys = this.memberGroup(owner, group), after = index + 1;
@@ -312,7 +329,7 @@ export class Editor {
         if (open && h) {
             if (h.kind === "geoNode") this.tab = "terrain";
             if (h.kind === "mark" || h.kind === "section") this.tab = "marks";
-            if (["input", "field"].includes(h.kind)) this.tab = "inputs";
+            if (["input", "field", "curve"].includes(h.kind)) this.tab = "inputs";
         }
     }
     reconcileProject(reset = false) {
@@ -338,33 +355,40 @@ export class Editor {
     }
     focusGeometry(target: GeometryTarget) {
         const h = this.selection;
-        const node = h?.kind === "geoNode" ? geoAt(this.project.design, h.id) : undefined;
-        const first = target.kind === "path" && node ? geometryPath(node, target.index)?.nodes[0] : undefined;
+        const node = this.geometryOwner(h);
+        const first = target.kind !== "parameter" && node ? geometryPath(node, target.index)?.nodes[0] : undefined;
         if (first) this.selectControl({ role: target.index < 0 ? "curve" : "outline", path: target.index, index: 0, point: first.p });
         else this.activateGeometry(target);
     }
-    selectControl(control: GeoControl) {
+    selectControl(hit: GeoControl) {
+        const control = controlOwner(hit)!;
         const h = this.selection;
+        if (h?.kind === "curve") {
+            this.activateGeometry({ kind: "curve", index: -1 });
+            this.selectedPart = geometrySelection(this.project.resolved.curves[h.id], control);
+            this.revealGeometry(h.id);
+            return;
+        }
         if (h?.kind !== "geoNode") return;
         if (control.role === "body") {
             this.activateGeometry();
             return;
         }
-        const node = geoAt(this.project.design, h.id), target = parameterTarget(control), part = geometrySelection(node, control);
+        const node = geoAt(this.project.resolved, h.id), target = parameterTarget(control), part = geometrySelection(node, control);
         if (target) {
             this.changePropertyTab("function");
             const f = node.function;
             if (f.type === "mountain") {
-                if (target.kind === "path") this.toggleSubitem(node.id, "ridges", -1 - control.path, true);
+                if (target.kind === "curve") this.toggleSubitem(node.id, "ridges", -1 - control.path, true);
                 else this.toggleSubitem(node.id, "peaks", control.path - f.ridges.length, true);
             }
             this.activateGeometry(target);
         }
         else if (part) {
             this.changePropertyTab("region");
-            this.toggleSubitem(node.id, "paths", control.path, true);
-            if (part.role === "outline" || this.geometry && (this.geometry.kind !== "path" || this.geometry.index !== control.path))
-                this.activateGeometry({ kind: "path", index: control.path });
+            this.toggleSubitem(node.id, "outlines", control.path, true);
+            if (part.role === "outline" || this.geometry && (this.geometry.kind !== "outline" || this.geometry.index !== control.path))
+                this.activateGeometry({ kind: "outline", index: control.path });
         }
         this.selectedPart = part;
         if (target || part) this.revealGeometry(node.id);
@@ -411,8 +435,35 @@ export class Editor {
         if (mode === "textMark" || mode === "scaleMark") this.layer("marks", true);
         if (mode === "section") this.layer("sections", true);
     }
+    curveToolActive(key: string) {
+        return this.geoDraft?.tool === "redrawCurve" && this.geoDraft.curve?.key === key;
+    }
+    drawCurve(key: string, endpoint?: number) {
+        const slot = this.curves.slots.get(key);
+        if (!slot) return;
+        const mode = endpoint === undefined ? "redrawCurve" : "continueCurve";
+        if (endpoint !== undefined && !isEndpoint(this.curves.source(slot).curve, endpoint)) return;
+        const part = this.selectedPart;
+        this.setTool(mode);
+        if (mode === "continueCurve") this.selectedPart = part;
+        this.geoDraft = startCurveDrawing(this, mode, key, endpoint);
+        updatePreview(this, this.geoDraft);
+        this.map.canvas.focus({ preventScroll: true });
+    }
+    continueCurve(control: GeoControl) {
+        const h = this.selection, slot = h && geometrySlot(this.project.design, h.id, control.path, h.kind === "curve");
+        if (slot) this.drawCurve(slot.key, control.index);
+    }
+    changeCurveReference(slot: CurveSlot, target?: string) {
+        return this.edit(d => {
+            setCurveReference(d, slot.key, target);
+        },
+        () => this.focusGeometry({ kind: slot.closed && geometryIndex(slot) >= 0 ? "outline" : "curve", index: geometryIndex(slot) }));
+    }
     cancelDrawing() {
+        const part = this.geoDraft?.tool === "continueCurve" ? this.selectedPart : undefined;
         this.setTool("select");
+        this.selectedPart = part;
     }
     changeTab(tab: Tab) {
         if (this.tool !== "select") this.cancelDrawing();
@@ -670,6 +721,32 @@ export class Editor {
             this.message(draft.ids.length ? "请选择起止节点" : "请先在地图上选择地件");
             return;
         }
+        if (draft.tool === "continueCurve" && !this.drawingReady) {
+            this.cancelDrawing();
+            return;
+        }
+        if (draft.tool === "sharedCurve" || draft.curve) {
+            if (!this.drawingReady) {
+                this.message(draft.curve?.requiredClosed || draft.closed ? "闭合曲线至少需要三个节点" : "曲线至少需要两个节点");
+                return;
+            }
+            const info = draft.curve;
+            if (!info) return this.edit(d => ({ kind: "curve", id: finishCurveDraft(d, draft)! }), () => this.focusNewDeclaration());
+            const h = this.selection!;
+            const slot = this.curves.slots.get(info.key)!, path = geometryIndex(slot);
+            let nodeId: string | undefined;
+            return this.edit(d => {
+                nodeId = finishCurveDraft(d, draft);
+                return h;
+            }, () => {
+                const owner = this.geometryOwner(h)!;
+                if (draft.tool === "continueCurve") {
+                    const curve = geometryPath(owner, path)!, index = nodeId ? curve.nodes.findIndex(node => node.id === nodeId) : info.endpoint!;
+                    if (index >= 0) this.selectControl({ role: "vertex", path, index, point: curve.nodes[index].p });
+                }
+                else this.focusGeometry({ kind: path >= 0 ? "outline" : "curve", index: path });
+            });
+        }
         if (draft.tool === "section") return this.edit(d => {
             const ids = new Set(d.sections.map(section => section.id));
             const id = [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ"].find(id => !ids.has(id)) ?? nextId(ids, "S");
@@ -684,7 +761,7 @@ export class Editor {
             const n = geoAt(this.project.design, this.selection!.id), f = n.function;
             if (draft.tool === "ridge" && f.type === "mountain") {
                 const index = draft.member ?? f.ridges.length - 1;
-                this.geometry = { kind: "path", index: -1 - index };
+                this.geometry = { kind: "curve", index: -1 - index };
                 this.toggleSubitem(n.id, "ridges", index, true);
             }
             else if (draft.tool === "peak" && f.type === "mountain") {
@@ -693,15 +770,17 @@ export class Editor {
                 this.toggleSubitem(n.id, "peaks", index, true);
             }
             else if (draft.tool === "center" || draft.tool === "harbor") this.geometry = { kind: "parameter", index: 0 };
-            else if (draft.tool === "shore" || draft.tool === "slopeLine") this.geometry = { kind: "path", index: -1 };
-            else if (n.construction.type === "free") {
-                const index = n.construction.paths.length - 1;
-                this.geometry = { kind: "path", index };
-                if (draft.tool === "addPath") this.toggleSubitem(n.id, "paths", index, true);
+            else if (draft.tool === "shore" || draft.tool === "slopeLine") this.geometry = { kind: "curve", index: -1 };
+            else if (n.construction.type === "outline") {
+                const index = n.construction.outlines.length - 1;
+                this.geometry = { kind: "outline", index };
+                if (draft.tool === "addOutline") this.toggleSubitem(n.id, "outlines", index, true);
             }
         });
     }
     switchFunction(n: GeoNode, type: GeoFunction["type"], slope: "path" | "radial" = "path") {
+        const uses = curveRemovalUses(this.project.design, s => s.location.kind === "geo" && s.location.id === n.id && s.location.path[0] === "function");
+        if (uses.length) return this.blockRemoval(n.label + "的函数曲线", uses.map(use => this.removalItem(use)));
         return this.edit(d => {
             const node = geoAt(d, n.id);
             if (type !== "coast" && type !== "slope") {
@@ -709,22 +788,23 @@ export class Editor {
                 return;
             }
             const shape = this.project.terrain.regions.get(n.id)!.shape;
-            const geometry = functionGeometry(node.construction, shape, d.grid.step, nodeIds(d));
+            const geometry = functionGeometry(geoAt(this.project.resolved, n.id).construction, shape, d.grid.step, nodeIds(d));
             node.function = defaultFunction(type, { center: geometry.center, slope,
                 shore: type === "coast" ? geometry.shore() : undefined,
                 line: type === "slope" && slope === "path" ? geometry.line() : undefined });
         }, () => {
             this.clearSubitems(n.id);
             this.clearControl();
-            this.geometry = type === "coast" || type === "slope" && slope === "path" ? { kind: "path", index: -1 } :
+            this.geometry = type === "coast" || type === "slope" && slope === "path" ? { kind: "curve", index: -1 } :
                 type === "slope" ? { kind: "parameter", index: 0 } : undefined;
         });
     }
     hoverSelection(selection?: Selection, control?: GeometryPart) {
         if (selection && (this.tool !== "select" || this.gesture || this.busy)) return;
-        const part = selection?.kind === "geoNode" && control ? geometryHover(geoAt(this.project.design, selection.id), control) : undefined;
+        const owner = control && this.geometryOwner(selection);
+        const part = owner ? geometryHover(owner, control) : undefined;
         const previous = this.hoveredPart, hovered = this.hovered;
-        const key = (p?: GeometryHover) => p && ("nodeId" in p ? p.nodeId : p.path);
+        const key = (p?: GeometryHover) => p && ("nodeId" in p ? p.nodeId + ":" + p.path : p.path);
         if (part?.role !== previous?.role || key(part) !== key(previous)) this.hoveredPart = part;
         if (selection?.kind !== hovered?.kind || selection?.id !== hovered?.id ||
             selection?.role !== hovered?.role || selection?.index !== hovered?.index) this.hovered = selection;
@@ -752,34 +832,34 @@ export class Editor {
         this.editNode(id, n => enableGeo(n, !!n.disabled));
     }
     addDeclaration(kind: "input" | "field") {
-        return this.edit(d => ({ kind, id: kind === "input" ? addInput(d) : addField(d) }), () => {
-            this.revealProperties?.();
-            void tick().then(() => {
-                const label = this.properties?.previousElementSibling?.querySelector("input");
-                label?.focus({ preventScroll: true }); label?.select();
-            });
+        return this.edit(d => ({ kind, id: kind === "input" ? addInput(d) : addField(d) }), () => this.focusNewDeclaration());
+    }
+    private focusNewDeclaration() {
+        this.revealProperties?.();
+        void tick().then(() => {
+            const label = this.properties?.previousElementSibling?.querySelector("input");
+            label?.focus({ preventScroll: true }); label?.select();
         });
     }
     openMenu(h: Selection, x: number, y: number, map = false, hit?: GeoControl) {
         this.select(h);
-        const control = controlOwner(hit);
-        if (control) this.selectControl(control);
-        this.menu = { x, y, map, control };
+        if (hit) this.selectControl(hit);
+        this.menu = { x, y, map, control: controlOwner(hit) };
     }
     openIssueMenu(issue: Issue, x: number, y: number) {
         this.menu = { x, y, issue };
     }
-    private selectPart(id: string, part: GeometrySelection) {
-        const selection = { kind: "geoNode", id } as const;
+    private selectPart(selection: Selection, part: GeometrySelection) {
         const control = this.resolvePart(selection, part);
         if (!control) return;
-        if (this.selection?.kind !== "geoNode" || this.selection.id !== id) this.select(selection);
+        if (this.selection?.kind !== selection.kind || this.selection.id !== selection.id) this.select(selection);
         this.selectControl(control);
     }
     stepCurvePart(direction: -1 | 1) {
         const control = this.vertex, selection = this.selection;
-        if (selection?.kind !== "geoNode" || control?.role !== "vertex" && control?.role !== "segment") return;
-        const curve = geometryPath(geoAt(this.project.design, selection.id), control.path);
+        const owner = this.geometryOwner(selection);
+        if (!owner || control?.role !== "vertex" && control?.role !== "segment") return;
+        const curve = geometryPath(owner, control.path);
         const step = control.role === "segment" ? segmentNeighbor : neighbor;
         const index = curve && step(curve, control.index, direction);
         if (curve && index !== undefined) this.selectControl({ ...control, index, point: curve.nodes[index].p });
@@ -796,9 +876,9 @@ export class Editor {
                 const group = slot.path[3];
                 if ((group === "ridges" || group === "peaks") && typeof slot.path[4] === "number")
                     this.toggleSubitem(slot.id, group, slot.path[4], true);
-                const n = geoAt(this.project.design, slot.id), nodes = slot.path.indexOf("nodes");
+                const n = geoAt(this.project.resolved, slot.id), nodes = slot.resolvedPath.indexOf("nodes");
                 if (nodes >= 0) {
-                    const path = group === "ridges" ? -1 - Number(slot.path[4]) : -1, index = Number(slot.path[nodes + 1]);
+                    const path = group === "ridges" ? -1 - Number(slot.path[4]) : -1, index = Number(slot.resolvedPath[nodes + 1]);
                     const vertex = geometryPath(n, path)?.nodes[index];
                     if (vertex) this.selectControl({ role: "vertex", path, index, point: vertex.p });
                 }
@@ -827,24 +907,33 @@ export class Editor {
     }
     private removalItem(use: RemovalUse) {
         if (use.kind === "parameter") return this.referenceItem(use.slot);
+        if (use.kind === "curve") {
+            const slot = use.slot, index = geometryIndex(slot);
+            return { text: quotedLocation(curveSlotName(slot)), locate: () => {
+                if (slot.location.kind !== "geo") return;
+                this.focus("geoNode", slot.location.id);
+                this.focusGeometry({ kind: index < 0 ? "curve" : "outline", index });
+            } };
+        }
         const { id, label } = use.node;
         return use.kind === "strip" ? this.geoReference(id, label, "边", "region") : this.geoReference(id, label, "输出到", "function");
     }
     private blockRemoval(name: string, items: RemovalItem[], detail = "请先修改以下引用位置。") {
         this.removal = { title: "无法删除“" + name + "”", detail, items };
     }
-    removePath(id: string, index: number) {
+    removeOutline(id: string, index: number) {
         const d = this.project.design, c = geoAt(d, id).construction;
-        if (c.type !== "free" || c.paths.length < 2 || !c.paths[index]) return;
-        const affected = rangeUsers(d, id, c.paths[index].nodes.map(v => v.id));
+        if (c.type !== "outline" || c.outlines.length < 2 || !c.outlines[index]) return;
+        const uses = geometryItemCurveUses(d, id, ["construction", "outlines"], index);
+        if (uses.length) return this.blockRemoval("轮廓 " + (index + 1), uses.map(use => this.removalItem(use)));
+        const affected = rangeUsers(d, id, geometryPath(geoAt(this.project.resolved, id), index)!.nodes.map(v => v.id));
         const perform = () => {
             this.edit(draft => {
-                const construction = geoAt(draft, id).construction;
-                if (construction.type === "free") construction.paths.splice(index, 1);
+                removeGeometryItem(draft, geoAt(draft, id), ["construction", "outlines"], index);
             }, () => {
-                this.discardSubitem(id, "paths", index);
-                if (this.selection?.id !== id || this.geometry?.kind !== "path" || this.geometry.index < index) return;
-                this.geometry = this.geometry.index === index ? undefined : { kind: "path", index: this.geometry.index - 1 };
+                this.discardSubitem(id, "outlines", index);
+                if (this.selection?.id !== id || this.geometry?.kind !== "outline" || this.geometry.index < index) return;
+                this.geometry = this.geometry.index === index ? undefined : { kind: "outline", index: this.geometry.index - 1 };
             });
         };
         this.removal = { title: "删除这条轮廓？", detail: affected.length ? "以下条带将找不到范围节点。" : "",
@@ -863,28 +952,7 @@ export class Editor {
                 }
             });
         }
-        if (vertex?.role === "vertex" || vertex?.role === "segment") {
-            const path = geometryPath(n, vertex.path), segment = vertex.role === "segment";
-            if (!path || !canRemoveNode(path)) return;
-            const index = segment ? segmentRemovalIndex(path, vertex.index) : vertex.index;
-            if (index === undefined || !path.nodes[index]) return;
-            const refs = vertex.path < 0 ? [] : rangeUsers(d, id, [path.nodes[index].id]);
-            const perform = () => {
-                let next: CurveNode | undefined;
-                return this.edit(draft => {
-                    const owner = geoAt(draft, id);
-                    if (segment) next = removeCurveSegment(draft, owner, vertex);
-                    else removeCurveNode(draft, owner, vertex);
-                }, () => {
-                    if (next) this.selectPart(id, { role: "vertex", nodeId: next.id });
-                });
-            };
-            const action = segment ? "删除线段" : "删除节点";
-            if (refs.length) this.removal = { title: action + "？", detail: "以下条带的范围将报告找不到节点。",
-                action, items: refs.map(r => this.geoReference(r.id, r.label, "边", "region")), perform };
-            else return perform();
-            return;
-        }
+        if (vertex?.role === "vertex" || vertex?.role === "segment") return this.removeCurvePart({ kind: "geoNode", id }, vertex);
         const items = removalUses(d, "geo", id).map(use => this.removalItem(use));
         if (isLastInitializer(d, id)) return this.blockRemoval(n.label, items, requiredInitializer + "。");
         if (items.length) return this.blockRemoval(n.label, items);
@@ -893,35 +961,65 @@ export class Editor {
             if (this.selection?.kind === "geoNode" && this.selection.id === id) return null;
         }, () => this.clearSubitems(id, true));
     }
+    removeCurvePart(h: Selection, control: GeoControl) {
+        const owner = this.geometryOwner(h), curve = owner && geometryPath(owner, control.path), segment = control.role === "segment";
+        if (!curve || !canRemoveNode(curve)) return;
+        const index = segment ? segmentRemovalIndex(curve, control.index) : control.index;
+        if (index === undefined || !curve.nodes[index]) return;
+        const d = this.project.design, graph = this.curves, slot = geometrySlot(d, h.id, control.path, h.kind === "curve")!;
+        const source = graph.source(slot).slot.key, affected = new Map<string, GeoNode>();
+        for (const candidate of graph.slots.values()) if (candidate.location.kind === "geo" && candidate.location.path[0] === "construction" &&
+            graph.source(candidate).slot.key === source)
+            for (const n of rangeUsers(d, candidate.location.id, [curve.nodes[index].id])) affected.set(n.id, n);
+        const perform = () => {
+            let next: CurveNode | undefined;
+            return this.edit(draft => {
+                if (segment) next = removeCurveSegment(draft, h, control);
+                else removeCurveNode(draft, h, control);
+            }, () => {
+                if (next) this.selectPart(h, { role: "vertex", path: control.path, nodeId: next.id });
+            });
+        };
+        const action = segment ? "删除线段" : "删除节点";
+        if (affected.size) this.removal = { title: action + "？", detail: "以下条带的范围将报告找不到节点。",
+            action, items: [...affected.values()].map(r => this.geoReference(r.id, r.label, "边", "region")), perform };
+        else return perform();
+    }
     setCurveClosed(id: string, index: number, closed: boolean) {
-        return this.editNode(id, n => {
-            const path = geometryPath(n, index);
-            if (!path || index >= 0 || n.function.type === "coast" || closed && path.nodes.length < 3) return;
-            path.closed = closed;
-            cleanHandles(path);
+        const h = this.selection;
+        if (!h || h.id !== id) return;
+        return this.edit(d => {
+            editCurve(d, h, index, path => {
+                if (index >= 0 || closed && path.nodes.length < 3) return;
+                path.closed = closed;
+                cleanHandles(path);
+            });
         });
     }
-    pathNodeMode(control: GeoControl, mode: CurveNode["mode"]) {
-        const id = this.selection?.id;
-        if (id) this.editNode(id, n => setNodeMode(geometryPath(n, control.path)!, control.index, mode));
+    private editSelectedCurve(control: GeoControl, change: (curve: Curve) => void) {
+        const h = this.selection;
+        if (h) return this.edit(d => {
+            editCurve(d, h, control.path, change);
+        });
+    }
+    pathNodeMode(control: GeoControl, mode?: CurveNode["mode"]) {
+        return this.editSelectedCurve(control, path => setNodeMode(path, control.index, mode ?? (path.nodes[control.index].mode === "auto" ? "corner" : "auto")));
     }
     segment(control: GeoControl, type: SegmentType | "tangent") {
-        const id = this.selection?.id;
-        if (id) this.editNode(id, n => setSegment(geometryPath(n, control.path)!, control.index, type));
+        return this.editSelectedCurve(control, path => setSegment(path, control.index, type));
     }
     wholeCurve(control: GeoControl, action: "auto" | "line") {
-        if (this.selection?.kind !== "geoNode") return;
-        const id = this.selection.id, curve = geometryPath(geoAt(this.project.design, id), control.path);
-        if (!curve) return;
-        const next = structuredClone(curve);
-        if (editWholeCurve(next, action)) return this.editNode(id, n => geometryPath(n, control.path)!.nodes = next.nodes);
+        return this.editSelectedCurve(control, path => {
+            editWholeCurve(path, action);
+        });
     }
     insertNode(id: string, control: GeoControl) {
+        const h = this.selection?.id === id ? this.selection : { kind: "geoNode" as const, id };
         let node: CurveNode | undefined;
         return this.edit(d => {
-            node = insertCurveNode(d, geoAt(d, id), control);
+            node = insertCurveNode(d, h, control);
         }, () => {
-            if (node) this.selectPart(id, { role: "vertex", nodeId: node.id });
+            if (node) this.selectPart(h, { role: "vertex", path: control.path, nodeId: node.id });
         });
     }
     moveLabel(target: LabelTarget, offset: Point) {
@@ -943,6 +1041,9 @@ export class Editor {
         else if (kind === "geoNode") {
             const box = this.project.terrain.regions.get(id)?.shape.box;
             if (box) this.map.revealBounds(box);
+        }
+        else if (kind === "curve") {
+            this.map.revealBounds(bounds(this.project.design.curves[id].curve.nodes.map(v => v.p)));
         }
         else if (kind === "section") {
             this.map.revealBounds(bounds(this.project.design.sections.find(section => section.id === id)!.points));
@@ -1032,17 +1133,18 @@ export class Editor {
     removeSelected() {
         const h = this.selection;
         if (!h) return;
-        if (h.kind === "geoNode" && this.outline !== undefined) this.removePath(h.id, this.outline);
+        if (h.kind === "geoNode" && this.outline !== undefined) this.removeOutline(h.id, this.outline);
         else if (h.kind === "geoNode" && this.vertex) this.removeGeo(h.id, this.vertex);
+        else if (h.kind === "curve" && this.vertex) this.removeCurvePart(h, this.vertex);
         else this.removeElement(h);
     }
     removeElement(h: Selection) {
         if (!this.canRemove(h) || !this.exists(h)) return;
         if (h.kind === "geoNode") return this.removeGeo(h.id);
-        if (h.kind === "input" || h.kind === "field") {
+        if (h.kind === "input" || h.kind === "field" || h.kind === "curve") {
             const kind = h.kind, d = this.project.design;
             const items = removalUses(d, kind, h.id).map(use => this.removalItem(use));
-            const item = (kind === "input" ? d.inputs : d.fields)[h.id];
+            const item = (kind === "input" ? d.inputs : kind === "field" ? d.fields : d.curves)[h.id];
             if (items.length) return this.blockRemoval(item.label ?? h.id, items);
             return this.edit(d => {
                 removeDeclaration(d, kind, h.id);

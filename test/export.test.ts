@@ -29,10 +29,10 @@ async function loadExample() {
         { id: "C", label: "C", kind: "text", point: [2, 3], follow: "screen" },
         { id: "D", label: "D", kind: "text", point: [9, 8], follow: "map" });
     const base = design.geoNodes[0].construction;
-    assert.equal(base.type, "free");
+    assert(base.type === "outline");
     const hole = polygon([[6, 5], [12, 5], [12, 10], [6, 10]]);
     for (const node of hole.nodes) node.id = "H" + node.id;
-    base.paths.push(hole);
+    base.outlines.push(hole);
     design.geoNodes.push(layer("S", rect(-40, 6, -20, 10), { type: "flat", amount: -5 }),
         layer("B", rect(-40, 10, -20, 18), { type: "flat", amount: -3 }),
         layer("F", rect(-30, -6, 30, 8), { type: "ground", value: .123456 }, "F"),
@@ -214,9 +214,9 @@ test("PNG preview matches the light map relief both at full resolution and when 
     const { project, files } = await example();
     checkPreview(project, files, 1);
     const design = syntheticDesign();
-    const base = rect(-1025, -3, 1025, 3), hole = rect(-12, -2, 11, 2).paths[0];
+    const base = rect(-1025, -3, 1025, 3), hole = rect(-12, -2, 11, 2).outlines[0];
     for (const node of hole.nodes) node.id = "H" + node.id;
-    base.paths.push(hole);
+    base.outlines.push(hole);
     design.geoNodes = [layer("A", base, { type: "ground", value: -1 }), layer("B", rect(-991, -2, 1021, 2), { type: "flat", amount: 3 })];
     const wide = new Project(parseDesign(design));
     checkPreview(wide, readZip(await exportProject(wide, commit)), 2);

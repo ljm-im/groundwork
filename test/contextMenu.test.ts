@@ -5,7 +5,7 @@ import { type GeoControl, controlOwner } from "../src/core/edit/geoControls.ts";
 import { defaultFunction } from "../src/core/edit/geoNodes.ts";
 import { type Selection } from "../src/core/edit/types.ts";
 import { type Point } from "../src/core/design/v5.ts";
-import { layer, openCurve, rect, syntheticDesign } from "./scenarios.ts";
+import { literalCurve, layer, openCurve, rect, syntheticDesign } from "./scenarios.ts";
 
 const selection = (id: string): Selection => ({ kind: "geoNode", id });
 const hit = (role: GeoControl["role"], path = 0, index = 0) => controlOwner({ role, path, index, point: [0, 0] });
@@ -14,19 +14,19 @@ const names = (columns: ReturnType<typeof contextMenuColumns>) => columns.map(co
 
 test("Contour, curve and region menus follow the actual geometry and semantic owners", () => {
     const d = syntheticDesign(), n = d.geoNodes[1];
-    assert(n.construction.type === "free");
-    n.construction.paths.push(rect(-16, -10, -13, -5).paths[0]);
+    assert(n.construction.type === "outline");
+    n.construction.outlines.push(rect(-16, -10, -13, -5).outlines[0]);
     const menu = (control?: GeoControl) => contextMenuColumns(d, selection("T"), true, control);
     const semantic = ["轮廓 2", "区域", "地件"], curveActions = ["全部节点改为自动平滑", "全部线段改为直线"];
     for (const role of ["vertex", "in", "out"] as const) {
         const groups = menu(hit(role, 1));
         assert.deepEqual(titles(groups), [["节点类型", "节点", "闭合曲线"], semantic]);
         assert.deepEqual(names(groups), [["尖角", "自动平滑", "手动平滑", "删除节点", ...curveActions],
-            ["删除轮廓", "添加轮廓", "复制地件", "禁用地件", "删除地件"]]);
+            ["复制轮廓", "删除轮廓", "添加轮廓", "复制地件", "禁用地件", "删除地件"]]);
         assert.equal(groups[0][0].items[0].selected, true);
     }
     for (const role of ["segment", "arc"] as const) {
-        const path = n.construction.paths[1];
+        const path = literalCurve(n.construction.outlines[1]);
         path.nodes[0].bulge = .5;
         const groups = menu(hit(role, 1));
         assert.deepEqual(titles(groups), [["线段类型", "线段", "闭合曲线"], semantic]);
@@ -37,12 +37,12 @@ test("Contour, curve and region menus follow the actual geometry and semantic ow
     }
     assert.deepEqual(titles(menu(hit("body"))), [["区域", "地件"]]);
     assert.deepEqual(titles(menu(hit("outline", 1))), [["轮廓 2", "区域", "地件"]]);
-    assert.deepEqual(names(menu(hit("outline", 1))), [["删除轮廓", "添加轮廓", "复制地件", "禁用地件", "删除地件"]]);
-    n.construction.paths.pop();
-    n.construction.paths[0].nodes.pop();
-    assert.deepEqual(titles(menu(hit("vertex"))), [["节点类型", "闭合曲线"], ["区域", "地件"]]);
+    assert.deepEqual(names(menu(hit("outline", 1))), [["复制轮廓", "删除轮廓", "添加轮廓", "复制地件", "禁用地件", "删除地件"]]);
+    n.construction.outlines.pop();
+    literalCurve(n.construction.outlines[0]).nodes.pop();
+    assert.deepEqual(titles(menu(hit("vertex"))), [["节点类型", "闭合曲线"], ["轮廓 1", "区域", "地件"]]);
     assert(!names(menu(hit("segment")))[0].includes("删除线段"));
-    assert.deepEqual(titles(menu(hit("outline"))), [["区域", "地件"]]);
+    assert.deepEqual(titles(menu(hit("outline"))), [["轮廓 1", "区域", "地件"]]);
     d.geoNodes.push(layer("S", { type: "strip", of: ["T"], widths: [1, 2] }, { type: "blend" }));
     const strip = contextMenuColumns(d, selection("S"), true, hit("body"));
     assert.deepEqual(titles(strip), [["区域", "地件"]]);
@@ -76,7 +76,7 @@ test("Parameter geometry menus show member operations only for ridges and peaks"
     assert.deepEqual(titles(menu(hit("segment", -1, 3))), [["线段类型", "线段", "闭合曲线"], ["地件"]]);
     ridge.closed = false;
     assert.deepEqual(titles(menu(hit("vertex", -1, 1))), [["节点类型", "节点", "曲线"], ["地件"]]);
-    n.function = defaultFunction("coast", { shore: rect(0, 0, 4, 4).paths[0], center: [0, 0] });
+    n.function = defaultFunction("coast", { shore: rect(0, 0, 4, 4).outlines[0], center: [0, 0] });
     assert.deepEqual(titles(menu(hit("segment", -1))), [["线段类型", "线段", "闭合曲线"], ["地件"]]);
     assert.deepEqual(titles(menu(hit("parameter"))), [["地件"]]);
 });

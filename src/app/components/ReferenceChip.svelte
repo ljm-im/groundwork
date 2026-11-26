@@ -1,4 +1,4 @@
-<span class="ref-chip" data-ref={refKey} contenteditable="false"><Icon name={info.icon} builtin={info.builtin} /><span>{info.name}{info.property ? "." + info.property : ""}</span></span>
+<span class="ref-chip" data-ref={curve?.key ?? refKey} contenteditable="false"><Icon name={info.icon} builtin={info.builtin} /><span>{info.name}{info.property ? "." + info.property : ""}</span></span>
 
 <style>
     .ref-chip {
@@ -25,6 +25,8 @@
     import { referenceLabel } from "../state/numbers.ts";
     import { type Design } from "../../core/design/v5.ts";
     import { type Slot } from "../../core/design/parameters.ts";
-    let { refKey, design, slots }: { refKey: string; design: Design; slots: Map<string, Slot> } = $props();
-    let info = $derived(referenceLabel(refKey, design, slots));
+    let { refKey, design, slots, curve }: { refKey: string; design: Design; slots: Map<string, Slot>; curve?: never } |
+        { refKey?: never; design?: never; slots?: never; curve: { key: string; name: string; closed: boolean } } = $props();
+    let info = $derived(curve ? { icon: curve.closed ? "closedPath" as const : "curve" as const, name: curve.name, property: undefined, builtin: undefined } :
+        referenceLabel(refKey!, design!, slots!));
 </script>

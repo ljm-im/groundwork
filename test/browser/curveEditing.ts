@@ -5,7 +5,7 @@ import { geometryPath, type GeoControl, type GeometryTarget } from "../../src/co
 import { defaultFunction } from "../../src/core/edit/geoNodes.ts";
 import { type Curve, type Point, type Section } from "../../src/core/design/v5.ts";
 import { distance, mixPoint } from "../../src/core/math/geometry.ts";
-import { layer, openCurve, rect, syntheticDesign } from "../scenarios.ts";
+import { literalCurve, layer, openCurve, rect, syntheticDesign } from "../scenarios.ts";
 import { startChromium } from "./chromium.ts";
 import { installPickers } from "./filePickers.ts";
 import { checkLineDragging } from "./mapSelection.ts";
@@ -174,7 +174,7 @@ async function checkDrawnCurves(url: string) {
         const second = nodeRow(line.nodes[1].id), third = nodeRow(line.nodes[2].id);
         await tap(line.nodes[1].p); await paint();
         assert.equal((await frame()).vertex?.index, 1);
-        assert.deepEqual((await frame()).geometry, { kind: "path", index: -1 });
+        assert.deepEqual((await frame()).geometry, { kind: "curve", index: -1 });
         await screenshot("ridge-node", ".subitem:has(" + ridgeInput + ") > .subitem-heading");
         await screenshot("ridge-handles", undefined, [[-41, 13], [-2, -17]]);
         assert.equal(await evaluate(s => !!document.querySelector(s + " .subitem-toggle"), second), false, "The selected node is always expanded");
@@ -331,7 +331,7 @@ export async function checkCurveEditing(url: string) {
         await tap(await at(vertex), 1);
         await drag(await at(vertex), await at([-4, 32.3])); await saved();
         const mountain = (await authored()).geoNodes.find(n => n.id === "C")!.function;
-        assert(mountain.type === "mountain" && distance(mountain.ridges[2].line.nodes[1].p, [-4, 32.3]) < .3);
+        assert(mountain.type === "mountain" && distance(literalCurve(mountain.ridges[2].line).nodes[1].p, [-4, 32.3]) < .3);
         await undo();
     });
     await withCurveMap(url, "curve-controls", async ({ authored, boundary, click, curve, disk, drag, evaluate, frame, key, nodeTitles, paint, pixels, saved, screenshot, tap, text, undo }) => {

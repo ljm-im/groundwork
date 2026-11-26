@@ -11,6 +11,7 @@ const lineEnd = "回车或双击结束，单击首个节点闭合";
 const penHint = "单击放置节点，按 S 切换尖角和自动平滑，";
 const closedPenHint = penHint + "回车、双击或单击首点闭合";
 const lineHint = penHint + lineEnd;
+const continueEnd = "回车或双击完成，单击另一端闭合";
 
 const hints: Record<Tool, string> = {
     select: "单击选择，Alt 单击选择下层，中键或按住空格拖动平移，滚轮缩放",
@@ -19,7 +20,7 @@ const hints: Record<Tool, string> = {
     circle: "拖出半径或单击圆心和圆周",
     sector: "拖出半径或单击圆心和圆周，再单击确定终止角",
     strip: "单击要沿的地件，按住 Alt 单击可选被遮住的地件",
-    addPath: closedPenHint,
+    addOutline: closedPenHint,
     shore: closedPenHint,
     ridge: lineHint,
     slopeLine: lineHint,
@@ -28,10 +29,13 @@ const hints: Record<Tool, string> = {
     harbor: "单击选择港湾圆心",
     textMark: "单击放置文字标记",
     scaleMark: "单击放置比例尺",
-    section: "单击起点和终点"
+    section: "单击起点和终点",
+    sharedCurve: lineHint,
+    redrawCurve: lineHint,
+    continueCurve: penHint + continueEnd
 };
 
-export function drawingStatus(mode: Exclude<Tool, "select">, name: string, owner?: string, member?: number, names: string[] = []) {
+export function drawingStatus(mode: Exclude<Tool, "select">, name: string, owner?: string, member?: number, names: string[] = [], curve?: GeoDraft["curve"]) {
     const label = "“" + name + "”", pen = "回车、双击或单击首点结束", point = "单击地图放置";
     const text: Record<Exclude<Tool, "select">, [string, string, boolean]> = {
         pen: ["新建地件（钢笔）", pen, true],
@@ -40,7 +44,7 @@ export function drawingStatus(mode: Exclude<Tool, "select">, name: string, owner
         sector: ["新建地件（扇形）", "单击圆心和圆周，再单击终止角", false],
         strip: owner ? ["重选" + label + "的边", "单击起止节点，Tab 交换，回车确认", true] :
             ["新建地件（条带）", names.length ? "沿" + names.map(name => "“" + name + "”").join("、") + "，回车确认" : "单击要沿的地件", true],
-        addPath: ["给" + label + "添加轮廓", pen, true],
+        addOutline: ["给" + label + "添加轮廓", pen, true],
         shore: ["重画" + label + "的海岸线", pen, true],
         ridge: [member === undefined ? "给" + label + "添加山脊" : "重画" + label + "的山脊线", lineEnd, true],
         peak: [member === undefined ? "给" + label + "添加山峰" : "移动" + label + "的山峰", point, false],
@@ -49,7 +53,10 @@ export function drawingStatus(mode: Exclude<Tool, "select">, name: string, owner
         harbor: ["选择" + label + "的港湾圆心", point, false],
         textMark: ["新建文字标记", point, false],
         scaleMark: ["新建比例尺", point, false],
-        section: ["新建剖面线", "单击起点和终点", false]
+        section: ["新建剖面线", "单击起点和终点", false],
+        sharedCurve: ["新建曲线", lineEnd, true],
+        redrawCurve: ["重画" + label, curve?.requiredClosed ? pen : lineEnd, true],
+        continueCurve: ["继续画" + label, continueEnd + "，Esc 取消", true]
     };
     const [title, end, finish] = text[mode];
     return { title, end, finish, owner, member };
@@ -59,7 +66,7 @@ export function drawingHint(tool: Tool, draft?: GeoDraft, finish?: string) {
     if (tool === "select") return hints.select;
     if (draft?.radius) return "单击确定终止角，Esc 取消";
     if (draft?.sizing) return tool === "rect" ? "单击确定对角，Esc 取消" : "单击确定半径，Esc 取消";
-    let hint = hints[tool];
+    let hint = tool === "redrawCurve" && draft?.curve?.requiredClosed ? closedPenHint : hints[tool];
     if (tool === "strip" && draft) {
         if (draft.anchors.length === 1) hint = "单击终止节点";
         else if (draft.anchors.length === 2) hint = "Tab 交换方向，回车确认";

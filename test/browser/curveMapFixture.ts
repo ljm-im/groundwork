@@ -107,13 +107,13 @@ function sample() {
     setNodeMode(line, 2, "auto");
     Object.assign(line.nodes[4], { mode: "manual", in: [-3, 0], out: [3, 0] });
     setSegment(line, 5, "arc");
-    mountain.ridges.push({ line, widths: [8, 8], widthNoise: { amount: 0, wavelength: 10 }, heightNoise: { amount: 0, wavelength: 10 } });
-    const region = rect(-46, 18, 43, 40), hole = rect(33, 31, 38, 36).paths[0];
+    mountain.ridges.push({ line, slope: 1 });
+    const region = rect(-46, 18, 43, 40), hole = rect(33, 31, 38, 36).outlines[0];
     for (const node of hole.nodes) node.id = "hole-" + node.id;
-    region.paths.push(hole);
-    const ground = rect(-57, -45, 57, 16), upper = rect(48, 20, 57, 41).paths[0];
+    region.outlines.push(hole);
+    const ground = rect(-57, -45, 57, 16), upper = rect(48, 20, 57, 41).outlines[0];
     for (const node of upper.nodes) node.id = "upper-" + node.id;
-    ground.paths.push(upper);
+    ground.outlines.push(upper);
     design.geoNodes = [
         layer("G", ground, { type: "ground", value: .2 }),
         layer("A", rect(-37, -13, 3, 13), { type: "flat", amount: 1 }),

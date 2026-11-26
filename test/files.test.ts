@@ -14,7 +14,6 @@ test("Authored and default designs survive a JSON round trip", fixtureOptions("r
     const current = await readFixture("round14-land.json");
     const design = parseDesign(current);
     const raw = JSON.parse(current);
-    for (const section of raw.sections) if (Array.isArray(section.marks) && !section.marks.length) delete section.marks;
     assert.deepEqual(JSON.parse(serializeDesign(design)), raw);
     assert.deepEqual(parseDesign(serializeDesign(author)), author);
 });

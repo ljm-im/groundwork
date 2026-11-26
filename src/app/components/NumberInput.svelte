@@ -30,7 +30,7 @@
 {/snippet}
 {#snippet control()}
     <div class="number-box input-box" class:danger={!!error} class:invalid={!!error} class:warning={outside} bind:this={box}>
-        <button class="step" aria-label={"减小" + actionLabel} data-tip="减小" onpointerdown={e => beginGesture(e, -1)} onclick={e => keyboardStep(e, -1)}><Icon name="chevronLeft" /></button>
+        {#if stepButtons}<button class="step" aria-label={"减小" + actionLabel} data-tip="减小" onpointerdown={e => beginGesture(e, -1)} onclick={e => keyboardStep(e, -1)}><Icon name="chevronLeft" /></button>{/if}
         {#if editing && !expanded}
             {@render editControl()}
         {:else}
@@ -39,12 +39,12 @@
                     if (!e.detail) void startEdit();
                 }}>
                 <span class="numeric-label">
-                    {#if typeof shown === "number"}{displayValue(shown, step)}
+                    {#if typeof shown === "number"}{displayValue(shown, step, faceUnit ? unit : "")}
                     {:else}{@render formatted(shown, true)}{/if}
                 </span>
             </button>
         {/if}
-        <button class="step" aria-label={"增大" + actionLabel} data-tip="增大" onpointerdown={e => beginGesture(e, 1)} onclick={e => keyboardStep(e, 1)}><Icon name="chevronRight" /></button>
+        {#if stepButtons}<button class="step" aria-label={"增大" + actionLabel} data-tip="增大" onpointerdown={e => beginGesture(e, 1)} onclick={e => keyboardStep(e, 1)}><Icon name="chevronRight" /></button>{/if}
         {#if !expanded}{@render variableMenuButton()}
 {:else if kind !== "literal"}<span class="menu-spacer"></span>{/if}
     </div>
@@ -141,16 +141,21 @@
     import FieldRow from "./FieldRow.svelte";
     import Menu from "./Menu.svelte";
     let { editor, address, setting, label, kind = "number", step = .1, range, unit = "", self, owner, compact = false,
-        inputStep = false, fallback = 0, attributes, namedInput = false }: {
+        inputStep = false, fallback = 0, attributes, namedInput = false, faceUnit = false, stepButtons = true }: {
         editor: session.Editor; label: string; kind?: "number" | "field" | "literal"; step?: number;
         range?: Range; unit?: string; self?: string; owner?: string; compact?: boolean; inputStep?: boolean; fallback?: number;
-        attributes?: Record<string, string>; namedInput?: boolean;
-    } & ({ address: Address; setting?: never } | { address?: never; setting: { value: number; change: (n: number) => void; validate: (n: number) => void } }) = $props();
+        attributes?: Record<string, string>; namedInput?: boolean; faceUnit?: boolean; stepButtons?: boolean;
+    } & ({ address: Address; setting?: never } | { address?: never; setting: { value: number; change: (n: number) => void; validate: (n: number) => void; retainDraft?: boolean } }) = $props();
     let actionLabel = $derived(namedInput ? "“" + label + "”" : label);
     let face = $state<HTMLButtonElement>(), expandedBox = $state<HTMLElement>();
     let box = $state<HTMLElement>(null!), input = $state<HTMLElement>(null!), mirror = $state<HTMLElement>(null!);
     let base = $derived(editor.project.design), authored = $derived(address ? readAt(base, address) as Expression | undefined : undefined);
-    let value = $derived(setting?.value ?? authored ?? (address ? readAt(editor.project.resolved, address) as number | undefined : undefined) ??
+    let resolvedValue = $derived.by(() => {
+        if (!address) return;
+        const resolvedAddress = self ? editor.numberEdits.slots.get(self)?.resolvedPath ?? address : address;
+        return readAt(editor.project.resolved, resolvedAddress) as number | undefined;
+    });
+    let value = $derived(setting?.value ?? authored ?? resolvedValue ??
         (self ? editor.numberEdits.get(self) as number : fallback));
     let editing = $state(false), expanded = $state(false), draft = $state(""), error = $state(""), opened = $state(false), parent = $state(""), query = $state("");
     let queryStart = 0, queryEnd = 0, composing = false, editedValue: Expression;
@@ -213,8 +218,7 @@
         setting?.validate(Number(v));
     }
     function parseDraft() {
-        const value = numericText(draft, kind === "literal");
-        return value;
+        return numericText(draft, kind === "literal", faceUnit ? unit : "");
     }
     function validate() {
         try {
@@ -244,7 +248,7 @@
         await paint(at ?? draft.length);
     }
     function syncEdit(next: Expression) {
-        if (!editing || composing || next === editedValue) return;
+        if (!editing || composing || setting?.retainDraft || next === editedValue) return;
         editedValue = next;
         const [start, end] = input ? selectionOffsets(input) : [0, 0];
         draft = String(next);
@@ -271,7 +275,7 @@
     function finish(save: boolean) {
         if (!editing) return;
         let committed: Expression | undefined;
-        if (save && draft !== String(value)) {
+        if (save && draft !== String(editedValue)) {
             try {
                 const parsed = parseDraft();
                 committed = candidate(parsed)?.value ?? parsed;

@@ -2,7 +2,7 @@ import { testTerrainClient } from "./computeFixture.ts";
 import { test } from "node:test";
 import { functionTable, parameterStep, parameterUnit } from "../src/core/design/functionTable.ts";
 import assert from "node:assert/strict";
-import { adjustInputStep, adjustNumber, NumberDrag, numberPreviewFactor, numericText, repeatButton } from "../src/app/state/numbers.ts";
+import { adjustInputStep, adjustNumber, NumberDrag, numberPreviewFactor, numericText, repeatButton, validateZoom } from "../src/app/state/numbers.ts";
 import { copyAt, writeAt, type Address } from "../src/core/design/address.ts";
 import { parseDesign } from "../src/core/design/model.ts";
 import { numberEdits } from "../src/core/design/numberEdit.ts";
@@ -264,4 +264,16 @@ test("Numeric drafts and committed edits agree on resolution and error wording",
         }
     }
     assert.deepEqual(resolveDesign(design), original);
+});
+
+test("Zoom accepts a literal percent in the camera's supported range", () => {
+    for (const text of ["250", "250%", " 250 % "]) {
+        const value = numericText(text, true, "%");
+        assert.equal(value, 250);
+        validateZoom(Number(value));
+    }
+    for (const bad of ["1 + 2", "50%%", "NaN", "Infinity", ""])
+        assert.throws(() => numericText(bad, true, "%"), /一个数/);
+    for (const value of [5, 3000]) assert.doesNotThrow(() => validateZoom(value));
+    for (const value of [4, 3001, Infinity]) assert.throws(() => validateZoom(value), /5% 到 3000%/);
 });

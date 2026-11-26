@@ -33,7 +33,7 @@ class TerrainReceiver {
             const region = ref.deref();
             if (!region) continue;
             const data = shapeData(region.shape);
-            known.push([revision, data?.type === "free" || data?.contour !== undefined]);
+            known.push([revision, data?.type === "outline" || data?.contour !== undefined]);
             retained.set(revision, region);
         }
         return { known, retained };

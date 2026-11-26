@@ -5,7 +5,7 @@ import { parseDesign } from "../src/core/design/model.ts";
 import { type Design } from "../src/core/design/v5.ts";
 import { TerrainCache } from "../src/core/terrain/cache.ts";
 import { generateTerrain } from "../src/core/terrain/terrain.ts";
-import { syntheticDesign, rect, layer } from "./scenarios.ts";
+import { literalCurve, syntheticDesign, rect, layer } from "./scenarios.ts";
 
 function compare(cache: TerrainCache, d: Design) {
     const actual = cache.generate(d), expected = generateTerrain(d);
@@ -62,8 +62,8 @@ test("Incremental layers match a fresh stack byte for byte after every fixture e
             assert(cache.recomputed.includes(target) && cache.recomputed.includes(source));
         }
         const moved = d.geoNodes.find(n => n.id === rule.move)!.construction;
-        assert(moved.type === "free");
-        for (const path of moved.paths) for (const v of path.nodes) v.p[0] += 3;
+        assert(moved.type === "outline");
+        for (const path of moved.outlines) for (const v of literalCurve(path).nodes) v.p[0] += 3;
         check();
         assert(erosion.function.type === "erosion");
         erosion.function.droplets = Number(erosion.function.droplets) + 123;
