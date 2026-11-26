@@ -261,12 +261,12 @@ export async function checkRound31Fix(url: string) {
         await click("[data-property-tab=region]");
         await moveTo(outlineHeading("0"));
         assert.equal((await frame()).hoverPart?.role, "outline");
-        assert.deepEqual(await strokes(), []);
+        assert.deepEqual((await strokes()).map(s => [s.width, s.color, s.alpha, s.dash]), [[4, accent, overlay.segmentHoverOpacity, []]]);
         await leave();
         await tap(single);
         assert.equal((await frame()).outline, 0);
         assert.equal(await currentOutline(), "轮廓 1");
-        assert.deepEqual(await strokes(), []);
+        assert.deepEqual((await strokes()).map(s => [s.width, s.color, s.alpha, s.dash]), [[4, accent, 1, []]]);
         const outlines = await evaluate(() => window.curveMapProbe.pathStrokes);
         assert(outlines.some(s => s.color === accent && Math.abs(s.width - overlay.selectedWidth) < .001));
 

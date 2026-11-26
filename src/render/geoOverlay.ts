@@ -135,7 +135,7 @@ export function drawGeoOverlay(map: ProjectMap, view: MapView, colors: MapColors
     ctx.save();
     const owner = view.selection?.kind === "geoNode" ? d.geoNodes.find(n => n.id === view.selection!.id) : undefined;
     const n = view.dragNode ?? owner;
-    const outline = n?.construction.type === "outline" && n.construction.outlines.length > 1 ? view.outline : undefined;
+    const outline = n?.construction.type === "outline" ? view.outline : undefined;
     const moved = view.dragNode && hasOutlinePreview(view.dragNodes?.get(view.dragNode.id)?.paths);
     if (n?.construction.type === "outline" && (!draft || draft.owner === n.id) && (moved || draft)) {
         for (const [i, path] of n.construction.outlines.entries()) {
@@ -180,7 +180,7 @@ export function drawGeoOverlay(map: ProjectMap, view: MapView, colors: MapColors
                 const selected = onOwner && (sameControl(hovered, view.vertex) ||
                     hovered.role === "outline" && hovered.path === view.outline || hovered.role === "curve" && hovered.path === whole);
                 const target = !selected && d.geoNodes.find(node => node.id === hoverOwner);
-                if (target && (hovered.role !== "outline" || target.construction.type === "outline" && target.construction.outlines.length > 1)) {
+                if (target) {
                     ctx.save();
                     ctx.globalAlpha = overlay.segmentHoverOpacity;
                     highlight(target, hovered.path, hovered.role === "segment" ? hovered.index : undefined);
