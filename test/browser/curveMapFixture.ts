@@ -19,7 +19,8 @@ interface Frame {
 }
 interface Probe {
     editor?: import("../../src/app/state/session.svelte.ts").Editor;
-    frame?: Frame; strokes: Stroke[]; pathStrokes: { color: string; width: number }[];
+    frame?: Frame; strokes: Stroke[]; pathStrokes: { color: string; width: number; hits?: boolean[] }[];
+    pathChecks?: Point[];
     dots: { point: Point; color: string }[]; ticks: Reading[]; release?: () => void;
 }
 declare global {
@@ -65,7 +66,10 @@ async function observeCurveMap() {
     };
     ctx.stroke = function (...args: [Path2D?]) {
         if (this.canvas.id === "map") {
-            if (args.length) probe.pathStrokes.push({ color: String(this.strokeStyle), width: this.lineWidth * this.getTransform().a / devicePixelRatio });
+            if (args.length) {
+                probe.pathStrokes.push({ color: String(this.strokeStyle), width: this.lineWidth * this.getTransform().a / devicePixelRatio,
+                    hits: probe.pathChecks?.map(([x, y]) => this.isPointInStroke(args[0]!, x * devicePixelRatio, y * devicePixelRatio)) });
+            }
             else if (points.length >= 2) probe.strokes.push({ points: points.slice(), dash: this.getLineDash(), color: String(this.strokeStyle),
                 width: this.lineWidth, alpha: this.globalAlpha });
         }

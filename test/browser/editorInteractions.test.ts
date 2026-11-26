@@ -21,6 +21,7 @@ import { checkSectionPlots } from "./sectionPlots.ts";
 import { checkNumericEditing } from "./numericEditing.ts";
 import { checkPenDrawing } from "./penDrawing.ts";
 import { checkMapOverlays } from "./mapOverlays.ts";
+import { checkCurvePlacements } from "./curvePlacements.ts";
 import { checkCurveZoom, checkSharedCurves } from "./round37Curves.ts";
 import { checkCoarsePreview } from "./coarsePreview.ts";
 import { checkWorkerTerrain } from "./workerTerrain.ts";
@@ -51,6 +52,7 @@ test("Editor interactions in Chromium", async t => {
         await t.test("Terrain export with shared memory in Chromium", () => checkWorkerExport(url, commit, true));
         await t.test("Curve handles and camera zoom in Chromium", () => checkCurveZoom(url));
         await t.test("Shared curves and endpoint drawing in Chromium", () => checkSharedCurves(url));
+        await t.test("Referenced curves follow placement drags in Chromium", () => checkCurvePlacements(url));
     }
     finally {
         await server.close();

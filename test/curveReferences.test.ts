@@ -156,13 +156,14 @@ test("Moving a landform is inherited all along its curve reference chain", () =>
     const b = layer("B", { type: "outline", outlines: [reference("geo:A.construction.outlines.0")] }, { type: "flat", amount: 2 });
     const c = layer("C", { type: "outline", outlines: [reference("geo:B.construction.outlines.0", [10, 2])] }, { type: "flat", amount: 3 });
     d.geoNodes.push(a, b, c);
-    const body = { role: "body", path: 0, index: 0, point: [0, 0] } as const satisfies Parameters<typeof commitControl>[2];
+    assert(a.construction.type === "outline" && b.construction.type === "outline" && c.construction.type === "outline");
+    const body = { role: "body", path: 0, index: 0, point: [0, 0] } satisfies Parameters<typeof commitControl>[2];
     const positions = () => resolveDesign(d).geoNodes.slice(-3).map(n => {
         assert(n.construction.type === "outline");
         return n.construction.outlines[0].nodes.map(v => v.p);
     });
     const move = (id: string, delta: Point) => commitControl(d, { kind: "geoNode", id }, body, delta, false);
-    const translate = (points: Point[], [x, y]: Point) => points.map(p => [p[0] + x, p[1] + y]);
+    const translate = (points: Point[], [x, y]: Point): Point[] => points.map(p => [p[0] + x, p[1] + y]);
     const before = positions(), afterA = before.map(p => translate(p, [3, -2]));
     move("A", [3, -2]);
     assert.deepEqual(positions(), afterA);
@@ -173,8 +174,10 @@ test("Moving a landform is inherited all along its curve reference chain", () =>
     assert.deepEqual(b.construction.outlines[0], reference("geo:A.construction.outlines.0", [-4, 5]));
     assert.deepEqual(c.construction.outlines[0], reference("geo:B.construction.outlines.0", [10, 2]));
 
-    d.curves.reference = { label: "共享形状", curve: a.construction.outlines[0] };
-    a.construction.outlines[0] = reference("curve:reference") as never;
+    const [outline] = a.construction.outlines;
+    assert("nodes" in outline);
+    d.curves.reference = { label: "共享形状", curve: outline };
+    a.construction.outlines[0] = reference("curve:reference");
     const shapeBefore = structuredClone(d.curves.reference.curve);
     assert.deepEqual(positions(), afterB);
     commitControl(d, { kind: "curve", id: "reference" }, { ...body, role: "curve", path: -1 }, [7, -3], false);
