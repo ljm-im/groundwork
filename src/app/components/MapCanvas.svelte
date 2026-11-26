@@ -14,12 +14,8 @@
             <strong>{editor.drawing.title}</strong>
             <span>{editor.drawing.end}</span>
             {#if editor.penNodeMode}
-                <div class="pen-modes" role="group" aria-label="单击放置的节点">
-                    {#each penModes as [mode, label, icon] (mode)}
-                        <button aria-pressed={editor.penNodeMode === mode} data-tip="按 S 切换"
-                            disabled={!!editor.busy} onclick={() => editor.choosePenNode(mode)}><Icon name={icon} />{label}</button>
-                    {/each}
-                </div>
+                <SegmentedButtons label="单击放置的节点" options={penModes} value={editor.penNodeMode}
+                    showText tip="按 S 切换" disabled={!!editor.busy} choose={mode => editor.choosePenNode(mode)} />
             {/if}
             <div class="drawing-actions">
                 {#if editor.drawing.finish}
@@ -122,9 +118,6 @@
         }
         .drawing-status strong { font-weight: 600; }
         .drawing-status span { font-size: var(--text-sm); line-height: var(--leading-sm); color: var(--text-secondary); }
-        .pen-modes { display: flex; align-items: center; }
-        .pen-modes button { flex: none; border-color: transparent; background: transparent; }
-        .pen-modes button[aria-pressed="true"] { background: var(--bg-selected); color: var(--accent); }
         .drawing-actions { display: flex; gap: var(--space-1); margin-inline-start: auto; }
         #mode-hint, #position {
             max-width: 100%;
@@ -168,6 +161,7 @@
     import Icon from "./Icon.svelte";
     import Messages from "./Messages.svelte";
     import NumberInput from "./NumberInput.svelte";
+    import SegmentedButtons from "./SegmentedButtons.svelte";
 
     let { editor, theme }: { editor: session.Editor; theme: Theme } = $props();
     const penModes = [nodeModes[0], nodeModes[1]];

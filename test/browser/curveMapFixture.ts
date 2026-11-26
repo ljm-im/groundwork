@@ -147,7 +147,7 @@ function curveMap(browser: Chromium, design: Design, name: string, url: string) 
     const undo = async () => {
         await click("#undo"); await saved(); await paint();
     };
-    const group = ".pen-modes";
+    const group = "[aria-label=单击放置的节点]";
     const penMode = () => text(group + " [aria-pressed=true]");
     const nodeTitles = () => evaluate(() => [...document.querySelectorAll("[data-curve-node] .subitem-label")].map(el => el.textContent));
     const pixels = (f: Frame, [x, y]: Point, local = false): Point => {
