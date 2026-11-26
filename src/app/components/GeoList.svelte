@@ -11,6 +11,7 @@
         {:else}
             {@const n = row.node}
             {@const c = n.construction}
+            {@const details = row.detail!}
             <ListRow icon="terrain" name={n.label} problem={problems.get(n.id)?.join("\n")} {insertion}
                 rowAttributes={{ "data-stack-row": row.key }} attributes={{ "data-geo-node": n.id }}
                 muted={!!n.disabled} outside={!!anchor && stack.indexOf(n) < hiddenCount} referenced={editor.hoverRefs.includes(n.id)}
@@ -26,9 +27,9 @@
                     editor.hover([]);
                 }}>
                 {#snippet detail()}
-                    <small class="list-detail"><Icon name="function" builtin={isBuiltinFunction(n.function.type)} />{functionTable[n.function.type].name}{#if n.function.type === "flat"}<span class="flat-amount" use:flagOverflow>{flatAmount(n, n.function.amount)}</span>{/if}</small>
-                    {#if c.type === "strip"}<small class="along">沿 {c.of.map(id => "“" + (d.geoNodes.find(n => n.id === id)?.label ?? id) + "”").join("、")}</small>{/if}
-                    {#if n.field !== heightId}<small class="field-detail"><Icon name="field" />{d.fields[n.field]?.label ?? n.field}</small>{/if}
+                    <small class="list-detail"><Icon name="function" builtin={isBuiltinFunction(n.function.type)} />{details.name}{#if details.amount}<span class="flat-amount" use:flagOverflow>{details.amount}</span>{/if}</small>
+                    {#if details.along}<small class="along">{details.along}</small>{/if}
+                    {#if details.field}<small class="field-detail"><Icon name="field" />{details.field}</small>{/if}
                 {/snippet}
             </ListRow>
         {/if}
@@ -75,18 +76,28 @@
         return byNode;
     });
     let order = $derived.by(() => {
-        const result: { key: string; node?: GeoNode }[] = stack.map(n => ({ key: "n:" + n.id, node: n }));
+        const result: { key: string; node?: GeoNode; detail?: ReturnType<typeof rowDetail> }[] =
+            stack.map(n => ({ key: "n:" + n.id, node: n, detail: rowDetail(n) }));
         result.splice(hiddenCount, 0, { key: "viewport" });
         return result;
     });
     let rows = $derived.by(() => {
-        const matches = order.filter(r => r.node && matchesSearch(editor.terrainFilter, r.node.label,
-            functionTable[r.node.function.type].name, r.node.function.type, r.node.id, d.fields[r.node.field]?.label));
+        const matches = order.filter(r => r.node && r.detail && matchesSearch(editor.terrainFilter, r.node.label,
+            r.detail.name, r.detail.amount, r.detail.along, r.detail.field));
         return matches.length ? order.filter(row => !row.node || matches.includes(row)) : [];
     });
     let mark = $state("");
     let dragged: string | null | undefined;
     let insertion: { index: number; viewport: string | null; at: number } | undefined;
+    function rowDetail(n: GeoNode) {
+        const c = n.construction, f = n.function;
+        return {
+            name: functionTable[f.type].name,
+            amount: f.type === "flat" ? flatAmount(n, f.amount) : undefined,
+            along: c.type === "strip" ? "沿 " + c.of.map(id => "“" + (d.geoNodes.find(n => n.id === id)?.label ?? id) + "”").join("、") : undefined,
+            field: n.field !== heightId ? d.fields[n.field]?.label ?? n.field : undefined
+        };
+    }
     function flatAmount(n: GeoNode, authored: Expression | undefined) {
         const p = geoParameter(n, ["function", "amount"]);
         if (!p || p.type === "geometry") return "";

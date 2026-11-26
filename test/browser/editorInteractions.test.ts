@@ -8,6 +8,7 @@ import { geoLabelPoint } from "../../src/render/labelLayout.ts";
 import { type Point } from "../../src/core/design/v5.ts";
 import { literalCurve, layer, rect, syntheticDesign } from "../scenarios.ts";
 import { checkProfilesAndLabels } from "./round41.ts";
+import { checkVisibleSearch } from "./visibleSearch.ts";
 import { createBrowserServer, startChromium } from "./chromium.ts";
 import { installPickers } from "./filePickers.ts";
 import { checkAppearance } from "./appearance.ts";
@@ -67,6 +68,7 @@ test("Editor interactions in Chromium", async t => {
         await t.test("A single outline highlights and segmented buttons keep their gap and keys in Chromium", () => checkSingleOutlineAndButtons(url));
         await t.test("Outline holes support hover, selection, cycling, menus and body dragging in Chromium", () => checkOutlineHoleHits(url));
         await t.test("Node profiles, slope lines, valleys and localized inspector labels in Chromium", () => checkProfilesAndLabels(url));
+        await t.test("List and numeric reference searches match visible labels in Chromium", () => checkVisibleSearch(url));
     }
     finally {
         await server.close();

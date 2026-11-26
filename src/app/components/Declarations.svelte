@@ -117,10 +117,10 @@
     import NumberInput from "./NumberInput.svelte";
     let { editor, properties = false }: { editor: session.Editor; properties?: boolean } = $props();
     let d = $derived(editor.project.design), h = $derived(editor.selection);
-    const matches = (id: string, name: string) => matchesSearch(editor.variableFilter, name + " " + id);
-    let inputs = $derived(declarationEntries("input", d.inputs).filter(([id, input]) => matches(id, input.label ?? id)));
-    let fields = $derived(declarationEntries("field", d.fields).filter(([id, field]) => matches(id, field.label)));
-    let curves = $derived(Object.entries(d.curves).filter(([, item]) => matchesSearch(editor.variableFilter, item.label)));
+    const matches = (name: string) => matchesSearch(editor.variableFilter, name);
+    let inputs = $derived(declarationEntries("input", d.inputs).filter(([id, input]) => matches(input.label ?? id)));
+    let fields = $derived(declarationEntries("field", d.fields).filter(([, field]) => matches(field.label)));
+    let curves = $derived(Object.entries(d.curves).filter(([, item]) => matches(item.label)));
     function startCurve() {
         editor.setTool("sharedCurve");
         editor.map.canvas.focus({ preventScroll: true });

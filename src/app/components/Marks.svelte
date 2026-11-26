@@ -52,7 +52,7 @@
         ...marks.map(m => ({ id: m.id, label: m.label, kind: "mark" as const, icon: markIcon[m.kind], detail: m.kind === "scale" ? "比例尺" : "文字标记" })),
         ...editor.project.design.sections.map(s => ({ id: s.id, label: s.label, kind: "section" as const, icon: "sectionMark" as const, detail: "剖面线" }))
     ]);
-    let filtered = $derived(items.filter(item => matchesSearch(editor.markFilter, item.label, item.id, item.detail)));
+    let filtered = $derived(items.filter(item => matchesSearch(editor.markFilter, item.label, item.detail)));
     let index = $derived(properties ? marks.findIndex(m => m.id === editor.selection?.id) : -1);
     let mark = $derived(marks[index]);
 </script>

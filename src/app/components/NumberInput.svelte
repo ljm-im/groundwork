@@ -120,7 +120,7 @@
 
 <script lang="ts">
     import { onDestroy, tick, untrack, type Snippet } from "svelte";
-    import { SvelteMap, SvelteSet } from "svelte/reactivity";
+    import { SvelteMap } from "svelte/reactivity";
     import * as session from "../state/session.svelte.ts";
     import { type Expression } from "../../core/design/v5.ts";
     import { readAt, type Address } from "../../core/design/parameters.ts";
@@ -172,7 +172,7 @@
     type Group = { title: string; items: Option[] };
     let groups = $derived.by((): Group[] => {
         if (!opened) return [];
-        const filter = (v: Option) => matchesSearch(query, v.name + " " + v.key);
+        const filter = (v: Option) => matchesSearch(query, v.name);
         const excluded = self ? editor.numberEdits.affected([self]) : undefined;
         const allowed = (key: string) => !excluded?.has(key);
         const leaves = [...slots.values()].filter(s => allowed(s.key) && (kind === "field" || !s.field || typeof editor.numberEdits.get(s.key) === "number"));
@@ -195,13 +195,10 @@
             result.push({ title: "场", items: fields.filter(filter) });
         }
         for (const [owner, title, icon] of [["geo", "地件", "terrain"], ["mark", "标记", "marks"]] as const) {
-            const items = new SvelteMap<string, Option>(), matched = new SvelteSet<string>();
-            for (const s of leaves) if (s.owner === owner) {
-                const item = { key: owner + ":" + s.id, name: s.name, icon, branch: true };
-                if (!items.has(s.id)) items.set(s.id, item);
-                if (filter(item) || matchesSearch(query, s.label)) matched.add(s.id);
-            }
-            result.push({ title, items: [...items].filter(([id]) => matched.has(id)).map(([, item]) => item) });
+            const items = new SvelteMap<string, Option>();
+            for (const s of leaves) if (s.owner === owner && !items.has(s.id))
+                items.set(s.id, { key: owner + ":" + s.id, name: s.name, icon, branch: true });
+            result.push({ title, items: [...items.values()].filter(filter) });
         }
         return result.filter(group => group.items.length);
     });
