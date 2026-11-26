@@ -127,7 +127,7 @@ export function checkCurveZoom(url: string) {
 
 export function checkSharedCurves(url: string) {
     return withCurveMap(url, "round37-shared", async page => {
-        const { click, evaluate, key, saved, authored, owner, frame, tap, drag, paint, text, undo } = page;
+        const { click, evaluate, key, saved, authored, owner, frame, tap, drag, paint, text, undo, wait } = page;
         const menu = ".reference-menu[aria-label=可用曲线]";
         const option = (id: string) => menu + " [data-option=" + JSON.stringify(id) + "]";
         const region = async (id: string) => {
@@ -149,7 +149,16 @@ export function checkSharedCurves(url: string) {
             return { values: Array.from(samples.values), defined: Array.from(samples.defined) };
         });
 
+        const nameIsSelected = (label: string) => wait(name => {
+            const input = document.activeElement;
+            return input instanceof HTMLInputElement && input.getAttribute("aria-label") === name &&
+                input.value.length > 0 && input.selectionStart === 0 && input.selectionEnd === input.value.length;
+        }, label);
         await click("[data-tab=inputs]");
+        await click("[data-add=input]"); await saved();
+        await nameIsSelected("自定义输入名称");
+        await click("[data-add=field]"); await saved();
+        await nameIsSelected("场名称");
         await click("[data-add=curve]");
         const ring: Point[] = [[-29, -18], [-12, -18], [-12, -4], [-29, -4]];
         for (const p of ring) await tap(p, 2);
@@ -158,7 +167,7 @@ export function checkSharedCurves(url: string) {
         const original = (await authored()).curves[id].curve;
         assert(original.closed && original.nodes.length === 4);
         assert.equal((await frame()).selection?.id, id);
-        assert(await evaluate(() => document.activeElement?.getAttribute("aria-label") === "曲线名称"));
+        await nameIsSelected("曲线名称");
         await cropped(page, "round37-curve-group", "#panel .part:has([data-add=curve])");
 
         await click("[data-tab=terrain]");

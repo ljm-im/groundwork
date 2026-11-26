@@ -835,8 +835,10 @@ export class Editor {
         return this.edit(d => ({ kind, id: kind === "input" ? addInput(d) : addField(d) }), () => this.focusNewDeclaration());
     }
     private focusNewDeclaration() {
+        const selection = this.selection, work = this.finishWork() ?? Promise.resolve();
         this.revealProperties?.();
-        void tick().then(() => {
+        void work.then(tick).then(() => {
+            if (this.busy || this.selection !== selection) return;
             const label = this.properties?.previousElementSibling?.querySelector("input");
             label?.focus({ preventScroll: true }); label?.select();
         });
