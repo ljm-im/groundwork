@@ -20,7 +20,7 @@ import { type SnapGuide } from "../core/edit/snapping.ts";
 import { relief } from "./relief.ts";
 import { fieldFill } from "./fieldFill.ts";
 
-import { regionMaskAt, type Region } from "../core/design/regions.ts";
+import { regionMaskAt, type Region, type RegionShape } from "../core/design/regions.ts";
 import { type Grid } from "../core/math/geometry.ts";
 
 type Context = CanvasRenderingContext2D;
@@ -36,6 +36,15 @@ function geoHit(id: string, control: GeoControl): MapHit {
 }
 const bodyControl = (point: Point): GeoControl => ({ role: "body", path: 0, index: 0, point });
 const outlineControl = (path: number, point: Point): GeoControl => ({ role: "outline", path, index: 0, point });
+
+function hitFaceOutlines(shape: RegionShape | undefined, point: Point) {
+    if (!shape) return;
+    if (!shape.containingOutlines) return shape.contains(point) ? [] : undefined;
+    const [left, bottom, right, top] = shape.box, [x, y] = point;
+    if (x < left || x > right || y < bottom || y > top) return;
+    const outlines = shape.containingOutlines(point);
+    if (outlines.length) return outlines;
+}
 
 export function nextMapHit(hits: Iterable<MapHit>, selection: Selection | null, geometry?: GeometryTarget, outline?: number) {
     let first: MapHit | undefined, found = false;
@@ -380,10 +389,11 @@ export class ProjectMap {
             const shape = terrain.regions.get(node.id)?.shape;
             if (!shape) continue;
             const enabled = !node.disabled || empty;
-            if (enabled && mode === "cycle" && active && view.outline !== undefined) {
-                const outlines = shape.containingOutlines?.(p) ?? [];
-                for (const index of outlines) yield geoHit(node.id, outlineControl(index, p));
-                if (outlines.length) continue;
+            const cycling = enabled && mode === "cycle" && active && view.outline !== undefined;
+            const cycleOutlines = cycling ? hitFaceOutlines(shape, p) : undefined;
+            if (cycleOutlines?.length) {
+                for (const index of cycleOutlines) yield geoHit(node.id, outlineControl(index, p));
+                continue;
             }
             if (active || empty || enabled && (view.layers.geoNodes || node.outline || node.fill)) {
                 const vertices = mode === "edit" || active, margin = (vertices ? 7 : 5) / scale;
@@ -396,8 +406,10 @@ export class ProjectMap {
                     }
                 }
             }
-            if (!enabled || !shape.contains(p)) continue;
-            const index = mode === "edit" || mode === "select" && active ? shape.containingOutlines?.(p)[0] : undefined;
+            if (!enabled) continue;
+            const outlines = cycling ? cycleOutlines : hitFaceOutlines(shape, p);
+            if (!outlines) continue;
+            const index = mode === "edit" || mode === "select" && active ? outlines[0] : undefined;
             yield geoHit(node.id, index === undefined ? bodyControl(p) : outlineControl(index, p));
         }
     }
@@ -448,16 +460,17 @@ export class ProjectMap {
                 if (segment) return geoHit(node.id, segment);
             }
             const shape = project.terrain.regions.get(node.id)?.shape;
-            if (shape?.contains(p)) {
+            const outlines = hitFaceOutlines(shape, p);
+            if (outlines) {
                 const i = view.outline;
-                return geoHit(node.id, i !== undefined && shape.containingOutlines?.(p).includes(i) ? outlineControl(i, p) : bodyControl(p));
+                return geoHit(node.id, i !== undefined && outlines.includes(i) ? outlineControl(i, p) : bodyControl(p));
             }
             if (hitPathSegment(node, p, this.scale, tolerance)) return geoHit(node.id, bodyControl(p));
         }
     }
     pickGeo(project: ProjectView, point: Point, after?: string, excluded: readonly string[] = []) {
         const empty = !hasSamples(project.terrain);
-        const hits = project.design.geoNodes.filter(n => (!n.disabled || empty) && project.terrain.regions.get(n.id)?.shape.contains(point)).reverse();
+        const hits = project.design.geoNodes.filter(n => (!n.disabled || empty) && hitFaceOutlines(project.terrain.regions.get(n.id)?.shape, point)).reverse();
         const start = after ? hits.findIndex(n => n.id === after) + 1 : 0;
         for (let i = 0; i < hits.length; i++) {
             const hit = hits[(start + i) % hits.length];

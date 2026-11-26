@@ -15,7 +15,7 @@ import { designProblemText } from "../src/app/state/designMessages.ts";
 import { Project } from "../src/core/project.ts";
 import { pixelGridSpacing } from "../src/core/edit/display.ts";
 import { constrainGeoLabel, constrainSectionLabel, geoLabelPoint } from "../src/render/labelLayout.ts";
-import { makeShape, rasterRegion } from "../src/core/design/regions.ts";
+import { makeShape, rasterRegion, regionMaskAt } from "../src/core/design/regions.ts";
 import { clampMarkPoint, nextMapHit, ProjectMap } from "../src/render/map.ts";
 import { testProjectModel, testTerrainClient } from "./computeFixture.ts";
 import { render } from "svelte/server";
@@ -82,6 +82,32 @@ test("An upper landform face covers lower outlines, vertices and parameter geome
     const atVertex = map.screen(coveredLandformPoints[2]);
     assert.equal(map.selectedControl(editor.mapView!, atVertex)?.selection.id, "A");
     assert.equal(map.selectedControl(editor.mapView!, atVertex)?.control?.role, "vertex");
+});
+
+test("Map face hits include holes while the terrain raster uses even-odd coverage", async () => {
+    const { Editor } = await import("../src/app/state/session.svelte.ts");
+    const design = syntheticDesign(), outline = rect(-20, -18, 20, 18), hole = rect(-8, -7, 8, 7).outlines[0];
+    for (const node of hole.curve.nodes) node.id = "hole-" + node.id;
+    outline.outlines.push(hole);
+    design.geoNodes[1].construction = outline;
+    const project = new Project(design), editor = new Editor(testTerrainClient());
+    const map: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), { width: 1000, height: 700, markBoxes: [] });
+    map.fit(project.terrain, false);
+    Object.assign(editor, { project: testProjectModel(project), map });
+    const point: Point = [0, 0], screen = map.screen(point), { grid, regions } = project.terrain;
+    const region = regions.get("T")!;
+    assert.equal(regionMaskAt(region, grid.index(...point)), 0);
+    assert.equal(regionMaskAt(region, grid.index(12, 0)), 1);
+    assert.equal(map.pickGeo(project.view(), point)?.id, "T");
+    const first = map.objectHits(editor.mapView!, screen).next().value!;
+    assert.deepEqual([first.selection.id, first.control?.role], ["T", "body"]);
+    editor.setSelection(first.selection);
+    const view = editor.mapView!;
+    assert.equal(map.selectedBody(view, screen)?.control?.role, "body");
+    const outlineHit = map.objectHits(view, screen, "edit").next().value?.control;
+    assert.deepEqual([outlineHit?.role, outlineHit?.path], ["outline", 1]);
+    const cycle = [...map.objectHits({ ...view, outline: 1 }, screen, "cycle")];
+    assert.deepEqual(cycle.map(hit => [hit.selection.id, hit.control?.path]), [["T", 1], ["T", 0], ["G", 0]]);
 });
 
 test("Map gestures use only related alignment points and Shift and Ctrl bypass nearby snaps", async () => {
