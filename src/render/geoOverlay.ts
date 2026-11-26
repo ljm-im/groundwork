@@ -81,7 +81,7 @@ function strokeEdges(map: ProjectMap, segments: Segment[], color: string, width:
 
 function selectedLine(view: MapView, id: string) {
     const { selection, geometry, vertex } = view;
-    if (selection?.kind === "geoNode" && selection.id === id && geometry?.kind === "curve" && geometry.index < 0 && !vertex)
+    if (!view.draft && selection?.kind === "geoNode" && selection.id === id && geometry?.kind === "curve" && geometry.index < 0 && !vertex)
         return geometry.index;
 }
 
@@ -95,11 +95,11 @@ export function drawParameterGeometry(map: ProjectMap, view: MapView, colors: Ma
     ctx.save();
     for (const owner of d.geoNodes) {
         const visible = showsParameterGeometry(view, owner), preview = view.dragNodes?.get(owner.id);
-        if ((!visible && (!preview || owner.disabled)) || view.draft && view.draft.owner !== owner.id) continue;
+        if (!visible && (!preview || owner.disabled)) continue;
         const drag = view.dragNode?.id === owner.id;
         const n = preview?.node ?? owner;
         const whole = selectedLine(view, n.id), focused = view.selection?.kind === "geoNode" && view.selection.id === n.id;
-        const part = focused ? view.vertex : undefined;
+        const part = !view.draft && focused ? view.vertex : undefined;
         const hover = !view.draft && !view.dragNode && view.hovered?.kind === "geoNode" && view.hovered.id === n.id ? view.hoverPart : undefined;
         const origin = !drag || view.dragCurve === undefined || view.dragCurve >= 0 || view.dragCommitting ? undefined : geometryPath(owner, view.dragCurve);
         if (origin) strokeEdges(map, flattenPath(origin, tolerance), colors.dragOrigin, overlay.parameterWidth, true);
@@ -112,7 +112,7 @@ export function drawParameterGeometry(map: ProjectMap, view: MapView, colors: Ma
         if (!visible) continue;
         for (const [i, point] of parameterPoints(n)) {
             if (hover?.role === "parameter" && hover.path === i) continue;
-            if (!focused || view.geometry?.kind !== "parameter" || view.geometry.index !== i)
+            if (view.draft || !focused || view.geometry?.kind !== "parameter" || view.geometry.index !== i)
                 drawHandle(ctx, colors, ...map.screen(point));
         }
         if (n.function.type === "coast" && owner.function.type === "coast" && owner.function.harbor.radius > 0) {
