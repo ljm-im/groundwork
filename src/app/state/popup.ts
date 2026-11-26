@@ -11,6 +11,10 @@ export function menuDirection(event: KeyboardEvent) {
     return !composingKey(event) && ["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key);
 }
 
+export function contextMenuPoint(event: MouseEvent) {
+    return { x: event.clientX, y: event.clientY, pointerOpened: event.button === 2 || event instanceof PointerEvent && !!event.pointerType };
+}
+
 export function popupBounds(box: AnchorBounds, top: number, bottom: number, desiredHeight: number, gap = 2) {
     const above = Math.max(0, box.top - top - gap - clearance), below = Math.max(0, bottom - box.bottom - gap - clearance);
     const upwards = desiredHeight > below && above > below;

@@ -250,6 +250,8 @@ export async function checkAppearance(url: string) {
         await expectTheme("dark");
 
         await openMenu();
+        assert(await evaluate(() => document.activeElement?.matches(".appearance-menu")));
+        await key("ArrowDown");
         assert.equal(await focused(), "dark");
         await key("ArrowDown");
         assert.equal(await focused(), "system");

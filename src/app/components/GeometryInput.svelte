@@ -8,10 +8,12 @@
         </button>
         {#if reference}
             <button class="icon-button geometry-reference" data-tip="引用曲线" aria-label={"为“" + (reference.name ?? label) + "”引用曲线"}
-                aria-expanded={opened} bind:this={toggle} onclick={() => opened = !opened}><Icon name="collapse" /></button>
+                aria-expanded={opened} bind:this={toggle} onclick={e => {
+                    pointerOpened = e.detail > 0; opened = !opened;
+                }}><Icon name="collapse" /></button>
             {#if opened}
                 <Menu label="引用曲线" variant="reference-menu" kind="listbox" anchor={box} groups={choices} empty="没有可用的曲线"
-                    close={focus => close(focus)} choose={choose} />
+                    {pointerOpened} close={focus => close(focus)} choose={choose} />
             {/if}
         {/if}
         {#if redraw}
@@ -41,7 +43,7 @@
         reference?: { editor: session.Editor; slot: CurveSlot; name?: string };
         redraw?: () => void; redrawing?: boolean; onmouseenter?: () => void; onmouseleave?: () => void;
     } = $props();
-    let opened = $state(false);
+    let opened = $state(false), pointerOpened = $state(false);
     let box = $state<HTMLElement>(null!), toggle = $state<HTMLButtonElement>(null!);
     let selected = $derived.by(() => {
         const holder = reference?.slot.holder;

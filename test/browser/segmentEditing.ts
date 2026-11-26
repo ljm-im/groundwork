@@ -181,6 +181,8 @@ export async function checkSegmentEditing(url: string) {
                 box.left >= 16 && box.right <= innerWidth - 16 && box.top >= 16 && box.bottom <= innerHeight - 16;
         }));
         await screenshot("context-menu-columns");
+        assert(await evaluate(() => document.activeElement?.matches(".context-menu")));
+        await key("ArrowDown");
         assert.deepEqual(await active(), ["line", 0]);
         await key("ArrowDown");
         assert.deepEqual(await active(), ["curve", 0]);
@@ -200,10 +202,16 @@ export async function checkSegmentEditing(url: string) {
         assert.deepEqual(await active(), ["line", 0]);
         await key("Escape");
 
+        await evaluate(() => document.querySelector<HTMLCanvasElement>("#map")!.focus());
+        await key("s");
         await tap(outline.nodes[0].p, 0, "right");
         assert.deepEqual((await menuGroups()).map(column => column.map(group => group[0])), [["节点类型", "节点", "闭合曲线"],
             ["轮廓 1", "区域", "地件"]]);
         assert.equal((await frame()).vertex?.role, "vertex");
+        assert(await evaluate(() => document.activeElement?.matches(".context-menu") && !document.querySelector(".context-menu button:focus-visible")));
+        await key("ArrowDown");
+        assert.deepEqual(await active(), ["corner", 0]);
+        assert(await evaluate(() => document.activeElement?.matches(".context-menu button:focus-visible")));
         await key("Escape");
         await tap(inside, 0, "right");
         assert.deepEqual(await menuGroups(), [regionGroups]);
@@ -249,6 +257,8 @@ export async function checkSegmentEditing(url: string) {
         await pointer("mouseReleased", list, 0, "right");
         await wait(() => document.querySelector(".context-menu:popover-open"));
         assert.deepEqual(await menuGroups(), [[["地件", "在视野中显示", "复制地件", "禁用地件", "删除地件"]]]);
+        await key("ArrowUp");
+        assert.deepEqual(await active(), ["delete", 0]);
         await key("Escape");
 
         await cdp("Emulation.setDeviceMetricsOverride", { width: 284, height: 425, deviceScaleFactor: 1, mobile: false });

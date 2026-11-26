@@ -15,8 +15,10 @@
             composing = false; onInput(); syncEdit(value);
         }} onkeydown={key} onbeforeinput={beforeInput} onpointerdown={e => {
             if (e.button === 0) editorPress = [e.clientX, e.clientY];
-        }} onclick={placeCaret} onblur={() => {
-            if (editing) finish(true);
+        }} onclick={placeCaret} onfocus={() => {
+            if (menuSelection) closeMenu();
+        }} onblur={e => {
+            if (editing && (!menuSelection || !inReferenceMenu(e.relatedTarget))) finish(true);
         }} onpaste={e => {
             e.preventDefault();
             insertText((e.clipboardData?.getData("text/plain") ?? "").replace(/\r\n|[\r\n\u2028\u2029]/g, " "));
@@ -24,9 +26,7 @@
 {/snippet}
 {#snippet variableMenuButton()}
     {#if kind !== "literal"}<button class="reference-toggle" data-tip="插入变量" aria-label={"为" + actionLabel + "插入变量"} aria-expanded={opened}
-        onpointerdown={e => e.preventDefault()} onclick={() => {
-            if (opened) closeMenu(); else showMenu();
-        }}><Icon name="collapse" /></button>{/if}
+        onpointerdown={e => e.preventDefault()} onclick={toggleMenu}><Icon name="collapse" /></button>{/if}
 {/snippet}
 {#snippet control()}
     <div class="number-box input-box" class:danger={!!error} class:invalid={!!error} class:warning={outside} bind:this={box}>
@@ -49,7 +49,7 @@
 {:else if kind !== "literal"}<span class="menu-spacer"></span>{/if}
     </div>
 {/snippet}
-<div class="number-row" data-parameter={address?.join(".")} {...attributes}>
+<div class="number-row" data-parameter={address?.join(".")} {...attributes} bind:this={row} onfocusout={leaveReferenceMenu}>
     {#if compact}
         {@render control()}
         {#if !expanded && error}<div class="number-error danger" role="alert">{error}</div>{/if}
@@ -69,11 +69,8 @@
             <Menu label="可用变量" variant="reference-menu" kind="listbox"
                 groups={groups.map(group => ({ title: group.title, items: group.items.map(item => ({
                     ...item, id: item.key, selected: draft.trim() === "{" + item.key + "}"
-                })) }))} anchor={expandedBox ?? box} viewport={expanded} keyboardTarget={input} searching={!!query}
-                back={parent ? () => parent = "" : undefined} close={(_focus, event) => {
-                    if (event?.key === "Escape") finish(false);
-                    else closeMenu();
-                }}
+                })) }))} anchor={expandedBox ?? box} viewport={expanded} keyboardTarget={input} pointerOpened={!!menuSelection} searching={!!query}
+                back={parent ? () => parent = "" : undefined} close={dismissMenu}
                 choose={id => choose(options.find(item => item.key === id)!)} />
         {/key}
     {/if}
@@ -148,6 +145,7 @@
     } & ({ address: Address; setting?: never } | { address?: never; setting: { value: number; change: (n: number) => void; validate: (n: number) => void; retainDraft?: boolean } }) = $props();
     let actionLabel = $derived(namedInput ? "“" + label + "”" : label);
     let face = $state<HTMLButtonElement>(), expandedBox = $state<HTMLElement>();
+    let row: HTMLElement;
     let box = $state<HTMLElement>(null!), input = $state<HTMLElement>(null!), mirror = $state<HTMLElement>(null!);
     let base = $derived(editor.project.design), authored = $derived(address ? readAt(base, address) as Expression | undefined : undefined);
     let resolvedValue = $derived.by(() => {
@@ -158,6 +156,7 @@
     let value = $derived(setting?.value ?? authored ?? resolvedValue ??
         (self ? editor.numberEdits.get(self) as number : fallback));
     let editing = $state(false), expanded = $state(false), draft = $state(""), error = $state(""), opened = $state(false), parent = $state(""), query = $state("");
+    let menuSelection = $state.raw<[number, number]>();
     let queryStart = 0, queryEnd = 0, composing = false, editedValue: Expression;
     let editorPress: [number, number] | undefined;
     let slots = $derived(editor.numberEdits.slots);
@@ -231,7 +230,18 @@
         }
     }
     function closeMenu() {
-        opened = false; parent = query = ""; queryStart = queryEnd = 0;
+        opened = false; menuSelection = undefined; parent = query = ""; queryStart = queryEnd = 0;
+    }
+    function inReferenceMenu(target: EventTarget | null) {
+        return target instanceof Element && target.closest(".reference-menu")?.parentElement === row;
+    }
+    function leaveReferenceMenu(e: FocusEvent) {
+        if (menuSelection && inReferenceMenu(e.target) && e.relatedTarget instanceof Node && !row.contains(e.relatedTarget)) finish(true);
+    }
+    function dismissMenu(_focus?: boolean, event?: KeyboardEvent) {
+        if (event?.key === "Escape") finish(false);
+        else if (menuSelection) finish(true);
+        else closeMenu();
     }
     async function paint(at: number, end = at) {
         const paintId = ++version;
@@ -271,8 +281,17 @@
         closeMenu();
         editorSelection(input, at);
     }
-    async function showMenu() {
-        await startEdit(); closeMenu(); opened = true;
+    async function toggleMenu(e: MouseEvent) {
+        if (opened) {
+            const selection = menuSelection;
+            closeMenu();
+            if (selection) await paint(...selection);
+            return;
+        }
+        const pointerOpened = e.detail > 0;
+        await startEdit(); closeMenu();
+        if (pointerOpened) menuSelection = selectionOffsets(input);
+        opened = true;
     }
     function finish(save: boolean) {
         if (!editing) return;
@@ -291,7 +310,7 @@
         if (setting && typeof committed === "number" && committed !== value) setting.change(committed);
     }
     function insertText(text: string, replaceLiteral = false) {
-        const [start, end] = selectionOffsets(input);
+        const [start, end] = menuSelection ?? selectionOffsets(input);
         const filtering = opened && queryEnd > queryStart;
         const fromQuery = filtering ? queryStart : start, toQuery = filtering ? queryEnd : end;
         const withoutQuery = filtering ? draft.slice(0, fromQuery) + draft.slice(toQuery) : draft;

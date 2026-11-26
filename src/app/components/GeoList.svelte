@@ -15,7 +15,7 @@
                 rowAttributes={{ "data-stack-row": row.key }} attributes={{ "data-geo-node": n.id }}
                 muted={!!n.disabled} outside={!!anchor && stack.indexOf(n) < hiddenCount} referenced={editor.hoverRefs.includes(n.id)}
                 selected={editor.selection?.kind === "geoNode" && editor.selection.id === n.id}
-                select={() => editor.focus("geoNode", n.id)} onmenu={(x, y) => editor.openMenu({ kind: "geoNode", id: n.id }, x, y)}
+                select={() => editor.focus("geoNode", n.id)} onmenu={event => editor.openMenu({ kind: "geoNode", id: n.id }, event)}
                 ondragstart={e => start(e, n.id)} ondragend={clear}
                 onmouseenter={() => {
                     if (dragged !== undefined || editor.tool !== "select" || editor.gesture) return;

@@ -30,6 +30,7 @@ import { designErrorText } from "./designMessages.ts";
 import { DesignError, quotedLocation } from "../../core/design/problems.ts";
 import { drawingStatus } from "./mapText.ts";
 import { numberPreviewFactor } from "./numbers.ts";
+import { contextMenuPoint } from "./popup.ts";
 import { penNodeGroup, readPenNodes, savePenNodes, type PenNodeMode } from "./penNodes.ts";
 import { objectIssues } from "../../core/checks/issues.ts";
 import { propertyTabs, tabForSelection, type PropertyTab, type SubitemGroup } from "./inspector.ts";
@@ -99,7 +100,7 @@ export class Editor {
     dragSection = $state.raw<{ id: string; points: Section["points"] }>();
     private issueStart = $state<number>();
     viewport = $state<string | null>(null);
-    menu = $state.raw<{ x: number; y: number; map?: boolean; control?: GeoControl; issue?: Issue } | null>(null);
+    menu = $state.raw<(ReturnType<typeof contextMenuPoint> & { map?: boolean; control?: GeoControl; issue?: Issue }) | null>(null);
     private pointerPosition = $state.raw<Point>();
     cursor = $derived.by(() => {
         const point = this.pointerPosition, project = this.mapProject;
@@ -847,13 +848,13 @@ export class Editor {
             label?.focus({ preventScroll: true }); label?.select();
         });
     }
-    openMenu(h: Selection, x: number, y: number, map = false, hit?: GeoControl) {
+    openMenu(h: Selection, event: MouseEvent, map = false, hit?: GeoControl) {
         this.select(h);
         if (hit) this.selectControl(hit);
-        this.menu = { x, y, map, control: hit };
+        this.menu = { ...contextMenuPoint(event), map, control: hit };
     }
-    openIssueMenu(issue: Issue, x: number, y: number) {
-        this.menu = { x, y, issue };
+    openIssueMenu(issue: Issue, event: MouseEvent) {
+        this.menu = { ...contextMenuPoint(event), issue };
     }
     private selectPart(selection: Selection, part: GeometrySelection) {
         const control = this.resolvePart(selection, part);

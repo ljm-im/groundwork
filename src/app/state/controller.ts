@@ -127,7 +127,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         if (!editor.project || !editor.mapCurrent || editor.busy || editor.geoDraft) return;
         editor.menu = null;
         const hit = pick(localPoint(ev), "menu");
-        if (hit && !("issues" in hit)) editor.openMenu(hit.selection, ev.clientX, ev.clientY, true, hit.control);
+        if (hit && !("issues" in hit)) editor.openMenu(hit.selection, ev, true, hit.control);
     }, { signal });
     function beginPointer(ev: PointerEvent) {
         const screen = localPoint(ev), p = map.world(...screen);

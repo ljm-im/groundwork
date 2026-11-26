@@ -162,11 +162,40 @@ export function checkParameterSources(url: string) {
     d.marks.push({ id: "M", kind: "text", label: "测点", point: [0, 0], elevation: 13, follow: "map" },
         { id: "R", kind: "scale", label: "地图比例尺", point: [22, 23], length: 10, follow: "map" });
     return withCurveMap(url, "round39-parameter-sources", async page => {
-        const { authored, click, evaluate, key, saved, wait } = page;
+        const { authored, cdp, click, evaluate, key, saved, undo, wait } = page;
         const option = (id: string) => "[aria-label=可用变量] button[data-option=" + JSON.stringify(id) + "]";
         const toggle = (name: string) => "[aria-label=" + JSON.stringify("为" + name + "插入变量") + "]";
         await click("[data-geo-node=T]");
         await click("[data-property-tab=function]");
+        const amount = ".numeric-edit[aria-label=增量]", variableMenu = ".reference-menu[aria-label=可用变量]";
+        await click(".numeric-face[aria-label=增量]");
+        await wait(s => document.activeElement?.matches(s), amount);
+        await evaluate(() => {
+            const input = document.activeElement!, chip = input.querySelector(".ref-chip")!;
+            const index = [...input.childNodes].indexOf(chip);
+            document.getSelection()!.setBaseAndExtent(input, index, input, index + 1);
+        });
+        await click(toggle("增量"));
+        await wait(s => document.activeElement?.matches(s), variableMenu);
+        assert(await evaluate(s => !document.querySelector(s + " button:focus-visible"), variableMenu));
+        await key("ArrowDown");
+        assert(await evaluate(s => document.activeElement?.matches(s + ":focus-visible"), option("input:seed")));
+        await key("Enter");
+        await wait(s => document.activeElement?.matches(s), amount);
+        await key("Enter"); await saved();
+        const changed = (await authored()).geoNodes[1].function;
+        assert(changed.type === "flat");
+        assert.equal(changed.amount, "{input:seed} - 4");
+        await undo();
+
+        await click(".numeric-face[aria-label=增量]");
+        await wait(s => document.activeElement?.matches(s), amount);
+        await evaluate(() => document.getSelection()!.selectAllChildren(document.activeElement!));
+        await cdp("Input.insertText", { text: "种" });
+        await wait(s => !!document.querySelector(s + "[aria-selected=true]"), option("input:seed"));
+        assert(await evaluate(s => document.activeElement?.matches(s), amount));
+        await key("Escape");
+
         await click(toggle("羽化宽度"));
         await click(option("geo:F"));
         assert.equal(await evaluate(s => !!document.querySelector(s), option("geo:F.amount")), false);

@@ -1,13 +1,15 @@
 <FieldRow {label}>
     <button class="input-box choice-face" aria-label={label} aria-expanded={open} aria-haspopup="listbox" {...attributes}
-        bind:this={anchor} onclick={() => open = !open} onkeydown={key}>
+        bind:this={anchor} onclick={e => {
+            pointerOpened = e.detail > 0; openingKey = undefined; open = !open;
+        }} onkeydown={key}>
         {#if icon}<Icon name={icon} builtin={selected?.builtin} />{/if}
         <span>{selected?.name ?? value}</span>
         <Icon name="collapse" />
     </button>
 </FieldRow>
 {#if open}
-    <Menu {label} kind="listbox" variant="choices" {anchor} {openingKey} {close}
+    <Menu {label} kind="listbox" variant="choices" {anchor} {openingKey} {pointerOpened} {close}
         groups={[{ title: group, items: options.map(item => ({ ...item, icon, selected: item.id === value })) }]}
         choose={id => {
             close(true); if (id !== value) choose(id);
@@ -30,6 +32,7 @@
         choose: (v: string) => void; attributes?: Record<string, string>;
     } = $props();
     let anchor = $state<HTMLButtonElement>(null!), open = $state(false), openingKey = $state<string>();
+    let pointerOpened = $state(false);
 
     let selected = $derived(options.find(item => item.id === value));
 
@@ -40,7 +43,7 @@
     function key(e: KeyboardEvent) {
         if (!open && menuDirection(e)) {
             e.preventDefault();
-            openingKey = e.key; open = true;
+            pointerOpened = false; openingKey = e.key; open = true;
         }
     }
 </script>

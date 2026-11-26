@@ -88,6 +88,14 @@ export async function checkNumericEditing(url: string) {
         await cdp("Input.insertText", { text: " + 7" });
         await key("Escape");
         await confirmFormula(formula);
+        await editLong();
+        await click(".expanded-edit .reference-toggle");
+        await wait(() => document.activeElement?.matches(".reference-menu[aria-label=可用变量]"));
+        await click(".expanded-edit .reference-toggle");
+        await wait(() => document.activeElement?.matches(".expanded-edit .numeric-edit"));
+        assert(await evaluate(() => !document.querySelector(".reference-menu")));
+        await key("Escape");
+        await confirmFormula(formula);
 
         await tap(await at([70, 0]));
         assert.equal(await text("#properties .property-title h2"), "项目");

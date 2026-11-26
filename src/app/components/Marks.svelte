@@ -23,7 +23,7 @@
     {#each filtered as item (item.kind + ":" + item.id)}
         <ListRow name={item.label} icon={item.icon} attributes={item.kind === "mark" ? { "data-mark": item.id } : { "data-section": item.id }}
             selected={editor.selection?.kind === item.kind && editor.selection.id === item.id}
-            select={() => editor.focus(item.kind, item.id)} onmenu={(x, y) => editor.openMenu({ kind: item.kind, id: item.id }, x, y)}
+            select={() => editor.focus(item.kind, item.id)} onmenu={event => editor.openMenu({ kind: item.kind, id: item.id }, event)}
             onmouseenter={() => editor.hoverSelection({ kind: item.kind, id: item.id })} onmouseleave={() => editor.hoverSelection()}>
             {#snippet detail()}<small class="list-detail">{item.detail}</small>{/snippet}
         </ListRow>

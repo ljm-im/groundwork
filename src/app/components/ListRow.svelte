@@ -66,12 +66,12 @@
         icon: IconName; name: string; builtin?: boolean; selected?: boolean; muted?: boolean; outside?: boolean; referenced?: boolean;
         insertion?: "before" | "after"; attributes?: Record<string, string | number>; rowAttributes?: Record<string, string>;
         severity?: "error" | "warning"; description?: string; problem?: string; detail?: Snippet; actions?: Snippet; actionsWidth?: string;
-        select?: () => void; onmenu?: (x: number, y: number) => void; ondragstart?: (event: DragEvent) => void; ondragend?: () => void;
+        select?: () => void; onmenu?: (event: MouseEvent) => void; ondragstart?: (event: DragEvent) => void; ondragend?: () => void;
         onmouseenter?: () => void; onmouseleave?: () => void;
     } = $props();
     function menu(event: MouseEvent) {
         if (!onmenu) return;
         event.preventDefault();
-        onmenu(event.clientX, event.clientY);
+        onmenu(event);
     }
 </script>

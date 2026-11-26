@@ -9,8 +9,8 @@
     <div class="header-actions">
         <button class="icon-button" id="appearance" aria-label="外观" data-tip="外观" aria-haspopup="menu"
             aria-pressed={open} aria-expanded={open} bind:this={anchor}
-            onclick={() => {
-                openingKey = undefined; open = !open;
+            onclick={e => {
+                pointerOpened = e.detail > 0; openingKey = undefined; open = !open;
             }} onkeydown={openWithKey}>
             <Icon name={current.icon} />
         </button>
@@ -25,7 +25,7 @@
     </div>
 </header>
 {#if open}
-    <Menu label="外观" variant="appearance-menu" {anchor} {openingKey} {close}
+    <Menu label="外观" variant="appearance-menu" {anchor} {openingKey} {pointerOpened} {close}
         groups={[{ items: appearances.map(item => ({ ...item, selected: item === current })) }]} choose={choose} />
 {/if}
 
@@ -68,6 +68,7 @@
     ];
     let current = $derived(appearances.find(item => item.id === appearance)!);
     let anchor = $state<HTMLButtonElement>(null!), open = $state(false), openingKey = $state<string>();
+    let pointerOpened = $state(false);
 
     function close(focus = false, event?: KeyboardEvent) {
         event?.stopPropagation();
@@ -77,7 +78,7 @@
     function openWithKey(e: KeyboardEvent) {
         if (!open && menuDirection(e)) {
             e.preventDefault();
-            openingKey = e.key; open = true;
+            pointerOpened = false; openingKey = e.key; open = true;
         }
     }
     function choose(id: string) {

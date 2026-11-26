@@ -6,7 +6,7 @@
         {#each inputs as [id, v] (id)}
             {@const builtin = isBuiltin("input", id)}
             <ListRow icon="inputs" name={v.label ?? id} {builtin} actionsWidth="55%" attributes={{ "data-select-input": id }} selected={h?.kind === "input" && h.id === id}
-                select={() => editor.focus("input", id)} onmenu={builtin ? undefined : (x, y) => editor.openMenu({ kind: "input", id }, x, y)}>
+                select={() => editor.focus("input", id)} onmenu={builtin ? undefined : event => editor.openMenu({ kind: "input", id }, event)}>
                 {#snippet actions()}
                     <div data-input={id}><NumberInput {editor} label={v.label ?? id} address={["inputs", id, "value"]} self={"input:" + id}
                         range={v.range} step={v.range[2]} compact namedInput /></div>
@@ -21,7 +21,7 @@
         {#each fields as [id, field] (id)}
             {@const builtin = isBuiltin("field", id)}
             <ListRow icon="field" name={field.label} {builtin} attributes={{ "data-select-field": id }} selected={h?.kind === "field" && h.id === id}
-                select={() => editor.focus("field", id)} onmenu={builtin ? undefined : (x, y) => editor.openMenu({ kind: "field", id }, x, y)} />
+                select={() => editor.focus("field", id)} onmenu={builtin ? undefined : event => editor.openMenu({ kind: "field", id }, event)} />
         {:else}<EmptyState search />{/each}
     </Part>
     <Part title="曲线">
@@ -32,7 +32,7 @@
             {@const target = { kind: "curve" as const, id }}
             <ListRow icon={item.curve.closed ? "closedPath" : "curve"} name={item.label} attributes={{ "data-select-curve": id }}
                 selected={h?.kind === "curve" && h.id === id} select={() => editor.focus("curve", id)}
-                onmenu={(x, y) => editor.openMenu(target, x, y)} onmouseenter={() => editor.hoverSelection(target)} onmouseleave={() => editor.hoverSelection()} />
+                onmenu={event => editor.openMenu(target, event)} onmouseenter={() => editor.hoverSelection(target)} onmouseleave={() => editor.hoverSelection()} />
         {:else}<EmptyState search={!!editor.variableFilter.trim()} text="没有曲线" />{/each}
     </Part>
 {:else if h?.kind === "curve" && d.curves[h.id]}

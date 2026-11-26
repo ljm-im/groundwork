@@ -1,7 +1,7 @@
 {#if menu && columns.length}
     {#key menu}
         <Menu label="编辑菜单" variant="context-menu" point={menu} surface={menu.map ? editor.map.canvas : undefined} {columns}
-            close={() => editor.menu = null} choose={choose} />
+            pointerOpened={menu.pointerOpened} close={() => editor.menu = null} choose={choose} />
     {/key}
 {/if}
 

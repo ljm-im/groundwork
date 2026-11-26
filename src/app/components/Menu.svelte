@@ -17,10 +17,10 @@
                         {#if group.title}<div class="group-name" aria-hidden="true">{group.title}</div>{/if}
                         {#each group.items as item (item.id)}
                             <button role={kind === "listbox" ? "option" : item.selected === undefined ? "menuitem" : "menuitemradio"}
-                                aria-selected={kind === "listbox" ? keyboardTarget ? current === item.id : !!item.selected : undefined}
+                                aria-selected={kind === "listbox" ? inputNavigation ? current === item.id : !!item.selected : undefined}
                                 aria-checked={kind === "menu" ? item.selected : undefined}
                                 class:danger={item.danger} disabled={item.disabled} data-option={item.id} onmouseenter={() => {
-                                    if (keyboardTarget) active = item.id;
+                                    if (inputNavigation) active = item.id;
                                 }} onclick={() => choose(item.id)}>
                                 {#if item.icon}<Icon name={item.icon} builtin={item.builtin} />{/if}
                                 {item.name}
@@ -62,13 +62,15 @@
     import EmptyState from "./EmptyState.svelte";
 
     let { label, groups = [], columns, choose, close, variant, kind = "menu", anchor, point, surface, viewport = false, keyboardTarget,
-        back, searching = false, openingKey, empty = "没有可用的变量" }: {
+        back, searching = false, openingKey, pointerOpened = false, empty = "没有可用的变量" }: {
         label: string; groups?: MenuGroup[]; columns?: MenuGroup[][]; choose: (id: string) => void; close: (focus?: boolean, event?: KeyboardEvent) => void;
         variant: string; kind?: "menu" | "listbox"; anchor?: HTMLElement; point?: { x: number; y: number }; surface?: HTMLElement;
-        viewport?: boolean; keyboardTarget?: HTMLElement; back?: () => void; searching?: boolean; openingKey?: string; empty?: string;
+        viewport?: boolean; keyboardTarget?: HTMLElement; back?: () => void; searching?: boolean; openingKey?: string;
+        pointerOpened?: boolean; empty?: string;
     } = $props();
     let menu: HTMLElement;
     let placement = $derived(point ? { point, close, surface } : { anchor: anchor!, close, viewport });
+    let inputNavigation = $derived(!!keyboardTarget && !pointerOpened);
     let menuColumns = $derived(columns ?? [groups]);
     let items = $derived(menuColumns.flat().flatMap(group => group.items).filter(item => !item.disabled));
     const backId = "";
@@ -79,12 +81,16 @@
         return [...menu.querySelectorAll<HTMLButtonElement>("button:enabled")];
     }
     function itemButton(id: string | undefined) {
+        if (id === undefined) return;
         return buttons().find(button => id === backId ? button.classList.contains("ref-back") : button.dataset.option === id);
     }
     onMount(() => {
-        if (keyboardTarget) return;
+        if (inputNavigation) return;
         void tick().then(() => {
             if (!menu?.isConnected) return;
+            if (pointerOpened) {
+                menu.focus({ preventScroll: true }); return;
+            }
             const targets = buttons(), selected = itemButton(current);
             (openingKey === "Home" ? targets[0] : openingKey === "End" ? targets.at(-1) : selected)?.focus({ preventScroll: true });
         });
@@ -96,15 +102,17 @@
         }
         if (e.target !== anchor && e.target !== keyboardTarget && !(e.target instanceof Node && menu?.contains(e.target))) return;
         const targets = buttons();
-        if (keyboardTarget && e.key === "Enter") {
+        if (inputNavigation && e.key === "Enter") {
             e.preventDefault(); e.stopPropagation(); itemButton(current)?.click(); return;
         }
         const horizontal = menuColumns.length === 2 && (e.key === "ArrowLeft" || e.key === "ArrowRight");
         if ((!horizontal && !menuDirection(e)) || !targets.length) return;
         e.preventDefault(); e.stopPropagation();
-        const focused = (keyboardTarget ? itemButton(current) : document.activeElement) as HTMLButtonElement | undefined;
+        const focused = inputNavigation ? itemButton(current) : targets.find(button => button === document.activeElement);
         let button: HTMLButtonElement | undefined;
-        if (menuColumns.length === 2) {
+        if (pointerOpened && !focused && (e.key === "ArrowDown" || e.key === "ArrowUp"))
+            button = itemButton(items.find(item => item.selected)?.id) ?? (e.key === "ArrowDown" ? targets[0] : targets.at(-1));
+        else if (menuColumns.length === 2) {
             const columns = [...menu.querySelectorAll(".menu-column")];
             const column = focused?.closest(".menu-column") ?? columns[0], index = columns.indexOf(column);
             if (horizontal) {
@@ -124,13 +132,16 @@
         }
         else button = moveInColumn(targets, focused, e.key);
         if (!button) return;
-        if (keyboardTarget) {
+        if (inputNavigation) {
             active = button.dataset.option ?? backId;
             button.scrollIntoView({ block: "nearest" });
         }
         else {
             button.focus({ preventScroll: true });
-            if (point) button.scrollIntoView({ block: "nearest" });
+            if (point || pointerOpened) {
+                const viewport = menu.getBoundingClientRect(), item = button.getBoundingClientRect();
+                menu.scrollTop += Math.min(0, item.top - viewport.top) + Math.max(0, item.bottom - viewport.bottom);
+            }
         }
     }
     function columnY(button: HTMLButtonElement, column: Element) {

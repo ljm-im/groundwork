@@ -298,6 +298,8 @@ async function checkEditor(url: string) {
         await wait(() => !!document.querySelector(".numeric-edit") && !!document.querySelector(".reference-menu [data-option]"));
         for (const [id, builtin] of [["input:seed", true], ["input:A", false], ["field:height", true], ["field:F", false]] as const)
             assert.equal(await hasBuiltinMark(`.reference-menu [data-option="${id}"]`), builtin, id);
+        await click("button[aria-label=为增量插入变量]");
+        await wait(() => document.activeElement?.matches(".numeric-edit"));
         await evaluate(() => document.getSelection()!.selectAllChildren(document.querySelector(".numeric-edit")!));
         await key("Backspace");
         await wait(() => document.querySelector(".numeric-edit")?.textContent === "");

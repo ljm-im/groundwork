@@ -1,10 +1,10 @@
 <button class="icon-button" data-tip={label} aria-label={label} aria-pressed={active || open}
     aria-haspopup={options ? "menu" : undefined} aria-expanded={options ? open : undefined}
-    {...attributes} bind:this={anchor} onclick={() => options ? open = !open : action?.()} onkeydown={key}>
+    {...attributes} bind:this={anchor} onclick={activate} onkeydown={key}>
     <Icon name="plus" />
 </button>
 {#if open && options}
-    <Menu {label} groups={[{ items: options }]} {anchor} viewport variant="creation-menu" {openingKey} {close}
+    <Menu {label} groups={[{ items: options }]} {anchor} viewport variant="creation-menu" {openingKey} {pointerOpened} {close}
         choose={id => {
             close(); choose?.(id);
         }} />
@@ -19,6 +19,13 @@
         action?: () => void; active?: boolean; attributes?: Record<string, string>;
     } = $props();
     let anchor = $state<HTMLButtonElement>(null!), open = $state(false), openingKey = $state<string>();
+    let pointerOpened = $state(false);
+    function activate(e: MouseEvent) {
+        if (!options) {
+            action?.(); return;
+        }
+        pointerOpened = e.detail > 0; openingKey = undefined; open = !open;
+    }
     function close(focus = false) {
         open = false; openingKey = undefined;
         if (focus) anchor.focus({ preventScroll: true });
@@ -26,7 +33,7 @@
     function key(e: KeyboardEvent) {
         if (!open && options && menuDirection(e)) {
             e.preventDefault();
-            openingKey = e.key; open = true;
+            pointerOpened = false; openingKey = e.key; open = true;
         }
     }
 </script>
