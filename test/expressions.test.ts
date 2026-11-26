@@ -2,12 +2,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { evaluate, fieldValue, sampleValue } from "../src/core/design/expression.ts";
 import { canReference, expressionGraph, referenceSlots, resolveDesign, slotName, type Owner } from "../src/core/design/parameters.ts";
-import { problemText } from "../src/core/design/problems.ts";
+import { DesignError, problemText } from "../src/core/design/problems.ts";
 import { parseDesign, serializeDesign } from "../src/core/design/model.ts";
 import { newDesign } from "../src/core/design/newDesign.ts";
 import { type Design, type Expression } from "../src/core/design/v5.ts";
-import { deleteGeo } from "../src/core/edit/geoNodes.ts";
+import { deleteGeo, removalUses } from "../src/core/edit/geoNodes.ts";
 import { defaultInputRange } from "../src/core/design/defaults.ts";
+import { numberEdits } from "../src/core/design/numberEdit.ts";
 import { TerrainCache } from "../src/core/terrain/cache.ts";
 import { generateTerrain } from "../src/core/terrain/terrain.ts";
 import { literalCurve, layer, rect, syntheticDesign, openCurve } from "./scenarios.ts";
@@ -83,6 +84,55 @@ test("Format and type errors identify the authored slot and cycles name every pa
     assert.deepEqual(referenceUses(d, "geo", "T"), []);
     assert(referenceUses(d, "geo", "T.B").some(v => v.includes("inputs.c.value")));
 });
+test("Field parameters can feed numeric slots until their transitive value contains a field", () => {
+    const d = syntheticDesign(), source = d.geoNodes[1];
+    source.function = { type: "flat", amount: 4 };
+    d.geoNodes.push(
+        layer("A", rect(0, 0, 10, 10), { type: "flat", amount: "{geo:T.amount} * 2 + 1" }),
+        layer("B", rect(3, 2, 8, 9), { type: "flat", amount: 2, feather: "{geo:A.amount}" })
+    );
+    const before = resolveDesign(d);
+    assert.equal(expressionGraph(d).get("geo:B.feather"), 9);
+    const changed = ["geoNodes", 1, "function", "amount"];
+    const badReader = (error: unknown) => {
+        assert(error instanceof DesignError);
+        assert.deepEqual(error.problems, [{
+            location: { kind: "geo", id: "B", index: 3, path: ["function", "feather"] },
+            message: "“A.增量”现在是场，不能填进数类型参数"
+        }]);
+        return true;
+    };
+    const field = "{field:height} * 0.5";
+    assert.throws(() => numberEdits(d, before).validate(changed, field), badReader);
+    source.function.amount = field;
+    assert.throws(() => resolveDesign(d), badReader);
+
+    d.geoNodes.pop();
+    const fn = resolveDesign(parseDesign(serializeDesign(d))).geoNodes[2].function;
+    assert(fn.type === "flat" && typeof fn.amount === "string");
+    const reading = evaluate(fn.amount, ref => {
+        assert.equal(ref, "field:height");
+        return fieldValue("height");
+    });
+    assert.equal(sampleValue(reading, () => 7), 8);
+    d.geoNodes[2].function = { type: "flat", amount: "{geo:T.amount} * {field:height}" };
+    assert.throws(() => resolveDesign(d), /场不能与场相乘/);
+});
+
+test("Text and scale mark parameters are references in both directions of the numeric graph", () => {
+    const d: Design = syntheticDesign();
+    d.marks.push({ id: "M", kind: "text", label: "标高", point: [0, 0], follow: "map", elevation: "{input:A} + 1" },
+        { id: "S", kind: "scale", label: "长度", point: [0, 0], follow: "screen", length: "{mark:M.elevation} + 2" });
+    d.geoNodes[1].function = { type: "flat", amount: "{mark:M.elevation}", feather: "{mark:S.length}" };
+    const result = resolveDesign(parseDesign(serializeDesign(d))), fn = result.geoNodes[1].function;
+    assert(fn.type === "flat");
+    assert.equal(fn.amount, 8);
+    assert.equal(fn.feather, 10);
+    assert.deepEqual(removalUses(d, "mark", "M").map(use => use.kind === "parameter" && use.slot.key), ["geo:T.amount", "mark:S.length"]);
+    d.inputs.A.value = "{mark:M.elevation}";
+    assert.throws(() => resolveDesign(d), /引用成环/);
+});
+
 test("Rounded per-layer seeds and transitive scalar inputs invalidate only their readers", () => {
     const d: Design = newDesign(), base = d.geoNodes[0], cache = new TerrainCache();
     d.geoNodes.push(layer("N", base.construction, { type: "noise", amplitude: 1, scale: 7, seed: "{input:seed}" }));

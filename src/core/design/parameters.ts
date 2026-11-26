@@ -141,14 +141,20 @@ export function expressionLookup(d: Design, slot: (key: string) => Slot | undefi
         key = canonical(key);
         const s = slot(key);
         if (!s) throw Error((key.startsWith("input:") ? "找不到自定义输入“" : "找不到数类型属性“") + inputKey.slice(inputKey.indexOf(":") + 1) + "”");
-        if (s.field && visiting.length) throw Error(slotName(s) + " 是场类型参数，不能引用");
         const found = values.get(key) ?? unchanged?.(key);
         if (found !== undefined) return found;
         const cycle = visiting.indexOf(key);
         if (cycle >= 0) throw Error("引用成环：" + [...visiting.slice(cycle), key].map(k => slotName(slot(k)!)).join(" → "));
         visiting.push(key);
         try {
-            let value = evaluate(s.value, get);
+            let value = evaluate(s.value, ref => {
+                const result = get(ref);
+                if (!s.field && typeof result !== "number") {
+                    const target = slot(canonical(ref));
+                    if (target?.field) throw Error(slotName(target) + "现在是场，不能填进数类型参数");
+                }
+                return result;
+            });
             if (!s.field && typeof value !== "number") throw Error("这里不能用场");
             if (s.type === "seed") value = Math.round(value as number);
             values.set(key, value);
@@ -168,6 +174,11 @@ export function expressionGraph(d: Design, slots?: Map<string, Slot>, curves = c
 
 export const resolvedPaths = (slot: Slot) => [slot.resolvedPath, ...slot.aliases ?? []];
 
+function resolvedReference(value: Value) {
+    if (typeof value === "number") return String(value);
+    return [value.offset, ...value.terms.map(([field, coefficient]) => coefficient + " * {field:" + field + "}")].join(" + ");
+}
+
 export function resolveParameterValues(slots: Iterable<Slot>, get: (key: string) => Value) {
     const values = new Map<Slot, Expression>(), errors: DesignProblem[] = [];
     for (const slot of slots) {
@@ -175,7 +186,7 @@ export function resolveParameterValues(slots: Iterable<Slot>, get: (key: string)
             const value = get(slot.key);
             // Field references stay in the expression for evaluation on the layer's input grid.
             const result = typeof value === "number" ? value : String(slot.value).replace(/\{([^{}]+)\}/g,
-                (text, key: string) => key.startsWith("field:") ? text : "(" + get(key) + ")");
+                (text, key: string) => key.startsWith("field:") ? text : "(" + resolvedReference(get(key)) + ")");
             if (!slot.virtual) values.set(slot, result);
         }
         catch (error) {

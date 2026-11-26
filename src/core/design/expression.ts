@@ -10,7 +10,7 @@ export function tokens(source: string): Token[] {
         const match = tokenPattern.exec(source);
         if (!match) throw Error("第 " + (start + 1) + " 个字符无法识别");
         const text = match[0], end = start + text.length;
-        if (text.startsWith("{") && !/^\{(?:input|field|geo):[^{}]+\}$/.test(text))
+        if (text.startsWith("{") && !/^\{(?:input|field|geo|mark):[^{}]+\}$/.test(text))
             throw Error("第 " + (start + 1) + " 个字符无法识别，未知的变量“" + text + "”");
         if (text.trim()) result.push({ text, start, end });
         start = end;

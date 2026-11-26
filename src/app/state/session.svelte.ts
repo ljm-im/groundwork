@@ -1163,6 +1163,10 @@ export class Editor {
                 if (this.selection?.kind === h.kind && this.selection.id === h.id) return null;
             });
         }
+        if (h.kind === "mark") {
+            const d = this.project.design, items = removalUses(d, "mark", h.id).map(use => this.removalItem(use));
+            if (items.length) return this.blockRemoval(d.marks.find(mark => mark.id === h.id)!.label, items);
+        }
         return this.edit(d => {
             const group = h.kind === "mark" ? "marks" : "sections";
             d[group].splice(d[group].findIndex(item => item.id === h.id), 1);

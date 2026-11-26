@@ -1,5 +1,5 @@
 {#snippet formatted(text: string, operators: boolean)}
-    {#each text.split(/(\{(?:input|field|geo):[^{}]+\})/g) as part, i (i)}
+    {#each text.split(/(\{(?:input|field|geo|mark):[^{}]+\})/g) as part, i (i)}
         {#if part.startsWith("{") && part.endsWith("}")}<ReferenceChip refKey={part.slice(1, -1)} design={base} {slots} canonical={editor.numberEdits.key} />
         {:else}{operators ? displayValue(part, step) : part}{/if}
     {/each}
@@ -175,7 +175,7 @@
         const filter = (v: Option) => matchesSearch(query, v.name + " " + v.key);
         const excluded = self ? editor.numberEdits.affected([self]) : undefined;
         const allowed = (key: string) => !excluded?.has(key);
-        const leaves = [...slots.values()].filter(s => !s.field && allowed(s.key));
+        const leaves = [...slots.values()].filter(s => allowed(s.key) && (kind === "field" || !s.field || typeof editor.numberEdits.get(s.key) === "number"));
         if (parent) return [{ title: leaves.find(s => s.owner + ":" + s.id === parent)?.name ?? "属性",
             items: leaves.filter(s => s.owner + ":" + s.id === parent).map(s => ({ key: s.key, name: s.label, icon: "property" as const })).filter(filter) }];
         const items: Option[] = declarationEntries("input", base.inputs).flatMap(([id, input]) => {
@@ -189,13 +189,15 @@
             }));
             result.push({ title: "场", items: fields.filter(filter) });
         }
-        const nodes = new SvelteMap<string, Option>(), matched = new SvelteSet<string>();
-        for (const s of leaves) if (s.owner === "geo") {
-            const item = { key: "geo:" + s.id, name: s.name, icon: "terrain" as const, branch: true };
-            if (!nodes.has(s.id)) nodes.set(s.id, item);
-            if (filter(item) || matchesSearch(query, s.label)) matched.add(s.id);
+        for (const [owner, title, icon] of [["geo", "地件", "terrain"], ["mark", "标记", "marks"]] as const) {
+            const items = new SvelteMap<string, Option>(), matched = new SvelteSet<string>();
+            for (const s of leaves) if (s.owner === owner) {
+                const item = { key: owner + ":" + s.id, name: s.name, icon, branch: true };
+                if (!items.has(s.id)) items.set(s.id, item);
+                if (filter(item) || matchesSearch(query, s.label)) matched.add(s.id);
+            }
+            result.push({ title, items: [...items].filter(([id]) => matched.has(id)).map(([, item]) => item) });
         }
-        result.push({ title: "地件", items: [...nodes].filter(([id]) => matched.has(id)).map(([, item]) => item) });
         return result.filter(group => group.items.length);
     });
     let options = $derived(groups.flatMap(g => g.items));

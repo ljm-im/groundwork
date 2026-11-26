@@ -170,7 +170,7 @@ export function curveRemovalUses(d: Design, matches: (slot: CurveSlot | HolderSl
         matches(target) && !matches(slot) ? [{ kind: "curve" as const, slot }] : []);
 }
 
-export function removalUses(d: Design, kind: "geo" | "input" | "field" | "curve", id: string): RemovalUse[] {
+export function removalUses(d: Design, kind: "geo" | "input" | "field" | "curve" | "mark", id: string): RemovalUse[] {
     const uses: RemovalUse[] = kind === "curve" ? [] : referenceSlots(d, kind, id)
         .filter(slot => slot.owner !== kind || slot.id !== id).map(slot => ({ kind: "parameter", slot }));
     if (kind === "curve") return curveRemovalUses(d, slot => slot.location.kind === "curve" && slot.location.id === id);
