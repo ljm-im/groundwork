@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { arcGeometry, pathBezier, pathHandle, segmentType, splitBezier } from "../../src/core/design/path.ts";
+import { arcGeometry, degreesFromBulge, pathBezier, pathHandle, segmentType, splitBezier } from "../../src/core/design/path.ts";
 import { geometryPath } from "../../src/core/edit/geoControls.ts";
 import { defaultFunction } from "../../src/core/edit/geoNodes.ts";
 import { arcHandle } from "../../src/core/edit/paths.ts";
@@ -335,9 +335,56 @@ export async function checkSegmentEditing(url: string) {
         assert((await selectedStroke(true)).points.length > 2);
         const arc = arcHandle(shore.nodes[0].p, shore.nodes[1].p, shore.nodes[0].bulge!);
         await tap(arc, 0, "right");
-        assert((await menuGroups())[0][0].includes("相切"));
-        assert.deepEqual((await menuGroups())[1].map(group => group[0]), ["地件"]);
+        const groups = await menuGroups();
+        assert.deepEqual(groups[0][0], ["线段类型", "直线", "曲线", "圆弧"]);
+        assert.deepEqual(groups[0][1], ["线段", "插入节点", "相切", "删除线段"]);
+        assert.deepEqual(groups[1].map(group => group[0]), ["地件"]);
         await key("Escape");
+
+        const angleFace = row + " .numeric-face[aria-label=圆心角]", tangent = row + " button[aria-label=相切]";
+        const readShore = () => authored().then(d => geometryPath(page.owner(d, "C"), -1)!);
+        const readAngle = async () => Number(await text(angleFace));
+        const enterAngle = async (value: string) => {
+            await click(angleFace);
+            await wait(() => document.activeElement?.matches(".numeric-edit[aria-label=圆心角]"));
+            await evaluate(() => document.getSelection()!.selectAllChildren(document.activeElement!));
+            await cdp("Input.insertText", { text: value });
+            await key("Enter");
+        };
+        const initialStroke = (await selectedStroke(true)).points;
+        await enterAngle("120"); await saved(); await paint();
+        let current = await readShore();
+        assert(Math.abs(degreesFromBulge(current.nodes[0].bulge!) - 120) < 1e-10);
+        assert.equal(await readAngle(), 120);
+        assert.notDeepEqual((await selectedStroke(true)).points, initialStroke);
+        const expectedMidpoint = pixels(await frame(), segmentPoint(current, 0), true);
+        assert((await selectedStroke(true)).points.some(p => distance(p, expectedMidpoint) < 1));
+
+        await enterAngle("0");
+        assert.match(await text(row + " [role=alert]"), /非零/);
+        assert.deepEqual(await readShore(), current);
+        await key("Escape");
+
+        const [ax, ay] = pixels(await frame(), segmentPoint(current, 0));
+        await pointer("mousePressed", [ax, ay], 0);
+        await pointer("mouseMoved", [ax, ay - 20], 0);
+        await pointer("mouseReleased", [ax, ay - 20], 0);
+        await saved(); await paint();
+        current = await readShore();
+        const draggedAngle = await readAngle();
+        assert.notEqual(draggedAngle, 120);
+        assert(Math.abs(draggedAngle - degreesFromBulge(current.nodes[0].bulge!)) < .0001);
+
+        assert(await evaluate(selector => {
+            const button = document.querySelector<HTMLButtonElement>(selector);
+            const angleRow = button?.closest(".parameter-row");
+            return !button?.disabled && angleRow?.querySelector(".param-name")?.textContent === "圆心角" &&
+                angleRow.querySelector(".unit")?.textContent === "°";
+        }, tangent));
+        await click(tangent); await saved(); await paint();
+        current = await readShore();
+        assert(Math.abs(current.nodes[0].bulge! - 1) < 1e-10);
+        assert.equal(await readAngle(), 180);
         const slope = geometryPath(page.owner(original, "S"), -1)!;
         await tap(slope.nodes[0].p);
         assert.equal((await frame()).selection?.id, "S");
@@ -349,6 +396,6 @@ export async function checkSegmentEditing(url: string) {
         await tap(segmentPoint(slope, 0));
         assert.equal(await segmentTitle(), "线段 1");
         await click(row + " button[aria-label=圆弧]"); await saved(); await paint();
-        assert(await evaluate(() => [...document.querySelectorAll<HTMLButtonElement>("[data-curve-segment] button")].some(b => b.textContent === "相切" && b.disabled)));
+        assert(await evaluate(selector => document.querySelector<HTMLButtonElement>(selector)?.disabled, tangent));
     }, scene());
 }

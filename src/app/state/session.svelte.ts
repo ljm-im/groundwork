@@ -22,7 +22,7 @@ import { drawingReady, drawingTools, finishCurveDraft, finishDraft, geoAt, start
 import { type DrawTool, type GeoDraft } from "../../core/edit/types.ts";
 import { markParameters } from "../../core/design/functionTable.ts";
 import { functionGeometry } from "../../core/edit/functionGeometry.ts";
-import { neighbor, segmentNeighbor, type SegmentType } from "../../core/design/path.ts";
+import { bulgeFromDegrees, neighbor, segmentNeighbor, type SegmentType } from "../../core/design/path.ts";
 import { sampleField } from "../../core/design/results.ts";
 import { designErrorText } from "./designMessages.ts";
 import { DesignError, quotedLocation } from "../../core/design/problems.ts";
@@ -1012,6 +1012,12 @@ export class Editor {
     }
     segment(control: GeoControl, type: SegmentType | "tangent") {
         return this.editSelectedCurve(control, path => setSegment(path, control.index, type));
+    }
+    segmentAngle(control: GeoControl, angle: number) {
+        return this.editSelectedCurve(control, path => {
+            const node = path.nodes[control.index];
+            if (node.bulge !== undefined) node.bulge = bulgeFromDegrees(angle);
+        });
     }
     wholeCurve(control: GeoControl, action: "auto" | "line") {
         return this.editSelectedCurve(control, path => {

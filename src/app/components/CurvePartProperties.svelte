@@ -13,8 +13,14 @@
         canSetManual(curve, control.index) ? undefined : "manual")}
 {:else if segment}
     {@render segments("线段类型", segmentTypes, segment, type => editor.segment(control, type as SegmentType))}
-    {#if segment === "arc"}
-        <FieldRow><button disabled={neighbor(curve, control.index, -1) === undefined} onclick={() => editor.segment(control, "tangent")}><Icon name="tangent" />相切</button></FieldRow>
+    {#if segment === "arc" && node.bulge !== undefined}
+        <NumberInput {editor} label="圆心角" kind="literal" unit="°" step={1}
+            setting={{ value: degreesFromBulge(node.bulge), change: value => editor.segmentAngle(control, value), validate: bulgeFromDegrees }}>
+            {#snippet action()}
+                <button class="icon-button" aria-label="相切" data-tip="相切" disabled={neighbor(curve, control.index, -1) === undefined}
+                    onclick={() => editor.segment(control, "tangent")}><Icon name="tangent" /></button>
+            {/snippet}
+        </NumberInput>
     {/if}
 {/if}
 
@@ -26,12 +32,13 @@
 <script lang="ts">
     import * as session from "../state/session.svelte.ts";
     import { type Curve, type CurveNode } from "../../core/design/v5.ts";
-    import { neighbor, segmentType, type SegmentType } from "../../core/design/path.ts";
+    import { bulgeFromDegrees, degreesFromBulge, neighbor, segmentType, type SegmentType } from "../../core/design/path.ts";
     import { canSetManual } from "../../core/edit/paths.ts";
     import { type GeoControl } from "../../core/edit/geoControls.ts";
     import { nodeModes, segmentTypes } from "../state/inspector.ts";
     import Icon, { type IconName } from "./Icon.svelte";
     import FieldRow from "./FieldRow.svelte";
+    import NumberInput from "./NumberInput.svelte";
 
     let { editor, curve, control }: { editor: session.Editor; curve: Curve; control: GeoControl } = $props();
     let node = $derived(curve.nodes[control.index]);

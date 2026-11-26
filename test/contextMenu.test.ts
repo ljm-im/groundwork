@@ -31,9 +31,10 @@ test("Contour, curve and region menus follow the actual geometry and semantic ow
         path.nodes[0].bulge = .5;
         const groups = menu(hit(role, 1));
         assert.deepEqual(titles(groups), [["线段类型", "线段", "闭合曲线"], semantic]);
-        assert.deepEqual(names(groups)[0], ["直线", "曲线", "圆弧", "相切", "插入节点", "删除线段", ...curveActions]);
+        assert.deepEqual(groups[0][0].items.map(i => i.name), ["直线", "曲线", "圆弧"]);
+        assert.deepEqual(groups[0][1].items.map(i => i.name), ["插入节点", "相切", "删除线段"]);
         assert.equal(groups[0][0].items[2].selected, true);
-        assert.equal(groups[0][0].items[3].disabled, false);
+        assert.equal(groups[0][1].items[1].disabled, false);
         assert.equal(menu(hit("vertex", 1))[0][0].items[2].disabled, true);
     }
     assert.deepEqual(titles(menu(hit("body"))), [["区域", "地件"]]);
@@ -42,7 +43,7 @@ test("Contour, curve and region menus follow the actual geometry and semantic ow
     n.construction.outlines.pop();
     literalCurve(n.construction.outlines[0]).nodes.pop();
     assert.deepEqual(titles(menu(hit("vertex"))), [["节点类型", "闭合曲线"], ["轮廓 1", "区域", "地件"]]);
-    assert(!names(menu(hit("segment")))[0].includes("删除线段"));
+    assert.deepEqual(menu(hit("segment"))[0][1].items.map(i => i.name), ["插入节点"]);
     assert.deepEqual(titles(menu(hit("outline"))), [["轮廓 1", "区域", "地件"]]);
     d.geoNodes.push(layer("S", { type: "strip", of: ["T"], widths: [1, 2] }, { type: "blend" }));
     const strip = contextMenuColumns(d, selection("S"), true, hit("body"));
@@ -63,7 +64,7 @@ test("Parameter geometry menus show member operations only for ridges and peaks"
     const first = menu(hit("segment", -2, 0));
     assert.deepEqual(titles(first), [["线段类型", "线段", "曲线"], ["山脊 2", "地件"]]);
     assert.deepEqual(names(first)[1].slice(0, 2), ["复制山脊", "删除山脊"]);
-    assert.equal(first[0][0].items.find(i => i.id === "tangent")?.disabled, true);
+    assert.equal(first[0][1].items.find(i => i.id === "tangent")?.disabled, true);
     assert(names(first)[0].includes("删除线段"));
     assert(!names(menu(hit("segment", -2, 1)))[0].includes("删除线段"));
     assert.deepEqual(titles(menu(hit("vertex", -2, 1))), [["节点类型", "节点", "曲线"], ["山脊 2", "地件"]]);

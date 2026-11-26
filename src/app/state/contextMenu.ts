@@ -33,9 +33,9 @@ function geometryGroups(selection: Selection, control: GeoControl, curve: Curve,
         const types: Action[] = segmentTypes.map(([id, name, icon]) => ({
             id, name, icon, selected: type === id, run: editor => editor.segment(control, id)
         }));
-        if (type === "arc") types.push({ id: "tangent", name: "相切", icon: "tangent",
-            disabled: neighbor(curve, index, -1) === undefined, run: editor => editor.segment(control, "tangent") });
         const items: Action[] = [{ id: "insert-node", name: "插入节点", icon: "nodeCorner", run: editor => editor.insertNode(selection.id, control) }];
+        if (type === "arc") items.push({ id: "tangent", name: "相切", icon: "tangent",
+            disabled: neighbor(curve, index, -1) === undefined, run: editor => editor.segment(control, "tangent") });
         if (segmentRemovalIndex(curve, index) !== undefined) items.push(
             { id: "delete-segment", name: "删除线段", icon: "delete", danger: true, run: editor => editor.removeCurvePart(selection, control) });
         groups.push({ title: "线段类型", items: types }, { title: "线段", items });

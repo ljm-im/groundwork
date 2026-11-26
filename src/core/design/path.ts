@@ -6,6 +6,13 @@ export type Bezier = [Point, Point, Point, Point];
 export type SegmentType = "line" | "curve" | "arc";
 
 export const defaultArcBulge = .4142135624;
+export const degreesFromBulge = (bulge: number) => Math.atan(bulge) * (720 / Math.PI);
+
+export function bulgeFromDegrees(angle: number) {
+    if (!Number.isFinite(angle) || angle === 0 || Math.abs(angle) >= 360)
+        throw Error("请输入大于 −360°、小于 360° 且非零的数字");
+    return Math.tan(angle * (Math.PI / 720)) || Math.sign(angle) * Number.MIN_VALUE;
+}
 
 export function splitBezier([a, b, c, d]: Bezier, t: number): [Bezier, Bezier] {
     const ab = mixPoint(a, b, t), bc = mixPoint(b, c, t), cd = mixPoint(c, d, t);

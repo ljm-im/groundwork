@@ -1,4 +1,4 @@
-<div class="parameter-row" {onmouseenter} {onmouseleave} {...attributes}>
+<div class="parameter-row" class:with-action={!!action} {onmouseenter} {onmouseleave} {...attributes}>
     {#if forInput}<label class="param-name" class:disabled for={forInput}>{label}</label>
     {:else if label}<span class="param-name">{label}</span>{/if}
     <div class="parameter-control">
@@ -7,10 +7,13 @@
         {:else}{@render children?.()}{/if}
     </div>
     <small class="unit control-unit" data-tip={unit || undefined}>{unit}</small>
+    {#if action}<div class="parameter-action">{@render action()}</div>{/if}
     {#if problem}<div class="parameter-error danger" role="alert">{problem}</div>{/if}
 </div>
 
 <style>
+    .parameter-row.with-action { grid-template-columns: var(--name-w) minmax(0, 1fr) max-content var(--icon-button); }
+    .parameter-action { grid-column: 4; grid-row: 1; display: flex; }
     label:not(.disabled) { cursor: pointer; }
     .disabled { color: var(--text-disabled); }
     .read-only-value {
@@ -29,8 +32,8 @@
 
 <script lang="ts">
     import { type Snippet } from "svelte";
-    let { label, unit = "", forInput, disabled = false, readOnlyValue, problem, attributes, children, onmouseenter, onmouseleave }: {
+    let { label, unit = "", forInput, disabled = false, readOnlyValue, problem, attributes, children, action, onmouseenter, onmouseleave }: {
         label?: string; unit?: string; forInput?: string; disabled?: boolean; readOnlyValue?: string;
-        problem?: string; attributes?: Record<string, string>; children?: Snippet; onmouseenter?: () => void; onmouseleave?: () => void;
+        problem?: string; attributes?: Record<string, string>; children?: Snippet; action?: Snippet; onmouseenter?: () => void; onmouseleave?: () => void;
     } = $props();
 </script>

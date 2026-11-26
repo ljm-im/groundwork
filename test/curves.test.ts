@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { parseDesign, serializeDesign } from "../src/core/design/model.ts";
 import { resolveDesign } from "../src/core/design/parameters.ts";
 import { DesignError } from "../src/core/design/problems.ts";
-import { autoHandle, flattenPath, pathBezier, segmentType, splitBezier, type Bezier } from "../src/core/design/path.ts";
+import { autoHandle, bulgeFromDegrees, defaultArcBulge, degreesFromBulge, flattenPath, pathBezier, segmentType, splitBezier, type Bezier } from "../src/core/design/path.ts";
 import { numericProfile } from "../src/core/design/polyline.ts";
 import { type ClosedCurve, type Curve, type Point } from "../src/core/design/v5.ts";
 import { defaultFunction, curvesOf } from "../src/core/edit/geoNodes.ts";
@@ -74,6 +74,18 @@ test("Manual smoothing fills missing handles and aligns both directions while ke
         if (!incoming) assert(distance(v.out!, b) < 1e-10);
         if (incoming && outgoing) assert(distance(v.out!, [Math.SQRT2, Math.SQRT2]) < 1e-10);
     }
+});
+
+test("Signed arc angles round-trip through bulge and exclude zero and full turns", () => {
+    assert(Math.abs(bulgeFromDegrees(90) - defaultArcBulge) < 1e-10);
+    assert(Math.abs(degreesFromBulge(defaultArcBulge) - 90) < 1e-8);
+    for (const angle of [-359.999, -120, -.001, .001, 120, 359.999]) {
+        const bulge = bulgeFromDegrees(angle);
+        assert.equal(Math.sign(bulge), Math.sign(angle));
+        assert(Math.abs(degreesFromBulge(bulge) - angle) < 1e-10);
+    }
+    for (const angle of [0, -0, -361, -360, 360, 361, NaN, Infinity, -Infinity])
+        assert.throws(() => bulgeFromDegrees(angle), /非零/);
 });
 
 test("Straightening, curving and arcing a segment leave the adjacent Béziers untouched", () => {

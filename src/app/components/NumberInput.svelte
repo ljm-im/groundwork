@@ -54,7 +54,7 @@
         {@render control()}
         {#if !expanded && error}<div class="number-error danger" role="alert">{error}</div>{/if}
     {:else}
-        <FieldRow {label} {unit} problem={expanded ? undefined : error}>{@render control()}</FieldRow>
+        <FieldRow {label} {unit} {action} problem={expanded ? undefined : error}>{@render control()}</FieldRow>
     {/if}
     {#if editing}<div hidden bind:this={mirror}>{@render formatted(draft, false)}</div>{/if}
     {#if editing && expanded}
@@ -122,7 +122,7 @@
 </style>
 
 <script lang="ts">
-    import { onDestroy, tick, untrack } from "svelte";
+    import { onDestroy, tick, untrack, type Snippet } from "svelte";
     import { SvelteMap, SvelteSet } from "svelte/reactivity";
     import * as session from "../state/session.svelte.ts";
     import { type Expression } from "../../core/design/v5.ts";
@@ -141,10 +141,10 @@
     import FieldRow from "./FieldRow.svelte";
     import Menu from "./Menu.svelte";
     let { editor, address, setting, label, kind = "number", step = .1, range, unit = "", self, owner, compact = false,
-        inputStep = false, fallback = 0, attributes, namedInput = false, faceUnit = false, stepButtons = true }: {
+        inputStep = false, fallback = 0, attributes, namedInput = false, faceUnit = false, stepButtons = true, action }: {
         editor: session.Editor; label: string; kind?: "number" | "field" | "literal"; step?: number;
         range?: Range; unit?: string; self?: string; owner?: string; compact?: boolean; inputStep?: boolean; fallback?: number;
-        attributes?: Record<string, string>; namedInput?: boolean; faceUnit?: boolean; stepButtons?: boolean;
+        attributes?: Record<string, string>; namedInput?: boolean; faceUnit?: boolean; stepButtons?: boolean; action?: Snippet;
     } & ({ address: Address; setting?: never } | { address?: never; setting: { value: number; change: (n: number) => void; validate: (n: number) => void; retainDraft?: boolean } }) = $props();
     let actionLabel = $derived(namedInput ? "“" + label + "”" : label);
     let face = $state<HTMLButtonElement>(), expandedBox = $state<HTMLElement>();
