@@ -70,16 +70,30 @@ export function checkSelectionHierarchy(url: string) {
         assert.equal((await frame()).hoverPath?.at(-1)?.kind, "vertex");
         assert.deepEqual(await dotsAt(vertex), [mapColors.light.bgPanel, mapColors.light.accent]);
 
-        const dx = 30 / (await frame()).scale;
-        await drag(vertex, 2);
-        assert.equal(await depth(), 4);
-        assert.equal(await text("[data-curve-node] .subitem-label"), "节点 1");
+        const dx = 30 / (await frame()).scale, [x, y] = vertex, moved: Point = [x + dx, y];
+        const landformPath = (await frame()).selectionPath;
+        const propertyTab = () => evaluate(() => document.querySelector("[data-property-tab][aria-pressed=true]")?.getAttribute("data-property-tab"));
+        const landformTab = await propertyTab();
+        const assertLandformSelected = async () => {
+            assert.deepEqual((await frame()).selectionPath, landformPath);
+            assert.equal(await title(), "T");
+            assert.equal(await propertyTab(), landformTab);
+            assert.equal(await text(parts), "");
+        };
+        await drag(vertex, 2, async () => {
+            await assertLandformSelected();
+            assert.deepEqual(await dotsAt(moved), [mapColors.light.accent]);
+            await screenshot("round43-fix5-dragging-node");
+        });
+        await assertLandformSelected();
         const { nodes } = literalCurve(await authored(), outlineId);
-        const [x, y] = vertex;
-        assert(distance(nodes[0].p, [x + dx, y]) < .02);
+        assert(distance(nodes[0].p, moved) < .02);
         assert.deepEqual(nodes.slice(1), outline.nodes.slice(1));
+        await move(away);
+        assert.deepEqual(await dotsAt(moved), [mapColors.light.bgPanel]);
+        await screenshot("round43-fix5-landform-after-drag");
         await undo();
-        await resetLandform();
+        await assertLandformSelected();
 
         await tap(vertex);
         assert.equal(await depth(), 4);

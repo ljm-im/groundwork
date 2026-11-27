@@ -936,6 +936,78 @@ test("Map drags follow the current layer, preserving offsets and shared coordina
         [[first.p[0] + delta[0], first.p[1] + delta[1]], ...shared.curve.nodes.slice(1).map(node => node.p)]);
 });
 
+test("Dragging a visible curve control keeps the selection through undo and redo", async t => {
+    const { Editor } = await import("../src/app/state/session.svelte.ts");
+    const { attachController } = await import("../src/app/state/controller.ts");
+    const globals = {
+        document: new EventTarget(), window: new EventTarget(),
+        requestAnimationFrame: () => 1, cancelAnimationFrame() {}
+    };
+    const editor = new Editor(testTerrainClient()), design = syntheticDesign(), owner = design.geoNodes[1];
+    const previous = Object.keys(globals).map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)] as const);
+    for (const [key, value] of Object.entries(globals)) Object.defineProperty(globalThis, key, { value, configurable: true });
+    let detach: (() => void) | undefined;
+    t.after(() => {
+        detach?.();
+        editor.dispose();
+        for (const [key, descriptor] of previous) {
+            if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+            else Reflect.deleteProperty(globalThis, key);
+        }
+    });
+    const captures = new Set<number>();
+    const canvas = Object.assign(new EventTarget(), {
+        style: {}, getContext: () => ({}), getBoundingClientRect: () => ({ left: 0, top: 0 }), focus() {},
+        setPointerCapture: (id: number) => captures.add(id), hasPointerCapture: (id: number) => captures.has(id),
+        releasePointerCapture: (id: number) => captures.delete(id)
+    }) as unknown as HTMLCanvasElement;
+    editor.attach(canvas, () => {});
+    editor.map.resize(1000, 700, 1);
+    t.mock.method(editor.files, "remember", () => {});
+    await editor.replace(design, true);
+    editor.history = new History(design);
+    detach = attachController(editor, canvas);
+    assert(owner.construction.type === "outline" && "curve" in owner.construction.outlines[0]);
+    const root = { kind: "geoNode", id: owner.id } as const, holder = holderLayer("outlines");
+    const geometry = { kind: "geometry", id: owner.construction.outlines[0].curve } as const;
+    const paths: SelectionPath[] = [[root], [root, holder], [root, holder, geometry]];
+    const nodes = () => geometryPath(editor.project.resolved.geoNodes[1], 0)!.nodes;
+    const before = structuredClone(nodes()), start = before[0].p, end: Point = [start[0] + 2, start[1] - 3];
+    const pointer = (type: string, position: Point) => {
+        const [clientX, clientY] = editor.map.screen(position);
+        canvas.dispatchEvent(Object.assign(new Event(type, { cancelable: true }), {
+            button: 0, pointerId: 1, pointerType: "mouse", clientX, clientY, altKey: false, ctrlKey: true, shiftKey: false
+        }));
+    };
+    for (const path of paths) {
+        editor.selectPath(path);
+        const tab = editor.propertyTab;
+        pointer("pointerdown", start);
+        pointer("pointermove", end);
+        assert.deepEqual(editor.selectionPath, path);
+        assert.equal(editor.propertyTab, tab);
+        assert.equal(editor.mapView?.dragControl?.role, "vertex");
+
+        pointer("pointerup", end);
+        assert.equal(editor.mapView?.dragControl, undefined);
+        await editor.finishWork();
+        const after = nodes();
+        assert(distance(after[0].p, end) < 1e-9);
+        assert.deepEqual(after.slice(1), before.slice(1));
+        assert.deepEqual(editor.selectionPath, path);
+        assert.equal(editor.propertyTab, tab);
+        assert.deepEqual(editor.history.editStep(false), { before: path, after: path });
+
+        await editor.navigate(false);
+        assert.deepEqual(editor.selectionPath, path);
+        assert.deepEqual(nodes(), before);
+        await editor.navigate(true);
+        assert.deepEqual(editor.selectionPath, path);
+        assert.deepEqual(nodes(), after);
+        await editor.navigate(false);
+    }
+});
+
 test("Escape and history preserve hierarchy, truncating a missing holder and blocking deletion of a shared geometry", async t => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
     const d = overlappingLandforms(), editor = new Editor(testTerrainClient());

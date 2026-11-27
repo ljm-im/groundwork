@@ -66,7 +66,7 @@ function segmentControl(curve: Curve, index: number, edge: NonNullable<ReturnTyp
     if (edge) return { role: "segment", path: index, index: curve.nodes.findIndex(node => node.id === edge.edge.from), point: edge.point };
 }
 
-function hitsCurveControl(hit: MapHit) {
+export function hitsCurveControl(hit: MapHit) {
     const role = hit.control?.role;
     return role === "vertex" || role === "in" || role === "out" || role === "arc";
 }
@@ -152,6 +152,7 @@ export type MapView = Readonly<{
     dragNode?: PlacedGeoNode;
     dragGeometry?: GeometryObject;
     dragNodes?: ControlPreview["nodes"];
+    dragControl?: GeoControl;
     dragCommitting?: boolean;
     snapGuides?: readonly SnapGuide[];
     dragMark?: Readonly<{ id: string; point: Point }>;

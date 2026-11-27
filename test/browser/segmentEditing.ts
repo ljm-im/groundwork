@@ -427,16 +427,23 @@ export async function checkSegmentEditing(url: string) {
         await key("Escape");
 
         await key("Escape"); await key("Escape"); await paint();
-        assert.equal((await frame()).selectionPath?.at(-1)?.kind, "holder");
+        const holderPath = (await frame()).selectionPath;
+        assert.equal(holderPath?.at(-1)?.kind, "holder");
         const [ax, ay] = pixels(await frame(), segmentPoint(current, 0));
         await pointer("mousePressed", [ax, ay], 0);
         await pointer("mouseMoved", [ax, ay - 20], 0);
+        await paint();
+        assert.deepEqual((await frame()).selectionPath, holderPath);
+        const dots = await evaluate(() => window.curveMapProbe.dots);
+        assert.equal(dots.filter(dot => dot.color === mapColors.light.accent).length, 1);
         await pointer("mouseReleased", [ax, ay - 20], 0);
         await saved(); await paint();
         current = await readShore();
+        assert.deepEqual((await frame()).selectionPath, holderPath);
+        assert.notEqual(degreesFromBulge(current.nodes[0].bulge!), 120);
+        await tap(segmentPoint(current, 0));
         assert.equal((await frame()).selectionPath?.at(-1)?.kind, "segment");
         const draggedAngle = await readAngle();
-        assert.notEqual(draggedAngle, 120);
         assert(Math.abs(draggedAngle - degreesFromBulge(current.nodes[0].bulge!)) < .0001);
 
         assert(await evaluate(selector => {

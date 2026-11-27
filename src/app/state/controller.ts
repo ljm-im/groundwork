@@ -7,7 +7,7 @@ import { selectionLayers } from "../../core/edit/selection.ts";
 import { doubleClickTools, draftPointer, updatePreview } from "./geoTools.ts";
 import { controlSnap, sectionSnap, type SnapModifiers } from "./mapSnaps.ts";
 import { type GeoDraft } from "../../core/edit/types.ts";
-import { dragMapHit, mapControlDrag, mapHoverHit, nextMapHit, type MapHit } from "../../render/map.ts";
+import { dragMapHit, hitsCurveControl, mapControlDrag, mapHoverHit, nextMapHit, type MapHit } from "../../render/map.ts";
 import { errorText, type Point } from "../types.ts";
 import * as session from "./session.svelte.ts";
 
@@ -169,9 +169,9 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             return;
         }
         if (!hit) return;
-        editor.selectPath(hit.path);
-        const { root, leaf } = selectionLayers(hit.path);
+        const { root, leaf, part } = selectionLayers(hit.path);
         if (!root || !leaf) return;
+        if (!part || !hitsCurveControl(hit)) editor.selectPath(hit.path);
         const { design, resolved } = editor.project, { handle: h } = hit;
         if (leaf.kind === "section") {
             const section = resolved.sections.find(s => s.id === root.id)!;
@@ -334,7 +334,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             const result = snap?.(target, ev);
             const at = result?.point ?? target;
             editor.snapGuides = result?.guides;
-            editor.dragPreview = preview(at);
+            editor.dragPreview = { ...preview(at), control };
             editor.gesture.target = at;
             return;
         }

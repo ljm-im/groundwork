@@ -153,7 +153,7 @@ export class Editor {
         const owner = this.geometryOwner(this.selection), curve = owner && geometryPath(owner, path);
         if (curve) return partControl(curve, part, path);
     });
-    dragPreview = $state.raw<ControlPreview>();
+    dragPreview = $state.raw<ControlPreview & { control?: GeoControl }>();
     dragNode = $derived(this.selection?.kind === "geoNode" ? this.dragPreview?.nodes.get(this.selection.id)?.node : undefined);
     dragGeometry = $derived(this.dragPreview?.geometry);
     snapGuides = $state.raw<readonly SnapGuide[]>();
@@ -237,6 +237,7 @@ export class Editor {
             selectionPath: this.selectionPath, hoverPath: this.hoverPath, hoverHandle: this.hoverHandle,
             draft: draft && { ...draft, nodes: [...draft.nodes], ids: [...draft.ids], anchors: [...draft.anchors] },
             dragNode: this.dragNode, dragGeometry: this.dragGeometry, dragNodes: this.dragPreview?.nodes,
+            dragControl: this.dragCommitting ? undefined : this.dragPreview?.control,
             snapGuides: this.snapGuides, dragCommitting: this.dragCommitting, dragMark: this.dragMark, dragLabel: this.dragLabel,
             displayField: this.displayField,
             layers: { ...this.layers }, grid: { ...this.displayGrid }, referencedGeo: this.hoverRefs,

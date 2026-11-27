@@ -13,7 +13,7 @@ import { checkLineDragging } from "./mapSelection.ts";
 import { withLayeredMap } from "./layeredMapFixture.ts";
 import { withCurveMap } from "./curveMapFixture.ts";
 import { pathHandle } from "../../src/core/design/path.ts";
-import { overlay } from "../../src/render/palette.ts";
+import { mapColors, overlay } from "../../src/render/palette.ts";
 
 interface Frame {
     origin: Point; scale: number; selected?: string; geometry?: GeometryTarget; vertex?: GeoControl;
@@ -412,17 +412,26 @@ export async function checkCurveEditing(url: string) {
         assert.deepEqual((await strokeAt(4))?.dash, []);
         const handlesFrame = await frame(), [left, top] = pixels(handlesFrame, [-27, 36]), [right, bottom] = pixels(handlesFrame, [12, 20]);
         await screenshot("handle-dashes", { x: left, y: top, width: right - left, height: bottom - top });
-        const handle = pathHandle(line, 2, "out");
-        assert.equal((await frame()).selectionPath?.at(-1)?.kind, "holder");
+        const handle = pathHandle(line, 2, "out"), holderPath = (await frame()).selectionPath;
+        assert.equal(holderPath?.at(-1)?.kind, "holder");
+        const assertDraggingHandle = async () => {
+            assert.deepEqual((await frame()).selectionPath, holderPath);
+            const dots = await evaluate(() => window.curveMapProbe.dots);
+            assert.equal(dots.filter(dot => dot.color === mapColors.light.accent).length, 1);
+        };
         await drag(handle, 0, async () => {
+            await assertDraggingHandle();
             const f = await frame(), [x, y] = pixels(f, handle, true), start = pixels(f, line.nodes[2].p, true);
             const preview = (await evaluate(() => window.curveMapProbe.strokes)).find(s => s.width === overlay.controlLine &&
                 s.points.length === 2 && distance(s.points[0], start) < .01 && distance(s.points[1], [x + 30, y]) < 1);
             assert.deepEqual(preview?.dash, []);
         });
         assert.equal((await curve()).nodes[2].mode, "manual");
+        assert.deepEqual((await frame()).selectionPath, holderPath);
         await undo();
+        assert.deepEqual((await frame()).selectionPath, holderPath);
 
+        await tapLayer([-35, 25], "geometry", "M");
         await tap([-35, 25], 0, "right");
         assert.match(await text(".context-menu"), /曲线[\s\S]*全部节点改为自动平滑[\s\S]*全部线段改为直线/);
         await evaluate(() => window.curveMapProbe.editor!.toast = null);

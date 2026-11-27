@@ -322,7 +322,8 @@ function drawSelection(map: ProjectMap, view: MapView, path: SelectionPath, colo
 
 function drawSelectedControls(map: ProjectMap, view: MapView, path: SelectionPath, colors: MapColors) {
     const { part } = selectionLayers(path), hover = selectionLayers(view.hoverPath);
-    for (const { curve, holder } of visibleControlCurves(view, true)) {
+    const dragging = view.dragControl;
+    for (const { curve, holder, index } of visibleControlCurves(view, true)) {
         const prefix: SelectionPath = holder ? [path[0], holder] : [path[0]];
         const hoverPart = view.hoverPath && includesSelection(view.hoverPath, prefix) ? hover.part : undefined;
         const controls = geoControls({ label: "", curve });
@@ -332,7 +333,8 @@ function drawSelectedControls(map: ProjectMap, view: MapView, path: SelectionPat
         }
         for (const c of controls) {
             const node = curve.nodes[c.index], tangent = c.role === "in" || c.role === "out";
-            const selected = c.role === part?.kind && node.id === part.nodeId;
+            const selected = c.role === part?.kind && node.id === part.nodeId ||
+                dragging?.path === index && dragging.role === c.role && dragging.index === c.index;
             const hovered = c.role === (view.hoverHandle ?? hoverPart?.kind) && node.id === hoverPart?.nodeId;
             drawHandle(map.ctx, colors, ...map.screen(c.point), selected ? "selected" : hovered ? "hovered" : "normal", tangent);
         }
