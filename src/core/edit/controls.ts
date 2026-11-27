@@ -35,15 +35,19 @@ export function moveSection(d: Design, id: string, delta: Point) {
     for (const holder of new Set(section.points)) translateHolder(holder, delta);
 }
 
-export function moveHandle(d: Design, h: Handle, p: Point) {
+export function moveHandle(d: Design, h: Handle, p: Point, movePoint = true) {
     if (h.kind === "mark") {
         const mark = d.marks.find(m => m.id === h.id)!;
         if (mark.follow === "screen") mark.screen = roundedPoint(p);
-        else movePointGeometry(d, mark.point, roundedPoint(p));
+        else if (movePoint) movePointGeometry(d, mark.point, roundedPoint(p));
+        else translateHolder(mark.point, localPoint(placedPoint(d, mark.point), roundedPoint(p)));
     }
     if (h.kind === "section") {
         const section = d.sections.find(s => s.id === h.id)!, index = h.index!;
         const holder = section.points[index], other = section.points[1 - index];
-        if (holder.point === other.point || distance(p, placedPoint(d, other)) >= 1) movePointGeometry(d, holder, p);
+        if (movePoint && holder.point === other.point || distance(p, placedPoint(d, other)) >= 1) {
+            if (movePoint) movePointGeometry(d, holder, p);
+            else translateHolder(holder, localPoint(placedPoint(d, holder), p));
+        }
     }
 }

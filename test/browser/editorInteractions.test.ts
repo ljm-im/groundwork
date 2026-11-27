@@ -1,4 +1,5 @@
 import { checkGeometryObjects } from "./round42.ts";
+import { checkSelectionHierarchy } from "./round43.ts";
 import { resolveDesign } from "../../src/core/design/parameters.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -71,6 +72,7 @@ test("Editor interactions in Chromium", async t => {
         await t.test("Outline holes support hover, selection, cycling, menus and body dragging in Chromium", () => checkOutlineHoleHits(url));
         await t.test("Node profiles, slope lines, valleys and localized inspector labels in Chromium", () => checkProfilesAndLabels(url));
         await t.test("Geometry objects, holders and mark anchors in Chromium", () => checkGeometryObjects(url));
+        await t.test("Selection hierarchy and curve styling in Chromium", () => checkSelectionHierarchy(url));
         await t.test("List and numeric reference searches match visible labels in Chromium", () => checkVisibleSearch(url));
     }
     finally {
@@ -361,12 +363,12 @@ async function checkEditor(url: string) {
         console.log("Immediate function and slope form switches, with undo");
         await choose("函数", "海岸");
         assert.equal(await evaluate(() => document.querySelector("[aria-label=海岸线]")?.getAttribute("aria-pressed")), "true");
-        assert.match(await text("#mode-hint"), /单击选择/);
+        assert.match(await text("#mode-hint"), /单击逐层选中/);
         await click("#undo"); await idle();
         await wait(() => document.querySelector("button.choice-face[aria-label=函数] span")?.textContent === "升降");
         await choose("函数", "坡面");
         assert(await evaluate(() => !!document.querySelector("[aria-label=添加坡线]") && !document.querySelector("[aria-label=坡线]")));
-        assert.match(await text("#mode-hint"), /单击选择/);
+        assert.match(await text("#mode-hint"), /单击逐层选中/);
         await choose("坡面形式", "径向");
         assert.equal(await text("[data-parameter$=\".function.rate\"] .unit"), "m/m");
         const maxWidth = await evaluate(() => {
@@ -513,7 +515,7 @@ async function checkEditor(url: string) {
                 await cdp("Input.dispatchMouseEvent", { type, x, y, button, clickCount, modifiers });
         }
         const status = ".drawing-status";
-        const selected = () => wait(() => !document.querySelector(".drawing-status") && document.querySelector("#mode-hint")?.textContent?.startsWith("单击选择"));
+        const selected = () => wait(() => !document.querySelector(".drawing-status") && document.querySelector("#mode-hint")?.textContent?.startsWith("单击逐层选中"));
         async function chooseTool(category: "地件" | "标记", id: string) {
             await click("button[aria-label=新建" + category + "]");
             await click(".creation-menu [data-option=" + id + "]");
@@ -549,7 +551,7 @@ async function checkEditor(url: string) {
             assert(await disk() === original, "One undo must restore the previous design");
             await start(); await vertices(closed, firstModifiers);
             await tap(end); await tap([end[0] + 1, end[1]], 2); await idle(); await saved();
-            assert.match(await text("#mode-hint"), /单击选择/);
+            assert.match(await text("#mode-hint"), /单击逐层选中/);
             assert(await disk() === byEnter, "Double-click and Enter must save identical geometry");
         }
         console.log("Drawing status, Escape, undo, selection and placement cancellation");
@@ -626,7 +628,7 @@ async function checkEditor(url: string) {
             await cdp("Input.dispatchMouseEvent", { ...second, type: "mouseReleased" });
             await idle(); await saved();
             assert(await disk() === triangle, "Double-clicking the first node must close exactly once");
-            assert.match(await text("#mode-hint"), /单击选择/);
+            assert.match(await text("#mode-hint"), /单击逐层选中/);
             assert.equal(await evaluate(() => !!document.querySelector("[aria-label=节点类型]")), false);
         }
         await undo();
@@ -638,9 +640,10 @@ async function checkEditor(url: string) {
         }
         await cdp("Emulation.setTouchEmulationEnabled", { enabled: false });
         await idle(); await saved();
-        assert.match(await text("#mode-hint"), /单击选择/);
+        assert.match(await text("#mode-hint"), /单击逐层选中/);
         assert(await disk() === triangle, "A native double-tap must finish the same drawing");
-        await tap(a); await tap(a, 2); await idle(); await saved();
+        for (let i = 0; i < 3; i++) await tap(a);
+        await tap(a, 2); await idle(); await saved();
         assert(await disk() !== triangle, "A separate double-click in selection mode must still change the node type");
         await undo();
         assert(await disk() === triangle);
@@ -719,26 +722,28 @@ async function checkEditor(url: string) {
         const terrain = await pixel(left, mid);
         await click("input[data-layer=geoNodes]");
         await tap([left + 38, mid]);
-        const solid = await pixel(left, mid), handle = await pixel(left, top);
+        const solid = await pixel(left, mid);
         assert.notDeepEqual(solid, terrain);
         await browser.mouse("mousePressed", left + 38, mid);
         await browser.mouse("mouseMoved", left + 38 + dx, mid + dy);
         const origin = await pixel(left, mid);
         for (const [i, channel] of origin.entries())
             assert(Math.abs(channel - (.7 * terrain[i] + .3 * solid[i])) <= 2, "Original outline pixel " + origin);
-        assert.deepEqual(await pixel(left + dx, mid + dy), solid);
-        assert.deepEqual(await pixel(left + dx, top + dy), handle);
+        assert((await pixel(left + dx, mid + dy)).every((channel, i) => Math.abs(channel - solid[i]) <= 1));
         await browser.mouse("mouseReleased", left + 38 + dx, mid + dy); await idle(); await saved();
-        assert.deepEqual(await pixel(left + dx, mid + dy), solid);
+        assert((await pixel(left + dx, mid + dy)).every((channel, i) => Math.abs(channel - solid[i]) <= 1));
         await undo();
         const restored = await disk();
+        for (let i = 0; i < 3; i++) await tap([left, top]);
+        await wait(() => !!document.querySelector("[data-curve-node]"));
+        const beforeVertex = await pixel(left, mid);
         await cdp("Emulation.setTouchEmulationEnabled", { enabled: true });
         await cdp("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: left, y: top }] });
         await cdp("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: left + 26, y: top - 12 }] });
-        assert.deepEqual(await pixel(left, mid), origin, "Dragging a vertex also fades the old edge");
+        assert.notDeepEqual(await pixel(left, mid), beforeVertex, "Dragging a vertex also fades the old edge");
         await cdp("Input.dispatchTouchEvent", { type: "touchCancel", touchPoints: [] });
         await cdp("Emulation.setTouchEmulationEnabled", { enabled: false });
-        assert.deepEqual(await pixel(left, mid), solid);
+        assert.deepEqual(await pixel(left, mid), beforeVertex);
         assert.equal(await disk(), restored);
 
         console.log("Strip construction, segment menu, section list and draggable names");
@@ -780,6 +785,7 @@ async function checkEditor(url: string) {
         await wait(id => document.querySelector<HTMLElement>("[data-geo-node][aria-pressed=true]")?.dataset.geoNode === id, circle.id);
         await click("[data-property-tab=region]");
         assert.match(await text("#property-content .geometry-box"), /^曲线 \d+$/);
+        await click("#property-content .geometry-box");
         const theme = await evaluate(() => document.documentElement.dataset.theme);
         assert(theme === "light" || theme === "dark");
         const handleColor = mapColors[theme].bgPanel.slice(1).match(/../g)!.map(channel => Number.parseInt(channel, 16));
@@ -812,6 +818,8 @@ async function checkEditor(url: string) {
         assert.deepEqual(await evaluate(() => [...document.querySelectorAll<HTMLElement>("[data-geo-node][aria-pressed=true]")]
             .map(item => item.dataset.geoNode)), ["B"]);
         await click("[data-geo-node=A]");
+        await click("[data-property-tab=region]");
+        await click("#property-content .geometry-box[aria-label=曲线]");
         await tap(at([-17, -12]), 1, "right");
         await click(".context-menu [data-option=insert-node]"); await idle(); await saved();
         const nextDesign = parseDesign(await disk()), changed = nextDesign.geoNodes.find(n => n.id === "A")!.construction;

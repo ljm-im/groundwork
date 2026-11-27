@@ -44,7 +44,7 @@ function scene() {
 export async function checkSegmentEditing(url: string) {
     await withCurveMap(url, "segment-editing", async page => {
         const { authored, boundary, cdp, click, curve, disk, drag, evaluate, frame, key, nodeTitles, paint, pixels, pointer,
-            saved, screenshot, tap, text, translated, undo, wait } = page;
+            saved, screenshot, tap, tapLayer, text, translated, undo, wait } = page;
         const menu = ".context-menu", row = "[data-curve-segment]", prop = "#property-content";
         const segmentTitle = () => text(row + " .subitem-label");
         const deleteButton = row + " [aria-label=删除线段]", removeItem = menu + " [data-option=delete-segment]";
@@ -87,11 +87,11 @@ export async function checkSegmentEditing(url: string) {
         assert.equal(hoveredOutline.length, 1);
         assert(Math.abs(hover.alpha - .3) < 1e-6);
         assert.deepEqual([hover.width, hover.color, hover.dash], [4, mapColors.light.accent, []]);
-        await tap(edge);
+        await tapLayer(edge, "segment", "A");
         assert.equal((await frame()).vertex?.role, "segment");
         assert.equal(await segmentTitle(), "线段 1");
-        assert.deepEqual(await nodeTitles(), []);
-        assert.equal(await text(prop + " h3"), "区域");
+        assert.deepEqual(await nodeTitles(), ["节点 1"]);
+        assert(await evaluate(() => document.querySelector("[data-property-tab=geometry][aria-pressed=true]")));
         assert.equal(await text(row + " .param-name"), "线段类型");
         const selected = await selectedStroke(false), f = await frame();
         assert(selected.points.every((p, i) => distance(p, pixels(f, outline.nodes[i].p, true)) < .01));
@@ -108,9 +108,9 @@ export async function checkSegmentEditing(url: string) {
         assert.equal(await segmentTitle(), "线段 4");
         await click("[aria-label=下一个线段]"); await paint();
         assert.equal(await segmentTitle(), "线段 1");
-        await tap(outline.nodes[0].p);
+        await tapLayer(outline.nodes[0].p, "vertex", "A");
         assert.deepEqual(await nodeTitles(), ["节点 1"]);
-        assert.equal(await segmentTitle(), "");
+        assert.equal(await segmentTitle(), "线段 1");
         await tap(inside);
         assert.equal((await frame()).selection?.id, "A");
         assert.equal((await frame()).vertex, undefined);
@@ -124,6 +124,7 @@ export async function checkSegmentEditing(url: string) {
         assert.equal((await frame()).vertex, undefined);
         await undo();
 
+        await tap(firstRidge);
         await pointer("mouseMoved", pixels(await frame(), firstRidge), 0, "none"); await paint();
         const hoveredRidge = await highlights(), [ridgeHover] = hoveredRidge;
         assert.equal(hoveredRidge.length, 1);
@@ -135,8 +136,9 @@ export async function checkSegmentEditing(url: string) {
         assert.equal((await frame()).selection?.id, "M");
         assert.equal(await segmentTitle(), "");
         await selectedStroke(true);
-        assert.match(await text(".geometry-box[aria-pressed=true]"), /^曲线 \d+$/);
-        await tap(firstRidge);
+        assert.match(await text(".subitem.selected > .subitem-heading"), /山脊 1/);
+        assert(await text(".geometry-box[aria-label=山脊线][aria-pressed=false]"));
+        await tapLayer(firstRidge, "segment", "M");
         assert.equal(await segmentTitle(), "线段 1");
         await selectedStroke(true);
         await screenshot("ridge-segment-light");
@@ -147,15 +149,15 @@ export async function checkSegmentEditing(url: string) {
         await screenshot("ridge-segment-dark");
         await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] });
         await wait(() => document.documentElement.dataset.theme === "light");
-        assert.equal(await evaluate(() => document.querySelector("[data-curve-segment]")?.parentElement?.closest(".subitem")
-            ?.querySelector(".subitem-toggle")?.textContent?.trim()), "山脊 1");
-        assert(await evaluate(() => document.querySelector("[data-property-tab=function]")?.getAttribute("aria-pressed") === "true"));
+        assert.equal(await evaluate(() => !!document.querySelector("[data-curve-segment]")?.parentElement?.closest(".subitem")), false);
+        assert(await evaluate(() => document.querySelector("[data-property-tab=geometry]")?.getAttribute("aria-pressed") === "true"));
         assert(await evaluate(() => {
             const row = document.querySelector("[data-curve-segment]")!.getBoundingClientRect(), pane = document.querySelector("#property-content")!.getBoundingClientRect();
             return row.top >= pane.top && row.bottom <= pane.bottom;
         }));
         assert(await evaluate(() => document.querySelector<HTMLButtonElement>("[aria-label=上一个线段]")?.disabled));
         await tap(inside);
+        await tapLayer(firstRidge, "holder", "M");
         await drag(firstRidge);
         translated(line.nodes.map(n => n.p), (await curve()).nodes.map(n => n.p), dx);
         assert.deepEqual(page.owner(await authored(), "M").construction, page.owner(original, "M").construction);
@@ -163,6 +165,7 @@ export async function checkSegmentEditing(url: string) {
         await undo();
 
         console.log("Map menu ownership, compact layout and keyboard navigation");
+        await tapLayer(edge, "geometry", "A");
         await tap(edge, 0, "right");
         const regionGroups = [
             ["轮廓 1", "删除轮廓"], ["区域", "添加轮廓"], ["地件", "复制地件", "禁用地件", "删除地件"]
@@ -284,6 +287,7 @@ export async function checkSegmentEditing(url: string) {
         await wait(() => innerWidth === 284 && window.curveMapProbe.editor!.map.width <= 284);
         await click("#fit");
         await evaluate(() => window.scrollTo(0, 0));
+        await tapLayer(edge, "geometry", "A");
         await paint();
         const edgeOnScreen = await evaluate(point => {
             const map = window.curveMapProbe.editor!.map, box = map.canvas.getBoundingClientRect(), [x, y] = map.screen(point);
@@ -330,6 +334,7 @@ export async function checkSegmentEditing(url: string) {
         assert.equal(boundary(await authored(), "A").nodes.length, 3);
         await undo();
 
+        await tapLayer(middleRidge, "geometry", "M");
         await tap(middleRidge, 0, "right");
         assert.deepEqual((await menuGroups()).map(column => column.map(group => group[0])), [["线段类型", "线段", "曲线"], ["山脊 1", "地件"]]);
         assert.deepEqual((await menuGroups())[1][0], ["山脊 1", "复制山脊", "删除山脊"]);
@@ -347,7 +352,7 @@ export async function checkSegmentEditing(url: string) {
         assert.deepEqual((await curve()).nodes.map(n => n.id), line.nodes.slice(1).map(n => n.id));
         assert.deepEqual(await nodeTitles(), ["节点 1"]);
         await undo();
-        await tap(segmentPoint(line, 3));
+        await tapLayer(segmentPoint(line, 3), "segment", "M");
         assert(await evaluate(() => document.querySelector<HTMLButtonElement>("[aria-label=下一个线段]")?.disabled));
         await click(deleteButton); await saved(); await paint();
         assert.deepEqual((await curve()).nodes.map(n => n.id), line.nodes.slice(0, -1).map(n => n.id));
@@ -364,7 +369,7 @@ export async function checkSegmentEditing(url: string) {
                 await click(menu + " [data-option=insert-node]");
             }
             else {
-                await tap(middleRidge);
+                await tapLayer(middleRidge, "segment", "M");
                 await tap(middleRidge, 0, "left", 2);
             }
             await saved(); await paint();
@@ -379,11 +384,11 @@ export async function checkSegmentEditing(url: string) {
         }
 
         const shore = geometryPath(page.owner(original, "C"), -1)!;
-        await tap(segmentPoint(shore, 0, .3));
+        await tapLayer(segmentPoint(shore, 0, .3), "holder", "C");
         assert.equal((await frame()).selection?.id, "C");
         assert.equal(await segmentTitle(), "");
         assert.match(await text(".geometry-box[aria-pressed=true]"), /^曲线 \d+$/);
-        await tap(segmentPoint(shore, 0, .3));
+        await tapLayer(segmentPoint(shore, 0, .3), "segment", "C");
         assert.equal(await segmentTitle(), "线段 1");
         assert.equal(segmentType(shore, 0), "arc");
         assert((await selectedStroke(true)).points.length > 2);
@@ -440,14 +445,14 @@ export async function checkSegmentEditing(url: string) {
         assert(Math.abs(current.nodes[0].bulge! - 1) < 1e-10);
         assert.equal(await readAngle(), 180);
         const slope = geometryPath(page.owner(original, "S"), -1)!;
-        await tap(slope.nodes[0].p);
+        await tapLayer(slope.nodes[0].p, "holder", "S");
         assert.equal((await frame()).selection?.id, "S");
         assert.equal(await segmentTitle(), "");
         assert.deepEqual(await nodeTitles(), []);
-        assert.match(await text(".geometry-box[aria-pressed=true]"), /^曲线 \d+$/);
-        await tap(slope.nodes[0].p);
+        assert.match(await text(".subitem.selected > .subitem-heading"), /坡线 1/);
+        await tapLayer(slope.nodes[0].p, "vertex", "S");
         assert.deepEqual(await nodeTitles(), ["节点 1"]);
-        await tap(segmentPoint(slope, 0));
+        await tapLayer(segmentPoint(slope, 0), "segment", "S");
         assert.equal(await segmentTitle(), "线段 1");
         await click(row + " button[aria-label=圆弧]"); await saved(); await paint();
         assert(await evaluate(selector => document.querySelector<HTMLButtonElement>(selector)?.disabled, tangent));

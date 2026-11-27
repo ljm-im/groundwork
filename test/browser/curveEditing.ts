@@ -18,6 +18,7 @@ import { overlay } from "../../src/render/palette.ts";
 interface Frame {
     origin: Point; scale: number; selected?: string; geometry?: GeometryTarget; vertex?: GeoControl;
     ridgePreview?: Curve; section?: Section<"resolved">["points"]; height?: number;
+    selectionPath?: import("../../src/core/edit/selection.ts").SelectionPath | null;
 }
 interface Probe { frame?: Frame }
 declare global {
@@ -28,6 +29,9 @@ async function observeCurveEditing() {
     const probe: Probe = {};
     window.curveEditingProbe = probe;
     const mapModule = "/src/render/map.ts", terrainModule = "/src/core/design/results.ts";
+    const selectionModule = "/src/core/edit/selection.ts", controlsModule = "/src/core/edit/geoControls.ts";
+    const { holderTarget, partControl, selectionLayers } = await import(selectionModule) as typeof import("../../src/core/edit/selection.ts");
+    const { geometryPath } = await import(controlsModule) as typeof import("../../src/core/edit/geoControls.ts");
     const { ProjectMap } = await import(mapModule) as typeof import("../../src/render/map.ts");
     const { sampleField } = await import(terrainModule) as typeof import("../../src/core/design/results.ts");
     const draw = ProjectMap.prototype.draw;
@@ -35,8 +39,13 @@ async function observeCurveEditing() {
         draw.call(this, view, theme);
         const canvas = document.querySelector("#map")!.getBoundingClientRect(), [x, y] = this.screen([0, 0]);
         const dragged = view.dragNode?.function;
-        probe.frame = { origin: [canvas.left + x, canvas.top + y], scale: this.scale, selected: view.selection?.id,
-            geometry: view.geometry, vertex: view.vertex, ridgePreview: dragged?.type === "mountain" ? dragged.ridges[0].curve : undefined,
+        const { root, holder, part } = selectionLayers(view.selectionPath);
+        const owner = root?.kind === "geoNode" ? view.project.design.geoNodes.find(n => n.id === root.id) : undefined;
+        const geometry = owner && holder ? holderTarget(owner, holder) : undefined;
+        const curve = owner && geometry ? geometryPath(owner, geometry.index) : undefined;
+        const vertex = curve && part && geometry ? partControl(curve, part, geometry.index) : undefined;
+        probe.frame = { origin: [canvas.left + x, canvas.top + y], scale: this.scale, selected: root?.id, selectionPath: view.selectionPath,
+            geometry, vertex, ridgePreview: dragged?.type === "mountain" ? dragged.ridges[0].curve : undefined,
             section: view.project.design.sections.find(s => s.id === "Q")?.points,
             height: sampleField(view.project.terrain, "height", [-23, 5]) };
     };
@@ -67,6 +76,16 @@ async function checkDrawnCurves(url: string) {
         const [x, y] = await screen(p);
         for (const type of ["mousePressed", "mouseReleased"])
             await cdp("Input.dispatchMouseEvent", { type, x, y, button, clickCount });
+    }
+    async function tapVertex(p: Point, index: number) {
+        const visited = [];
+        for (let i = 0; i < 4; i++) {
+            await tap(p); await paint();
+            const { vertex, selectionPath } = await frame();
+            if (vertex?.role === "vertex" && vertex.index === index) return;
+            visited.push(selectionPath);
+        }
+        assert.fail("Vertex " + index + " at " + p.join(",") + " was not selected. " + JSON.stringify(visited));
     }
     async function drag(a: Point, b: Point, preview?: () => Promise<void>) {
         await mouse("mousePressed", ...a);
@@ -135,7 +154,7 @@ async function checkDrawnCurves(url: string) {
         const boundary = async () => geometryPath(resolveDesign(await authored()).geoNodes.find(n => n.id === id)!, 0)!;
         const before = await boundary();
         assert.deepEqual(before.nodes.map((_, i) => segmentType(before, i)), ["line", "line", "line"]);
-        await tap(before.nodes[1].p);
+        await tapVertex(before.nodes[1].p, 1);
         await click("[aria-label=节点类型] button[aria-label=自动平滑]");
         await saved();
         const smoothed = await boundary(), edges = flattenPath(smoothed, .125);
@@ -173,15 +192,15 @@ async function checkDrawnCurves(url: string) {
         assert.match(await text(ridgeInput), /^曲线 \d+$/);
         assert.equal((await closedCheckbox(0)).checked, false);
         const second = nodeRow(line.nodes[1].id), third = nodeRow(line.nodes[2].id);
-        await tap(line.nodes[1].p); await paint();
+        await tapVertex(line.nodes[1].p, 1);
         assert.equal((await frame()).vertex?.index, 1);
         assert.deepEqual((await frame()).geometry, { kind: "curve", index: -1 });
-        await screenshot("ridge-node", ".subitem:has(" + ridgeInput + ") > .subitem-heading");
+        await screenshot("ridge-node", second + " > .subitem-heading");
         await screenshot("ridge-handles", undefined, [[-41, 13], [-2, -17]]);
         assert.equal(await evaluate(s => !!document.querySelector(s + " .subitem-toggle"), second), false, "The selected node is always expanded");
         assert.equal((await frame()).vertex?.index, 1);
         await evaluate(() => document.querySelector("#property-content")!.scrollTop = 0);
-        await tap(line.nodes[2].p);
+        await tapVertex(line.nodes[2].p, 2);
         await wait(selector => {
             const row = document.querySelector(selector + " .subitem-heading"), panel = document.querySelector("#property-content")!.getBoundingClientRect();
             const box = row?.getBoundingClientRect();
@@ -189,7 +208,7 @@ async function checkDrawnCurves(url: string) {
         }, third);
         for (const row of [second, third])
             assert.equal(await evaluate(s => !!document.querySelector(s + " [aria-label=线段类型]"), row), false);
-        await tap(line.nodes[1].p);
+        await tapVertex(line.nodes[1].p, 1);
         const priorHeight = (await frame()).height!;
         await click(second + " button.numeric-face[aria-label=高度]");
         await evaluate(() => document.getSelection()!.selectAllChildren(document.querySelector(".numeric-edit")!));
@@ -211,18 +230,20 @@ async function checkDrawnCurves(url: string) {
         await tap(line.nodes[1].p);
         await click(nodeRow(line.nodes[1].id) + " [aria-label=删除节点]"); await saved();
         line = await ridge();
-        await tap(line.nodes[2].p);
+        await tapVertex(line.nodes[2].p, 2);
         await click(nodeRow(line.nodes[2].id) + " [aria-label=删除节点]"); await saved();
         line = await ridge();
         assert.equal(line.nodes.length, 2);
-        assert((await closedCheckbox(0)).disabled);
         assert.equal(await evaluate(() => document.querySelectorAll("#properties [aria-label=删除节点]").length), 0);
+        await click("[data-property-tab=function]");
+        assert((await closedCheckbox(0)).disabled);
         await tap(line.nodes[0].p, "right");
         assert.equal(await evaluate(() => !!document.querySelector(".context-menu [data-option=delete-node]")), false);
         await key("Escape");
         assert.doesNotMatch(await text("#properties"), /平滑折线|顶点 \d+ 高度/);
 
         console.log("drawing and reopening a closed ridge removes its closing handles");
+        if (await evaluate(() => !!document.querySelector("[data-property-tab=geometry]"))) await click("[data-property-tab=function]");
         await click("button[aria-label=添加山脊]");
         const closedPoints: Point[] = [[-29, 19], [-13, 22], [-8, 14]];
         await drag(await screen(closedPoints[0]), await screen([-28, 23]));
@@ -273,11 +294,12 @@ export async function checkCurveEditing(url: string) {
         const boundary2 = await evaluate(() => [...document.querySelectorAll(".subitem-toggle")]
             .find(el => el.textContent?.trim() === "轮廓 2")?.getAttribute("aria-expanded"));
         assert.equal(boundary2, "true");
-        await tap(await at([-32, 4]));
+        await tap(await at([-32, 4])); await tap(await at([-32, 4]));
         const selectedNode = ".subitem[data-curve-node]";
         await wait(s => !!document.querySelector(s), selectedNode);
-        assert.equal(await evaluate(s => document.querySelector(s)?.parentElement?.closest(".subitem")
-            ?.querySelector(".subitem-toggle")?.textContent?.trim(), selectedNode), "轮廓 2");
+        assert.equal(await evaluate(s => !!document.querySelector(s)?.parentElement?.closest(".subitem"), selectedNode), false);
+        await property("region");
+        assert.equal(await text("[data-outline].selected .subitem-toggle"), "轮廓 2");
         assert.equal(await evaluate(() => [...document.querySelectorAll("#properties h3")].some(h => h.textContent?.trim() === "节点")), false);
         const [rowX, rowY] = await point(row2);
         await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: rowX, y: rowY });
@@ -316,57 +338,61 @@ export async function checkCurveEditing(url: string) {
         await tap(await at(ridge));
         assert.equal(await evaluate(() => document.querySelector("[data-geo-node=D]")?.getAttribute("aria-pressed")), "true");
         await tap(await at(ridge), 1);
+        await tap(await at(ridge));
         await wait(() => {
-            const row = document.querySelector("button.geometry-box[aria-label=山脊线][aria-pressed=true]")?.getBoundingClientRect();
+            const row = document.querySelector(".subitem.selected > .subitem-heading")?.getBoundingClientRect();
             const panel = document.querySelector("#property-content")!.getBoundingClientRect();
             return !!row && row.top >= panel.top && row.bottom <= panel.bottom && !document.querySelector("[data-curve-segment]");
         });
         assert.equal(await evaluate(() => document.querySelector("[data-geo-node=C]")?.getAttribute("aria-pressed")), "true");
         assert.equal(await evaluate(() => document.querySelector("[data-property-tab=function]")?.getAttribute("aria-pressed")), "true");
         assert.deepEqual(await evaluate(() => [...document.querySelectorAll(".subitem-toggle[aria-expanded=true]")].map(el => el.textContent?.trim())), ["山脊 3"]);
-        await tap(await at(vertex));
+        await tap(await at(vertex)); await tap(await at(vertex));
         const heightRow = "[data-parameter*=\".ridges.2.h.\"]";
         await wait(s => !!document.querySelector(s), heightRow);
         await click("[data-geo-node=A]");
         await tap(await at(vertex));
         await tap(await at(vertex), 1);
+        for (let i = 0; i < 3; i++) await tap(await at(vertex));
         await drag(await at(vertex), await at([-4, 32.3])); await saved();
         const mountain = resolveDesign(await authored()).geoNodes.find(n => n.id === "C")!.function;
         assert(mountain.type === "mountain" && distance(mountain.ridges[2].curve.nodes[1].p, [-4, 32.3]) < .3);
         await undo();
     });
-    await withCurveMap(url, "curve-controls", async ({ authored, boundary, click, curve, disk, drag, evaluate, frame, key, nodeTitles, paint, pixels, saved, screenshot, tap, text, undo }) => {
+    await withCurveMap(url, "curve-controls", async ({ authored, boundary, click, curve, disk, drag, evaluate, frame, key, nodeTitles, paint, pixels, saved, screenshot, tap, tapLayer, text, undo }) => {
         await click("[data-tab=layers]"); await click("input[data-layer=geoNodes]"); await paint();
         const original = await authored(), originalLine = await curve(), alt = 1;
         await click("[data-tab=terrain]"); await click("[data-geo-node=B]"); await paint();
         const b = boundary(original, "B"), edge = mixPoint(b.nodes[2].p, b.nodes[3].p, .5), beforeInsert = await disk();
         await tap(edge, alt);
         assert.equal(await disk(), beforeInsert);
-        await tap(edge); await tap(edge, 0, "left", 2); await saved();
+        await click("[data-geo-node=B]");
+        await tapLayer(edge, "segment", "B"); await tap(edge, 0, "left", 2); await saved();
         assert.equal(boundary(await authored(), "B").nodes.length, b.nodes.length + 1);
         await undo(); assert.equal(await disk(), beforeInsert);
 
         await tap([-35, 25]); assert.deepEqual(await nodeTitles(), []);
-        await tap(originalLine.nodes[2].p); assert.deepEqual(await nodeTitles(), ["节点 3"]);
+        await tapLayer(originalLine.nodes[2].p, "vertex", "M"); assert.deepEqual(await nodeTitles(), ["节点 3"]);
         await click("[aria-label=下一个节点]"); await paint();
         assert.deepEqual(await nodeTitles(), ["节点 4"]);
         assert.equal((await frame()).vertex?.index, 3);
-        await tap(originalLine.nodes.at(-1)!.p);
+        await tapLayer(originalLine.nodes.at(-1)!.p, "vertex", "M");
         assert(await evaluate(() => document.querySelector<HTMLButtonElement>("[aria-label=下一个节点]")?.disabled));
-        await key("Escape"); await paint(); assert.deepEqual(await nodeTitles(), []);
+        await key("Escape"); await paint();
+        assert.equal((await frame()).vertex, undefined);
+        assert.equal((await frame()).selectionPath?.at(-1)?.kind, "geometry");
         await click("[data-property-tab=region]");
         const boundaryTwo = ".subitem:has(> .subitem-heading .subitem-toggle span)";
         assert.deepEqual(await evaluate(s => [...document.querySelectorAll(s + " > .subitem-heading .subitem-toggle")]
             .map(el => [el.textContent?.trim(), el.getAttribute("aria-expanded")]), boundaryTwo), [["轮廓 1", "false"], ["轮廓 2", "false"]]);
-        await tap([29, 37]); await tap([33, 31]);
+        await tap([29, 37]); await tapLayer([33, 31], "vertex", "M");
         assert.deepEqual(await nodeTitles(), ["节点 1"]);
         assert(await evaluate(() => {
             const nested = document.querySelector("[data-curve-node]")?.parentElement?.closest(".subitem");
-            return nested?.querySelector(".subitem-toggle")?.textContent?.trim() === "轮廓 2" &&
-                ![...document.querySelectorAll("#property-content h3")].some(h => h.textContent === "节点");
+            return !nested && ![...document.querySelectorAll("#property-content h3")].some(h => h.textContent === "节点");
         }));
         await click("[aria-label=上一个节点]"); await paint(); assert.deepEqual(await nodeTitles(), ["节点 4"]);
-        await key("Escape"); await paint();
+        await key("Escape"); await key("Escape"); await paint();
         assert.deepEqual(await nodeTitles(), []);
         assert(await evaluate(() => [...document.querySelectorAll(".subitem-toggle")].some(el =>
             el.textContent?.trim() === "轮廓 2" && el.getAttribute("aria-expanded") === "true")));
@@ -374,7 +400,7 @@ export async function checkCurveEditing(url: string) {
         assert.equal(await text("#property-content .subitem-toggle"), "轮廓 1");
         assert(await evaluate(() => !document.querySelector("#property-content [aria-label=删除轮廓]")));
 
-        await tap([-35, 25]);
+        await tapLayer([-35, 25], "geometry", "M");
         const line = await curve();
         const strokeAt = async (index: number) => {
             const f = await frame(), start = pixels(f, line.nodes[index].p, true), end = pixels(f, pathHandle(line, index, "out"), true);
@@ -386,6 +412,8 @@ export async function checkCurveEditing(url: string) {
         const handlesFrame = await frame(), [left, top] = pixels(handlesFrame, [-27, 36]), [right, bottom] = pixels(handlesFrame, [12, 20]);
         await screenshot("handle-dashes", { x: left, y: top, width: right - left, height: bottom - top });
         const handle = pathHandle(line, 2, "out");
+        await tap(line.nodes[2].p, 0, "right");
+        await key("Escape");
         await drag(handle, 0, async () => {
             const f = await frame(), [x, y] = pixels(f, handle, true), start = pixels(f, line.nodes[2].p, true);
             const preview = (await evaluate(() => window.curveMapProbe.strokes)).find(s => s.width === overlay.controlLine &&

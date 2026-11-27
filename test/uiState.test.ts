@@ -5,8 +5,10 @@ import { createGrid, distance, type Point } from "../src/core/math/geometry.ts";
 import { sectionHandles } from "../src/core/edit/controls.ts";
 import { geoParameterName, resolveDesign } from "../src/core/design/parameters.ts";
 import { History } from "../src/core/edit/history.ts";
-import { commitControl, geometryPath, insertCurveNode } from "../src/core/edit/geoControls.ts";
+import { commitControl, controlPreview, geometryPath, insertCurveNode } from "../src/core/edit/geoControls.ts";
+import { holderLayer, holderTarget, selectionLayers, type SelectionPath } from "../src/core/edit/selection.ts";
 import { parseDesign } from "../src/core/design/model.ts";
+import { type Design } from "../src/core/design/v5.ts";
 import { positionReadings, readingRange } from "../src/app/state/mapText.ts";
 import { controlSnap, sectionSnap } from "../src/app/state/mapSnaps.ts";
 import { draftPointer } from "../src/app/state/geoTools.ts";
@@ -16,14 +18,14 @@ import { Project } from "../src/core/project.ts";
 import { pixelGridSpacing } from "../src/core/edit/display.ts";
 import { constrainGeoLabel, constrainSectionLabel, geoLabelPoint } from "../src/render/labelLayout.ts";
 import { makeShape, rasterRegion, regionMaskAt } from "../src/core/design/regions.ts";
-import { clampMarkPoint, nextMapHit, ProjectMap } from "../src/render/map.ts";
+import { clampMarkPoint, dragMapHit, mapControlDrag, nextMapHit, ProjectMap } from "../src/render/map.ts";
 import { testProjectModel, testTerrainClient } from "./computeFixture.ts";
 import { render } from "svelte/server";
-import { fixtureConstruction, fixtureFunction, fixtureSection, withNodeSlope, coveredLandformPoints, addLayer, openCurve, overlappingLandforms, polygon, rect, resolvedRect, syntheticDesign } from "./scenarios.ts";
+import { fixtureConstruction, fixtureFunction, fixtureMark, fixtureSection, withNodeSlope, coveredLandformPoints, addLayer, openCurve, overlappingLandforms, polygon, rect, resolvedRect, syntheticDesign } from "./scenarios.ts";
 
-test("Overlapping map objects cycle in paint order, including separate geometries of the same terrain", async () => {
+test("Hit branches follow the paint order, with parameters ahead of the containing outline", async () => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
-    const design = syntheticDesign(), point: [number, number] = [-14, -8];
+    const design = syntheticDesign(), point: Point = [-14, -8];
     design.geoNodes.push(addLayer(design, "M", rect(-25, -17, 5, 3), {
         type: "mountain", valleys: [], peaks: [{ at: point, height: 12, radius: 20, noise: 0, scale: 1 }],
         ridges: [{ curve: withNodeSlope(openCurve([{ p: [-23, -8] }, { p: [-4, -8] }]), 2) }]
@@ -38,23 +40,22 @@ test("Overlapping map objects cycle in paint order, including separate geometrie
     Object.assign(editor, { project: testProjectModel(project), map });
     editor.layers.geoNodes = editor.layers.sections = true;
     const hits = [...map.objectHits(editor.mapView!, screen)];
-    assert.deepEqual(hits.map(h => [h.selection.id, h.control?.role, h.control?.path]), [
-        ["B", undefined, undefined], ["A", undefined, undefined], ["Q", undefined, undefined],
-        ["M", "parameter", 1], ["M", "segment", -1], ["M", "body", 0], ["T", "body", 0], ["G", "body", 0]
-    ]);
-    assert.equal(nextMapHit(hits, null), hits[0]);
-    assert.equal(nextMapHit(hits, { kind: "geoNode", id: "other" }), hits[0]);
-    for (const [i, hit] of hits.entries()) {
-        const geometry = i === 3 ? { kind: "parameter" as const, index: 1 } :
-            i === 4 ? { kind: "curve" as const, index: -1 } : undefined;
-        assert.equal(nextMapHit(hits, hit.selection, geometry), hits[(i + 1) % hits.length]);
-    }
+    assert.deepEqual(hits.map(h => h.path[0].id), ["B", "A", "Q", "M", "T", "G"]);
+    const mountain = hits[3].path, peak = selectionLayers(mountain);
+    assert.deepEqual(peak.holder, holderLayer("peaks"));
+    assert(peak.geometry && "point" in design.geometry[peak.geometry.id]);
+    const ridge = [...map.objectHits(editor.mapView!, map.screen([-17, -8]))].find(h => h.path[0].id === "M")!;
+    assert.deepEqual(selectionLayers(ridge.path).holder, holderLayer("ridges"));
+    assert.deepEqual(nextMapHit(hits, null)?.path, [hits[0].path[0]]);
+    assert.deepEqual(nextMapHit(hits, [{ kind: "geoNode", id: "other" }])?.path, [hits[0].path[0]]);
+    for (const [i, hit] of hits.entries())
+        assert.deepEqual(nextMapHit(hits, hit.path, true)?.path, [hits[(i + 1) % hits.length].path[0]]);
     editor.layers.geoNodes = false;
-    assert.deepEqual([...map.objectHits(editor.mapView!, screen)].map(h => h.selection.id), ["B", "A", "Q", "M", "T", "G"]);
-    assert.equal(nextMapHit([], { kind: "geoNode", id: "M" }), undefined);
+    assert.deepEqual([...map.objectHits(editor.mapView!, screen)].map(h => h.path[0].id), ["B", "A", "Q", "M", "T", "G"]);
+    assert.equal(nextMapHit([], [{ kind: "geoNode", id: "M" }]), undefined);
 });
 
-test("An upper landform face covers lower outlines, vertices and parameter geometry", async () => {
+test("Outline hits expose vertices and segments only on their selected geometry branch", async () => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
     const project = new Project(overlappingLandforms()), editor = new Editor(testTerrainClient());
     const map: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), { width: 1000, height: 700, markBoxes: [] });
@@ -63,25 +64,23 @@ test("An upper landform face covers lower outlines, vertices and parameter geome
     editor.layers.geoNodes = true;
     for (const point of coveredLandformPoints) {
         const screen = map.screen(point), view = editor.mapView!;
-        for (const mode of ["select", "edit", "cycle"] as const)
-            assert.equal(map.objectHits(view, screen, mode).next().value?.selection.id, "B");
-        const next = nextMapHit(map.objectHits(view, screen, "cycle"), { kind: "geoNode", id: "B" });
-        assert.equal(next?.selection.id, "A");
+        assert.equal(map.objectHits(view, screen).next().value?.path[0].id, "B");
+        const next = nextMapHit(map.objectHits(view, screen), [{ kind: "geoNode", id: "B" }], true);
+        assert.deepEqual(next?.path, [{ kind: "geoNode", id: "A" }]);
     }
-    const view = editor.mapView!;
-    const ridge = map.objectHits(view, map.screen([0, 10]), "edit").next().value!;
-    assert.equal(ridge.selection.id, "A");
-    assert.equal(ridge.control?.role, "segment");
-    assert.equal(ridge.control.path, -2);
-    for (const [point, role] of [[[-16, 10], "vertex"], [[-16, 8], "segment"]] as const) {
-        const screen = map.screen([...point]);
-        assert.equal(map.objectHits(view, screen, "select").next().value?.control?.role, "body");
-        assert.equal(map.objectHits(view, screen, "edit").next().value?.control?.role, role);
-    }
-    editor.setSelection({ kind: "geoNode", id: "A" });
-    const atVertex = map.screen(coveredLandformPoints[2]);
-    assert.equal(map.selectedControl(editor.mapView!, atVertex)?.selection.id, "A");
-    assert.equal(map.selectedControl(editor.mapView!, atVertex)?.control?.role, "vertex");
+    const hit = (point: Point) => [...map.objectHits(editor.mapView!, map.screen(point))].find(h => h.path[0].id === "A")!;
+    assert.deepEqual(selectionLayers(hit([0, 10]).path).holder, holderLayer("ridges", 1));
+    const vertex: Point = [-16, 10], edge: Point = [-16, 8];
+    const path = hit(vertex).path;
+    assert.equal(path.length, 3);
+    assert.deepEqual(path[1], holderLayer("outlines"));
+    assert.equal(hit(edge).path.length, 3);
+    editor.selectPath([path[0], path[1]!]);
+    assert.equal(hit(vertex).path.length, 3);
+    editor.selectPath(path);
+    assert.equal(hit(vertex).control?.role, "vertex");
+    assert.equal(hit(edge).control?.role, "segment");
+    assert.equal(hit(vertex).path.length, 4);
 });
 
 test("Map face hits include holes while the terrain raster uses even-odd coverage", async () => {
@@ -99,15 +98,17 @@ test("Map face hits include holes while the terrain raster uses even-odd coverag
     assert.equal(regionMaskAt(region, grid.index(...point)), 0);
     assert.equal(regionMaskAt(region, grid.index(12, 0)), 1);
     assert.equal(map.pickGeo(project.view(), point)?.id, "T");
-    const first = map.objectHits(editor.mapView!, screen).next().value!;
-    assert.deepEqual([first.selection.id, first.control?.role], ["T", "body"]);
-    editor.setSelection(first.selection);
-    const view = editor.mapView!;
-    assert.equal(map.selectedBody(view, screen)?.control?.role, "body");
-    const outlineHit = map.objectHits(view, screen, "edit").next().value?.control;
-    assert.deepEqual([outlineHit?.role, outlineHit?.path], ["outline", 1]);
-    const cycle = [...map.objectHits({ ...view, outline: 1 }, screen, "cycle")];
-    assert.deepEqual(cycle.map(hit => [hit.selection.id, hit.control?.path]), [["T", 1], ["T", 0], ["G", 0]]);
+    const click = (at = screen, alt = false) => {
+        const path = nextMapHit(map.objectHits(editor.mapView!, at), editor.selectionPath, alt)?.path ?? null;
+        editor.selectPath(path);
+        return path;
+    };
+    const [hit] = map.objectHits(editor.mapView!, screen);
+    assert.deepEqual(hit.path.slice(0, 2), [{ kind: "geoNode", id: "T" }, holderLayer("outlines", 1)]);
+    for (const depth of [1, 2, 3, 3]) assert.equal(click()?.length, depth);
+    assert.deepEqual(click(map.screen([12, 0])), [hit.path[0]]);
+    click();
+    assert.deepEqual(click(screen, true), [{ kind: "geoNode", id: "G" }]);
 });
 
 test("Map gestures use only related alignment points and Shift and Ctrl bypass nearby snaps", async () => {
@@ -400,7 +401,7 @@ test("Drawing or canceling a parameter keeps its owner and activates only the co
         assert.equal(editor.tool, "select"); assert.deepEqual(editor.selection, selected);
         assert.equal(editor.history.index, cancel ? 0 : 1);
     }
-    const owner = editor.project.resolved.geoNodes[1], target = editor.geometry;
+    const owner = editor.project.resolved.geoNodes[1], target = holderTarget(owner, editor.selectedHolder!);
     assert.deepEqual(target, { kind: "curve", index: -1 });
     const handles = geoControls(owner, target);
     assert.equal(handles.filter(c => c.role === "vertex").length, 3);
@@ -414,7 +415,7 @@ test("Drawing or canceling a parameter keeps its owner and activates only the co
     assert.equal(editor.geoDraft, undefined);
     assert.equal(editor.history.index, 2);
     assert.deepEqual(editor.selection, selected);
-    assert.equal(geoControls(editor.project.resolved.geoNodes[1], editor.geometry).length, 1);
+    assert.deepEqual(editor.selectedHolder, holderLayer("peaks"));
 });
 
 test("Isolating a section exposes only its own map handles", () => {
@@ -494,19 +495,20 @@ test("Dragged map names follow the continuous boundary with eight pixels of clea
 
 test("The inspector keeps compatible tabs and chooses the first available tab", async () => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
-    const editor = new Editor(testTerrainClient());
+    const editor = new Editor(testTerrainClient()), d = overlappingLandforms();
+    d.sections.push(fixtureSection(d, { id: "D", label: "D", points: [[0, 0], [0, 5]] }));
+    editor.project = testProjectModel(new Project(d));
     editor.setSelection({ kind: "geoNode", id: "A" });
     assert.equal(editor.propertyTab, "label");
     editor.changePropertyTab("function");
     editor.setSelection({ kind: "geoNode", id: "B" });
     assert.equal(editor.propertyTab, "function");
     editor.changePropertyTab("issues");
-    editor.setSelection({ kind: "geoNode", id: "C" });
+    editor.setSelection({ kind: "geoNode", id: "G" });
     assert.equal(editor.propertyTab, "issues");
     editor.setSelection({ kind: "section", id: "D" });
     assert.equal(editor.propertyTab, "label");
-    for (const kind of ["mark", "input", "field", null] as const) {
-        const selection = kind ? { kind, id: "E" } : null;
+    for (const selection of [{ kind: "input", id: "A" }, { kind: "field", id: "height" }, null] as const) {
         editor.setSelection(selection);
         assert.equal(editor.propertyTab, "general");
         assert.equal(propertyTabs(selection).length, 1);
@@ -578,7 +580,7 @@ test("Selected segments follow their starting node through edits, undo and redo"
         insertCurveNode(doc, doc.geoNodes[1], { role: "segment", path: 0, index: 0, point: [-14, -14] });
     });
     assert.deepEqual(selected(), ["segment", 3, "2"]);
-    await editor.removeGeo("T", { role: "vertex", path: 0, index: 0, point: [-21, -14] });
+    await editor.removeCurvePart(editor.selection!, { role: "vertex", path: 0, index: 0, point: [-21, -14] });
     assert.deepEqual(selected(), ["segment", 2, "2"]);
     await editor.navigate(false);
     assert.deepEqual(selected(), ["segment", 3, "2"]);
@@ -588,7 +590,7 @@ test("Selected segments follow their starting node through edits, undo and redo"
     assert.deepEqual(selected(), ["segment", 3, "2"]);
     await editor.navigate(true);
     assert.deepEqual(selected(), ["segment", 2, "2"]);
-    await editor.removeGeo("T", editor.vertex);
+    await editor.removeSelected();
     assert.deepEqual(selected(), ["vertex", 2, "2"]);
     await editor.navigate(false);
     assert.deepEqual(selected(), ["segment", 2, "2"]);
@@ -608,33 +610,25 @@ function islandDesign() {
     return d;
 }
 
-test("Nested outlines use their own area and expand a selected landform's place in the Alt cycle", async () => {
+test("Nested outline hits choose the smallest face and cycle to the next object root", async () => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
     const d = islandDesign(), editor = new Editor(testTerrainClient()), map: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), {
         width: 1000, height: 700, markBoxes: []
     });
     editor.project = testProjectModel(new Project(d));
     map.fit(editor.project.terrain, false);
-    const p: [number, number] = [-10, -10], screen = map.screen(p), shape = editor.project.terrain.regions.get("T")!.shape;
+    const p: Point = [-10, -10], screen = map.screen(p), shape = editor.project.terrain.regions.get("T")!.shape;
     assert(shape.contains(p));
     assert.deepEqual(shape.containingOutlines!(p), [2, 1, 0]);
     assert(!shape.contains([-20, -20]));
     assert.deepEqual(shape.containingOutlines!([-20, -20]), [1, 0]);
-    assert.equal(map.objectHits(editor.mapView!, screen, "select").next().value?.control?.role, "body");
-    assert.equal(map.objectHits(editor.mapView!, screen, "edit").next().value?.control?.path, 2);
+    const hits = () => map.objectHits(editor.mapView!, screen);
+    assert.deepEqual(hits().next().value?.path[1], holderLayer("outlines", 2));
     editor.select({ kind: "geoNode", id: "T" });
-    const first = map.objectHits(editor.mapView!, screen, "select").next().value!;
-    assert.equal(first.control?.role, "outline");
-    assert.equal(first.control?.path, 2);
-    editor.selectControl(first.control!);
-    for (const index of [1, 0, undefined]) {
-        const view = editor.mapView!, hits = map.objectHits(view, screen, "cycle");
-        const hit = nextMapHit(hits, view.selection, view.geometry, view.outline)!;
-        assert.equal(hit.selection.id, index === undefined ? "G" : "T");
-        if (index !== undefined) assert.equal(hit.control?.path, index);
-        editor.select(hit.selection);
-        if (hit.control) editor.selectControl(hit.control);
-    }
+    assert.deepEqual(nextMapHit(hits(), editor.selectionPath)?.path[1], holderLayer("outlines", 2));
+    editor.focusGeometry({ kind: "outline", index: 1 });
+    assert.deepEqual(nextMapHit(hits(), editor.selectionPath)?.path[1], holderLayer("outlines", 1));
+    assert.deepEqual(nextMapHit(hits(), editor.selectionPath, true)?.path, [{ kind: "geoNode", id: "G" }]);
 
     const crossed = resolvedRect(-10, -10, 10, 10), bow = polygon([[-14, -14], [14, 14], [-14, 14], [14, -14]]);
     const small = resolvedRect(-4, -6, 4, 6).outlines[0];
@@ -665,7 +659,7 @@ test("Dragging nested outlines moves only their own geometry and preserves selec
     const placed = editor.project.resolved.geoNodes[1];
     editor.select({ kind: "geoNode", id: "T" });
     const outer = { role: "outline" as const, path: 0, index: 0, point: [-10, -28] as [number, number] };
-    editor.selectControl(outer);
+    editor.focusGeometry({ kind: "outline", index: outer.path });
     await editor.edit(d => {
         commitControl(d, { kind: "geoNode", id: "T" }, outer, [-7, -28], false);
     });
@@ -677,8 +671,8 @@ test("Dragging nested outlines moves only their own geometry and preserves selec
     assert.deepEqual(editor.project.design.geoNodes[1], original);
 
     const control = { role: "outline" as const, path: 2, index: 0, point: [-10, -10] as [number, number] };
-    editor.selectControl(control);
-    assert.equal(editor.outline, 2);
+    editor.focusGeometry({ kind: "outline", index: control.path });
+    assert.equal(editor.selectedHolder?.index, 2);
     assert.equal(editor.vertex, undefined);
     await editor.edit(d => {
         commitControl(d, { kind: "geoNode", id: "T" }, control, [-8, -13], false);
@@ -692,32 +686,191 @@ test("Dragging nested outlines moves only their own geometry and preserves selec
     editor.removal?.perform?.();
     await editor.finishWork();
     editor.removal = null;
-    assert.equal(editor.outline, 1);
+    assert.equal(editor.selectedHolder?.index, 1);
     assert.equal(geometryPath(editor.project.resolved.geoNodes[1], 1)?.nodes[0].id, "island0");
     await editor.navigate(false);
-    assert.equal(editor.outline, 2);
+    assert.equal(editor.selectedHolder?.index, 2);
     await editor.navigate(false);
-    assert.equal(editor.outline, 2);
+    assert.equal(editor.selectedHolder?.index, 2);
     assert.deepEqual(editor.project.design.geoNodes[1], original);
     await editor.navigate(true);
-    assert.equal(editor.outline, 2);
+    assert.equal(editor.selectedHolder?.index, 2);
     await editor.navigate(true);
-    assert.equal(editor.outline, 1);
+    assert.equal(editor.selectedHolder?.index, 1);
     const removal = () => editor.removal;
     editor.removeSelected();
     assert.equal(removal()?.action, "删除轮廓");
     removal()?.perform?.();
     await editor.finishWork();
     editor.removal = null;
-    assert.equal(editor.outline, undefined);
+    assert.equal(editor.selectedHolder?.index, undefined);
     await editor.navigate(false);
-    assert.equal(editor.outline, 1);
+    assert.equal(editor.selectedHolder?.index, 1);
     await editor.navigate(true);
-    assert.equal(editor.outline, undefined);
+    assert.equal(editor.selectedHolder?.index, undefined);
     editor.focusGeometry({ kind: "outline", index: 0 });
     editor.removeSelected();
     assert.equal(editor.removal, null);
-    assert.equal(editor.outline, 0);
+    assert.equal(editor.selectedHolder?.index, 0);
+});
+
+
+test("Map drags follow the current layer, preserving offsets and shared coordinates", async () => {
+    const { Editor } = await import("../src/app/state/session.svelte.ts");
+    const d = islandDesign(), owner = d.geoNodes[1];
+    assert(owner.construction.type === "outline");
+    owner.function = fixtureFunction(d, { type: "mountain", ridges: [], valleys: [],
+        peaks: [{ at: [5, -7], height: 4, radius: 8, noise: 0, scale: 1 }] });
+    const offset: Point = [2, 3], outline = owner.construction.outlines[2];
+    assert("curve" in outline);
+    outline.offset = offset;
+    const shared = d.geometry[outline.curve];
+    assert("curve" in shared);
+    const other = addLayer(d, "A", rect(-14, 15, -1, 28), { type: "flat", amount: 1 });
+    assert(other.construction.type === "outline");
+    other.construction.outlines[0] = { curve: outline.curve, offset: [0, 30] };
+    d.geoNodes.push(other);
+    const map: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), { width: 1000, height: 700, markBoxes: [] });
+    const editor = new Editor(testTerrainClient());
+    Object.assign(editor, { project: testProjectModel(new Project(d)), map });
+    map.fit(editor.project.terrain, false);
+    const root = { kind: "geoNode", id: "T" } as const;
+    const holder = holderLayer("outlines", 2);
+    const branch: SelectionPath = [root, holder, { kind: "geometry", id: outline.curve }];
+    const p: Point = [-8, -7], delta: Point = [3, 2];
+    const drag = (point: Point, selection: SelectionPath | null) => {
+        editor.selectPath(selection);
+        const view = editor.mapView!, screen = map.screen(point);
+        const hit = dragMapHit(map.objectHits(view, screen), editor.selectionPath)!;
+        const { selection: moving, control } = mapControlDrag(hit, view, point)!;
+        const target: Point = [control.point[0] + delta[0], control.point[1] + delta[1]];
+        const preview = controlPreview(d, editor.project.resolved, editor.curves, moving, control, false)!(target);
+        const next = structuredClone(d);
+        commitControl(next, moving, control, target, false);
+        assert.equal(hit.path.length, selection?.length ?? 1);
+        return { next, preview };
+    };
+    assert.deepEqual(dragMapHit(map.objectHits(editor.mapView!, map.screen(p)), null)?.path, [root]);
+    const whole = drag(p, [root]);
+    const wholeLand = whole.next.geoNodes[1];
+    assert(wholeLand.construction.type === "outline" && wholeLand.function.type === "mountain");
+    assert.deepEqual(wholeLand.construction.outlines.map(holder => "offset" in holder && holder.offset), [delta, delta, [5, 5]]);
+    assert.deepEqual(wholeLand.function.peaks[0].at.offset, delta);
+    assert.deepEqual(whole.next.geometry, d.geometry);
+    assert.deepEqual(whole.next.geoNodes[2], d.geoNodes[2]);
+
+    const placed = drag(p, [root, holder]).next;
+    assert.deepEqual(placed.geometry, d.geometry);
+    const placement = placed.geoNodes[1].construction;
+    assert(placement.type === "outline");
+    assert.deepEqual(placement.outlines[2], { curve: outline.curve, offset: [5, 5] });
+    assert.deepEqual(placement.outlines.slice(0, 2), owner.construction.outlines.slice(0, 2));
+    assert.deepEqual(placed.geoNodes[1].function, owner.function);
+    assert.deepEqual(placed.geoNodes[2], d.geoNodes[2]);
+
+    const shape = drag(p, branch);
+    assert.deepEqual(shape.next.geoNodes, d.geoNodes);
+    const movedShape = shape.next.geometry[outline.curve];
+    assert("curve" in movedShape);
+    assert.deepEqual(shape.preview.geometry, movedShape);
+    assert.deepEqual(movedShape.curve.nodes.map(node => node.p),
+        shared.curve.nodes.map(node => [node.p[0] + delta[0], node.p[1] + delta[1]]));
+    assert(shape.preview.nodes.has("A"));
+
+    const first = shared.curve.nodes[0];
+    const nodePoint: Point = [first.p[0] + offset[0], first.p[1] + offset[1]];
+    const vertex = drag(nodePoint, [...branch, { kind: "vertex", nodeId: first.id }]).next;
+    assert.deepEqual(vertex.geoNodes, d.geoNodes);
+    const movedVertex = vertex.geometry[outline.curve];
+    assert("curve" in movedVertex);
+    assert.deepEqual(movedVertex.curve.nodes.map(node => node.p),
+        [[first.p[0] + delta[0], first.p[1] + delta[1]], ...shared.curve.nodes.slice(1).map(node => node.p)]);
+});
+
+test("Escape and history preserve hierarchy, truncating a missing holder and blocking deletion of a shared geometry", async t => {
+    const { Editor } = await import("../src/app/state/session.svelte.ts");
+    const d = overlappingLandforms(), editor = new Editor(testTerrainClient());
+    t.mock.method(editor, "reconcileProject", () => {});
+    t.mock.method(editor.files, "remember", () => {});
+    await editor.replace(d, true);
+    editor.history = new History(d);
+    const root = { kind: "geoNode", id: "A" } as const;
+    const n = d.geoNodes.find(n => n.id === root.id)!;
+    assert(n.function.type === "mountain" && "curve" in n.function.ridges[1]);
+    const id = n.function.ridges[1].curve, holder = holderLayer("ridges", 1);
+    const curve = d.geometry[id];
+    assert("curve" in curve);
+    const path: SelectionPath = [root, holder, { kind: "geometry", id }, { kind: "vertex", nodeId: curve.curve.nodes[0].id }];
+    const open = () => editor.selectionPath;
+    editor.selectPath(path);
+    for (let depth = 3; depth >= 1; depth--) {
+        editor.stepSelectionOut();
+        assert.deepEqual(open(), path.slice(0, depth));
+    }
+    editor.stepSelectionOut();
+    assert.equal(open(), null);
+    editor.selectPath(path);
+    editor.stepSelectionOut();
+    editor.removeSelected();
+    assert.match(editor.removal?.detail ?? "", /仍在使用/);
+    assert.deepEqual(open(), path.slice(0, 3));
+    assert.equal(editor.history.index, 0);
+    editor.removal = null;
+
+    editor.selectPath(path);
+    await editor.edit(doc => {
+        doc.geoNodes.find(n => n.id === root.id)!.label = "山岭";
+    });
+    editor.select(null);
+    await editor.navigate(false);
+    assert.deepEqual(open(), path);
+    await editor.navigate(true);
+    assert.deepEqual(open(), path);
+    editor.stepSelectionOut();
+    editor.stepSelectionOut();
+    await editor.removeSelected();
+    assert.deepEqual(open(), [root]);
+    await editor.navigate(false);
+    assert.deepEqual(open(), [root, holder]);
+    await editor.navigate(true);
+    assert.deepEqual(open(), [root]);
+    await editor.replace(editor.project.design, false, path);
+    assert.deepEqual(open(), [root]);
+    editor.dispose();
+});
+
+test("Delete removes the current root while required references stay with their owner", async t => {
+    const { Editor } = await import("../src/app/state/session.svelte.ts");
+    const d = syntheticDesign(), editor = new Editor(testTerrainClient());
+    d.sections.push(fixtureSection(d, { id: "A", label: "A", points: [[0, 4], [1, 10]] }));
+    d.marks.push(fixtureMark(d, { id: "B", label: "B", kind: "text", follow: "map", point: [5, 5] }));
+    d.geometry.C = { label: "C", independent: true, point: [12, 12] };
+    t.mock.method(editor, "reconcileProject", () => {});
+    t.mock.method(editor.files, "remember", () => {});
+    await editor.replace(d, true);
+    editor.history = new History(d);
+    const section = { kind: "section", id: "A" } as const;
+    editor.selectPath([section, holderLayer("endpoints")]);
+    await editor.removeSelected();
+    assert.equal(editor.project.design.sections.length, 1);
+    assert.match(editor.removal?.detail ?? "", /保留/);
+    editor.removal = null;
+
+    for (const [selection, exists] of [
+        [{ kind: "geoNode", id: "T" }, (design: Design) => design.geoNodes.some(n => n.id === "T")],
+        [section, (design: Design) => design.sections.some(s => s.id === "A")],
+        [{ kind: "mark", id: "B" }, (design: Design) => design.marks.some(m => m.id === "B")],
+        [{ kind: "geometry", id: "C" }, (design: Design) => Object.hasOwn(design.geometry, "C")]
+    ] as const) {
+        editor.select(selection);
+        await editor.removeSelected();
+        assert(!exists(editor.project.design));
+        assert.equal(editor.selectionPath, null);
+        await editor.navigate(false);
+        assert(exists(editor.project.design));
+        assert.deepEqual(editor.selectionPath, [selection]);
+    }
+    editor.dispose();
 });
 
 test("Coordinate slots use design grid and sample bounds while longer readings stay intact", () => {

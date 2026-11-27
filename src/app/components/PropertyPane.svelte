@@ -44,7 +44,7 @@
     let { editor, title, children }: { editor: session.Editor; title: Snippet; children?: Snippet<[PropertyTab]> } = $props();
     let markKind = $derived(editor.selection?.kind === "mark" ? editor.project.design.marks.find(m => m.id === editor.selection!.id)?.kind : undefined);
     let tabs = $derived(propertyTabs(editor.selection, markKind));
-    let nested = $derived(!!editor.holderGeometry && !!editor.geometryPage);
+    let nested = $derived(!!editor.geometryPage?.fromHolder);
     let showTabs = $derived(tabs.length > 1 || nested);
     let errors = $derived(objectIssues(editor.project, editor.selection).some(issue => issue.severity === "error"));
 </script>

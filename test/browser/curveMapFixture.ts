@@ -1,7 +1,7 @@
 import { resolveDesign } from "../../src/core/design/parameters.ts";
 import assert from "node:assert/strict";
 import { parseDesign, serializeDesign } from "../../src/core/design/model.ts";
-import { geometryPath } from "../../src/core/edit/geoControls.ts";
+import { geometryPath, type GeoControl, type GeometryTarget } from "../../src/core/edit/geoControls.ts";
 import { defaultFunction } from "../../src/core/edit/geoNodes.ts";
 import { setNodeMode, setSegment } from "../../src/core/edit/paths.ts";
 import { type Design, type Point } from "../../src/core/design/v5.ts";
@@ -12,12 +12,14 @@ import { startChromium, type Chromium } from "./chromium.ts";
 import { installPickers } from "./filePickers.ts";
 
 type View = import("../../src/render/map.ts").MapView;
+type Selection = import("../../src/core/edit/types.ts").Selection;
 interface Stroke { points: Point[]; dash: number[]; color: string; width: number; alpha: number }
 interface Arc { point: Point; radius: number }
 interface Reading { text: string; y: number; top: number; bottom: number; baseline: string; align: string }
 interface Frame {
-    origin: Point; localOrigin: Point; scale: number; selection: View["selection"]; hovered?: View["hovered"];
-    geometry?: View["geometry"]; vertex?: View["vertex"]; outline?: number; hoverPart?: View["hoverPart"]; section?: [Point, Point];
+    origin: Point; localOrigin: Point; scale: number; selection: Selection | null;
+    selectionPath: View["selectionPath"]; hoverPath?: View["hoverPath"]; hovered?: Selection;
+    geometry?: GeometryTarget; vertex?: GeoControl; outline?: number; hoverPart?: { role: GeoControl["role"] }; section?: [Point, Point];
 }
 interface Probe {
     editor?: import("../../src/app/state/session.svelte.ts").Editor;
@@ -33,7 +35,8 @@ declare global {
 async function observeCurveMap() {
     const probe: Probe = { strokes: [], pathStrokes: [], arcStrokes: [], dots: [], ticks: [], mapText: [], geometryFills: [] };
     window.curveMapProbe = probe;
-    const mapModule = "/src/render/map.ts", editorModule = "/src/app/state/session.svelte.ts";
+    const mapModule = "/src/render/map.ts", editorModule = "/src/app/state/session.svelte.ts", selectionModule = "/src/core/edit/selection.ts";
+    const { holderTarget, selectionLayers } = await import(selectionModule) as typeof import("../../src/core/edit/selection.ts");
     const { ProjectMap } = await import(mapModule) as typeof import("../../src/render/map.ts");
     const { Editor } = await import(editorModule) as typeof import("../../src/app/state/session.svelte.ts");
     const reconcile = Editor.prototype.reconcileProject;
@@ -106,9 +109,21 @@ async function observeCurveMap() {
         probe.geometryFills = [];
         draw.call(this, view, theme);
         const localOrigin = this.screen([0, 0]), box = this.canvas.getBoundingClientRect();
+        const { root, holder, leaf } = selectionLayers(view.selectionPath), hover = selectionLayers(view.hoverPath);
+        const target = (selection: typeof root, placed: typeof holder) => {
+            const owner = selection?.kind === "geoNode" && view.project.design.geoNodes.find(n => n.id === selection.id);
+            return owner && placed ? holderTarget(owner, placed) : undefined;
+        };
+        const geometry = target(root, holder), hoverKind = target(hover.root, hover.holder)?.kind;
+        const endpoint = (selection: typeof root, holder: typeof hover.holder) => selection?.kind === "section" && holder ?
+            { ...selection, index: holder.index, role: "vertex" } : selection;
+        const hoverRole = view.hoverHandle ?? hover.part?.kind ?? (hover.leaf?.kind === "holder" ? hoverKind : undefined);
         probe.frame = {
             localOrigin, origin: [box.left + localOrigin[0], box.top + localOrigin[1]], scale: this.scale,
-            selection: view.selection, hovered: view.hovered, geometry: view.geometry, vertex: view.vertex, outline: view.outline, hoverPart: view.hoverPart,
+            selection: endpoint(root, holder) ?? null, hovered: endpoint(hover.root, hover.holder),
+            selectionPath: view.selectionPath, hoverPath: view.hoverPath,
+            geometry, vertex: probe.editor?.vertex, outline: leaf?.kind === "holder" && holder?.group === "outlines" ? holder.index : undefined,
+            hoverPart: hoverRole ? { role: hoverRole } : undefined,
             section: view.project.design.sections.find(section => section.id === "Q")?.points
         };
     };
@@ -172,6 +187,14 @@ function curveMap(browser: Chromium, design: Design, name: string, url: string) 
         await mouse("mouseReleased", at, modifiers, button, count);
         await paint();
     }
+    async function tapLayer(p: Point, kind: NonNullable<View["selectionPath"]>[number]["kind"], owner?: string) {
+        for (let i = 0; i < 4; i++) {
+            await tap(p);
+            const path = (await frame()).selectionPath;
+            if (path?.at(-1)?.kind === kind && (owner === undefined || path[0].id === owner)) return;
+        }
+        assert.fail("No " + kind + " layer at " + p.join(",") + " for " + (owner ?? "any object"));
+    }
     async function drag(p: Point, modifiers = 0, preview?: () => Promise<void>) {
         const [x, y] = pixels(await frame(), p), to: Point = [x + 30, y];
         await mouse("mousePressed", [x, y], modifiers);
@@ -223,7 +246,7 @@ function curveMap(browser: Chromium, design: Design, name: string, url: string) 
         await mouse("mouseMoved", center, 0, "none");
         await wait(() => !document.querySelector<HTMLElement>("#position")?.hidden);
     }
-    return { ...browser, frame, paint, disk, text, authored, owner, curve, boundary, undo, penMode, nodeTitles, pixels, tap, drag, tool, open, translated, assertSectionStroke, moveOverMap, pointer: mouse };
+    return { ...browser, frame, paint, disk, text, authored, owner, curve, boundary, undo, penMode, nodeTitles, pixels, tap, tapLayer, drag, tool, open, translated, assertSectionStroke, moveOverMap, pointer: mouse };
 }
 
 export async function withCurveMap(url: string, scene: string, check: (page: ReturnType<typeof curveMap>) => Promise<void>, design = sample()) {

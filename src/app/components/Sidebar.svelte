@@ -34,8 +34,8 @@
         {#if editor.project}
             {#key inspected}
                 {#if editor.geometryPage}
-                    {@const { id, item, target } = editor.geometryPage}
-                    <GeometryProperties {editor} {id} {item} path={target?.index ?? -1} />
+                    {@const { id, item } = editor.geometryPage}
+                    <GeometryProperties {editor} {id} {item} path={editor.curvePath ?? -1} />
                 {:else if editor.selection?.kind === "geoNode"}<GeoProperties {editor} />
                 {:else if editor.selection?.kind === "input" || editor.selection?.kind === "field"}<Declarations {editor} properties />
                 {:else if editor.selection?.kind === "mark"}<Marks {editor} properties />
@@ -128,5 +128,10 @@
         editor.map.canvas.focus({ preventScroll: true });
     }
     let errors = $derived(editor.project?.issues.some(issue => issue.severity === "error"));
-    let inspected = $derived(editor.selection ? editor.selection.kind + ":" + editor.selection.id : null);
+    let inspected = $derived.by(() => {
+        const { selection, geometryPage } = editor;
+        if (!selection) return null;
+        const root = selection.kind + ":" + selection.id;
+        return geometryPage ? [root, geometryPage.id, geometryPage.holder?.group, geometryPage.holder?.index].join(":") : root;
+    });
 </script>

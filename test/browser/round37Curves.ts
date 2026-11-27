@@ -110,7 +110,7 @@ export function checkCurveZoom(url: string) {
         await click("#fit"); await paint();
         await click("[data-geo-node=T]");
         const [corner] = boundary(await authored(), "T").nodes, other = structuredClone(corner.in);
-        await tap(corner.p);
+        await page.tapLayer(corner.p, "vertex", "T");
         await wait(() => !!document.querySelector("[data-curve-node]"));
         const endpoint: Point = [corner.p[0] + corner.out![0], corner.p[1] + corner.out![1]];
         await drag(endpoint); await saved();
@@ -220,6 +220,7 @@ export function checkSharedCurves(url: string) {
         assert.deepEqual(literalCurve(moved, id), original);
 
         const at: Point = [original.nodes[0].p[0] + offset[0], original.nodes[0].p[1] + offset[1]];
+        await page.tapLayer(at, "vertex", "E");
         await drag(at, 2);
         const reshaped = await authored();
         assert(literalCurve(reshaped, id).nodes[0].p[0] > original.nodes[0].p[0]);
@@ -231,6 +232,7 @@ export function checkSharedCurves(url: string) {
         });
         assert.deepEqual(westNode, literalCurve(reshaped, id).nodes[0].p);
 
+        await click("[data-property-tab=region]");
         await click("[aria-label='为“轮廓 1”引用曲线']");
         assert(await evaluate(s => document.querySelector(s)?.getAttribute("aria-selected") === "true", option("curve:" + id)));
         await cropped(page, "round37-curve-reference-menu", menu);
@@ -256,7 +258,7 @@ export function checkSharedCurves(url: string) {
         await click("[data-tab=terrain]"); await ridge();
         await useSource("山脊线", "curve:ridge");
         for (const [i, value] of [[0, 12], [2, 19]]) {
-            await tap(sourcePoints[i]);
+            await page.tapLayer(sourcePoints[i], "vertex", "M");
             await enterNumber(page, "[data-parameter$='.ridges.0.h.r" + i + "'] .numeric-face", String(value));
             await key("Enter"); await saved(); await paint();
         }
@@ -285,12 +287,12 @@ export function checkSharedCurves(url: string) {
         await undo();
         assert.equal(literalCurve(await authored(), "ridge").nodes.length, 3);
 
-        await tap(sourcePoints[0]);
-        await click("[data-curve-node] [aria-label=继续画]");
+        await tap(sourcePoints[0], 0, "right");
+        await click("[data-option=continue-curve]");
         await tap([5, 18], 2); await key("Escape"); await paint();
         assert.equal(literalCurve(await authored(), "ridge").nodes.length, 3);
-        await tap(sourcePoints[0]);
-        await click("[data-curve-node] [aria-label=继续画]");
+        await tap(sourcePoints[0], 0, "right");
+        await click("[data-option=continue-curve]");
         await tap([5, 18], 2); await key("Enter"); await saved(); await paint();
         const head = literalCurve(await authored(), "ridge");
         assert.equal(head.nodes.length, 4);

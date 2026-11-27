@@ -90,9 +90,10 @@ export function checkCurvePlacements(url: string) {
         await click(option(outlineKey, outlineHolderMenu)); await saved(); await paint();
         assert.equal(await text(".subitem-source"), "山脉.轮廓 1");
         assert.equal(await text(".geometry-box"), d.geometry[shape.slice(6)].label);
-        await click(".subitem-source");
+        await click(".subitem-source"); await paint();
         assert.equal((await frame()).selection?.id, "M");
-        assert.equal(await evaluate(() => document.querySelector("#properties .geometry-box")?.getAttribute("aria-pressed")), "true");
+        assert.equal(await evaluate(() => document.querySelector("#properties .geometry-box")?.getAttribute("aria-pressed")), "false");
+        assert.equal(await text("[data-outline].selected .subitem-toggle"), "轮廓 1");
         await openOutlineMenu("A");
         assert(!await evaluate(s => document.querySelector(s), option("unlink")));
         await key("Escape");
@@ -135,6 +136,7 @@ export function checkCurvePlacements(url: string) {
         const graph = (await authored()).geoNodes.find(n => n.id === "M")!.construction;
         const source = graph.type === "outline" ? graph.outlines[0] : undefined;
         assert(source && "curve" in source);
+        await page.tapLayer(shifted[0], "vertex", "B");
         await drag(shifted[0], 2);
         const [changed, reshaped] = await positions(["M", "B"]);
         assert(changed[0][0] > still[0][0]);
@@ -169,7 +171,7 @@ export function checkCurvePlacements(url: string) {
         assert.equal(await text(option("geo:M.ridges.0", ridgeHolderMenu)), "山脉.山脊 1");
         await click(option("geo:M.ridges.0", ridgeHolderMenu)); await saved(); await paint();
         assert.equal(await text(".subitem-source"), "山脉.山脊 1");
-        await tap(geometryPath(page.owner(await authored(), "R"), -1)!.nodes[0].p);
+        await page.tapLayer(geometryPath(page.owner(await authored(), "R"), -1)!.nodes[0].p, "vertex", "R");
         await click("#properties [data-parameter$='.ridges.0.slope.ridge-0'] .numeric-face");
         await evaluate(() => document.getSelection()!.selectAllChildren(document.querySelector(".numeric-edit")!));
         await page.cdp("Input.insertText", { text: "1.5" });

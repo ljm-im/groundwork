@@ -25,7 +25,7 @@ const sectionSnapGroup = (id: string) => "section:" + id;
 
 export function mapSnapTargets(editor: Editor) {
     const { map, mapView, curves } = editor, view = mapView!;
-    const { design, terrain } = view.project, { selection } = view;
+    const { design, terrain } = view.project, selection = view.selectionPath?.[0];
     const margin = 4 * snapPixels;
     const [left, bottom] = map.world(-margin, map.height + margin);
     const [right, top] = map.world(map.width + margin, -margin);
@@ -68,7 +68,7 @@ export function mapSnapTargets(editor: Editor) {
         if (item && "curve" in item) addCurve(item.curve, curveGroup("geometry", selection.id, -1));
     }
     for (const section of design.sections) {
-        if (view.layers.sections || view.objectGeometry?.kind === "section" && view.objectGeometry.id === section.id)
+        if (view.layers.sections || selection?.kind === "section" && selection.id === section.id)
             section.points.forEach((point, i) => pointInView(point, sectionSnapGroup(section.id), i));
     }
 
@@ -80,7 +80,7 @@ export function controlSnap(editor: Editor, selection: Selection, control: GeoCo
     if (role === "body" || role === "outline" || role === "curve" || role === "arc") return;
 
     const { snap, curveGroup } = mapSnapTargets(editor);
-    if (role === "parameter") {
+    if (role === "parameter" || role === "pointHolder") {
         const exclude = { group: parameterSnapGroup(id), indices: [path] };
         return (pointer, ev) => {
             const modified = modifiedSnapPoint(pointer, ev, point);

@@ -310,8 +310,8 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
         assert.notDeepEqual(before, after);
         if (mark.follow === "screen") expected.marks.find((m: { id: string }) => m.id === mark.id).screen = after;
         else {
-            const [dx, dy] = mark.point.offset ?? [0, 0];
-            expected.geometry[mark.point.point].point = [after[0] - dx, after[1] - dy];
+            const [x, y] = expected.geometry[mark.point.point].point;
+            expected.marks.find((m: { id: string }) => m.id === mark.id).point.offset = [after[0] - x, after[1] - y];
         }
         assert.equal(moved, serializeDesign(expected));
         const movedDigest = await fileDigest(a);
@@ -578,9 +578,12 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
         await mouse("mousePressed", sx, sy);
         await mouse("mouseReleased", sx, sy);
         await click("[data-property-tab=section]");
-        const control = "#properties .geometry-box[aria-label=剖面线]";
+        const control = "#properties .geometry-box[aria-label=剖面线]", start = "#properties .geometry-box[aria-label=起点]";
+        await mouse("mousePressed", sx, sy);
+        await mouse("mouseReleased", sx, sy);
+        assert.equal(await evaluate(s => document.querySelector(s)!.getAttribute("aria-pressed"), start), "true");
         await click(control);
-        assert.equal(await evaluate(s => document.querySelector(s)!.getAttribute("aria-pressed"), control), "true");
+        assert.equal(await evaluate(s => document.querySelector(s)!.getAttribute("aria-pressed"), start), "false");
         assert.equal(await evaluate(() => [...document.querySelectorAll("#properties .number-label")].filter(n => /^(中心 )?[XY]$/.test(n.textContent!)).length), 0);
         assert.equal(await evaluate(() => document.querySelectorAll("[title]").length), 0);
         assert.equal(await prop("writes"), 0);

@@ -15,7 +15,7 @@ const continueEnd = "回车或双击完成，单击另一端闭合";
 const pickCurveHint = "单击曲线换用它，单击空白处开始画，按住 Ctrl 单击在曲线上开始画，Esc 取消";
 
 const hints: Record<Tool, string> = {
-    select: "单击选择，Alt 单击选择下层，中键或按住空格拖动平移，滚轮缩放",
+    select: "单击逐层选中，Alt 单击切换重叠的对象，Esc 回到上一层，中键或按住空格拖动平移，滚轮缩放",
     pen: closedPenHint,
     rect: "拖动或单击矩形的两个对角，按住 Shift 画正方形，按住 Ctrl 不吸附",
     circle: "拖出半径或单击圆心和圆周",

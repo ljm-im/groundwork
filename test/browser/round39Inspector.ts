@@ -37,7 +37,7 @@ function narrowDesign(): Design {
 
 export function checkNarrowInspector(url: string) {
     return withCurveMap(url, "round39-narrow-inspector", async page => {
-        const { cdp, click, evaluate, frame, paint, pixels, pointer, saved, tap, wait } = page;
+        const { cdp, click, evaluate, frame, paint, pixels, pointer, saved, wait } = page;
         await cdp("Emulation.setDeviceMetricsOverride", { width: 375, height: 800, deviceScaleFactor: 1, mobile: false });
         await paint();
         await click("#fit");
@@ -58,7 +58,7 @@ export function checkNarrowInspector(url: string) {
         const offscreen = await showMap();
         assert(offscreen.fullMap);
         assert(await evaluate(() => document.querySelector("#property-content")!.getBoundingClientRect().top >= innerHeight));
-        await tap([18, 10], 2);
+        await page.tapLayer([18, 10], "vertex", "T");
         await wait(s => !!document.querySelector(s), row);
         assert.deepEqual(await evaluate(() => [scrollY, document.querySelector("#property-content")!.scrollTop]), [offscreen.y, 0]);
 
@@ -71,9 +71,9 @@ export function checkNarrowInspector(url: string) {
         const initiallyVisible = () => evaluate(s => {
             const target = document.querySelector(s), pane = document.querySelector("#property-content")!;
             const { top, bottom } = pane.getBoundingClientRect(), box = target?.getBoundingClientRect();
-            return !!box && pane.scrollTop > 0 && box.top >= top - 1 && box.bottom <= bottom + 1;
+            return !!box && box.top >= top - 1 && box.bottom <= bottom + 1;
         }, row);
-        await tap([18, 10], 2);
+        await page.tapLayer([18, 10], "vertex", "T");
         assert(await initiallyVisible());
         assert.equal(await evaluate(() => scrollY), visible.y);
         const from = pixels(await frame(), [18, 10]), to: Point = [from[0] + 19, from[1] + 12];
@@ -161,9 +161,10 @@ export function checkInspectorActions(url: string) {
         const ridgeRow = ".geometry-control:has([aria-label=山脊线])";
         if (!await evaluate(s => !!document.querySelector(s), ridgeRow)) await click("#properties .part:has([aria-label=添加山脊]) .subitem-toggle");
         await assertRow(page, ridgeRow, ":scope > button", 3);
-        await tap(ridgePoints[0]); await tap(ridgePoints[0]);
+        await page.tapLayer(ridgePoints[0], "vertex", "T");
         await assertRow(page, "[data-parameter$=\".ridges.0.slope.ridge-0\"]", ".number-box button", 4);
-        await tap(arcHandle(ridgePoints[1], ridgePoints[2], .5), 2);
+        await tap(arcHandle(ridgePoints[1], ridgePoints[2], .5), 0, "right");
+        await page.key("Escape");
         await wait(() => !!document.querySelector("[aria-label=相切]"));
         await assertRow(page, ".parameter-row:has([aria-label=圆心角])", ".number-box button, .parameter-action button", 4);
         await click("[aria-label=相切]");

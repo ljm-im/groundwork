@@ -43,7 +43,7 @@ export async function checkLayeredHits(url: string) {
         await tap(blank);
         await tap(coveredLandformPoints[2]);
         await tap(coveredLandformPoints[2], 1);
-        await tap(coveredLandformPoints[2]);
+        for (let i = 0; i < 3; i++) await tap(coveredLandformPoints[2]);
         const selected = await frame();
         assert.equal(selected.selection?.id, "A");
         assert.equal(selected.vertex?.role, "vertex");
@@ -78,7 +78,7 @@ export async function checkSpacePan(url: string) {
         const face = coveredLandformPoints[0], other: Point = [32, 12];
         await tap(face);
         assert.equal((await frame()).selection?.id, "B");
-        assert.equal(await text("#mode-hint"), "单击选择，Alt 单击选择下层，中键或按住空格拖动平移，滚轮缩放");
+        assert.equal(await text("#mode-hint"), "单击逐层选中，Alt 单击切换重叠的对象，Esc 回到上一层，中键或按住空格拖动平移，滚轮缩放");
         await move(other);
         await evaluate(() => {
             const button = document.querySelector<HTMLButtonElement>("#fit")!;

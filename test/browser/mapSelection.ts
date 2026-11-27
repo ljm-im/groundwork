@@ -2,7 +2,6 @@ import { resolveDesign } from "../../src/core/design/parameters.ts";
 import assert from "node:assert/strict";
 import { type Design, type Point } from "../../src/core/design/v5.ts";
 import { distance, mixPoint } from "../../src/core/math/geometry.ts";
-import { mapColors } from "../../src/render/palette.ts";
 import { type Chromium } from "./chromium.ts";
 import { type Curve, type GeoNode, type Section } from "../../src/core/design/v5.ts";
 import { pathBezier, splitBezier } from "../../src/core/design/path.ts";
@@ -114,7 +113,7 @@ export async function checkMapSelection(url: string) {
             await key("Escape");
         }
     });
-    await withCurveMap(url, "map-object-selection", async ({ assertSectionStroke, authored, boundary, click, curve, drag, evaluate, frame, owner, paint, pixels, pointer: mouse, tap, text, translated, undo }) => {
+    await withCurveMap(url, "map-object-selection", async ({ assertSectionStroke, authored, boundary, click, curve, drag, evaluate, frame, owner, paint, pixels, pointer: mouse, tap, tapLayer, text, translated, undo }) => {
         const alt = 1;
         const original = await authored(), dx = 30 / (await frame()).scale;
         const overlap: Point = [-5, 1];
@@ -133,6 +132,10 @@ export async function checkMapSelection(url: string) {
         await mouse("mousePressed", selectedPoint);
         await paint(); assert.equal((await frame()).selection?.id, "A");
         await mouse("mouseReleased", selectedPoint); await paint();
+        assert.equal((await frame()).selection?.id, "A");
+        assert.equal((await frame()).selectionPath?.at(-1)?.kind, "holder");
+        await tap(overlap, alt);
+        await tap(overlap, alt);
         assert.equal((await frame()).selection?.id, "B");
         assert.deepEqual(await authored(), current);
         await drag([-28, 1], alt);
@@ -143,25 +146,24 @@ export async function checkMapSelection(url: string) {
 
         await click("[data-tab=layers]"); await click("input[data-layer=geoNodes]"); await paint();
         const intersection: Point = [-5, 25];
-        for (const [id, index] of [["Q", undefined], ["M", -1], ["M", undefined], ["Q", undefined]] as const) {
+        for (const id of ["Q", "M", "Q"]) {
             await tap(intersection, alt);
             const f = await frame();
             assert.equal(f.selection?.id, id);
-            assert.equal(f.geometry?.index, index);
+            assert.equal(f.selectionPath?.length, 1);
         }
-        await tap([-35, 25]); assert.equal((await frame()).geometry?.index, -1);
-        assert.match(await text(".geometry-box[aria-label=山脊线][aria-pressed=true]"), /^曲线 \d+$/);
-        await tap([30, 37]);
+        await tapLayer([-35, 25], "holder", "M");
+        assert.match(await text(".subitem.selected > .subitem-heading"), /山脊 1/);
+        assert(await text(".geometry-box[aria-label=山脊线][aria-pressed=false]"));
+        await tapLayer([30, 37], "holder", "M");
         assert.equal((await frame()).selection?.id, "M");
         assert.deepEqual((await frame()).geometry, { kind: "outline", index: 0 });
         assert(await evaluate(() => !!document.querySelector("[data-property-tab=region][aria-pressed=true]") &&
             !!document.querySelector("[data-outline] [aria-current=true]")));
-        assert.equal(await evaluate(() => {
-            const { editor, frame } = window.curveMapProbe, ctx = editor!.map.ctx;
-            const [x, y] = frame!.localOrigin, scale = frame!.scale;
-            return [...ctx.getImageData(Math.round(x - 46 * scale), Math.round(y - 18 * scale), 1, 1).data].slice(0, 3);
-        }).then(c => c.map(n => n.toString(16).padStart(2, "0")).join("")), mapColors.light.bgPanel.slice(1));
+        const corner = pixels(await frame(), [-46, 18], true);
+        assert(!(await evaluate(() => window.curveMapProbe.dots)).some(dot => distance(dot.point, corner) < .02));
 
+        await click("[data-tab=marks]"); await click("[data-section=Q]");
         await tap(resolveDesign(original).sections[0].points[0]);
         assert.equal((await frame()).selection?.index, 0);
         await drag(intersection, 0, assertSectionStroke);
@@ -170,8 +172,10 @@ export async function checkMapSelection(url: string) {
         await assertSectionStroke();
         await undo();
         const originalLine = await curve();
-        await tap(originalLine.nodes[0].p); assert.equal((await frame()).vertex, undefined);
-        await tap(originalLine.nodes[0].p); assert.equal((await frame()).vertex?.index, 0);
+        await click("[data-tab=terrain]"); await click("[data-geo-node=M]"); await paint();
+        await tapLayer(originalLine.nodes[0].p, "vertex", "M");
+        assert.equal((await frame()).vertex?.index, 0);
+        await tapLayer([-35, 25], "holder", "M");
         await drag([-35, 25]);
         current = await authored();
         assert.equal((await frame()).geometry?.index, -1);
@@ -197,7 +201,7 @@ interface LineDragFixture extends Pick<Chromium, "click"> {
 }
 
 export async function checkLineDragging({ click, authored, drag, frame, mountain, paint, ridge, saved, screen, section, text, undo }: LineDragFixture) {
-    console.log("dragging an unselected section or ridge moves the whole line in one undo step");
+    console.log("dragging unselected objects starts with the section or the terrain root");
     await click("[data-geo-node=S]"); await paint();
     const originalSection = await section(), sectionStart = await screen(mixPoint(...originalSection, .5));
     const dx = 30 / (await frame()).scale;
@@ -238,7 +242,8 @@ export async function checkLineDragging({ click, authored, drag, frame, mountain
         assert.deepEqual(attributes, node);
     }
     const owner = (await authored()).geoNodes.find(n => n.id === "M")!;
-    assert.deepEqual(owner.construction, mountain.construction);
+    assert(owner.construction.type === "outline" && mountain.construction.type === "outline" && "offset" in owner.construction.outlines[0]);
+    assert(distance(owner.construction.outlines[0].offset!, [dx, 0]) < .02);
     await undo();
     assert.deepEqual(await ridge(), original);
 }

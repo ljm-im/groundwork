@@ -5,7 +5,7 @@
                 <button class="subitem-toggle" aria-expanded={open} aria-current={selected || undefined} {onclick}>
                     <Icon name={open ? "collapse" : "expand"} /><span>{label}</span>
                 </button>
-            {:else}<span class="subitem-label">{label}</span>{/if}
+            {:else}<span class="subitem-label" aria-current={selected || undefined}>{label}</span>{/if}
             {#if source && reference}
                 <button class="subitem-source" data-tip={source.name} aria-label={source.name} onclick={() => reference?.editor.focusCurveHolder(source!.key)}>
                     <ReferenceChip curve={source} />
@@ -28,7 +28,7 @@
         padding-inline: 0 var(--panel-inset);
         background: var(--bg-sunken);
     }
-    .subitem > :global(.subitem-heading:hover) { background: var(--bg-hover); }
+    .subitem:not(.selected) > :global(.subitem-heading:hover) { background: var(--bg-hover); }
     .selected > :global(.subitem-heading) { background: var(--bg-selected); }
     .inset > :global(.subitem-heading) { margin-inline: 0; padding-inline-end: 0; }
     .subitem-label { padding-inline: var(--space-3); }

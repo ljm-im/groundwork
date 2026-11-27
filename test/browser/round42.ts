@@ -52,7 +52,8 @@ export function checkGeometryObjects(url: string) {
         assert(!await visible("[data-curve-node] [aria-label=高度]"));
         await click(region);
         assert(!await visible(geometry));
-        assert.equal(await evaluate(s => document.querySelector(s)?.getAttribute("aria-pressed"), row), "true");
+        assert.equal(await evaluate(s => document.querySelector(s)?.getAttribute("aria-pressed"), row), "false");
+        assert(await visible("[data-outline].selected"));
 
         await click("[data-tab=inputs]");
         assert(!await visible(list(original.curve)));
@@ -97,7 +98,7 @@ export function checkGeometryObjects(url: string) {
         const b = await rectangle([5, -26], [18, -12]);
         await selectOutline(b);
         const other = literalCurve(await authored(), shapeId);
-        const pick = "#properties [aria-label=选取或重画曲线]";
+        const pick = "#properties [aria-label=选取或重画轮廓]";
         const pickPoint: Point = [(other.nodes[0].p[0] + other.nodes[1].p[0]) / 2, other.nodes[0].p[1]];
         const initial = await authored();
         await click(pick);
@@ -168,7 +169,7 @@ export function checkGeometryObjects(url: string) {
         await click(checkbox); await paint();
         assert.deepEqual(await fills(), [.1, .1]);
         assert(await evaluate(() => JSON.parse(localStorage.getItem("groundwork/map-display-v1")!).layers.geometry));
-        await tap(face);
+        await tap(face, 1);
         assert.deepEqual((await frame()).selection, { kind: "geometry", id: listedId });
         assert(await visible(list(listedId)));
         assert.deepEqual(await fills(), [.1, .26]);

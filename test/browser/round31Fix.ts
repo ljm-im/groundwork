@@ -43,7 +43,7 @@ function scene() {
 
 export async function checkRound31Fix(url: string) {
     await withCurveMap(url, "outline-and-hover", async page => {
-        const { authored, cdp, click, curve, disk, drag, evaluate, frame, key, paint, pixels, pointer, saved, screenshot, tap, text, translated, undo, wait } = page;
+        const { authored, cdp, click, curve, disk, drag, evaluate, frame, key, paint, pixels, pointer, saved, screenshot, tap, tapLayer, text, translated, undo, wait } = page;
         const original = await authored(), owner = page.owner(original, "A"), inside: Point = [-25, -3], alt = 1;
         const outlineHeading = (id: string) => "[data-outline='" + id + "'] > .subitem-heading";
         const currentOutline = () => text("[data-outline].selected > .subitem-heading .subitem-toggle");
@@ -142,16 +142,18 @@ export async function checkRound31Fix(url: string) {
         const whole = await strokes();
         assert.deepEqual(whole.map(s => [s.width, s.color, s.dash, s.alpha, s.points.length]), [[4, accent, [], 1, 5]]);
         await screenshot("selected-outline");
-        for (const [id, index] of [["A", 1], ["A", 0], ["G", undefined]] as const) {
+        for (const id of ["G", "A"]) {
             await tap(inside, alt);
             assert.equal((await frame()).selection?.id, id);
-            assert.equal((await frame()).outline, index);
-            if (index === 0) await dragOutline(0, [-40, 11], -1);
+            assert.equal((await frame()).selectionPath?.length, 1);
         }
+        await tapLayer([-40, 11], "holder", "A");
+        await dragOutline(0, [-40, 11], -1);
         await tap(inside, 0, "right");
-        assert.equal((await frame()).outline, 2);
-        assert.deepEqual(await evaluate(() => [...document.querySelectorAll(".context-menu .group-name")].map(n => n.textContent)), ["轮廓 3", "区域", "地件"]);
+        assert.equal((await frame()).selectionPath?.at(-1)?.kind, "geometry");
+        assert.deepEqual(await evaluate(() => [...document.querySelectorAll(".context-menu .group-name")].map(n => n.textContent)), ["轮廓 1", "区域", "地件"]);
         await key("Escape");
+        await click("[data-geo-node=A]"); await tapLayer(inside, "holder", "A");
         await dragOutline(2, inside, -2);
         const before = await disk();
         await key("Delete");
@@ -197,6 +199,8 @@ export async function checkRound31Fix(url: string) {
         await click("[data-tab=layers]"); await click("input[data-layer=geoNodes]"); await click("[data-tab=terrain]");
 
         const outlineNode = geometryPath(owner, 2)!.nodes[0].p;
+        await tapLayer(outlineNode, "geometry", "A");
+        await leave();
         await assertHandle(outlineNode, "normal");
         await moveMap(outlineNode);
         assert.equal((await frame()).hoverPart?.role, "vertex");
@@ -205,7 +209,7 @@ export async function checkRound31Fix(url: string) {
         await assertHandle(outlineNode, "selected");
 
         const ridge = await curve(), node = ridge.nodes[1].p;
-        await tap(node);
+        await tapLayer(node, "geometry", "M");
         assert.equal((await frame()).geometry?.index, -1);
         await leave();
         await assertHandle(node, "normal");
@@ -230,14 +234,17 @@ export async function checkRound31Fix(url: string) {
         assert.equal((await frame()).hoverPart, undefined);
         await assertHandle(node, "selected");
 
-        for (const selector of [".subitem-heading:has([aria-label=删除山脊])", ".parameter-row:has([aria-label=山脊线])"]) {
-            await moveTo(selector);
-            assert.equal((await frame()).hoverPart?.role, "curve");
-            assert.deepEqual((await hoverStrokes()).map(s => [s.width, s.color, s.dash]), [[4, accent, [...overlay.dash]]]);
-            await leave();
-            assert.deepEqual(await hoverStrokes(), []);
-        }
-        await tap(mixPoint(ridge.nodes[0].p, node, .5));
+        await click("[data-geo-node=M]");
+        await moveTo(".subitem-heading:has([aria-label=删除山脊])");
+        assert.equal((await frame()).hoverPart?.role, "curve");
+        assert.deepEqual((await hoverStrokes()).map(s => [s.width, s.color, s.dash]), [[4, accent, [...overlay.dash]]]);
+        await leave();
+        await moveTo(".parameter-row:has([aria-label=山脊线])");
+        assert.equal((await frame()).hoverPath?.at(-1)?.kind, "geometry");
+        assert(await evaluate(() => window.curveMapProbe.strokes.some(s => s.width === 2 && !s.dash.length && s.color === "rgba(34, 102, 89, 0.5)")));
+        await leave();
+        assert.deepEqual(await hoverStrokes(), []);
+        await tapLayer(mixPoint(ridge.nodes[0].p, node, .5), "segment", "M");
         await moveTo("[data-curve-segment] > .subitem-heading");
         assert.equal((await frame()).hoverPart?.role, "segment");
         assert.deepEqual(await hoverStrokes(), []);
@@ -245,6 +252,7 @@ export async function checkRound31Fix(url: string) {
         await leave();
 
         const peak: Point = [20, 31];
+        await click("[data-geo-node=M]");
         await moveTo(".subitem-heading:has([aria-label=删除山峰])");
         assert.equal((await frame()).hoverPart?.role, "parameter");
         await assertHandle(peak, "hovered");
@@ -269,10 +277,11 @@ export async function checkRound31Fix(url: string) {
         assert.equal(await currentOutline(), "轮廓 1");
         assert.deepEqual((await strokes()).map(s => [s.width, s.color, s.alpha, s.dash]), [[4, accent, 1, []]]);
         const outlines = await evaluate(() => window.curveMapProbe.pathStrokes);
-        assert(outlines.some(s => s.color === accent && Math.abs(s.width - overlay.selectedWidth) < .001));
+        assert(!outlines.some(s => s.color === accent && Math.abs(s.width - overlay.selectedWidth) < .001));
 
         const [start, end] = resolveDesign(original).sections[0].points;
         await assertHandle(start, "normal");
+        await click("[data-tab=marks]"); await click("[data-section=Q]"); await paint();
         await moveMap(start);
         assert.equal((await frame()).hovered?.index, 0);
         await assertHandle(start, "hovered");
@@ -286,7 +295,8 @@ export async function checkRound31Fix(url: string) {
         await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] });
         await wait(() => document.documentElement.dataset.theme === "dark");
         await moveMap(start);
-        await assertHandle(start, "hovered", "dark");
+        assert.equal((await frame()).hoverPath?.length, 1);
+        await assertHandle(start, "normal", "dark");
         await assertHandle(end, "selected", "dark");
         await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] });
         await wait(() => document.documentElement.dataset.theme === "light");

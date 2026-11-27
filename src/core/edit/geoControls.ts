@@ -7,52 +7,21 @@ import { movePointGeometry, translateHolder } from "./controls.ts";
 import { type Selection } from "./types.ts";
 import { arcHandle, canRemoveNode, insertPathNode, moveHandle, nearestSegment, removePathNode, removePathSegment,
     setBulge } from "./paths.ts";
-import { flattenPath, flattenSegment, neighbor, pathHandle } from "../design/path.ts";
+import { flattenPath, neighbor, pathHandle } from "../design/path.ts";
 import { distance } from "../math/geometry.ts";
 import { copyHeldGeometry, nodeIds, parameterRemovalUses, requireUnused, retargetCopiedReferences } from "./geoNodes.ts";
 
 export interface GeometryTarget { kind: "outline" | "curve" | "parameter"; index: number }
 export interface GeoControl {
-    role: "vertex" | "in" | "out" | "arc" | "segment" | "body" | "outline" | "curve" | "parameter";
+    role: "vertex" | "in" | "out" | "arc" | "segment" | "body" | "outline" | "curve" | "parameter" | "pointHolder";
     path: number; index: number; point: Point;
 }
 
 export type CurveOwner = PlacedGeoNode | CurveGeometry;
-export interface CurveSelection { role: "outline" | "curve" | "vertex" | "segment"; nodeId: string; path?: number }
-export type GeometrySelection = CurveSelection | { role: "parameter"; path: number };
-export type GeometryHover = GeometrySelection | { role: "in" | "out" | "arc"; nodeId: string; path?: number };
-export type GeometryPart = Pick<GeoControl, "role" | "path" | "index">;
-
-export function geometrySelection(n: CurveOwner, { role, path, index }: GeometryPart): GeometrySelection | undefined {
-    if (role === "parameter") return { role, path };
-    if (role === "outline" || role === "curve" || role === "vertex" || role === "segment") {
-        const curve = geometryPath(n, path), node = curve?.nodes[role === "outline" || role === "curve" ? 0 : index];
-        if (node) return { role, nodeId: node.id, ...curvePlacement(n, path, node.id) };
-    }
-}
-
-export function geometryHover(n: CurveOwner, control: GeometryPart): GeometryHover | undefined {
-    const { role, path, index } = control;
-    if (role === "in" || role === "out" || role === "arc") {
-        const node = geometryPath(n, path)?.nodes[index];
-        return node && { role, nodeId: node.id, ...curvePlacement(n, path, node.id) };
-    }
-    return geometrySelection(n, control);
-}
-
 export function controlOwner(control?: GeoControl): GeoControl | undefined {
     if (control?.role === "arc") return { ...control, role: "segment" };
     if (control?.role === "in" || control?.role === "out") return { ...control, role: "vertex" };
     return control;
-}
-
-export function parameterTarget(control: GeoControl): GeometryTarget | undefined {
-    if (control.path < 0) return { kind: "curve", index: control.path };
-    if (control.role === "parameter") return { kind: "parameter", index: control.path };
-}
-
-function curvePlacement(n: CurveOwner, path: number, id: string) {
-    return pathEntries(n).some(([i, curve]) => i !== path && curve.nodes.some(node => node.id === id)) ? { path } : undefined;
 }
 
 export function geometryPath(n: CurveOwner, index: number): Curve | undefined {
@@ -95,27 +64,6 @@ export function pathEntries(n: CurveOwner): [number, Curve][] {
 
 const vertexControl = (path: number, index: number, point: Point): GeoControl => ({ role: "vertex", path, index, point });
 const pointControl = (path: number, point: Point): GeoControl => ({ role: "parameter", path, index: 0, point });
-
-export function resolveGeometrySelection(n: CurveOwner, part: GeometryHover): GeoControl | undefined {
-    if (part.role === "parameter") {
-        const point = parameterPoints(n).find(([i]) => i === part.path);
-        return point && pointControl(...point);
-    }
-    const { role, nodeId } = part;
-    for (const [path, curve] of pathEntries(n)) {
-        if (part.path !== undefined && part.path !== path) continue;
-        const index = curve.nodes.findIndex(v => v.id === nodeId);
-        if (index < 0) continue;
-        const node = curve.nodes[index];
-        if (role === "in" || role === "out") return { role, path, index, point: pathHandle(curve, index, role) };
-        const next = neighbor(curve, index, 1);
-        if (role === "arc") {
-            if (next !== undefined && node.bulge !== undefined)
-                return { role, path, index, point: arcHandle(node.p, curve.nodes[next].p, node.bulge) };
-        }
-        else if (role === "vertex" || next !== undefined) return { role, path, index, point: node.p };
-    }
-}
 
 export function geoControls(n: CurveOwner, target?: GeometryTarget) {
     const controls: GeoControl[] = [];
@@ -165,31 +113,9 @@ export function hitControl(n: CurveOwner, p: Point, scale: number, tolerance: nu
 export function hitGeoControl(n: CurveOwner, p: Point, scale: number, target?: GeometryTarget) {
     return hitGeoHandle(geoControls(n, target), p, scale);
 }
-export function hitOutlineVertex(n: PlacedGeoNode, p: Point, scale: number) {
-    const controls = editablePaths(n).flatMap(([path, curve]) => curve.nodes.map((v, i) => vertexControl(path, i, v.p)));
-    return hitGeoHandle(controls, p, scale);
-}
-
-export function* hitParameterGeometries(n: PlacedGeoNode, p: Point, scale: number, tolerance: number) {
-    for (const [index, point] of parameterPoints(n).reverse())
-        if (distance(p, point) * scale <= handleRadius) yield pointControl(index, point);
-    for (const [path, curve] of pathEntries(n).reverse()) {
-        if (path >= 0) continue;
-        const vertices = curve.nodes.map((v, i) => vertexControl(path, i, v.p));
-        const hit = hitGeoHandle(vertices, p, scale) ?? hitSegments([[path, curve]], p, scale, tolerance);
-        if (hit) yield hit;
-    }
-}
 export function hitPathSegment(n: CurveOwner, p: Point, scale: number, tolerance: number, target?: GeometryTarget) {
     return hitSegments(editablePaths(n, target), p, scale, tolerance);
 }
-export function hitSelectedSegment(owner: CurveOwner, part: GeoControl, at: Point, scale: number, tolerance: number) {
-    const curve = geometryPath(owner, part.path);
-    if (!curve) return;
-    const hit = nearestSegment(flattenSegment(curve, part.index, displayCurveTolerance(tolerance, scale)), at);
-    if (hit && hit.distance * scale <= segmentRadius) return { ...part, point: hit.point };
-}
-
 function movesPlacement({ role }: GeoControl) {
     return role === "body" || role === "outline" || role === "curve";
 }
@@ -252,13 +178,15 @@ export function controlPreview(d: Design, resolved: ResolvedDesign, graph: Retur
     selection: Selection, control: GeoControl, independent: boolean, offset?: Point): ((at: Point) => ControlPreview) | undefined {
     const { id } = selection, index = d.geoNodes.findIndex(n => n.id === id), selected = resolved.geoNodes[index];
     const standalone = selection.kind === "geometry", placing = !standalone && movesPlacement(control);
-    const curveSlot = control.role !== "parameter" && (!movesPlacement(control) || standalone && control.role === "curve") ?
+    const placingPoint = control.role === "pointHolder";
+    const curveSlot = control.role !== "parameter" && !placingPoint && (!movesPlacement(control) || standalone && control.role === "curve") ?
         geometrySlot(d, id, control.path, standalone) : undefined;
     const source = curveSlot && graph.source(curveSlot);
     const moved = placing ? movedHolders(graph, id, control) : undefined;
-    const point = control.role === "parameter" ? draggedPoint(d, selection, control, index, offset) : undefined;
-    const ownPoints = control.role === "body" && selected ? geoPointSlots(d.geoNodes[index], index) : [];
-    const pointUsers = point ? geometryUsers(d).get(point.point)?.filter(slot => slot.location.kind === "geo" && "point" in slot.value) ?? [] : [];
+    const point = control.role === "parameter" || placingPoint ? draggedPoint(d, selection, control, index, offset) : undefined;
+    const ownPoints = selected && (control.role === "body" || placingPoint) ?
+        geoPointSlots(d.geoNodes[index], index).filter(slot => !placingPoint || slot.value === point) : [];
+    const pointUsers = point && !placingPoint ? geometryUsers(d).get(point.point)?.filter(slot => slot.location.kind === "geo" && "point" in slot.value) ?? [] : [];
     if (!moved?.size && !source && !point && !ownPoints.length) return;
     const affected = moved ? [...moved].flatMap(graph.holderPlacements) : source ? graph.curvePlacements(source.id) : [];
     const placements = affected.filter(item => item.active).map(holder => {
@@ -273,7 +201,7 @@ export function controlPreview(d: Design, resolved: ResolvedDesign, graph: Retur
             if (curve !== undefined) entry.paths.add(curve);
             nodes.set(owner, entry);
         }
-        const delta = dragDelta(control, at), local = point && localPoint(point.offset ?? [0, 0], at);
+        const delta = dragDelta(control, at), local = point && !placingPoint ? localPoint(point.offset ?? [0, 0], at) : undefined;
         if (local && point) for (const item of pointUsers) if ("point" in item.value) {
             const at = item.location;
             if (at.kind !== "geo") continue;
@@ -295,9 +223,10 @@ export function controlPreview(d: Design, resolved: ResolvedDesign, graph: Retur
 
 export function commitControl(d: Design, selection: Selection, control: GeoControl, at: Point, independent: boolean, offset?: Point) {
     const { id } = selection, standalone = selection.kind === "geometry";
-    if (control.role === "parameter") {
+    if (control.role === "parameter" || control.role === "pointHolder") {
         const holder = draggedPoint(d, selection, control, d.geoNodes.findIndex(n => n.id === id), offset);
-        if (holder) movePointGeometry(d, holder, at);
+        if (holder && control.role === "pointHolder") translateHolder(holder, dragDelta(control, at));
+        else if (holder) movePointGeometry(d, holder, at);
     }
     else if (!standalone && movesPlacement(control)) {
         const delta = dragDelta(control, at);
@@ -369,13 +298,6 @@ function shiftGeometryReferences(d: Design, n: GeoNode, path: Address, index: nu
     for (const [address, formula] of edits) writeAt(d, address, formula);
     return { prefix, slots, belongs };
 }
-export function removeParameterPoint(d: Design, n: GeoNode, h: GeoControl) {
-    const f = n.function;
-    if (f.type === "mountain") removeGeometryItem(d, n, ["peaks"], h.path - f.ridges.length);
-    if (f.type === "coast") throw Error("港湾需要保留圆心");
-    if (f.type === "slope" && f.kind === "radial") throw Error("径向坡面需要保留圆心");
-}
-
 function selectedOwner(n: GeoNode | Selection): Selection {
     return "kind" in n ? n : { kind: "geoNode", id: n.id };
 }

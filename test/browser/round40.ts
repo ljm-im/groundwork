@@ -65,9 +65,9 @@ export function checkMapParameterOverlays(url: string) {
         await checkHarbor("light");
         await click("#fit"); await paint();
 
-        await tap([-29, 12.5]);
+        await page.tapLayer([-29, 12.5], "holder", "M");
         assert.deepEqual((await frame()).geometry, { kind: "curve", index: -1 });
-        assert.equal(await visibleDash(ridge.nodes[0].p, "light"), false);
+        assert((await evaluate(() => window.curveMapProbe.strokes)).some(s => s.width === 4 && s.dash.length));
         await click("[aria-label=添加山脊]"); await paint();
         assert(await visibleDash(ridge.nodes[0].p, "light"));
         await checkHarbor("light");
@@ -77,8 +77,8 @@ export function checkMapParameterOverlays(url: string) {
             const at = pixels(await frame(), point, true), dots = await evaluate(() => window.curveMapProbe.dots);
             return dots.filter(dot => distance(dot.point, at) < .01).map(dot => dot.color);
         }
-        await tap(firstPeak);
-        assert(await evaluate(() => !!document.querySelector(".geometry-box[aria-label=位置][aria-pressed=true]")));
+        await page.tapLayer(firstPeak, "holder", "M");
+        assert(await evaluate(() => !!document.querySelector(".subitem.selected .geometry-box[aria-label=位置][aria-pressed=false]")));
         assert.deepEqual(await handleColors(firstPeak), [mapColors.light.accent]);
         await click("[aria-label=添加山峰]"); await paint();
         assert.match(await page.text(".drawing-status strong"), /添加山峰/);
@@ -150,7 +150,7 @@ export function checkSingleOutlineAndButtons(url: string) {
         await key("Escape");
 
         await click("[data-geo-node=T]");
-        await tap([-21, -14]);
+        await page.tapLayer([-21, -14], "vertex", "T");
         assert.equal((await frame()).vertex?.role, "vertex");
         assert.deepEqual(await gaps(node), [4, 4]);
         await screenshot(page, "[data-curve-node]", "round40-node-buttons");
@@ -180,12 +180,11 @@ export function checkOutlineHoleHits(url: string) {
         assert.deepEqual(await evaluate(() => [...document.querySelectorAll("[data-outline].selected .row-actions button")]
             .map(button => button.getAttribute("aria-label"))), ["引用轮廓", "删除轮廓"]);
         await tap(point, 1);
-        assert.equal((await frame()).outline, 0);
-        await tap(point, 1);
         assert.equal((await frame()).selection?.id, "G");
+        assert.equal((await frame()).outline, undefined);
         await tap(point, 0, "right");
         assert.equal((await frame()).selection?.id, "T");
-        assert.equal((await frame()).outline, 1);
+        assert.equal((await frame()).selectionPath?.at(-1)?.kind, "geometry");
         assert.equal(await text(".context-menu [data-option=delete-outline]"), "删除轮廓");
         await key("Escape");
 

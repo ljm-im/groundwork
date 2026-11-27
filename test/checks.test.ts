@@ -1,3 +1,4 @@
+import { curveGraph } from "../src/core/design/curveReferences.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Project } from "../src/core/project.ts";
@@ -8,7 +9,7 @@ import { fixtureMark, fixtureSection, syntheticDesign } from "./scenarios.ts";
 
 const view = (project: Project, layers: Partial<MapView["layers"]>): MapView => ({
     project: project.view(), layers: { ...layerDefaults, ...layers }, grid: gridDefaults,
-    selection: null, displayField: "height", referencedGeo: []
+    authored: project.design, curves: curveGraph(project.design), selectionPath: null, displayField: "height", referencedGeo: []
 });
 
 test("Text marks show the resolved authored elevation when enabled", () => {

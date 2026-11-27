@@ -46,7 +46,7 @@ export function checkSegmentDragAndGuides(url: string) {
         assert.deepEqual(await points(), before);
 
         await click("[data-geo-node=T]");
-        await tap(middle, ctrl);
+        await page.tapLayer(middle, "segment", "T");
         assert.equal((await frame()).vertex?.role, "segment");
         await pointer("mousePressed", from, ctrl);
         await pointer("mouseMoved", to, ctrl);
@@ -84,7 +84,7 @@ export function checkSegmentDragAndGuides(url: string) {
         assertPositions(await points(), 5 * f.scale, 12 * f.scale, true);
         await undo();
 
-        await tap(before[0], ctrl);
+        await page.tapLayer(before[0], "vertex", "T");
         const view = await frame(), start = pixels(view, before[0]);
         const unrelated = pixels(view, [-28, -7.4]), related = pixels(view, [-31, -2.4]);
         const checkPoint = (actual: Point, expected: Point) => assert(distance(actual, expected) < .001, JSON.stringify({ actual, expected }));
@@ -177,6 +177,7 @@ export function checkDrawingConstraints(url: string) {
         checkPoint(section.points[0], [-22, 20]);
         checkPoint(section.points[1], [-14, 28]);
 
+        await page.tapLayer(section.points[1], "holder");
         const sectionView = await frame(), endpoint = pixels(sectionView, section.points[1]), moved = pixels(sectionView, [-6, 31]);
         for (const [modifiers, expected] of [[shift, [-6, 28]], [ctrl | shift, [-6, 31]]] as const) {
             await pointer("mousePressed", endpoint, modifiers);

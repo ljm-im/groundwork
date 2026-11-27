@@ -48,7 +48,7 @@ export function checkProfilesAndLabels(url: string) {
         await key("Escape");
 
         await click(".part:has([aria-label=添加山脊]) .subitem-toggle");
-        await tap(ridge[1]); await tap(ridge[1]);
+        await page.tapLayer(ridge[1], "vertex", "M");
         const input = "#properties [data-curve-node] .numeric-face[aria-label=高度]";
         const output = "#properties [data-curve-node] [data-output-value]";
         const checkbox = "#properties [data-curve-node] label";
@@ -86,7 +86,7 @@ export function checkProfilesAndLabels(url: string) {
         await key("Escape");
 
         await inspect("M");
-        await tap(ridge[1]); await tap(ridge[1]);
+        await page.tapLayer(ridge[1], "vertex", "M");
         await override();
         assert.equal(await text(input), "20.0");
         await inspect("F");

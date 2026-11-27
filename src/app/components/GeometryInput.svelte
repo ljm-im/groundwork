@@ -38,14 +38,13 @@
     import Menu from "./Menu.svelte";
     import FieldRow from "./FieldRow.svelte";
     const id = $props.id();
-    let { label, icon = "point", summary, active, onclick, redraw, redrawing = false, onmouseenter, onmouseleave, reference }: {
+    let { label, icon = "point", summary, active, onclick, redraw, redrawLabel = "重画" + label, redrawing = false, onmouseenter, onmouseleave, reference }: {
         label: string; icon?: IconName; summary?: string; active: boolean; onclick: () => void;
         reference?: { editor: session.Editor; slot: CurveSlot; name?: string };
-        redraw?: () => void; redrawing?: boolean; onmouseenter?: () => void; onmouseleave?: () => void;
+        redraw?: () => void; redrawLabel?: string; redrawing?: boolean; onmouseenter?: () => void; onmouseleave?: () => void;
     } = $props();
     let opened = $state(false), pointerOpened = $state(false);
     let box = $state<HTMLElement>(null!), toggle = $state<HTMLButtonElement>(null!);
-    let redrawLabel = $derived((reference ? "选取或重画" : "重画") + label);
     let current = $derived(reference && reference.editor.curves.source(reference.slot).id);
     let item = $derived(current === undefined ? undefined : geometryAt(reference!.editor.project.design, current));
     let shoreAlias = $derived(reference?.slot.holder?.kind === "shore" && isHolderRef(reference.slot.holder.value));
