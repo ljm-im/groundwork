@@ -19,7 +19,7 @@ import { pixelGridSpacing } from "../src/core/edit/display.ts";
 import { constrainGeoLabel, constrainSectionLabel, geoLabelPoint } from "../src/render/labelLayout.ts";
 import { visibleControlCurves } from "../src/render/geoOverlay.ts";
 import { makeShape, rasterRegion, regionMaskAt } from "../src/core/design/regions.ts";
-import { clampMarkPoint, dragMapHit, mapControlDrag, nextMapHit, ProjectMap } from "../src/render/map.ts";
+import { clampMarkPoint, dragMapHit, mapControlDrag, mapHoverHit, nextMapHit, ProjectMap } from "../src/render/map.ts";
 import { testProjectModel, testTerrainClient } from "./computeFixture.ts";
 import { render } from "svelte/server";
 import { fixtureConstruction, fixtureFunction, fixtureMark, fixtureSection, withNodeSlope, coveredLandformPoints, addLayer, openCurve, overlappingLandforms, polygon, rect, resolvedRect, syntheticDesign } from "./scenarios.ts";
@@ -176,6 +176,40 @@ test("Repeated clicks still advance one layer until the end of the hit", () => {
         current = nextMapHit([{ path: outlineA }], current)!.path;
         assert.deepEqual(current, outlineA.slice(0, depth));
     }
+});
+
+test("A map click holds the next layer's hover until the pointer leaves the selected path", async () => {
+    const { Editor } = await import("../src/app/state/session.svelte.ts");
+    const editor = new Editor(testTerrainClient()), project = new Project(syntheticDesign());
+    const map: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), { width: 1000, height: 700, markBoxes: [] });
+    map.fit(project.terrain, false);
+    Object.assign(editor, { project: testProjectModel(project), map });
+    const face: Point = [-14, -8], vertex: Point = [-21, -14], outside: Point = [0, 20];
+    const hits = (p: Point) => map.objectHits(editor.mapView!, map.screen(p));
+    const click = (p: Point) => editor.selectMapPath(nextMapHit(hits(p), editor.selectionPath)?.path ?? null);
+    const hover = (p: Point, alternate = false) => {
+        const preview = mapHoverHit(hits(p), editor.selectionPath, editor.pauseNextLayerHover, alternate);
+        editor.pauseNextLayerHover = preview.paused;
+        return preview.hit?.path;
+    };
+
+    click(face);
+    assert.equal(editor.selectionPath?.length, 1);
+    assert.equal(hover(face), undefined);
+    assert.equal(hover(vertex)?.at(-1)?.kind, "vertex");
+    assert.equal(hover(face, true)?.[0].id, "G");
+    assert.equal(hover(face), undefined);
+    click(face);
+    assert.equal(editor.selectionPath?.length, 2);
+    assert.equal(hover(face), undefined);
+    assert.equal(hover([-13, -8]), undefined);
+    assert.equal(hover(outside)?.[0].id, "G");
+    assert.equal(hover(face)?.at(-1)?.kind, "geometry");
+
+    click(face);
+    editor.focusGeometry({ kind: "outline", index: 0 });
+    assert.equal(editor.selectionPath?.at(-1)?.kind, "holder");
+    assert.equal(hover(face)?.at(-1)?.kind, "geometry");
 });
 
 test("Every map tool supplies ordered primary hints and a shared navigation footer", () => {

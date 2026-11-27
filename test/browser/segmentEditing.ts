@@ -80,9 +80,10 @@ export async function checkSegmentEditing(url: string) {
         assert.equal((await frame()).selection?.id, "A");
         assert.equal((await frame()).vertex, undefined);
         assert.equal(await segmentTitle(), "");
-        await pointer("mouseMoved", pixels(await frame(), inside), 0, "none");
-        await pointer("mouseMoved", pixels(await frame(), edge), 0, "none");
-        await paint();
+        await pointer("mouseMoved", pixels(await frame(), inside), 0, "none"); await paint();
+        assert.deepEqual(await highlights(), []);
+        await pointer("mouseMoved", pixels(await frame(), [0, 0]), 0, "none"); await paint();
+        await pointer("mouseMoved", pixels(await frame(), edge), 0, "none"); await paint();
         const hoveredOutline = await highlights(), [hover] = hoveredOutline;
         assert.equal(hoveredOutline.length, 1);
         assert(Math.abs(hover.alpha - .3) < 1e-6);
@@ -125,6 +126,7 @@ export async function checkSegmentEditing(url: string) {
         await undo();
 
         await tap(firstRidge);
+        await pointer("mouseMoved", pixels(await frame(), [0, 0]), 0, "none"); await paint();
         await pointer("mouseMoved", pixels(await frame(), firstRidge), 0, "none"); await paint();
         const hoveredRidge = await highlights(), [ridgeHover] = hoveredRidge;
         assert.equal(hoveredRidge.length, 1);

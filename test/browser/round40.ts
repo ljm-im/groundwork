@@ -106,8 +106,10 @@ export function checkSingleOutlineAndButtons(url: string) {
         await tap(inside);
         assert.equal((await frame()).selection?.id, "T");
         assert.equal((await frame()).outline, undefined);
-        await pointer("mouseMoved", pixels(await frame(), [-13, -8]), 0, "none");
-        await paint();
+        await pointer("mouseMoved", pixels(await frame(), [-13, -8]), 0, "none"); await paint();
+        assert.equal((await frame()).hoverPart, undefined);
+        await pointer("mouseMoved", pixels(await frame(), [0, 12]), 0, "none"); await paint();
+        await pointer("mouseMoved", pixels(await frame(), [-13, -8]), 0, "none"); await paint();
         assert.equal((await frame()).hoverPart?.role, "outline");
         const outlineStroke = () => evaluate(accent => window.curveMapProbe.strokes.find(stroke =>
             stroke.color === accent && stroke.width === 4 && !stroke.dash.length), accent);

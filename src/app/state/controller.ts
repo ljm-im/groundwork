@@ -7,7 +7,7 @@ import { selectionLayers } from "../../core/edit/selection.ts";
 import { doubleClickTools, draftPointer, updatePreview } from "./geoTools.ts";
 import { controlSnap, sectionSnap, type SnapModifiers } from "./mapSnaps.ts";
 import { type GeoDraft } from "../../core/edit/types.ts";
-import { dragMapHit, mapControlDrag, nextMapHit } from "../../render/map.ts";
+import { dragMapHit, mapControlDrag, mapHoverHit, nextMapHit, type MapHit } from "../../render/map.ts";
 import { errorText, type Point } from "../types.ts";
 import * as session from "./session.svelte.ts";
 
@@ -73,6 +73,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
 
     function beginPan(ev: PointerEvent, screen: Point, pan: "middle" | "space" | "stationary", click?: () => void) {
         ev.preventDefault();
+        editor.pauseNextLayerHover = false;
         editor.hoverSelection();
         editor.gesture = { pan, screen, center: map.center.slice(), pointer: ev.pointerId, click };
     }
@@ -85,9 +86,16 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         if (hoverPoint) hoverFrame ||= requestAnimationFrame(updateHover);
     }
 
-    function pick(screen: Point, alternate: boolean) {
-        const view = editor.mapView!;
-        const hit = nextMapHit(map.objectHits(view, screen), view.selectionPath, alternate);
+    function pick(screen: Point, alternate: boolean, hover = false) {
+        const view = editor.mapView!, hits = map.objectHits(view, screen);
+        let hit: MapHit | undefined;
+        if (hover) {
+            const preview = mapHoverHit(hits, view.selectionPath, editor.pauseNextLayerHover, alternate);
+            editor.pauseNextLayerHover = preview.paused;
+            hit = preview.hit;
+            if (!hit) return;
+        }
+        else hit = nextMapHit(hits, view.selectionPath, alternate);
         if (!alternate && (!hit || hit.path.length === 1 || editor.tab === "issues") &&
             hit?.path[0].kind !== "mark" && !selectionLayers(hit?.path).part) {
             const issues = map.issueHits(view, screen);
@@ -98,7 +106,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
     function updateHover() {
         hoverFrame = 0;
         if (!editor.mapView || !editor.mapCurrent || !hoverPoint || editor.tool !== "select" || editor.gesture || editor.busy || spaceHeld) return;
-        const hit = pick(hoverPoint, hoverAlternate);
+        const hit = pick(hoverPoint, hoverAlternate, true);
         if (!hit || "issues" in hit) return editor.hoverSelection();
         const role = selectionLayers(hit.path).part && hit.control?.role;
         editor.hoverSelectionPath(hit.path, role === "in" || role === "out" || role === "arc" ? role : undefined);
@@ -146,10 +154,11 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         if (!editor.mapCurrent) return;
         const hit = pick(screen, alternate);
         if (hit && "issues" in hit) editor.pickMarkers(hit.issues);
-        else editor.selectPath(hit?.path ?? null);
+        else editor.selectMapPath(hit?.path ?? null);
         if (hoverPoint) hoverFrame ||= requestAnimationFrame(updateHover);
     }
     function beginSelectionDrag(down: PointerEvent, screen: Point) {
+        editor.pauseNextLayerHover = false;
         if (!editor.mapCurrent) return;
         const view = editor.mapView!, p = map.world(...screen), pointer = down.pointerId;
         const hit = dragMapHit(map.objectHits(view, screen), view.selectionPath);
@@ -360,6 +369,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
 
     canvas.addEventListener("pointerleave", () => {
         pointerInside = false;
+        editor.pauseNextLayerHover = false;
         if (!editor.gesture && !editor.geoDraft?.down) editor.snapGuides = undefined;
         cancelAnimationFrame(hoverFrame); hoverFrame = 0;
         hoverPoint = undefined;
@@ -434,8 +444,13 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
     function releasePointer(ev: PointerEvent, current = press) {
         if (current?.selectFrom && current.down.pointerId === ev.pointerId && editor.tool === "select") {
             const screen = localPoint(ev);
-            if (!current.dragged && distance(screen, current.selectFrom) <= dragThreshold)
+            if (!current.dragged && distance(screen, current.selectFrom) <= dragThreshold) {
+                if (ev.pointerType !== "touch") {
+                    hoverPoint = screen;
+                    hoverAlternate = ev.altKey;
+                }
                 selectClick(current.selectFrom, ev.altKey);
+            }
             else if (!editor.busy) {
                 if (!current.dragged) beginSelectionDrag(current.down, current.selectFrom);
                 moveGesture(ev, screen, map.world(...screen));

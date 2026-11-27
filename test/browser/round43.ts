@@ -56,6 +56,7 @@ export function checkSelectionHierarchy(url: string) {
         await tap(p);
         assert.equal(await title(), "T");
         assert.equal(await depth(), 1);
+        assert.equal((await frame()).hoverPath, undefined);
         await move(away);
         const landformFills = await fills();
         assert.deepEqual(await dotsAt(vertex), [mapColors.light.bgPanel]);
@@ -98,6 +99,11 @@ export function checkSelectionHierarchy(url: string) {
         assert.equal(await active(curveInput), "false");
         assert.equal(await text(parts), "");
         assert.deepEqual((await accentStroke())?.dash, []);
+        assert.equal((await frame()).hoverPath, undefined);
+        assert.deepEqual(await fills(), landformFills);
+        await move([-13, -8]);
+        assert.equal((await frame()).hoverPath, undefined);
+        assert.deepEqual(await fills(), landformFills);
         await move(away);
         assert.deepEqual(await fills(), landformFills);
         assert.deepEqual(await dotsAt(vertex), [mapColors.light.bgPanel]);

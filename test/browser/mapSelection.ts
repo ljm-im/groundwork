@@ -120,6 +120,9 @@ export async function checkMapSelection(url: string) {
         await tap(overlap); assert.equal((await frame()).selection?.id, "B");
         await tap(overlap, alt); assert.equal((await frame()).selection?.id, "A");
         await mouse("mouseMoved", pixels(await frame(), overlap), 0, "none"); await paint();
+        assert.equal((await frame()).hovered, undefined);
+        await mouse("mouseMoved", pixels(await frame(), [-44, 0]), 0, "none"); await paint();
+        await mouse("mouseMoved", pixels(await frame(), overlap), 0, "none"); await paint();
         assert.equal((await frame()).hovered?.id, "A");
         await mouse("mouseMoved", pixels(await frame(), overlap), alt, "none"); await paint();
         assert.equal((await frame()).hovered?.id, "G");

@@ -80,18 +80,24 @@ function hitFaceOutlines(shape: RegionShape | undefined, point: Point) {
 }
 
 export function nextMapHit(hits: Iterable<MapHit>, selection: SelectionPath | null, alternate = false) {
-    let first: MapHit | undefined, next = false;
+    let first: MapHit | undefined, currentPath: SelectionPath | undefined;
     for (const hit of hits) {
         first ??= hit;
-        if (next) return { path: selectionPrefix(hit.path, 1) };
+        if (currentPath) return { path: selectionPrefix(hit.path, 1), currentPath };
         if (!selection) break;
-        if (alternate) next = hit.path[0].kind === selection[0].kind && hit.path[0].id === selection[0].id;
-        else {
-            const shared = commonSelectionLength(hit.path, selection);
-            if (shared) return hitsCurveControl(hit) ? hit : { ...hit, path: selectionPrefix(hit.path, shared + 1) };
-        }
+        const shared = commonSelectionLength(hit.path, selection);
+        if (!shared) continue;
+        currentPath = hit.path;
+        if (!alternate) return { ...hit, path: hitsCurveControl(hit) ? hit.path : selectionPrefix(hit.path, shared + 1), currentPath };
     }
-    if (first) return { path: selectionPrefix(first.path, 1) };
+    if (first) return { path: selectionPrefix(first.path, 1), currentPath };
+}
+
+export function mapHoverHit(hits: Iterable<MapHit>, selection: SelectionPath | null, paused: boolean, alternate = false) {
+    const hit = nextMapHit(hits, selection, alternate);
+    if (!paused || !selection || !hit?.currentPath || !includesSelection(hit.currentPath, selection)) return { hit, paused: false };
+    const hide = !alternate && hit.path.length > selection.length && !hitsCurveControl(hit);
+    return { hit: hide ? undefined : hit, paused: true };
 }
 
 export function dragMapHit(hits: Iterable<MapHit>, selection: SelectionPath | null) {
