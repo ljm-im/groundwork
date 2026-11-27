@@ -5,6 +5,7 @@
                 d.geometry[id].label = label;
             })}
             redraw={"curve" in item ? () => editor.redrawGeometry(id) : undefined}
+            redrawLabel={slot ? "选取或重画" + placementRedrawLabel(slot) : undefined}
             redrawing={editor.curveToolActive(slot?.key ?? curveKey(id))}
             copy={() => editor.duplicateGeometry(id)} remove={() => editor.removeElement({ kind: "geometry", id })} />
     {/snippet}
@@ -37,6 +38,7 @@
     import { geometryPath, type GeoControl } from "../../core/edit/geoControls.ts";
     import { curveKey, memberLabel, nodeQuantities, nodeQuantityPath, profileGroups } from "../../core/design/curveReferences.ts";
     import { interpolates, needsNodeValue } from "../../core/design/polyline.ts";
+    import { placementRedrawLabel } from "../../core/edit/selection.ts";
     import CheckboxRow from "./CheckboxRow.svelte";
     import { geometryIcon } from "../state/inspector.ts";
     import * as session from "../state/session.svelte.ts";

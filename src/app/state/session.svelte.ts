@@ -3,7 +3,7 @@ import { type ProjectView } from "../../core/project.ts";
 import { TerrainClient, type ProjectModel } from "./terrainClient.ts";
 import { History } from "../../core/edit/history.ts";
 import { existsSelection, holderForTarget, holderLayer, holderTarget, includesSelection, partControl,
-    placementSelection, selectionLayers, selectionPlacement, selectionPrefix, validSelection, withCurvePart,
+    placementRedrawLabel, placementSelection, selectionLayers, selectionPlacement, selectionPrefix, validSelection, withCurvePart,
     type HolderGroup, type HolderLayer, type SelectionPath } from "../../core/edit/selection.ts";
 import { copyAt, readAt, writeAt, type Address } from "../../core/design/address.ts";
 import { readDisplaySettings, saveDisplaySettings } from "./layers.ts";
@@ -451,7 +451,8 @@ export class Editor {
     }
     redrawGeometry(id: string) {
         const slot = this.geometryPage?.slot;
-        this.drawCurve(slot?.key ?? curveKey(id), undefined, true);
+        if (slot) this.pickOrRedrawCurve(slot.key, placementRedrawLabel(slot));
+        else this.drawCurve(curveKey(id), undefined, true);
     }
     duplicateGeometry(id: string) {
         return this.edit(d => ({ kind: "geometry", id: copyGeometry(d, id, true) }), () => this.focusNewDeclaration());

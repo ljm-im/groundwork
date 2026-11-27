@@ -72,7 +72,7 @@ test("Editor interactions in Chromium", async t => {
         await t.test("Outline holes support hover, selection, cycling, menus and body dragging in Chromium", () => checkOutlineHoleHits(url));
         await t.test("Node profiles, slope lines, valleys and localized inspector labels in Chromium", () => checkProfilesAndLabels(url));
         await t.test("Geometry objects, holders and mark anchors in Chromium", () => checkGeometryObjects(url));
-        await t.test("Selection hierarchy and curve styling in Chromium", () => checkSelectionHierarchy(url));
+        await t.test("Selection hierarchy, curve styling and replacing by face in Chromium", () => checkSelectionHierarchy(url));
         await t.test("List and numeric reference searches match visible labels in Chromium", () => checkVisibleSearch(url));
     }
     finally {

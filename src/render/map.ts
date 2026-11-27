@@ -527,12 +527,20 @@ export class ProjectMap {
         if (hit) return { path, control: { role, path: index, index: 0, point } };
     }
     pickCurve(choices: readonly CurveChoice[], point: Point, tolerance: number) {
-        let key: string | undefined, gap = Infinity;
+        let key: string | undefined, faceArea = Infinity, gap = Infinity;
         for (const choice of choices) for (const curve of choice.placements) {
-            const edge = hitCurve(curve, point, this.scale, tolerance)?.edge;
-            if (edge && edge.distance < gap) {
+            const hit = hitCurve(curve, point, this.scale, tolerance, curve.closed ? 5 : 8);
+            if (!hit) continue;
+            if (curve.closed) {
+                const size = hit.area();
+                if (size < faceArea) {
+                    key = choice.key;
+                    faceArea = size;
+                }
+            }
+            else if (faceArea === Infinity && hit.edge && hit.edge.distance < gap) {
                 key = choice.key;
-                gap = edge.distance;
+                gap = hit.edge.distance;
             }
         }
         return key;

@@ -873,6 +873,18 @@ test("Delete removes the current root while required references stay with their 
     editor.dispose();
 });
 
+test("Curve picking covers faces from smallest to largest and accepts open lines within eight pixels", () => {
+    const map: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), { scale: 4 });
+    const small = resolvedRect(-3, -3, 3, 3).outlines[0], large = resolvedRect(-12, -12, 12, 12).outlines[0];
+    const line = openCurve([{ p: [-9, 20] }, { p: [9, 20] }]);
+    const choices = [{ key: "large", placements: [large] }, { key: "small", placements: [small] }, { key: "line", placements: [line] }];
+    assert.equal(map.pickCurve(choices, [0, 0], .1), "small");
+    assert.equal(map.pickCurve(choices, [3, 0], .1), "small");
+    assert.equal(map.pickCurve(choices, [8, 8], .1), "large");
+    assert.equal(map.pickCurve(choices, [0, 21.99], .1), "line");
+    assert.equal(map.pickCurve(choices, [0, 22.01], .1), undefined);
+});
+
 test("Coordinate slots use design grid and sample bounds while longer readings stay intact", () => {
     const range = readingRange({ values: Float32Array.of(-2345, 123, 800000), defined: Uint8Array.of(1, 1, 0) });
     assert.deepEqual(range, [-2345, 123]);
