@@ -11,7 +11,7 @@ import { bounds, clamp, distance, nearest } from "../core/math/geometry.ts";
 import { objectIssues } from "../core/checks/issues.ts";
 import { displayCurveTolerance, hitGeoControl, parameterPoints, pathEntries, type ControlPreview, type GeoControl } from "../core/edit/geoControls.ts";
 import { nearestSegment } from "../core/edit/paths.ts";
-import { commonSelectionLength, holderForTarget, holderLayer, holderTarget, includesSelection, placementSelection, selectionLayers, selectionPrefix,
+import { commonSelectionLength, geometrySelectionPath, holderForTarget, holderLayer, holderTarget, includesSelection, placementSelection, selectionLayers, selectionPrefix,
     withCurvePart, type HolderLayer, type SelectionPath } from "../core/edit/selection.ts";
 import { flattenPath } from "../core/design/path.ts";
 import { insidePolygon, polygonArea } from "../core/math/polygon.ts";
@@ -89,6 +89,9 @@ export function dragMapHit(hits: Iterable<MapHit>, selection: SelectionPath | nu
     for (const hit of hits) {
         first ??= hit;
         if (!selection) break;
+        const role = hit.control?.role;
+        if ((role === "vertex" || role === "in" || role === "out" || role === "arc") && selectionLayers(hit.path).part &&
+            includesSelection(selection, geometrySelectionPath(hit.path))) return hit;
         if (includesSelection(hit.path, selection)) return { ...hit, path: selection };
     }
     if (first) return { ...first, path: selectionPrefix(first.path, 1) };

@@ -19,7 +19,7 @@ export function checkSelectionHierarchy(url: string) {
         return construction.outlines[0].curve;
     };
     return withCurveMap(url, "round43", async page => {
-        const { authored, click, evaluate, frame, key, paint, pointer, pixels, saved, screenshot, tap, text } = page;
+        const { authored, click, drag, evaluate, frame, key, paint, pointer, pixels, saved, screenshot, tap, text, undo } = page;
         const p: Point = [-14, -8], away: Point = [0, 54], row = "[data-outline] > .subitem-heading";
         const curveInput = "#properties .geometry-box[aria-label=曲线]", tab = "[data-property-tab=geometry]";
         const parts = "[data-curve-node], [data-curve-segment]";
@@ -76,6 +76,18 @@ export function checkSelectionHierarchy(url: string) {
         assert.equal((await frame()).hoverPath?.at(-1)?.kind, "vertex");
         await tap(outline.nodes[1].p);
         assert.equal(await text("[data-curve-node] .subitem-label"), "节点 2");
+        await tap(p);
+        assert.equal(await depth(), 3);
+
+        const dx = 30 / (await frame()).scale;
+        await drag(outline.nodes[0].p, 2);
+        assert.equal(await depth(), 4);
+        assert.equal(await text("[data-curve-node] .subitem-label"), "节点 1");
+        const { nodes } = literalCurve(await authored(), curveId(design, "T"));
+        const [x, y] = outline.nodes[0].p;
+        assert(distance(nodes[0].p, [x + dx, y]) < .02);
+        assert.deepEqual(nodes.slice(1), outline.nodes.slice(1));
+        await undo();
         await tap(p);
         assert.equal(await depth(), 3);
 

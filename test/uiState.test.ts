@@ -764,7 +764,7 @@ test("Map drags follow the current layer, preserving offsets and shared coordina
     const holder = holderLayer("outlines", 2);
     const branch: SelectionPath = [root, holder, { kind: "geometry", id: outline.curve }];
     const p: Point = [-8, -7], delta: Point = [3, 2];
-    const drag = (point: Point, selection: SelectionPath | null) => {
+    const drag = (point: Point, selection: SelectionPath, depth = selection.length) => {
         editor.selectPath(selection);
         const view = editor.mapView!, screen = map.screen(point);
         const hit = dragMapHit(map.objectHits(view, screen), editor.selectionPath)!;
@@ -773,7 +773,7 @@ test("Map drags follow the current layer, preserving offsets and shared coordina
         const preview = controlPreview(d, editor.project.resolved, editor.curves, moving, control, false)!(target);
         const next = structuredClone(d);
         commitControl(next, moving, control, target, false);
-        assert.equal(hit.path.length, selection?.length ?? 1);
+        assert.equal(hit.path.length, depth);
         return { next, preview };
     };
     assert.deepEqual(dragMapHit(map.objectHits(editor.mapView!, map.screen(p)), null)?.path, [root]);
@@ -805,7 +805,10 @@ test("Map drags follow the current layer, preserving offsets and shared coordina
 
     const first = shared.curve.nodes[0];
     const nodePoint: Point = [first.p[0] + offset[0], first.p[1] + offset[1]];
+    const direct = drag(nodePoint, branch, 4);
     const vertex = drag(nodePoint, [...branch, { kind: "vertex", nodeId: first.id }]).next;
+    assert.deepEqual(direct.next, vertex);
+    assert.deepEqual(direct.preview.nodes.get("A")?.node.construction, resolveDesign(vertex).geoNodes[2].construction);
     assert.deepEqual(vertex.geoNodes, d.geoNodes);
     const movedVertex = vertex.geometry[outline.curve];
     assert("curve" in movedVertex);

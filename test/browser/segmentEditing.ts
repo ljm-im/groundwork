@@ -424,12 +424,15 @@ export async function checkSegmentEditing(url: string) {
         assert.deepEqual(await readShore(), current);
         await key("Escape");
 
+        await key("Escape"); await paint();
+        assert.equal((await frame()).selectionPath?.at(-1)?.kind, "geometry");
         const [ax, ay] = pixels(await frame(), segmentPoint(current, 0));
         await pointer("mousePressed", [ax, ay], 0);
         await pointer("mouseMoved", [ax, ay - 20], 0);
         await pointer("mouseReleased", [ax, ay - 20], 0);
         await saved(); await paint();
         current = await readShore();
+        assert.equal((await frame()).selectionPath?.at(-1)?.kind, "segment");
         const draggedAngle = await readAngle();
         assert.notEqual(draggedAngle, 120);
         assert(Math.abs(draggedAngle - degreesFromBulge(current.nodes[0].bulge!)) < .0001);

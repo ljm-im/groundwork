@@ -353,7 +353,7 @@ export async function checkCurveEditing(url: string) {
         await click("[data-geo-node=A]");
         await tap(await at(vertex));
         await tap(await at(vertex), 1);
-        for (let i = 0; i < 3; i++) await tap(await at(vertex));
+        for (let i = 0; i < 2; i++) await tap(await at(vertex));
         await drag(await at(vertex), await at([-4, 32.3])); await saved();
         const mountain = resolveDesign(await authored()).geoNodes.find(n => n.id === "C")!.function;
         assert(mountain.type === "mountain" && distance(mountain.ridges[2].curve.nodes[1].p, [-4, 32.3]) < .3);
@@ -413,8 +413,7 @@ export async function checkCurveEditing(url: string) {
         const handlesFrame = await frame(), [left, top] = pixels(handlesFrame, [-27, 36]), [right, bottom] = pixels(handlesFrame, [12, 20]);
         await screenshot("handle-dashes", { x: left, y: top, width: right - left, height: bottom - top });
         const handle = pathHandle(line, 2, "out");
-        await tap(line.nodes[2].p, 0, "right");
-        await key("Escape");
+        assert.equal((await frame()).selectionPath?.at(-1)?.kind, "geometry");
         await drag(handle, 0, async () => {
             const f = await frame(), [x, y] = pixels(f, handle, true), start = pixels(f, line.nodes[2].p, true);
             const preview = (await evaluate(() => window.curveMapProbe.strokes)).find(s => s.width === overlay.controlLine &&
