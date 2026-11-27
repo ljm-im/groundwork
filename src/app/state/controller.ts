@@ -397,6 +397,8 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         cancelAnimationFrame(hoverFrame); hoverFrame = 0;
         hoverPoint = undefined;
         editor.readPosition();
+        const pick = editor.geoDraft?.curve?.pick;
+        if (pick) pick.hovered = undefined;
         editor.hoverSelection();
     }, { signal });
 

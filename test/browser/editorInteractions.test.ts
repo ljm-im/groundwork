@@ -529,8 +529,8 @@ async function checkEditor(url: string) {
         async function pen() {
             await chooseTool("地件", "pen");
         }
-        async function vertices(closed: boolean) {
-            await tap(a);
+        async function vertices(closed: boolean, firstModifiers = 0) {
+            await tap(a, 1, "left", firstModifiers);
             await browser.mouse("mousePressed", b[0], b[1]);
             await browser.mouse("mouseMoved", b[0] + 12, b[1] + 7);
             await browser.mouse("mouseReleased", b[0] + 12, b[1] + 7);
@@ -539,15 +539,15 @@ async function checkEditor(url: string) {
         async function undo() {
             await click("#undo"); await idle(); await saved();
         }
-        async function compareFinish(start: () => Promise<void>, closed: boolean) {
+        async function compareFinish(start: () => Promise<void>, closed: boolean, firstModifiers = 0) {
             await saved();
             const original = await disk();
-            await start(); await vertices(closed); await key("Enter"); await idle(); await saved();
+            await start(); await vertices(closed, firstModifiers); await key("Enter"); await idle(); await saved();
             const byEnter = await disk();
             assert(byEnter !== original, "Enter must commit the drawing");
             await undo();
             assert(await disk() === original, "One undo must restore the previous design");
-            await start(); await vertices(closed);
+            await start(); await vertices(closed, firstModifiers);
             await tap(end); await tap([end[0] + 1, end[1]], 2); await idle(); await saved();
             assert.match(await text("#mode-hint"), /单击选择/);
             assert(await disk() === byEnter, "Double-click and Enter must save identical geometry");
@@ -652,7 +652,7 @@ async function checkEditor(url: string) {
         await undo();
         await terrainTab();
         await choose("函数", "海岸");
-        await compareFinish(() => click("button[aria-label=重画海岸线]"), true);
+        await compareFinish(() => click("button[aria-label=选取或重画海岸线]"), true, 2);
         await choose("函数", "坡面");
         await compareFinish(() => click("button[aria-label=添加坡线]"), false);
         await choose("函数", "山脉");

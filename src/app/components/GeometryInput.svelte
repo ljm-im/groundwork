@@ -4,7 +4,7 @@
             <Icon name={item ? geometryIcon(item) : icon} /><span>{item?.label ?? summary ?? "线段"}</span>
         </button>
         {#if redraw}
-            <button class="icon-button geometry-redraw" data-tip={"重画" + label} aria-label={"重画" + label}
+            <button class="icon-button geometry-redraw" data-tip={redrawLabel} aria-label={redrawLabel}
                 aria-pressed={redrawing} onclick={redraw}><Icon name="pen" /></button>
         {/if}
         {#if reference}
@@ -45,6 +45,7 @@
     } = $props();
     let opened = $state(false), pointerOpened = $state(false);
     let box = $state<HTMLElement>(null!), toggle = $state<HTMLButtonElement>(null!);
+    let redrawLabel = $derived((reference ? "选取或重画" : "重画") + label);
     let current = $derived(reference && reference.editor.curves.source(reference.slot).id);
     let item = $derived(current === undefined ? undefined : geometryAt(reference!.editor.project.design, current));
     let shoreAlias = $derived(reference?.slot.holder?.kind === "shore" && isHolderRef(reference.slot.holder.value));

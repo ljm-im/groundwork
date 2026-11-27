@@ -8,6 +8,7 @@ export interface Handle extends Selection { point: Point; role: string }
 export type DrawTool = ShapeTool | "strip" | "addOutline" | "shore" | "ridge" | "valley" | "peak" | "slopeLine" | "center" | "harbor" | "section" | "geometryPoint" | "geometryCurve" | "geometryClosed" | "redrawCurve" | "continueCurve";
 export interface GeoDraft {
     tool: DrawTool; owner?: string; member?: number; ids: string[]; nodes: CurveNode[]; anchors: string[]; reverse: boolean;
-    curve?: { key: string; name: string; redrawTitle?: string; original: Curve; pen: "boundary" | "terrain"; requiredClosed: boolean; openOnly?: true; endpoint?: number };
+    curve?: { key: string; name: string; redrawTitle?: string; original: Curve; pen: "boundary" | "terrain"; requiredClosed: boolean; openOnly?: true; endpoint?: number;
+        pick?: { label: string; hovered?: string; pressed?: string } };
     down?: Point; downRaw?: Point; handle?: Point; start?: Point; sizing?: boolean; radius?: Point; cursor?: Point; path?: Curve; closed?: boolean; spine?: Segment[]; spineRange?: string;
 }

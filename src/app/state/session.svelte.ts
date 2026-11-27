@@ -35,7 +35,7 @@ import { contextMenuPoint } from "./popup.ts";
 import { penNodeGroup, readPenNodes, savePenNodes, type PenNodeMode } from "./penNodes.ts";
 import { objectIssues } from "../../core/checks/issues.ts";
 import { propertyTabs, tabForSelection, type PropertyTab, type SubitemGroup } from "./inspector.ts";
-import { ProjectMap, type LabelPreview, type LabelTarget, type MapView } from "../../render/map.ts";
+import { ProjectMap, type CurveChoice, type LabelPreview, type LabelTarget, type MapView } from "../../render/map.ts";
 import { DesignFiles, type FileAction, type SaveState } from "./files.ts";
 import { errorText, type Design, type Expression, type Gesture, type Issue, type Layer, type Mark, type Point, type Selection, type Tab, type Tool } from "../types.ts";
 
@@ -68,7 +68,7 @@ export class Editor {
     tool = $state<Tool>("select");
     geoDraft = $state<GeoDraft>();
     private penNodes = $state.raw(readPenNodes());
-    private penGroup = $derived(this.geoDraft?.curve?.pen ?? penNodeGroup(this.geoDraft?.tool));
+    private penGroup = $derived(this.geoDraft?.curve?.pick ? undefined : this.geoDraft?.curve?.pen ?? penNodeGroup(this.geoDraft?.tool));
     penNodeMode = $derived(this.penGroup && this.penNodes[this.penGroup]);
     drawing = $derived.by(() => {
         if (this.tool === "select") return;
@@ -110,6 +110,18 @@ export class Editor {
         if (holder) return [graph.materialize(graph.ofHolder(holder))];
         const slot = graph.slots.get(key);
         return slot && !slot.holder ? this.curvePlacements(slot) : [];
+    });
+    curveChoices = $derived.by((): CurveChoice[] => {
+        const draft = this.geoDraft?.curve;
+        if (!draft?.pick) return [];
+        const graph = this.curves, from = graph.slots.get(draft.key)!;
+        const { id } = graph.source(from);
+        return [...graph.slots.values()].flatMap(slot => {
+            if (slot.holder || slot.id === id || !graph.canUse(from, slot)) return [];
+            const placements = graph.curvePlacements(slot.id);
+            if (!placements.length && !this.project.design.geometry[slot.id].independent) return [];
+            return [{ key: slot.key, placements: this.curvePlacements(slot, placements) }];
+        });
     });
     private curvePlacements(slot: Extract<CurveSlot, { id: string }>, placements = this.curves.curvePlacements(slot.id)) {
         const graph = this.curves;
@@ -213,7 +225,8 @@ export class Editor {
             snapGuides: this.snapGuides, dragCommitting: this.dragCommitting, dragMark: this.dragMark, dragLabel: this.dragLabel,
             displayField: this.displayField,
             layers: { ...this.layers }, grid: { ...this.displayGrid }, referencedGeo: this.hoverRefs,
-            selectedIssues: this.selectedIssues, issueStart: this.issueStart, referenceCurves: this.referenceCurves
+            selectedIssues: this.selectedIssues, issueStart: this.issueStart, referenceCurves: this.referenceCurves,
+            curveChoices: this.curveChoices, hoveredCurveChoice: draft?.curve?.pick?.hovered
         };
     });
     private readonly compute: TerrainClient;
@@ -549,7 +562,10 @@ export class Editor {
     curveToolActive(key: string) {
         return this.geoDraft?.tool === "redrawCurve" && this.geoDraft.curve?.key === key;
     }
-    drawCurve(key: string, endpoint?: number, geometryPage = !!this.holderGeometry) {
+    pickOrRedrawCurve(key: string, label: string) {
+        this.drawCurve(key, undefined, false, label);
+    }
+    drawCurve(key: string, endpoint?: number, geometryPage = !!this.holderGeometry, pickLabel?: string) {
         const slot = this.curves.slots.get(key);
         if (!slot) return;
         const mode = endpoint === undefined ? "redrawCurve" : "continueCurve";
@@ -558,6 +574,10 @@ export class Editor {
         this.setTool(mode);
         if (mode === "continueCurve") this.selectedPart = part;
         this.geoDraft = startCurveDrawing(this, mode, key, endpoint, geometryPage);
+        if (pickLabel && slot.holder) {
+            const label = slot.holder.kind === "outline" ? slot.holder.label : pickLabel;
+            this.geoDraft.curve!.pick = { label: "“" + slot.name + "”的" + label };
+        }
         updatePreview(this, this.geoDraft);
         this.map.canvas.focus({ preventScroll: true });
     }
@@ -572,6 +592,11 @@ export class Editor {
             setCurveReference(d, edited.key, target);
         },
         () => this.focusGeometry({ kind: geometryIndex(slot) >= 0 ? "outline" : "curve", index: geometryIndex(slot) }));
+    }
+    chooseCurveFromMap(key: string, target: string) {
+        const slot = this.curves.slots.get(key);
+        this.cancelDrawing();
+        if (slot) return this.changeCurveReference(slot, target, true);
     }
     cancelDrawing() {
         const part = this.geoDraft?.tool === "continueCurve" ? this.selectedPart : undefined;

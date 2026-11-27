@@ -12,6 +12,7 @@ const penHint = "单击放置节点，按 S 切换尖角和自动平滑，按住
 const closedPenHint = penHint + "回车、双击或单击首点闭合";
 const lineHint = penHint + lineEnd;
 const continueEnd = "回车或双击完成，单击另一端闭合";
+const pickCurveHint = "单击曲线换用它，单击空白处开始画，按住 Ctrl 单击在曲线上开始画，Esc 取消";
 
 const hints: Record<Tool, string> = {
     select: "单击选择，Alt 单击选择下层，中键或按住空格拖动平移，滚轮缩放",
@@ -64,11 +65,13 @@ export function drawingStatus(mode: Exclude<Tool, "select">, name: string, owner
         redrawCurve: [curve?.redrawTitle ?? "重画" + label, curve?.requiredClosed ? pen : curve?.openOnly ? "单击添加节点，双击结束" : lineEnd, true],
         continueCurve: ["继续画" + label, continueEnd + "，Esc 取消", true]
     };
+    if (curve?.pick) return { title: "选取或重画" + curve.pick.label, end: pickCurveHint, finish: false, owner, member };
     const [title, end, finish] = text[mode];
     return { title, end, finish, owner, member };
 }
 
 export function drawingHint(tool: Tool, draft?: GeoDraft, finish?: string) {
+    if (draft?.curve?.pick) return pickCurveHint;
     if (tool === "select") return hints.select;
     if (draft?.radius) return "单击确定终止角，Esc 取消";
     if (draft?.sizing) return tool === "rect" ? "单击确定对角，按住 Shift 画正方形，按住 Ctrl 不吸附，Esc 取消" : "单击确定半径，Esc 取消";

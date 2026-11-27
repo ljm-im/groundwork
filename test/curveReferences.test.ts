@@ -389,3 +389,42 @@ test("Geometry reference count includes the independent reference and prunes one
     removeUnusedGeometry(next, removed);
     assert.deepEqual(removed, unchecked);
 });
+
+test("A map curve pick uses the same edit as the geometry row and Ctrl starts a redraw", async () => {
+    await import("../configs/register-svelte.ts");
+    const { Editor } = await import("../src/app/state/session.svelte.ts");
+    const { draftPointer } = await import("../src/app/state/geoTools.ts");
+    const { ProjectMap } = await import("../src/render/map.ts");
+    const d = syntheticDesign();
+    d.geometry.next = { label: "备选轮廓", independent: true, curve: rect(10, 10, 20, 20).outlines[0].curve };
+    const editor = new Editor(testTerrainClient());
+    const map = { scale: 8, frame() {}, canvas: { focus() {} }, pickCurve: ProjectMap.prototype.pickCurve };
+    Object.assign(editor, { map });
+    await editor.replace(d, true);
+    editor.history = new History(editor.project.design);
+    const before = serializeDesign(editor.project.design), key = outline("T") + ".curve";
+    editor.select(selection("T"));
+    await editor.changeCurveReference(editor.curves.slots.get(key)!, "curve:next", true);
+    const replaced = serializeDesign(editor.project.design);
+    await editor.navigate(false);
+    assert.equal(serializeDesign(editor.project.design), before);
+
+    const at: Point = [15, 10], click = { ctrlKey: false, shiftKey: false, altKey: false };
+    editor.select(selection("T"));
+    editor.pickOrRedrawCurve(key, "曲线");
+    draftPointer(editor, "down", at, click);
+    draftPointer(editor, "up", at, click);
+    await editor.finishWork();
+    assert.equal(serializeDesign(editor.project.design), replaced);
+
+    await editor.navigate(false);
+    editor.select(selection("T"));
+    editor.pickOrRedrawCurve(key, "曲线");
+    const ctrl = { ...click, ctrlKey: true };
+    draftPointer(editor, "down", at, ctrl);
+    draftPointer(editor, "up", at, ctrl);
+    assert.deepEqual(editor.geoDraft?.nodes.map(node => node.p), [at]);
+    assert.equal(serializeDesign(editor.project.design), before);
+    editor.cancelDrawing();
+    editor.dispose();
+});

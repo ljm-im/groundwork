@@ -142,7 +142,7 @@ export function drawParameterGeometry(map: ProjectMap, view: MapView, colors: Ma
         const origin = !drag || view.dragCurve === undefined || view.dragCurve >= 0 || view.dragCommitting ? undefined : geometryPath(owner, view.dragCurve);
         if (origin) strokeEdges(map, flattenPath(origin, tolerance), colors.dragOrigin, overlay.parameterWidth, true);
         for (const [i, path] of pathEntries(n)) {
-            if (i >= 0 || i === whole || i === page?.index && page.kind === "curve" ||
+            if (i >= 0 || i === whole || i === page?.index && page.kind === "curve" || view.draft?.curve?.pick ||
                 !visible && !preview?.paths.has(i)) continue;
             const edges = flattenPath(path, tolerance);
             const selected = part?.role === "segment" && part.path === i ? path.nodes[part.index]?.id : undefined;
@@ -176,7 +176,7 @@ export function drawGeoOverlay(map: ProjectMap, view: MapView, colors: MapColors
     const n = view.dragNode ?? owner;
     const outline = n?.construction.type === "outline" ? view.outline : undefined;
     const moved = view.dragNode && hasOutlinePreview(view.dragNodes?.get(view.dragNode.id)?.paths);
-    if (n?.construction.type === "outline" && (!draft || draft.owner === n.id) && (moved || draft)) {
+    if (n?.construction.type === "outline" && (!draft || draft.owner === n.id && !draft.curve?.pick) && (moved || draft)) {
         for (const [i, path] of n.construction.outlines.entries()) {
             if (i === view.dragCurve && i === outline) continue;
             strokeEdges(map, flattenPath(path, .6 / scale), colors.accent, overlay.selectedWidth);
@@ -263,7 +263,14 @@ export function drawGeoOverlay(map: ProjectMap, view: MapView, colors: MapColors
         for (const curve of view.referenceCurves ?? [])
             drawGeometryCurve(map, curve, colors, "hovered", tolerance);
     }
-    if (draft) {
+    if (draft?.curve?.pick) {
+        const tolerance = displayCurveTolerance(d.grid.step / 8, scale), choices = view.curveChoices ?? [];
+        for (const { key, placements } of choices) if (key !== view.hoveredCurveChoice)
+            for (const curve of placements) drawGeometryCurve(map, curve, colors, "normal", tolerance);
+        for (const { key, placements } of choices) if (key === view.hoveredCurveChoice)
+            for (const curve of placements) drawGeometryCurve(map, curve, colors, "hovered", tolerance);
+    }
+    else if (draft) {
         if (draft.tool === "strip") {
             strokeEdges(map, draft.spine ?? [], colors.accent, overlay.selectedWidth);
             const upper = d.geoNodes.findLast(n => draft.ids.includes(n.id));

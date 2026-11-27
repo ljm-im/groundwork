@@ -127,7 +127,9 @@ export function checkProfilesAndLabels(url: string) {
         await saved(); await paint();
         await wait(() => window.curveMapProbe.editor?.project.design.geoNodes.some(n => n.id === "M" && n.function.type === "mountain" && n.function.valleys.length === 1));
         assert((await height())! < before!);
-        await click("[aria-label=重画山谷线]");
+        await click("[aria-label=选取或重画山谷线]");
+        assert.equal(await text(".drawing-status strong"), "选取或重画“山体 A”的山谷线");
+        await tap([10.5, 1.5], 2);
         assert.equal(await text(".drawing-status strong"), "重画“山体 A”的山谷线");
     }, d);
 }

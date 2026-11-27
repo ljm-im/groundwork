@@ -13,7 +13,7 @@
     <GeometryInput {label}
         active={editor.geometry?.kind === kind && editor.geometry.index === index}
         onclick={() => editor.openCurve(slot)} onmouseenter={() => hover(kind, index)} onmouseleave={clearHover}
-        redraw={() => editor.drawCurve(slot.key)} redrawing={editor.curveToolActive(slot.key)}
+        redraw={() => editor.pickOrRedrawCurve(slot.key, label)} redrawing={editor.curveToolActive(slot.key)}
         reference={{ editor, slot, name: index >= 0 ? slot.holder?.label : label }} />
     {#if profile?.group === "lines"}
         {@const holder = editor.curves.holder(slot.holder!)}

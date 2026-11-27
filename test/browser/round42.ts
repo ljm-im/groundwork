@@ -9,7 +9,7 @@ export function checkGeometryObjects(url: string) {
     const position: Point = [-20, 22];
     design.marks.push(fixtureMark(design, { id: "A", label: "测点 A", kind: "text", point: position, follow: "map" }));
     return withCurveMap(url, "round42-geometry", async page => {
-        const { authored, click, drag, evaluate, frame, key, paint, saved, screenshot, tap, text, tool, undo, wait } = page;
+        const { authored, click, disk, drag, evaluate, frame, key, paint, saved, screenshot, tap, text, tool, undo, wait } = page;
         const row = "#properties .geometry-box[aria-label=曲线]";
         const region = "[data-property-tab=region]", geometry = "[data-property-tab=geometry]";
         const list = (id: string) => "[data-select-geometry=" + JSON.stringify(id) + "]";
@@ -96,7 +96,38 @@ export function checkGeometryObjects(url: string) {
         assert(!await visible(list(shapeId)));
         const b = await rectangle([5, -26], [18, -12]);
         await selectOutline(b);
+        const other = literalCurve(await authored(), shapeId);
+        const pick = "#properties [aria-label=选取或重画曲线]";
+        const pickPoint: Point = [(other.nodes[0].p[0] + other.nodes[1].p[0]) / 2, other.nodes[0].p[1]];
+        const initial = await authored();
+        await click(pick);
+        assert.match(await text(".drawing-status strong"), /^选取或重画“.+”的轮廓 1$/);
+        assert.equal(await text(".drawing-status > span"), "单击曲线换用它，单击空白处开始画，按住 Ctrl 单击在曲线上开始画，Esc 取消");
+        await tap(pickPoint);
+        await saved(); await paint();
+        const picked = await authored();
+        assert.equal(outline(picked, b).curve, shapeId);
+        await undo();
+        assert.deepEqual(await authored(), initial);
+        await selectOutline(b);
         await useCurve(shapeId);
+        assert.deepEqual(await authored(), picked);
+        const unchanged = await disk();
+        const unused = literalCurve(await authored(), listedId);
+        const edge: Point = [(unused.nodes[0].p[0] + unused.nodes[1].p[0]) / 2, unused.nodes[0].p[1]];
+        await click(pick);
+        await tap(edge, 2);
+        assert.match(await text(".drawing-status strong"), /^重画“/);
+        const first = await evaluate(() => window.curveMapProbe.editor!.geoDraft!.nodes[0].p);
+        assert(Math.abs(first[0] - edge[0]) < .2 && Math.abs(first[1] - edge[1]) < .2);
+        await key("Escape");
+        assert.equal(await disk(), unchanged);
+        await click(pick);
+        await tap([34, -30], 2);
+        assert.equal(await evaluate(() => window.curveMapProbe.editor!.geoDraft!.nodes.length), 1);
+        await key("Escape");
+        assert.equal(await disk(), unchanged);
+
         await click("[data-tab=inputs]");
         assert(!await visible(list(shapeId)));
         await selectOutline(b);

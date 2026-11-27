@@ -4,7 +4,7 @@ import { fillFunctionParameters } from "../../core/design/functionTable.ts";
 import { movePointGeometry } from "../../core/edit/controls.ts";
 import { writeCurveProfile } from "../../core/design/polyline.ts";
 import { resolveDesign } from "../../core/design/parameters.ts";
-import { curveSlotName, geometrySlot, nodeQuantities, profileGroupForTool, profileGroups, profileIndex } from "../../core/design/curveReferences.ts";
+import { curveSlotName, geometrySlot, nodeQuantities, profileGroupForTool, profileGroups, profileIndex, holderLabel } from "../../core/design/curveReferences.ts";
 import { editCurveSource, seedProfile } from "../../core/edit/curveEdits.ts";
 import { writeAt } from "../../core/design/address.ts";
 import { type DrawTool, type GeoDraft } from "../../core/edit/types.ts";
@@ -38,8 +38,10 @@ export function startCurveDrawing(e: Editor, tool: "redrawCurve" | "continueCurv
     const kind = slot.holder?.kind;
     const curveName = kind === "valley" ? "山谷线" : kind === "line" ? "坡线" : undefined;
     const source = graph.source(slot), ownPage = geometryPage || !slot.holder;
-    const redrawTitle = ownPage ? "重画“" + source.slot.name + "”" : curveName ? "重画“" + slot.name + "”的" + curveName : undefined;
-    draft.curve = { key, endpoint, name: ownPage ? source.slot.name : curveSlotName(slot), redrawTitle, original: graph.materialize(slot),
+    const name = ownPage ? source.slot.name : curveSlotName(slot);
+    const label = kind === "outline" ? slot.holder!.label : curveName ?? (kind === "ridge" ? "山脊线" : slot.holder && holderLabel(slot.holder));
+    const redrawTitle = ownPage ? "重画“" + source.slot.name + "”" : "重画“" + slot.name + "”的" + label;
+    draft.curve = { key, endpoint, name, redrawTitle, original: graph.materialize(slot),
         pen: ownPage || slot.location.path[0] === "construction" ? "boundary" : "terrain",
         requiredClosed: ownPage ? source.curve.closed : graph.needsClosed(source.slot),
         ...(ownPage && tool === "redrawCurve" && !source.curve.closed && { openOnly: true as const }) };
@@ -251,6 +253,24 @@ function closingPoint(draft: GeoDraft, at: Point, scale: number) {
 export function draftPointer(e: Editor, phase: "down" | "move" | "up", raw: Point, ev: SnapModifiers & { altKey: boolean }) {
     const draft = e.geoDraft;
     if (!draft) return false;
+    const pick = draft.curve?.pick;
+    if (pick) {
+        const candidate = ev.ctrlKey ? undefined : e.map.pickCurve(e.curveChoices, raw, e.project.design.grid.step / 8);
+        pick.hovered = candidate;
+        if (phase === "move") return true;
+        if (phase === "up") {
+            draft.down = undefined;
+            if (candidate && pick.pressed === candidate) void e.chooseCurveFromMap(draft.curve!.key, candidate);
+            else pick.pressed = undefined;
+            return true;
+        }
+        if (candidate) {
+            pick.pressed = candidate;
+            draft.down = raw;
+            return true;
+        }
+        delete draft.curve!.pick;
+    }
     const { tool, downRaw } = draft;
     const pen = doubleClickTools.includes(tool);
     const dragged = phase !== "down" && !!downRaw && distance(downRaw, raw) * e.map.scale > 3;

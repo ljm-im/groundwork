@@ -30,6 +30,7 @@ export type LabelTarget = { kind: "geoNode" | "section"; id: string };
 type LabelHit = LabelTarget & { point: Point; box: Box };
 export type LabelPreview = LabelTarget & { offset: Point };
 export type MapHit = { selection: Selection; control?: GeoControl; handle?: Handle; geometryPage?: boolean };
+export type CurveChoice = { key: string; placements: readonly Curve[] };
 
 const sectionHitRadius = 5, endpointHitRadius = 9;
 
@@ -91,6 +92,8 @@ export type MapView = Readonly<{
     objectGeometry?: Selection;
     holderGeometry?: { id: string; target?: GeometryTarget; index?: number; offset?: Point };
     referenceCurves?: readonly Curve[];
+    curveChoices?: readonly CurveChoice[];
+    hoveredCurveChoice?: string;
     vertex?: GeoControl;
     draft?: Readonly<GeoDraft>;
     dragNode?: PlacedGeoNode;
@@ -497,6 +500,19 @@ export class ProjectMap {
             }
             if (hitPathSegment(node, p, this.scale, tolerance)) return geoHit(node.id, bodyControl(p));
         }
+    }
+    pickCurve(choices: readonly CurveChoice[], point: Point, tolerance: number) {
+        let key: string | undefined, gap = Infinity;
+        for (const choice of choices) for (const curve of choice.placements) {
+            const hit = hitPathSegment({ label: "", curve }, point, this.scale, tolerance);
+            if (!hit) continue;
+            const distanceToEdge = distance(hit.point, point);
+            if (distanceToEdge < gap) {
+                gap = distanceToEdge;
+                key = choice.key;
+            }
+        }
+        return key;
     }
     pickGeo(project: ProjectView, point: Point, after?: string, excluded: readonly string[] = []) {
         const empty = !hasSamples(project.terrain);
