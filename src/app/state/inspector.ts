@@ -1,4 +1,6 @@
+import { type FunctionMember } from "../../core/design/curveReferences.ts";
 import { type GeometryObject } from "../../core/design/v5.ts";
+import { type HolderGroup } from "../../core/edit/selection.ts";
 import { type Selection } from "../../core/edit/types.ts";
 
 const label = ["label", "名称与描述", "tag"] as const;
@@ -10,9 +12,13 @@ const tabs = {
 } as const;
 
 export type PropertyTab = (typeof tabs)[keyof typeof tabs][number][0] | "general";
-import { type FunctionMember } from "../../core/design/curveReferences.ts";
-
 export type SubitemGroup = FunctionMember | "outlines" | "advanced";
+
+export function holderPropertyTab(group: HolderGroup): PropertyTab {
+    if (group === "outlines") return "region";
+    if (group === "endpoints") return "section";
+    return "function";
+}
 
 export function propertyTabs(selection: Selection | null, mark?: "scale" | "text") {
     switch (selection?.kind) {

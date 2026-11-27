@@ -91,6 +91,14 @@ export function checkSelectionHierarchy(url: string) {
         await tap(p);
         assert.equal(await depth(), 3);
 
+        await click("[data-property-tab=function]"); await paint();
+        assert.equal(await depth(), 1);
+        assert.equal(await title(), "T");
+        assert.equal(await active("[data-property-tab=function]"), "true");
+        assert.equal(await accentStroke(), undefined);
+        await tap(p); await tap(p);
+        assert.equal(await depth(), 3);
+
         await click("[data-property-tab=region]"); await paint();
         assert.equal(await depth(), 2);
         assert.equal(await active(curveInput), "false");

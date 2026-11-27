@@ -385,7 +385,7 @@ export async function checkCurveEditing(url: string) {
         const boundaryTwo = ".subitem:has(> .subitem-heading .subitem-toggle span)";
         assert.deepEqual(await evaluate(s => [...document.querySelectorAll(s + " > .subitem-heading .subitem-toggle")]
             .map(el => [el.textContent?.trim(), el.getAttribute("aria-expanded")]), boundaryTwo), [["轮廓 1", "false"], ["轮廓 2", "false"]]);
-        await click("[data-geo-node=M]"); await paint();
+        assert.equal((await frame()).selectionPath?.length, 1);
         await tapLayer([33, 31], "vertex", "M");
         assert.deepEqual(await nodeTitles(), ["节点 1"]);
         assert(await evaluate(() => {

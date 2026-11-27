@@ -36,7 +36,7 @@ import { numberPreviewFactor } from "./numbers.ts";
 import { contextMenuPoint } from "./popup.ts";
 import { penNodeGroup, readPenNodes, savePenNodes, type PenNodeMode } from "./penNodes.ts";
 import { objectIssues } from "../../core/checks/issues.ts";
-import { propertyTabs, tabForSelection, type PropertyTab, type SubitemGroup } from "./inspector.ts";
+import { holderPropertyTab, propertyTabs, tabForSelection, type PropertyTab, type SubitemGroup } from "./inspector.ts";
 import { ProjectMap, type CurveChoice, type LabelPreview, type LabelTarget, type MapView } from "../../render/map.ts";
 import { DesignFiles, type FileAction, type SaveState } from "./files.ts";
 import { errorText, type Design, type Expression, type Gesture, type Issue, type Layer, type Mark, type Point, type Selection, type Tab, type Tool } from "../types.ts";
@@ -302,13 +302,15 @@ export class Editor {
     }
     changePropertyTab(tab: PropertyTab) {
         if (!propertyTabs(this.selection).some(([id]) => id === tab)) return;
-        const back = this.geometryPage?.fromHolder && this.selectionPath;
-        if (!back && tab === this.propertyTab) return;
-        if (back) this.setSelectionPath(selectionPrefix(back, this.layersSelected.holder ? 2 : 1));
+        const current = this.selectionPath, { holder } = this.layersSelected;
+        const depth = holder && tab === holderPropertyTab(holder.group) ? 2 : 1;
+        const next = current && (holder || this.geometryPage?.fromHolder) ? selectionPrefix(current, depth) : current;
+        if (next === current && tab === this.propertyTab) return;
+        if (next !== current) this.setSelectionPath(next);
         this.propertyTab = tab;
         this.hoverSelection();
         if (this.properties) this.properties.scrollTop = 0;
-        if (back) this.revealGeometry();
+        if (next && next.length > 1) this.revealGeometry();
     }
     setSelection(selection: Selection | null) {
         this.setSelectionPath(selection ? [selection] : null);
@@ -320,7 +322,7 @@ export class Editor {
         this.selectionPath = next;
         if (!root || !holder) return;
         const { group, index } = holder;
-        this.propertyTab = group === "endpoints" ? "section" : group === "outlines" ? "region" : "function";
+        this.propertyTab = holderPropertyTab(group);
         if ((group === "outlines" || group === "peaks" || group === "ridges" || group === "valleys" || group === "lines") &&
             !this.subitemOpen(root.id, group, index)) this.toggleSubitem(root.id, group, index, true);
     }

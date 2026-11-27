@@ -541,6 +541,33 @@ test("The inspector keeps compatible tabs and chooses the first available tab", 
     }
 });
 
+test("Only the holder's tab returns to or keeps the holder selection", async () => {
+    const { Editor } = await import("../src/app/state/session.svelte.ts");
+    const d = syntheticDesign(), editor = new Editor(testTerrainClient());
+    d.sections.push(fixtureSection(d, { id: "A", label: "A", points: [[0, 0], [0, 5]] }));
+    editor.project = testProjectModel(new Project(d));
+    const root = { kind: "geoNode", id: "T" } as const;
+    const outline = editor.placementPath(holderLayer("outlines"), root)!;
+    editor.selectPath(outline);
+    editor.changePropertyTab("region");
+    assert.deepEqual(editor.selectionPath, outline.slice(0, 2));
+    editor.changePropertyTab("function");
+    assert.deepEqual(editor.selectionPath, [root]);
+    assert.equal(editor.propertyTab, "function");
+    editor.selectPath(outline);
+    editor.changePropertyTab("function");
+    assert.deepEqual(editor.selectionPath, [root]);
+
+    const section = { kind: "section", id: "A" } as const, endpoint = editor.placementPath(holderLayer("endpoints"), section)!;
+    editor.selectPath(endpoint);
+    editor.changePropertyTab("section");
+    assert.deepEqual(editor.selectionPath, endpoint.slice(0, 2));
+    editor.selectPath(endpoint);
+    editor.changePropertyTab("label");
+    assert.deepEqual(editor.selectionPath, [section]);
+    assert.equal(editor.propertyTab, "label");
+});
+
 test("Expanding and collapsing inspector subitems leaves the authored design and undo history intact", async () => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
     const editor = new Editor(testTerrainClient()), design = syntheticDesign();
