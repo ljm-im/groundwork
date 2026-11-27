@@ -7,6 +7,7 @@
             redraw={"curve" in item ? () => editor.redrawGeometry(id) : undefined}
             copy={() => editor.duplicateGeometry(id)} remove={() => editor.removeElement({ kind: "geometry", id })} />
     {/snippet}
+    <CheckboxRow label="独立" checked={!!item.independent} change={value => editor.setGeometryIndependent(id, value)} />
     {#if "curve" in item}
         <SelectedCurvePart {editor} curve={item.curve} {path} inset={false} />
     {/if}
@@ -18,6 +19,7 @@
     import * as session from "../state/session.svelte.ts";
     import PropertyPane from "./PropertyPane.svelte";
     import PropertyTitle from "./PropertyTitle.svelte";
+    import CheckboxRow from "./CheckboxRow.svelte";
     import SelectedCurvePart from "./SelectedCurvePart.svelte";
 
     let { editor, id, item, path = -1 }: { editor: session.Editor; id: string; item: GeometryObject; path?: number } = $props();

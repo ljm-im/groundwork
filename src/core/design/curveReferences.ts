@@ -127,6 +127,10 @@ export function geometryAt(d: Pick<Design, "geometry">, id: string) {
     return Object.hasOwn(d.geometry, id) ? d.geometry[id] : undefined;
 }
 
+export function geometryReferenceCount(d: Design, id: string, users: ReadonlyMap<string, readonly unknown[]>) {
+    return (users.get(id)?.length ?? 0) + (geometryAt(d, id)?.independent ? 1 : 0);
+}
+
 export function placedPoint(d: Design, holder: PointHolder, at?: Location): Point {
     const { point, offset } = holder, item = geometryAt(d, point);
     check(item, "找不到点“" + point + "”", at);
@@ -263,10 +267,11 @@ export function curveGraph(d: Design) {
     function canUse(from: CurveSlot, candidate: CurveSlot) {
         return !candidate.holder && (!from.closed || candidate.value.closed);
     }
+    function canUnlinkShape(slot: CurveSlot) {
+        return !!slot.holder && geometryReferenceCount(d, source(slot).id, users) > 1;
+    }
     function canUnlink(slot: CurveSlot) {
-        if (!slot.holder) return false;
-        const { id } = source(slot);
-        return isHolderRef(slot.holder.value) || !!geometryAt(d, id)?.listed || (users.get(id)?.length ?? 0) > 1;
+        return !!slot.holder && (isHolderRef(slot.holder.value) || canUnlinkShape(slot));
     }
     function canUseHolder(from: CurveSlot, candidate: HolderSlot) {
         if (from.holder?.kind !== candidate.kind || !candidate.active) return false;
@@ -306,6 +311,6 @@ export function curveGraph(d: Design) {
             if (target) yield { slot, target };
         }
     }
-    return { slots, holders, holder, ofHolder, offset, source, shape, materialize, canUse, canUseHolder, canUnlink, needsClosed,
+    return { slots, holders, holder, ofHolder, offset, source, shape, materialize, canUse, canUseHolder, canUnlink, canUnlinkShape, needsClosed,
         holderPlacements, curvePlacements, parameterHolder, parameterKey, references };
 }

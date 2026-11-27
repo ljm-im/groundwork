@@ -1,4 +1,4 @@
-import { curveGraph, curveSlotName, geoHolderSlots, geoPointSlots, geometryAt, geometryUsers, isHolderRef, type GeometryHolderSlot, type HolderSlot } from "../design/curveReferences.ts";
+import { curveGraph, curveSlotName, geoHolderSlots, geoPointSlots, geometryAt, geometryReferenceCount, geometryUsers, isHolderRef, type GeometryHolderSlot, type HolderSlot } from "../design/curveReferences.ts";
 import { quotedLocation, type Location } from "../design/problems.ts";
 import { type Design, type GeoFunction, type GeoNode, type ClosedCurve, type Curve, type CurveHolder, type Point, type PointHolder, type Strip } from "../design/v5.ts";
 import { defaultInputRange, heightId, isBuiltin } from "../design/defaults.ts";
@@ -158,7 +158,11 @@ export function removeDeclaration(d: Design, kind: "input" | "field" | "geometry
     const table = kind === "input" ? d.inputs : kind === "field" ? d.fields : d.geometry;
     if (kind !== "geometry" && isBuiltin(kind, id)) throw Error("“" + table[id].label + "”是内置" + (kind === "field" ? "场" : "输入"));
     requireUnused(removalUses(d, kind, id));
-    delete table[id];
+    if (kind === "geometry") {
+        if (!d.geometry[id].independent) throw Error("只能删除独立的几何对象");
+        setGeometryIndependent(d, id, false);
+    }
+    else delete table[id];
 }
 export function addInput(d: Design, value = 0) {
     const id = nextId(Object.keys(d.inputs), "v");
@@ -171,24 +175,24 @@ export function addField(d: Design) {
     return id;
 }
 
-export function addGeometry(d: Design, shape: { point: Point } | { curve: Curve }, listed = false) {
+export function addGeometry(d: Design, shape: { point: Point } | { curve: Curve }, independent = false) {
     const kind = "point" in shape ? "point" : "curve", prefix = kind === "point" ? "点 " : "曲线 ";
     const id = nextId(Object.keys(d.geometry), kind + "-");
     const label = nextId(Object.values(d.geometry).map(item => item.label), prefix);
-    d.geometry[id] = { ...shape, label, ...(listed && { listed: true as const }) };
+    d.geometry[id] = { ...shape, label, ...(independent && { independent: true as const }) };
     return id;
 }
 
-export function copyGeometry(d: Design, id: string, listed = false) {
+export function copyGeometry(d: Design, id: string, independent = false) {
     const item = geometryAt(d, id)!;
-    return addGeometry(d, "point" in item ? { point: structuredClone(item.point) } : { curve: structuredClone(item.curve) }, listed);
+    return addGeometry(d, "point" in item ? { point: structuredClone(item.point) } : { curve: structuredClone(item.curve) }, independent);
 }
 
 export function copyHeldGeometry(d: Design, holders: (PointHolder | CurveHolder)[], inside: (location: Location) => boolean) {
     const users = geometryUsers(d), copies = new Map<string, string>();
     for (const holder of holders) {
         const id = "point" in holder ? holder.point : holder.curve;
-        if (geometryAt(d, id)?.listed || !users.get(id)?.every(user => inside(user.location))) continue;
+        if (geometryAt(d, id)?.independent || !users.get(id)?.every(user => inside(user.location))) continue;
         const copy = copies.get(id) ?? copyGeometry(d, id);
         copies.set(id, copy);
         if ("point" in holder) holder.point = copy;
@@ -196,12 +200,17 @@ export function copyHeldGeometry(d: Design, holders: (PointHolder | CurveHolder)
     }
 }
 
+export function setGeometryIndependent(d: Design, id: string, independent: boolean) {
+    const item = geometryAt(d, id)!;
+    if (independent) item.independent = true;
+    else delete item.independent;
+}
+
 export function removeUnusedGeometry(before: Design, after: Design) {
-    const remaining = geometryUsers(after);
-    for (const id of geometryUsers(before).keys()) {
-        const item = geometryAt(after, id);
-        if (item && !item.listed && !remaining.has(id)) delete after.geometry[id];
-    }
+    const oldUsers = geometryUsers(before), remaining = geometryUsers(after);
+    for (const id of Object.keys(before.geometry))
+        if (geometryReferenceCount(before, id, oldUsers) > 0 && geometryReferenceCount(after, id, remaining) === 0)
+            delete after.geometry[id];
 }
 
 export function holdPoint(d: Design, point: Point): PointHolder {

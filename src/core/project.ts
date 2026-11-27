@@ -1,5 +1,5 @@
 import { copyAt, type Address } from "./design/address.ts";
-import { geometryUsers } from "./design/curveReferences.ts";
+import { geometryReferenceCount, geometryUsers } from "./design/curveReferences.ts";
 import { resolveDesign } from "./design/parameters.ts";
 import { validateGeo } from "./design/validateGeo.ts";
 import { type Design, type ResolvedDesign, type Point } from "./design/v5.ts";
@@ -44,8 +44,8 @@ export class Project {
         this.terrain = this.cache.generateResolved(this.evaluated(this.resolved), this.pool);
         const broken = new Set(this.structural.map(i => i.geoNode));
         const users = geometryUsers(this.design);
-        const unused = Object.entries(this.design.geometry).flatMap(([id, item]): Issue[] => item.listed || users.has(id) ? [] : [{
-            kind: "unused-geometry", severity: "warning", label: item.label, message: "没有被使用",
+        const unused = Object.entries(this.design.geometry).flatMap(([id, item]): Issue[] => geometryReferenceCount(this.design, id, users) ? [] : [{
+            kind: "unused-geometry", severity: "warning", label: item.label, message: "没有被引用",
             location: { kind: "geometry", id, path: [] }, point: "point" in item ? item.point : item.curve.nodes[0].p
         }]);
         this.issues = [...this.structural, ...terrainIssues(this.resolved, this.terrain).filter(i => !broken.has(i.geoNode)), ...unused];

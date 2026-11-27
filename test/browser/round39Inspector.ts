@@ -117,12 +117,12 @@ export function checkInspectorActions(url: string) {
     const d: Design = syntheticDesign(), n = d.geoNodes[1], region = n.construction;
     assert(region.type === "outline" && "curve" in region.outlines[0]);
     const boundary = rect(-26, -16, -5, 2).outlines[0].curve;
-    d.geometry.boundary = { label: "共享的台地边界曲线", listed: true, curve: boundary };
+    d.geometry.boundary = { label: "共享的台地边界曲线", independent: true, curve: boundary };
     region.outlines[0] = { curve: "boundary" };
     const ridgePoints: Point[] = [[-23, -12], [-19, -8], [-12, -8], [-9, -4]];
     const curve = openCurve<never>(ridgePoints.map(p => ({ p })), "corner", "ridge-");
     curve.nodes[1].bulge = .5;
-    d.geometry.ridge = { label: "一条需要截断长名称的共享山脊线", listed: true, curve };
+    d.geometry.ridge = { label: "一条需要截断长名称的共享山脊线", independent: true, curve };
     n.function = { type: "mountain", valleys: [], ridges: [{ curve: "ridge", h: { "ridge-0": 7, "ridge-3": 7 }, slope: { "ridge-0": 2, "ridge-3": 2 } }], peaks: [] };
     return withCurveMap(url, "round39-inspector-actions", async page => {
         const { click, evaluate, key, tap, wait } = page;

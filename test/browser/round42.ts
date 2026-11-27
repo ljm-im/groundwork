@@ -20,6 +20,10 @@ export function checkGeometryObjects(url: string) {
             return c.outlines[0];
         };
         const visible = (selector: string) => evaluate(s => !!document.querySelector(s), selector);
+        const independentCheckbox = () => evaluate(() => {
+            const label = [...document.querySelectorAll<HTMLLabelElement>("#properties label")].find(node => node.textContent === "独立");
+            return "#" + CSS.escape(label!.htmlFor);
+        });
         async function selectOutline(id: string) {
             await click("[data-tab=terrain]");
             await click("[data-geo-node=" + JSON.stringify(id) + "]");
@@ -35,6 +39,9 @@ export function checkGeometryObjects(url: string) {
 
         await selectOutline("T");
         const original = outline(await authored(), "T"), label = design.geometry[original.curve].label;
+        await click("[data-tab=inputs]");
+        assert.equal(await evaluate(() => [...document.querySelector(".part:has([data-add=geometry])")!.children].slice(1).length), 0);
+        await selectOutline("T");
         assert.equal(await text(row), label);
         await click(row);
         assert.equal((await frame()).selection?.id, "T");
@@ -55,7 +62,7 @@ export function checkGeometryObjects(url: string) {
         for (const p of [[-28, 4], [-10, 4], [-14, 15]] as Point[]) await tap(p, 2);
         await key("Enter"); await saved(); await paint();
         const listedId = (await frame()).selection!.id, created = await authored();
-        assert(created.geometry[listedId].listed && literalCurve(created, listedId).closed);
+        assert(created.geometry[listedId].independent && literalCurve(created, listedId).closed);
         assert(await visible(list(listedId)));
         assert(!await visible("#properties .side-tabs"));
 
@@ -79,6 +86,12 @@ export function checkGeometryObjects(url: string) {
         const b = await rectangle([5, -26], [18, -12]);
         await selectOutline(b);
         await useCurve(shapeId);
+        await click("[data-tab=inputs]");
+        assert(!await visible(list(shapeId)));
+        await selectOutline(b);
+        await click(row);
+        await click(await independentCheckbox());
+        await saved(); await paint();
         await click("[data-tab=inputs]");
         assert(await visible(list(shapeId)));
         await click(list(shapeId));

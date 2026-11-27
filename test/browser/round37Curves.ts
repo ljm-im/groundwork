@@ -15,7 +15,7 @@ function designFixture(): Design {
     const d = syntheticDesign(), outline = rect(-29, -18, -12, -4), land = d.geoNodes[1];
     Object.assign(outline.outlines[0].curve.nodes[0], { in: [0, 4], out: [4, -1] });
     land.label = "西台"; land.construction = fixtureConstruction(d, outline);
-    d.geometry.ridge = { label: "脊形", listed: true, curve: openCurve<never>(sourcePoints.map(p => ({ p })), "auto", "r") };
+    d.geometry.ridge = { label: "脊形", independent: true, curve: openCurve<never>(sourcePoints.map(p => ({ p })), "auto", "r") };
     d.geoNodes.push(
         { ...addLayer(d, "E", rect(9, -20, 26, -7), { type: "flat", amount: 3 }), label: "东台" },
         { ...addLayer(d, "M", rect(3, 9, 43, 40), { type: "mountain", valleys: [], ridges: [

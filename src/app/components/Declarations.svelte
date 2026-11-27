@@ -34,7 +34,7 @@
             <ListRow icon={geometryIcon(item)} name={item.label} attributes={{ "data-select-geometry": id }}
                 selected={h?.kind === "geometry" && h.id === id} select={() => editor.focus("geometry", id)}
                 onmenu={event => editor.openMenu(target, event)} onmouseenter={() => editor.hoverSelection(target)} onmouseleave={() => editor.hoverSelection()} />
-        {:else}<EmptyState search={eligibleGeometry.length > 0 && !!editor.variableFilter.trim()} text="没有点和曲线" />{/each}
+        {:else}{#if eligibleGeometry.length && editor.variableFilter.trim()}<EmptyState search />{/if}{/each}
     </Part>
 {:else if h?.kind === "input" || h?.kind === "field"}
     {@const variable = h.kind === "input"}
@@ -100,7 +100,7 @@
     const matches = (name: string) => matchesSearch(editor.variableFilter, name);
     let inputs = $derived(declarationEntries("input", d.inputs).filter(([id, input]) => matches(input.label ?? id)));
     let fields = $derived(declarationEntries("field", d.fields).filter(([, field]) => matches(field.label)));
-    let eligibleGeometry = $derived(Object.entries(d.geometry).filter(([id, item]) => item.listed || (editor.geometryUses.get(id)?.length ?? 0) >= 2));
+    let eligibleGeometry = $derived(Object.entries(d.geometry).filter(([, item]) => item.independent));
     let geometries = $derived(eligibleGeometry.filter(([, item]) => matches(item.label)));
     const geometryTools = [{ id: "geometryPoint", name: "点", icon: "point" }, { id: "geometryCurve", name: "曲线", icon: "curve" },
         { id: "geometryClosed", name: "闭合曲线", icon: "closedPath" }] as const;

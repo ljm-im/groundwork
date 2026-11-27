@@ -8,7 +8,7 @@ import { withCurveMap } from "./curveMapFixture.ts";
 export function checkCurvePlacements(url: string) {
     const d = syntheticDesign(), mountain = rect(-32, -17, -10, 1);
     mountain.outlines.push(rect(-9, -22, 2, -13).outlines[0]);
-    d.geometry.S = { label: "共享环", listed: true, curve: rect(16, 16, 24, 23).outlines[0].curve };
+    d.geometry.S = { label: "共享环", independent: true, curve: rect(16, 16, 24, 23).outlines[0].curve };
     d.geoNodes.splice(1, 1,
         addLayer(d, "A", rect(-35, 15, -24, 25), { type: "noise", scale: 5, amplitude: 1 }),
         addLayer(d, "B", rect(-12, 15, -2, 25), { type: "flat", amount: 2 }),

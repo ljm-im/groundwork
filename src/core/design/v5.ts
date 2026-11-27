@@ -49,7 +49,7 @@ export interface NodeRecords<N = Expression> {
     slope?: Record<string, N>;
     interpolate?: Record<string, NodeQuantity[]>;
 }
-interface GeometryLabel { label: string; listed?: true }
+interface GeometryLabel { label: string; independent?: true }
 export interface PointGeometry extends GeometryLabel { point: Point }
 export interface CurveGeometry extends GeometryLabel { curve: Curve }
 export type GeometryObject = PointGeometry | CurveGeometry;

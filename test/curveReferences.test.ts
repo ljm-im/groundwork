@@ -8,7 +8,7 @@ import { type Design, type Held, type Point, type ResolvedDesign } from "../src/
 import { moveHandle, moveSection } from "../src/core/edit/controls.ts";
 import { setCurveReference } from "../src/core/edit/curveEdits.ts";
 import { commitControl, controlPreview, copyGeometryItem, geometryPath, insertCurveNode, removeCurveNode, removeGeometryItem, type GeoControl } from "../src/core/edit/geoControls.ts";
-import { copyGeo, createStrip, deleteGeo, holdPoint, removalUses, removeDeclaration, removeUnusedGeometry } from "../src/core/edit/geoNodes.ts";
+import { copyGeo, createStrip, deleteGeo, holdPoint, removalUses, removeDeclaration, removeUnusedGeometry, setGeometryIndependent } from "../src/core/edit/geoNodes.ts";
 import { History } from "../src/core/edit/history.ts";
 import { Project } from "../src/core/project.ts";
 import { addLayer, fixtureCurve, fixtureMark, fixtureSection, literalCurve, openCurve, rect, syntheticDesign } from "./scenarios.ts";
@@ -77,6 +77,9 @@ test("Geometry resolves independently for each holder while same-object referenc
 test("Geometry validates storage, kinds, closure, node IDs and same-object references", () => {
     const { d, first, peak, primary, t } = fixture();
     assert.throws(() => parseDesign({ ...d, curves: {} }), /curves 退役键/);
+    const legacy = structuredClone(d);
+    Object.assign(legacy.geometry[first.curve], { listed: true });
+    assert.throws(() => parseDesign(legacy), /listed 退役键/);
     for (const key of ["h", "slope", "interpolate"]) {
         const curve = literalCurve(d, first);
         Object.assign(curve.nodes[0], { [key]: 1 });
@@ -113,13 +116,13 @@ test("Geometry validates storage, kinds, closure, node IDs and same-object refer
 test("Orphans produce named warnings and unrelated edits keep them", () => {
     const { d } = fixture();
     d.geometry.orphan = { label: "孤点", point: [12, 3] };
-    d.geometry.listed = { label: "收藏点", point: [12, 3], listed: true };
+    d.geometry.independent = { label: "收藏点", point: [12, 3], independent: true };
     const next = structuredClone(d);
     next.geoNodes[0].showLabel = true;
     removeUnusedGeometry(d, next);
     assert.deepEqual(next.geometry, d.geometry);
     const issues = new Project(parseDesign(next)).issues.filter(i => i.kind === "unused-geometry");
-    assert.deepEqual(issues.map(i => [i.label, i.message, i.location]), [["孤点", "没有被使用", { kind: "geometry", id: "orphan", path: [] }]]);
+    assert.deepEqual(issues.map(i => [i.label, i.message, i.location]), [["孤点", "没有被引用", { kind: "geometry", id: "orphan", path: [] }]]);
 });
 
 test("Moving a landform shifts each holder once and preserves every base coordinate", () => {
@@ -201,7 +204,7 @@ test("Curve switching keeps the offset, interpolates new nodes, and unlinks with
     const d: Design = syntheticDesign(), t = geo(d, "T");
     const source = owned(fixtureCurve(d, { curve: openCurve([{ p: [0, 0], h: 10, slope: 2 }, { p: [4, 0], h: 30, slope: 4 }]), offset: [2, 3] }, ["h", "slope"]));
     t.function = { type: "mountain", ridges: [source], valleys: [], peaks: [] };
-    d.geometry.next = { label: "另一条", listed: true, curve: openCurve([{ p: [0, 0] }, { p: [2, 0] }, { p: [4, 0] }], "corner", "next-") };
+    d.geometry.next = { label: "另一条", independent: true, curve: openCurve([{ p: [0, 0] }, { p: [2, 0] }, { p: [4, 0] }], "corner", "next-") };
     const before = structuredClone(d), key = ridge("T") + ".curve";
     setCurveReference(d, key, "curve:next");
     removeUnusedGeometry(before, d);
@@ -214,7 +217,7 @@ test("Curve switching keeps the offset, interpolates new nodes, and unlinks with
     setCurveReference(d, key);
     const unlinked = owned(t.function.ridges[0]);
     assert.notEqual(unlinked.curve, held.curve);
-    assert.equal(geometryAt(d, unlinked.curve)?.listed, undefined);
+    assert.equal(geometryAt(d, unlinked.curve)?.independent, undefined);
     assert.deepEqual({ ...unlinked, curve: held.curve }, held);
     assert.deepEqual(geo(resolveDesign(d), "T").function, placed);
 
@@ -234,7 +237,7 @@ test("Copies keep node IDs, rebase internal holders and retain geometry shared o
     assert(t.construction.type === "outline" && t.function.type === "mountain");
     const own = owned(t.construction.outlines[1]);
     t.construction.outlines.push(ref(outline("T", 1)));
-    d.geometry[primary.curve].listed = true;
+    d.geometry[primary.curve].independent = true;
     t.function.ridges.push(ref(ridge("T")));
     t.function.floor = "{geo:T.ridges.1.h.p0}";
     const copy = copyGeo(d, t), c = copy.construction, f = copy.function;
@@ -299,7 +302,7 @@ test("Editor deletes exclusive geometry in one undo step and blocks deleting in-
     assert(t.construction.type === "outline");
     const outline = owned(t.construction.outlines[0]).curve, peak = holdPoint(d, [-4, 1]);
     const center = holdPoint(d, [-4, 2]);
-    d.geometry[center.point].listed = true;
+    d.geometry[center.point].independent = true;
     t.function = { type: "slope", kind: "radial", center, radius: 2, value: 2, rate: -.2, lines: [
         { ...owned(fixtureCurve(d, { curve: openCurve([{ p: [-4, 2] }, { p: [-4, 3] }]) })), h: { "node-0": 0, "node-1": 1 } }
     ] };
@@ -337,4 +340,35 @@ test("Editor deletes exclusive geometry in one undo step and blocks deleting in-
     assert.deepEqual(read(), [1, 2]);
     assert.deepEqual(editor.project.design.marks[0].point, point);
     assert.deepEqual(JSON.parse(serializeDesign(editor.project.design)).marks[0].screen, [1, 2]);
+});
+
+test("Geometry reference count includes the independent reference and prunes one edit at a time", () => {
+    const d = syntheticDesign(), holder = geo(d, "T").construction;
+    assert(holder.type === "outline");
+    const id = owned(holder.outlines[0]).curve, orphan = holdPoint(d, [0, 0]).point, standalone = holdPoint(d, [2, 4]).point;
+    setGeometryIndependent(d, standalone, true);
+    setGeometryIndependent(d, id, true);
+    const used = structuredClone(d);
+    setGeometryIndependent(used, id, false);
+    removeUnusedGeometry(d, used);
+    assert(geometryAt(used, id));
+    assert.equal(geometryAt(used, id)?.independent, undefined);
+    assert.throws(() => removeDeclaration(used, "geometry", id), /仍被引用/);
+    assert.throws(() => removeDeclaration(used, "geometry", orphan), /只能删除独立/);
+
+    const next = structuredClone(used);
+    assert(deleteGeo(next, "T"));
+    removeUnusedGeometry(used, next);
+    assert(!geometryAt(next, id));
+    assert(geometryAt(next, orphan));
+    assert(geometryAt(next, standalone)?.independent);
+
+    const unchecked = structuredClone(next);
+    setGeometryIndependent(unchecked, standalone, false);
+    removeUnusedGeometry(next, unchecked);
+    assert(!geometryAt(unchecked, standalone));
+    const removed = structuredClone(next);
+    removeDeclaration(removed, "geometry", standalone);
+    removeUnusedGeometry(next, removed);
+    assert.deepEqual(removed, unchecked);
 });

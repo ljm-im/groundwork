@@ -16,7 +16,7 @@ import { type ControlPreview, type GeoControl, type GeometryHover, type Geometry
     geometryHover, geometryItemCurveUses, geometryPath, geometrySelection, insertCurveNode, parameterPoints, parameterTarget, removeCurveNode, removeCurveSegment, removeGeometryItem,
     removeParameterPoint, resolveGeometrySelection } from "../../core/edit/geoControls.ts";
 import { addInput, addField, copyGeo, copyGeometry, copyHeldGeometry, defaultFunction, deleteGeo, enableGeo, holdPoint, isLastInitializer, nextId, nodeIds, rangeUsers, removeUnusedGeometry,
-    parameterRemovalUses, removalUses, removeDeclaration, requiredInitializer, type RemovalUse } from "../../core/edit/geoNodes.ts";
+    parameterRemovalUses, removalUses, removeDeclaration, requiredInitializer, setGeometryIndependent, type RemovalUse } from "../../core/edit/geoNodes.ts";
 import { movePointGeometry } from "../../core/edit/controls.ts";
 import { canRemoveNode, cleanHandles, editWholeCurve, isEndpoint, retractHandle, segmentRemovalIndex, setNodeMode, setSegment } from "../../core/edit/paths.ts";
 import { drawingReady, drawingTools, finishCurveDraft, finishDraft, geoAt, startCurveDrawing, startDrawing, updatePreview } from "./geoTools.ts";
@@ -427,6 +427,12 @@ export class Editor {
     }
     duplicateGeometry(id: string) {
         return this.edit(d => ({ kind: "geometry", id: copyGeometry(d, id, true) }), () => this.focusNewDeclaration());
+    }
+    setGeometryIndependent(id: string, independent: boolean) {
+        return this.edit(d => {
+            setGeometryIndependent(d, id, independent);
+            if (!independent && this.selection?.kind === "geometry" && this.selection.id === id && !this.geometryUses.has(id)) return null;
+        });
     }
     addGeometry(tool: "geometryPoint" | "geometryCurve" | "geometryClosed") {
         this.setTool(tool);
@@ -1301,14 +1307,16 @@ export class Editor {
         const h = this.selection;
         if (!h) return;
         const part = this.resolvedPart;
-        if (this.holderGeometry && !this.vertex) return this.removeElement({ kind: "geometry", id: this.holderGeometry.id });
+        if (this.geometryPage) {
+            if (this.vertex?.role === "vertex" || this.vertex?.role === "segment") return this.removeCurvePart(h, this.vertex);
+            return this.removeElement({ kind: "geometry", id: this.geometryPage.id });
+        }
         if (h.kind === "geoNode" && part?.role === "curve") {
             const member = curveMember(geoAt(this.project.design, h.id).function, part.path);
             if (member) return this.changeMember(h.id, member.group, member.index, false);
         }
         if (h.kind === "geoNode" && this.outline !== undefined) this.removeOutline(h.id, this.outline);
         else if (h.kind === "geoNode" && this.vertex) this.removeGeo(h.id, this.vertex);
-        else if (h.kind === "geometry" && this.vertex) this.removeCurvePart(h, this.vertex);
         else this.removeElement(h);
     }
     removeElement(h: Selection) {
@@ -1320,6 +1328,8 @@ export class Editor {
             const item = (kind === "input" ? d.inputs : kind === "field" ? d.fields : d.geometry)[h.id];
             if (items.length) return this.blockRemoval(deletionTitle(item.label ?? h.id), items,
                 kind === "geometry" ? "以下位置仍在使用它，请先修改。" : undefined);
+            if (kind === "geometry" && !d.geometry[h.id].independent)
+                return this.blockRemoval(deletionTitle(item.label ?? h.id), [], "只能删除独立的几何对象。");
             return this.edit(d => {
                 removeDeclaration(d, kind, h.id);
                 if (this.selection?.kind === h.kind && this.selection.id === h.id) return null;

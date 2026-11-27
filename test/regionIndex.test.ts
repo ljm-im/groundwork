@@ -70,7 +70,7 @@ test("Strip cross sections preserve the projected point and normal at equal dist
 
 test("A strip range takes the first outline containing both of its node IDs", () => {
     const d = syntheticDesign();
-    d.geometry.A = { label: "A", listed: true, curve: rect(0, 0, 6, 3).outlines[0].curve };
+    d.geometry.A = { label: "A", independent: true, curve: rect(0, 0, 6, 3).outlines[0].curve };
     const first = { curve: "A", offset: [-12, 4] as Point }, second = { curve: "A", offset: [8, -9] as Point };
     const outlines = [first, second];
     d.geoNodes.push(addLayer(d, "A", { type: "outline", outlines }, { type: "flat", amount: 1 }),

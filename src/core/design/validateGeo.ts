@@ -83,7 +83,8 @@ export function validateGeometry(d: Design) {
         const at = (path: Address): Location => ({ kind: "geometry", id, path });
         check(id && record(entry), "无效", at([]));
         check(typeof entry.label === "string", "无效", at(["label"]));
-        check(entry.listed === undefined || entry.listed === true, "无效", at(["listed"]));
+        check(!Object.hasOwn(entry, "listed"), "退役键", at(["listed"]));
+        check(entry.independent === undefined || entry.independent === true, "无效", at(["independent"]));
         check(Object.hasOwn(entry, "point") !== Object.hasOwn(entry, "curve"), "需要点或曲线", at([]));
         for (const key of ["showLabel", "labelOffset"]) check(!Object.hasOwn(entry, key), "无效", at([key]));
         if ("point" in entry) check(point(entry.point), "只能填写数字坐标", at(["point"]));

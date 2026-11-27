@@ -96,7 +96,7 @@ export function checkMapParameterOverlays(url: string) {
 
 export function checkSingleOutlineAndButtons(url: string) {
     const design = syntheticDesign();
-    design.geometry.A = { label: "A", listed: true, curve: rect(-7, -5, 8, 7).outlines[0].curve };
+    design.geometry.A = { label: "A", independent: true, curve: rect(-7, -5, 8, 7).outlines[0].curve };
     return withCurveMap(url, "round40-outline-and-buttons", async page => {
         const { click, evaluate, frame, key, paint, pixels, pointer, saved, tap, text } = page;
         const accent = mapColors.light.accent, inside: Point = [-14, -9];
