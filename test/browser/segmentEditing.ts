@@ -424,8 +424,8 @@ export async function checkSegmentEditing(url: string) {
         assert.deepEqual(await readShore(), current);
         await key("Escape");
 
-        await key("Escape"); await paint();
-        assert.equal((await frame()).selectionPath?.at(-1)?.kind, "geometry");
+        await key("Escape"); await key("Escape"); await paint();
+        assert.equal((await frame()).selectionPath?.at(-1)?.kind, "holder");
         const [ax, ay] = pixels(await frame(), segmentPoint(current, 0));
         await pointer("mousePressed", [ax, ay], 0);
         await pointer("mouseMoved", [ax, ay - 20], 0);

@@ -150,7 +150,7 @@ export function checkSingleOutlineAndButtons(url: string) {
         await key("Escape");
 
         await click("[data-geo-node=T]");
-        await page.tapLayer([-21, -14], "vertex", "T");
+        await page.tap([-21, -14]);
         assert.equal((await frame()).vertex?.role, "vertex");
         assert.deepEqual(await gaps(node), [4, 4]);
         await screenshot(page, "[data-curve-node]", "round40-node-buttons");

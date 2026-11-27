@@ -3,11 +3,11 @@ import { commitFocusedInput, isEditableText } from "./pendingInput.ts";
 import { distance } from "../../core/math/geometry.ts";
 import { moveHandle, moveSection, sectionHandlePoint } from "../../core/edit/controls.ts";
 import { commitControl, controlPreview } from "../../core/edit/geoControls.ts";
-import { selectionLayers, type SelectionPath } from "../../core/edit/selection.ts";
+import { selectionLayers } from "../../core/edit/selection.ts";
 import { doubleClickTools, draftPointer, updatePreview } from "./geoTools.ts";
 import { controlSnap, sectionSnap, type SnapModifiers } from "./mapSnaps.ts";
 import { type GeoDraft } from "../../core/edit/types.ts";
-import { dragMapHit, mapControlDrag, nextMapHit, type MapHit } from "../../render/map.ts";
+import { dragMapHit, mapControlDrag, nextMapHit } from "../../render/map.ts";
 import { errorText, type Point } from "../types.ts";
 import * as session from "./session.svelte.ts";
 
@@ -17,11 +17,6 @@ declare global {
         gesturechange: MouseEvent & { scale: number };
         gestureend: MouseEvent & { scale: number };
     }
-}
-
-function firstEditableHit(hits: Iterable<MapHit>, active: SelectionPath | null) {
-    if (!selectionLayers(active).geometry) return;
-    for (const hit of hits) if (selectionLayers(hit.path).part) return hit;
 }
 
 export function attachController(editor: session.Editor, canvas: HTMLCanvasElement) {
@@ -258,7 +253,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         if (ev.altKey || editor.tool !== "select") return;
         ev.preventDefault();
         const view = editor.mapView!;
-        const hit = firstEditableHit(map.objectHits(view, localPoint(ev)), view.selectionPath);
+        const hit = map.curvePartHit(view, map.world(...localPoint(ev)), true);
         const control = hit?.control;
         if (hit && control) {
             editor.selectPath(hit.path);

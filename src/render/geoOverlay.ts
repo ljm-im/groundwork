@@ -1,6 +1,6 @@
 import { geometryAt } from "../core/design/curveReferences.ts";
-import { geometrySelectionPath, holderTarget, includesSelection, partControl, selectionLayers, selectionPlacement,
-    type SelectionPath } from "../core/edit/selection.ts";
+import { geometrySelectionPath, holderLayer, holderTarget, includesSelection, partControl, selectionLayers, selectionPlacement,
+    type HolderLayer, type SelectionPath } from "../core/edit/selection.ts";
 import { type MapView, type ProjectMap } from "./map.ts";
 import { displayCurveTolerance, geoControls, geometryPath, parameterPoints, pathEntries } from "../core/edit/geoControls.ts";
 import { flattenPath, flattenSegment } from "../core/design/path.ts";
@@ -155,6 +155,10 @@ export function drawParameterGeometry(map: ProjectMap, view: MapView, colors: Ma
     ctx.restore();
 }
 
+function placedNode(view: MapView, id: string, preview: boolean) {
+    return (preview ? view.dragNodes?.get(id)?.node : undefined) ?? view.project.design.geoNodes.find(n => n.id === id);
+}
+
 function shapeAt(view: MapView, path: SelectionPath, preview: boolean): ({ index: number } & ({ curve: Curve } | { point: Point })) | undefined {
     const { root, holder } = selectionLayers(path);
     if (root?.kind === "geometry") {
@@ -162,7 +166,7 @@ function shapeAt(view: MapView, path: SelectionPath, preview: boolean): ({ index
         if (item) return "curve" in item ? { index: -1, curve: item.curve } : { index: -1, point: item.point };
     }
     if (root?.kind !== "geoNode" || !holder) return;
-    const n = (preview ? view.dragNodes?.get(root.id)?.node : undefined) ?? view.project.design.geoNodes.find(n => n.id === root.id);
+    const n = placedNode(view, root.id, preview);
     const target = n && holderTarget(n, holder);
     if (!n || !target) return;
     const index = target.index;
@@ -172,6 +176,19 @@ function shapeAt(view: MapView, path: SelectionPath, preview: boolean): ({ index
     }
     const curve = geometryPath(n, index);
     return curve && { index, curve };
+}
+
+export function visibleControlCurves(view: MapView, preview = false): { curve: Curve; index: number; holder?: HolderLayer }[] {
+    const path = view.selectionPath;
+    if (!path || view.draft) return [];
+    const { root, holder } = selectionLayers(path);
+    if (root?.kind === "geoNode" && !holder) {
+        const construction = placedNode(view, root.id, preview)?.construction;
+        return construction?.type === "outline" ?
+            construction.outlines.map((curve, index) => ({ curve, index, holder: holderLayer("outlines", index) })) : [];
+    }
+    const shape = shapeAt(view, path, preview);
+    return shape && "curve" in shape ? [{ ...shape, holder }] : [];
 }
 
 function drawSelection(map: ProjectMap, view: MapView, path: SelectionPath, colors: MapColors, state: "selected" | "hovered", tolerance: number) {
@@ -213,21 +230,21 @@ function drawSelection(map: ProjectMap, view: MapView, path: SelectionPath, colo
 }
 
 function drawSelectedControls(map: ProjectMap, view: MapView, path: SelectionPath, colors: MapColors) {
-    const { part, geometry } = selectionLayers(path);
-    const shape = geometry && shapeAt(view, path, true);
-    if (!shape || !("curve" in shape)) return;
-    const { curve } = shape, hover = selectionLayers(view.hoverPath), current = geometrySelectionPath(path);
-    const hoverPart = hover.part && view.hoverPath && includesSelection(view.hoverPath, current) ? hover.part : undefined;
-    const controls = geoControls({ label: "", curve });
-    for (const c of controls) if (c.role === "in" || c.role === "out") {
-        const node = curve.nodes[c.index];
-        strokeEdges(map, [{ a: node.p, b: c.point }], colors.accent, overlay.controlLine, node.mode === "auto");
-    }
-    for (const c of controls) {
-        const node = curve.nodes[c.index], tangent = c.role === "in" || c.role === "out";
-        const selected = c.role === part?.kind && node.id === part.nodeId;
-        const hovered = c.role === (view.hoverHandle ?? hoverPart?.kind) && node.id === hoverPart?.nodeId;
-        drawHandle(map.ctx, colors, ...map.screen(c.point), selected ? "selected" : hovered ? "hovered" : "normal", tangent);
+    const { part } = selectionLayers(path), hover = selectionLayers(view.hoverPath);
+    for (const { curve, holder } of visibleControlCurves(view, true)) {
+        const prefix: SelectionPath = holder ? [path[0], holder] : [path[0]];
+        const hoverPart = view.hoverPath && includesSelection(view.hoverPath, prefix) ? hover.part : undefined;
+        const controls = geoControls({ label: "", curve });
+        for (const c of controls) if (c.role === "in" || c.role === "out") {
+            const node = curve.nodes[c.index];
+            strokeEdges(map, [{ a: node.p, b: c.point }], colors.accent, overlay.controlLine, node.mode === "auto");
+        }
+        for (const c of controls) {
+            const node = curve.nodes[c.index], tangent = c.role === "in" || c.role === "out";
+            const selected = c.role === part?.kind && node.id === part.nodeId;
+            const hovered = c.role === (view.hoverHandle ?? hoverPart?.kind) && node.id === hoverPart?.nodeId;
+            drawHandle(map.ctx, colors, ...map.screen(c.point), selected ? "selected" : hovered ? "hovered" : "normal", tangent);
+        }
     }
 }
 
@@ -256,7 +273,8 @@ export function drawGeoOverlay(map: ProjectMap, view: MapView, colors: MapColors
         const hoverIsPart = hovered.part && active && hover && includesSelection(hover, geometrySelectionPath(active));
         if (hover && !hoverIsActive && !hoverIsPart) drawSelection(map, view, hover, colors, "hovered", tolerance);
         if (active) drawSelection(map, view, active, colors, "selected", tolerance);
-        if (hover && hoverIsPart && !hoverIsActive) drawSelection(map, view, hover, colors, "hovered", tolerance);
+        if (hover && hoverIsPart && !hoverIsActive && hovered.part?.kind === "segment" && !view.hoverHandle)
+            drawSelection(map, view, hover, colors, "hovered", tolerance);
         if (active) drawSelectedControls(map, view, active, colors);
         for (const curve of view.referenceCurves ?? [])
             drawGeometryCurve(map, curve, colors, "hovered", tolerance);

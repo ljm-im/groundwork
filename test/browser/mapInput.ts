@@ -43,7 +43,7 @@ export async function checkLayeredHits(url: string) {
         await tap(blank);
         await tap(coveredLandformPoints[2]);
         await tap(coveredLandformPoints[2], 1);
-        for (let i = 0; i < 3; i++) await tap(coveredLandformPoints[2]);
+        await tap(coveredLandformPoints[2]);
         const selected = await frame();
         assert.equal(selected.selection?.id, "A");
         assert.equal(selected.vertex?.role, "vertex");

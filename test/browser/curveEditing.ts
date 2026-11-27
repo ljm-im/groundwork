@@ -294,7 +294,7 @@ export async function checkCurveEditing(url: string) {
         const boundary2 = await evaluate(() => [...document.querySelectorAll(".subitem-toggle")]
             .find(el => el.textContent?.trim() === "轮廓 2")?.getAttribute("aria-expanded"));
         assert.equal(boundary2, "true");
-        await tap(await at([-32, 4])); await tap(await at([-32, 4]));
+        await tap(await at([-32, 4]));
         const selectedNode = ".subitem[data-curve-node]";
         await wait(s => !!document.querySelector(s), selectedNode);
         assert.equal(await evaluate(s => !!document.querySelector(s)?.parentElement?.closest(".subitem"), selectedNode), false);
@@ -347,13 +347,13 @@ export async function checkCurveEditing(url: string) {
         assert.equal(await evaluate(() => document.querySelector("[data-geo-node=C]")?.getAttribute("aria-pressed")), "true");
         assert.equal(await evaluate(() => document.querySelector("[data-property-tab=function]")?.getAttribute("aria-pressed")), "true");
         assert.deepEqual(await evaluate(() => [...document.querySelectorAll(".subitem-toggle[aria-expanded=true]")].map(el => el.textContent?.trim())), ["山脊 3"]);
-        await tap(await at(vertex)); await tap(await at(vertex));
+        await tap(await at(vertex));
         const heightRow = "[data-parameter*=\".ridges.2.h.\"]";
         await wait(s => !!document.querySelector(s), heightRow);
         await click("[data-geo-node=A]");
         await tap(await at(vertex));
         await tap(await at(vertex), 1);
-        for (let i = 0; i < 2; i++) await tap(await at(vertex));
+        await tap(await at(vertex));
         await drag(await at(vertex), await at([-4, 32.3])); await saved();
         const mountain = resolveDesign(await authored()).geoNodes.find(n => n.id === "C")!.function;
         assert(mountain.type === "mountain" && distance(mountain.ridges[2].curve.nodes[1].p, [-4, 32.3]) < .3);
@@ -386,7 +386,7 @@ export async function checkCurveEditing(url: string) {
         assert.deepEqual(await evaluate(s => [...document.querySelectorAll(s + " > .subitem-heading .subitem-toggle")]
             .map(el => [el.textContent?.trim(), el.getAttribute("aria-expanded")]), boundaryTwo), [["轮廓 1", "false"], ["轮廓 2", "false"]]);
         assert.equal((await frame()).selectionPath?.length, 1);
-        await tapLayer([33, 31], "vertex", "M");
+        await tap([33, 31]);
         assert.deepEqual(await nodeTitles(), ["节点 1"]);
         assert(await evaluate(() => {
             const nested = document.querySelector("[data-curve-node]")?.parentElement?.closest(".subitem");
@@ -401,7 +401,7 @@ export async function checkCurveEditing(url: string) {
         assert.equal(await text("#property-content .subitem-toggle"), "轮廓 1");
         assert(await evaluate(() => !document.querySelector("#property-content [aria-label=删除轮廓]")));
 
-        await tapLayer([-35, 25], "geometry", "M");
+        await tapLayer([-35, 25], "holder", "M");
         const line = await curve();
         const strokeAt = async (index: number) => {
             const f = await frame(), start = pixels(f, line.nodes[index].p, true), end = pixels(f, pathHandle(line, index, "out"), true);
@@ -413,7 +413,7 @@ export async function checkCurveEditing(url: string) {
         const handlesFrame = await frame(), [left, top] = pixels(handlesFrame, [-27, 36]), [right, bottom] = pixels(handlesFrame, [12, 20]);
         await screenshot("handle-dashes", { x: left, y: top, width: right - left, height: bottom - top });
         const handle = pathHandle(line, 2, "out");
-        assert.equal((await frame()).selectionPath?.at(-1)?.kind, "geometry");
+        assert.equal((await frame()).selectionPath?.at(-1)?.kind, "holder");
         await drag(handle, 0, async () => {
             const f = await frame(), [x, y] = pixels(f, handle, true), start = pixels(f, line.nodes[2].p, true);
             const preview = (await evaluate(() => window.curveMapProbe.strokes)).find(s => s.width === overlay.controlLine &&

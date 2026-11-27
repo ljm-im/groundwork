@@ -17,7 +17,8 @@ import { flattenPath } from "../core/design/path.ts";
 import { insidePolygon, polygonArea } from "../core/math/polygon.ts";
 import { contourLabels, fieldContours } from "./fieldContours.ts";
 import { constrainGeoLabel, constrainSectionLabel, geoLabelPoint } from "./labelLayout.ts";
-import { drawGeoOverlay, drawHandle, drawParameterGeometry, drawPoint, drawSnapGuides, hasOutlinePreview, showsParameterGeometry } from "./geoOverlay.ts";
+import { drawGeoOverlay, drawHandle, drawParameterGeometry, drawPoint, drawSnapGuides, hasOutlinePreview, showsParameterGeometry,
+    visibleControlCurves } from "./geoOverlay.ts";
 import { baseMap, canvasText, contourStyle, interfaceColors, mapColors, overlay, type MapColors, type Theme } from "./palette.ts";
 import { displayReading, displayValue } from "../core/design/display.ts";
 import { sectionHandles } from "../core/edit/controls.ts";
@@ -60,6 +61,15 @@ function hitCurve(curve: Curve, point: Point, scale: number, tolerance: number, 
     if (inside || edge) return { edge, fill: inside, area: () => cached.area ??= polygonArea(cached.points) };
 }
 
+function segmentControl(curve: Curve, index: number, edge: NonNullable<ReturnType<typeof hitCurve>>["edge"]): GeoControl | undefined {
+    if (edge) return { role: "segment", path: index, index: curve.nodes.findIndex(node => node.id === edge.edge.from), point: edge.point };
+}
+
+function hitsCurveControl(hit: MapHit) {
+    const role = hit.control?.role;
+    return role === "vertex" || role === "in" || role === "out" || role === "arc";
+}
+
 function hitFaceOutlines(shape: RegionShape | undefined, point: Point) {
     if (!shape) return;
     if (!shape.containingOutlines) return shape.contains(point) ? [] : undefined;
@@ -78,7 +88,7 @@ export function nextMapHit(hits: Iterable<MapHit>, selection: SelectionPath | nu
         if (alternate) next = hit.path[0].kind === selection[0].kind && hit.path[0].id === selection[0].id;
         else {
             const shared = commonSelectionLength(hit.path, selection);
-            if (shared) return { ...hit, path: selectionPrefix(hit.path, shared + 1) };
+            if (shared) return hitsCurveControl(hit) ? hit : { ...hit, path: selectionPrefix(hit.path, shared + 1) };
         }
     }
     if (first) return { path: selectionPrefix(first.path, 1) };
@@ -89,9 +99,7 @@ export function dragMapHit(hits: Iterable<MapHit>, selection: SelectionPath | nu
     for (const hit of hits) {
         first ??= hit;
         if (!selection) break;
-        const role = hit.control?.role;
-        if ((role === "vertex" || role === "in" || role === "out" || role === "arc") && selectionLayers(hit.path).part &&
-            includesSelection(selection, geometrySelectionPath(hit.path))) return hit;
+        if (hitsCurveControl(hit) && includesSelection(hit.path, geometrySelectionPath(selection))) return hit;
         if (includesSelection(hit.path, selection)) return { ...hit, path: selection };
     }
     if (first) return { ...first, path: selectionPrefix(first.path, 1) };
@@ -438,12 +446,14 @@ export class ProjectMap {
             }
             else if (nearest(...p, section.points).distance * scale <= sectionHitRadius) yield { path: [root] };
         }
-        const empty = !hasSamples(terrain), tolerance = design.grid.step / 8;
+        const empty = !hasSamples(terrain), tolerance = design.grid.step / 8, controlHit = this.curvePartHit(view, p);
         if (active.root?.kind === "geometry") {
             const item = geometryAt(design, active.root.id);
-            if (item) {
-                const hit = "curve" in item ? this.curveBranch(view, [active.root], item.curve, p, -1, tolerance, "curve") :
-                    distance(p, item.point) * scale <= 7 ? { path: [active.root] as SelectionPath } : undefined;
+            if (controlHit) yield controlHit;
+            else if (item) {
+                const path: SelectionPath = [active.root];
+                const hit = "curve" in item ? this.curveBranch(view, path, item.curve, p, -1, tolerance, "curve") :
+                    distance(p, item.point) * scale <= 7 ? { path } : undefined;
                 if (hit) yield hit;
             }
         }
@@ -461,6 +471,10 @@ export class ProjectMap {
         for (let i = design.geoNodes.length - 1; i >= 0; i--) {
             const node = design.geoNodes[i], root = { kind: "geoNode", id: node.id } as const;
             const selected = active.root?.kind === "geoNode" && active.root.id === node.id;
+            if (selected && controlHit) {
+                yield controlHit;
+                continue;
+            }
             let parameter: MapHit | undefined, selectedHolder: MapHit | undefined;
             function matches(holder: HolderLayer) {
                 return selected && active.holder?.group === holder.group && active.holder.index === holder.index;
@@ -478,8 +492,7 @@ export class ProjectMap {
                     const holder = holderForTarget(node, { kind: "curve", index });
                     if (!holder || parameter && !matches(holder)) continue;
                     const hasHit = hitCurve(curve, p, scale, tolerance);
-                    // A visible handle can be outside the curve's bounds.
-                    if (!hasHit && !matches(holder)) continue;
+                    if (!hasHit) continue;
                     const path = placementSelection(authored, curves, root, holder);
                     const hit = this.curveBranch(view, path, curve, p, index, tolerance, "curve", hasHit);
                     if (!hit) continue;
@@ -496,7 +509,7 @@ export class ProjectMap {
                     const holder = holderLayer("outlines", index);
                     if (!enabled && !canHitBoundary && !matches(holder)) continue;
                     const hasHit = hitCurve(curve, p, scale, tolerance);
-                    if (!hasHit && !matches(holder) || hasHit && !hasHit.fill && !canHitBoundary) continue;
+                    if (!hasHit || !hasHit.fill && !canHitBoundary) continue;
                     const path = placementSelection(authored, curves, root, holder);
                     const hit = this.curveBranch(view, path, curve, p, index, tolerance, "outline", hasHit);
                     if (!hit) continue;
@@ -519,18 +532,35 @@ export class ProjectMap {
             else if (enabled && hitFaceOutlines(shape, p)) yield { path: [root] };
         }
     }
+    curvePartHit(view: MapView, point: Point, includeSegments = false): MapHit | undefined {
+        const root = view.selectionPath?.[0];
+        if (!root) return;
+        const targets = visibleControlCurves(view), tolerance = view.project.design.grid.step / 8;
+        let best: { target: typeof targets[number]; control: GeoControl } | undefined, bestGap = Infinity;
+        for (const target of targets) {
+            const { curve, index } = target;
+            const handle = hitGeoControl({ label: "", curve }, point, this.scale);
+            const hasHandle = best && best.control.role !== "segment";
+            const control = handle ? { ...handle, path: index } : includeSegments && !hasHandle ?
+                segmentControl(curve, index, hitCurve(curve, point, this.scale, tolerance)?.edge) : undefined;
+            if (!control) continue;
+            const gap = distance(point, control.point);
+            if (handle && !hasHandle || gap <= bestGap) {
+                best = { target, control };
+                bestGap = gap;
+            }
+        }
+        if (!best) return;
+        const { target: { curve, holder }, control } = best;
+        const path = placementSelection(view.authored, view.curves, root, holder);
+        return { path: withCurvePart(path, curve, control), control };
+    }
     private curveBranch(view: MapView, path: SelectionPath, curve: Curve, point: Point, index: number, tolerance: number,
         role: "outline" | "curve", hit = hitCurve(curve, point, this.scale, tolerance)): MapHit | undefined {
-        const active = view.selectionPath;
-        if (active && includesSelection(active, path)) {
-            const handle = hitGeoControl({ label: "", curve }, point, this.scale);
-            const edge = hit?.edge;
-            const part = handle ? { ...handle, path: index } : edge && {
-                role: "segment" as const, path: index, index: curve.nodes.findIndex(node => node.id === edge.edge.from), point: edge.point
-            };
-            if (part) return { path: withCurvePart(path, curve, part), control: part };
-        }
-        if (hit) return { path, control: { role, path: index, index: 0, point } };
+        if (!hit) return;
+        const part = view.selectionPath && includesSelection(view.selectionPath, path) && segmentControl(curve, index, hit.edge);
+        if (part) return { path: withCurvePart(path, curve, part), control: part };
+        return { path, control: { role, path: index, index: 0, point } };
     }
     pickCurve(choices: readonly CurveChoice[], point: Point, tolerance: number) {
         let key: string | undefined, faceArea = Infinity, gap = Infinity;

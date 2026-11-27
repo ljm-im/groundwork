@@ -199,7 +199,7 @@ export async function checkRound31Fix(url: string) {
         await click("[data-tab=layers]"); await click("input[data-layer=geoNodes]"); await click("[data-tab=terrain]");
 
         const outlineNode = geometryPath(owner, 2)!.nodes[0].p;
-        await tapLayer(outlineNode, "geometry", "A");
+        await click("[data-geo-node=A]");
         await leave();
         await assertHandle(outlineNode, "normal");
         await moveMap(outlineNode);
@@ -209,7 +209,7 @@ export async function checkRound31Fix(url: string) {
         await assertHandle(outlineNode, "selected");
 
         const ridge = await curve(), node = ridge.nodes[1].p;
-        await tapLayer(node, "geometry", "M");
+        await tapLayer(node, "holder", "M");
         assert.equal((await frame()).geometry?.index, -1);
         await leave();
         await assertHandle(node, "normal");

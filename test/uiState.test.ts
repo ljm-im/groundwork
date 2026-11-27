@@ -5,7 +5,7 @@ import { createGrid, distance, type Point } from "../src/core/math/geometry.ts";
 import { sectionHandles } from "../src/core/edit/controls.ts";
 import { geoParameterName, resolveDesign } from "../src/core/design/parameters.ts";
 import { History } from "../src/core/edit/history.ts";
-import { commitControl, controlPreview, geometryPath, insertCurveNode } from "../src/core/edit/geoControls.ts";
+import { commitControl, controlPreview, geoControls, geometryPath, insertCurveNode } from "../src/core/edit/geoControls.ts";
 import { holderLayer, holderTarget, selectionLayers, type SelectionPath } from "../src/core/edit/selection.ts";
 import { parseDesign } from "../src/core/design/model.ts";
 import { type Design } from "../src/core/design/v5.ts";
@@ -17,6 +17,7 @@ import { designProblemText } from "../src/app/state/designMessages.ts";
 import { Project } from "../src/core/project.ts";
 import { pixelGridSpacing } from "../src/core/edit/display.ts";
 import { constrainGeoLabel, constrainSectionLabel, geoLabelPoint } from "../src/render/labelLayout.ts";
+import { visibleControlCurves } from "../src/render/geoOverlay.ts";
 import { makeShape, rasterRegion, regionMaskAt } from "../src/core/design/regions.ts";
 import { clampMarkPoint, dragMapHit, mapControlDrag, nextMapHit, ProjectMap } from "../src/render/map.ts";
 import { testProjectModel, testTerrainClient } from "./computeFixture.ts";
@@ -55,9 +56,16 @@ test("Hit branches follow the paint order, with parameters ahead of the containi
     assert.equal(nextMapHit([], [{ kind: "geoNode", id: "M" }]), undefined);
 });
 
-test("Outline hits expose vertices and segments only on their selected geometry branch", async () => {
+test("Visible map controls follow the selected landform, holder or curve", async () => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
-    const project = new Project(overlappingLandforms()), editor = new Editor(testTerrainClient());
+    const design = overlappingLandforms(), owner = design.geoNodes.find(n => n.id === "A")!;
+    const island = rect(-26, 11, -20, 17);
+    island.outlines[0].curve.nodes[0].out = [-12, 0];
+    island.outlines[0].curve.nodes[2].bulge = .25;
+    const second = fixtureConstruction(design, island);
+    assert(owner.construction.type === "outline" && second.type === "outline");
+    owner.construction.outlines.push(second.outlines[0]);
+    const project = new Project(design), editor = new Editor(testTerrainClient());
     const map: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), { width: 1000, height: 700, markBoxes: [] });
     map.fit(project.terrain, false);
     Object.assign(editor, { project: testProjectModel(project), map });
@@ -69,18 +77,51 @@ test("Outline hits expose vertices and segments only on their selected geometry 
         assert.deepEqual(next?.path, [{ kind: "geoNode", id: "A" }]);
     }
     const hit = (point: Point) => [...map.objectHits(editor.mapView!, map.screen(point))].find(h => h.path[0].id === "A")!;
-    assert.deepEqual(selectionLayers(hit([0, 10]).path).holder, holderLayer("ridges", 1));
-    const vertex: Point = [-16, 10], edge: Point = [-16, 8];
-    const path = hit(vertex).path;
+    const click = (point: Point) => nextMapHit(map.objectHits(editor.mapView!, map.screen(point)), editor.selectionPath)?.path;
+    const shown = () => visibleControlCurves(editor.mapView!).map(({ holder }) => holder);
+    const vertex: Point = [-16, 10], edge: Point = [-16, 8], ridgeNode: Point = [-12, 10];
+    const path = hit(vertex).path, ridge = hit(ridgeNode).path;
     assert.equal(path.length, 3);
     assert.deepEqual(path[1], holderLayer("outlines"));
-    assert.equal(hit(edge).path.length, 3);
-    editor.selectPath([path[0], path[1]!]);
-    assert.equal(hit(vertex).path.length, 3);
-    editor.selectPath(path);
+    assert.deepEqual(ridge[1], holderLayer("ridges", 1));
+    assert.deepEqual(shown(), []);
+
+    editor.selectPath([path[0]]);
+    assert.deepEqual(shown(), [holderLayer("outlines"), holderLayer("outlines", 1)]);
+    const node = [...path, { kind: "vertex", nodeId: "3" }];
+    assert.deepEqual(click(vertex), node);
     assert.equal(hit(vertex).control?.role, "vertex");
+    assert.deepEqual(click([-26, 11])?.[1], holderLayer("outlines", 1));
+    const { curve: islandCurve } = visibleControlCurves(editor.mapView!)[1];
+    const controls = geoControls({ label: "", curve: islandCurve });
+    for (const role of ["out", "arc"] as const) {
+        const control = controls.find(c => c.role === role)!;
+        const selected = click(control.point);
+        assert.deepEqual(selected?.[1], holderLayer("outlines", 1));
+        assert.deepEqual(selected?.at(-1),
+            { kind: role === "arc" ? "segment" : "vertex", nodeId: islandCurve.nodes[control.index].id });
+        const drag = dragMapHit(map.objectHits(editor.mapView!, map.screen(control.point)), editor.selectionPath);
+        assert.deepEqual(drag?.path, selected);
+        assert.equal(drag?.control?.role, role);
+    }
+    assert.deepEqual(click(edge), path.slice(0, 2));
+    assert.deepEqual(click(ridgeNode), ridge.slice(0, 2));
+    assert.equal(hit(ridgeNode).control?.role, "curve");
+    assert.equal(map.curvePartHit(editor.mapView!, edge, true)?.control?.role, "segment");
+    assert.equal(map.curvePartHit(editor.mapView!, [-10, 0], true), undefined);
+
+    editor.selectPath([path[0], holderLayer("outlines")]);
+    assert.deepEqual(shown(), [holderLayer("outlines")]);
+    assert.deepEqual(click(vertex), node);
+    assert.equal(hit(edge).control?.role, "outline");
+    editor.selectPath(path);
+    assert.deepEqual(shown(), [holderLayer("outlines")]);
     assert.equal(hit(edge).control?.role, "segment");
-    assert.equal(hit(vertex).path.length, 4);
+
+    editor.selectPath([ridge[0], holderLayer("ridges", 1)]);
+    assert.deepEqual(shown(), [holderLayer("ridges", 1)]);
+    assert.equal(hit(ridgeNode).control?.role, "vertex");
+    assert.equal(click(ridgeNode)?.at(-1)?.kind, "vertex");
 });
 
 test("Map face hits include holes while the terrain raster uses even-odd coverage", async () => {
@@ -847,10 +888,13 @@ test("Map drags follow the current layer, preserving offsets and shared coordina
 
     const first = shared.curve.nodes[0];
     const nodePoint: Point = [first.p[0] + offset[0], first.p[1] + offset[1]];
-    const direct = drag(nodePoint, branch, 4);
     const vertex = drag(nodePoint, [...branch, { kind: "vertex", nodeId: first.id }]).next;
-    assert.deepEqual(direct.next, vertex);
-    assert.deepEqual(direct.preview.nodes.get("A")?.node.construction, resolveDesign(vertex).geoNodes[2].construction);
+    const visibleOn: SelectionPath[] = [[root], [root, holder], branch];
+    for (const selection of visibleOn) {
+        const direct = drag(nodePoint, selection, 4);
+        assert.deepEqual(direct.next, vertex);
+        assert.deepEqual(direct.preview.nodes.get("A")?.node.construction, resolveDesign(vertex).geoNodes[2].construction);
+    }
     assert.deepEqual(vertex.geoNodes, d.geoNodes);
     const movedVertex = vertex.geometry[outline.curve];
     assert("curve" in movedVertex);

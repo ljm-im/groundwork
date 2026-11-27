@@ -643,8 +643,7 @@ async function checkEditor(url: string) {
         await idle(); await saved();
         assert.equal(await text("#mode-hint .hint-text"), "逐层选中");
         assert(await disk() === triangle, "A native double-tap must finish the same drawing");
-        for (let i = 0; i < 3; i++) await tap(a);
-        await tap(a, 2); await idle(); await saved();
+        await tap(a); await tap(a, 2); await idle(); await saved();
         assert(await disk() !== triangle, "A separate double-click in selection mode must still change the node type");
         await undo();
         assert(await disk() === triangle);
@@ -735,7 +734,7 @@ async function checkEditor(url: string) {
         assert((await pixel(left + dx, mid + dy)).every((channel, i) => Math.abs(channel - solid[i]) <= 1));
         await undo();
         const restored = await disk();
-        for (let i = 0; i < 3; i++) await tap([left, top]);
+        await tap([left, top]);
         await wait(() => !!document.querySelector("[data-curve-node]"));
         const beforeVertex = await pixel(left, mid);
         await cdp("Emulation.setTouchEmulationEnabled", { enabled: true });

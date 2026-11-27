@@ -2,11 +2,14 @@ import assert from "node:assert/strict";
 import { type Design, type Point } from "../../src/core/design/v5.ts";
 import { mapColors } from "../../src/render/palette.ts";
 import { distance } from "../../src/core/math/geometry.ts";
-import { addLayer, fixtureMark, literalCurve, openCurve, rect, syntheticDesign, withNodeSlope } from "../scenarios.ts";
+import { addLayer, fixtureCurve, fixtureMark, literalCurve, openCurve, rect, syntheticDesign, withNodeSlope } from "../scenarios.ts";
 import { withCurveMap } from "./curveMapFixture.ts";
 
 export function checkSelectionHierarchy(url: string) {
-    const design: Design = syntheticDesign();
+    const design: Design = syntheticDesign(), landform = design.geoNodes[1];
+    assert(landform.construction.type === "outline");
+    const secondOutline = rect(1, -32, 11, -20).outlines[0];
+    landform.construction.outlines.push(fixtureCurve(design, secondOutline));
     const ridge = openCurve([{ p: [-25, 16], h: 8 }, { p: [-17, 22], h: 9 }, { p: [-9, 16], h: 8 }], "corner", "ridge-");
     design.geoNodes.push(
         addLayer(design, "M", rect(-33, 6, -4, 34), { type: "mountain", ridges: [{ curve: withNodeSlope(ridge, 2) }], valleys: [], peaks: [] }),
@@ -32,10 +35,18 @@ export function checkSelectionHierarchy(url: string) {
         const fills = () => evaluate(() => window.curveMapProbe.geometryFills);
         const strokes = () => evaluate(() => window.curveMapProbe.strokes);
         const depth = async () => (await frame()).selectionPath?.length ?? 0;
-        const outline = literalCurve(design, curveId(design, "T"));
-        const first = async () => pixels(await frame(), outline.nodes[0].p, true);
+        const outlineId = curveId(design, "T"), outline = literalCurve(design, outlineId), vertex = outline.nodes[0].p;
+        const otherVertex = secondOutline.curve.nodes[0].p;
+        const dotsAt = async (point: Point) => {
+            const at = pixels(await frame(), point, true);
+            return (await evaluate(() => window.curveMapProbe.dots)).filter(dot => distance(dot.point, at) < .02).map(dot => dot.color);
+        };
+        const resetLandform = async () => {
+            await click("[data-geo-node=T]"); await paint();
+            assert.equal(await depth(), 1);
+        };
         const accentStroke = async () => {
-            const start = await first();
+            const start = pixels(await frame(), vertex, true);
             return (await strokes()).find(s => s.color === mapColors.light.accent && s.width === 4 &&
                 s.points.some(point => distance(point, start) < .02));
         };
@@ -45,6 +56,41 @@ export function checkSelectionHierarchy(url: string) {
         await tap(p);
         assert.equal(await title(), "T");
         assert.equal(await depth(), 1);
+        await move(away);
+        const landformFills = await fills();
+        assert.deepEqual(await dotsAt(vertex), [mapColors.light.bgPanel]);
+        assert.deepEqual(await dotsAt(otherVertex), [mapColors.light.bgPanel]);
+        await screenshot("round43-fix2-landform");
+        await move(vertex);
+        assert.equal((await frame()).hoverPath?.at(-1)?.kind, "vertex");
+        assert.deepEqual(await dotsAt(vertex), [mapColors.light.bgPanel, mapColors.light.accent]);
+
+        const dx = 30 / (await frame()).scale;
+        await drag(vertex, 2);
+        assert.equal(await depth(), 4);
+        assert.equal(await text("[data-curve-node] .subitem-label"), "节点 1");
+        const { nodes } = literalCurve(await authored(), outlineId);
+        const [x, y] = vertex;
+        assert(distance(nodes[0].p, [x + dx, y]) < .02);
+        assert.deepEqual(nodes.slice(1), outline.nodes.slice(1));
+        await undo();
+        await resetLandform();
+
+        await tap(vertex);
+        assert.equal(await depth(), 4);
+        await tap(vertex, 0, "left", 2);
+        await saved(); await paint();
+        assert.equal(literalCurve(await authored(), outlineId).nodes[0].mode, "auto");
+        await undo();
+        await resetLandform();
+
+        await tap([-14, -14], 0, "left", 2);
+        await saved(); await paint();
+        assert.equal(literalCurve(await authored(), outlineId).nodes.length, outline.nodes.length + 1);
+        assert.equal(await depth(), 4);
+        await undo();
+        await resetLandform();
+
         await tap(p);
         assert.equal(await depth(), 2);
         assert.equal(await text(row), "轮廓 1");
@@ -53,7 +99,9 @@ export function checkSelectionHierarchy(url: string) {
         assert.equal(await text(parts), "");
         assert.deepEqual((await accentStroke())?.dash, []);
         await move(away);
-        assert(!(await fills()).includes(.14));
+        assert.deepEqual(await fills(), landformFills);
+        assert.deepEqual(await dotsAt(vertex), [mapColors.light.bgPanel]);
+        assert.deepEqual(await dotsAt(otherVertex), []);
         await screenshot("round43-outline");
         await move(p);
         assert((await fills()).includes(.1));
@@ -63,31 +111,18 @@ export function checkSelectionHierarchy(url: string) {
         assert.equal(await title(), design.geometry[curveId(design, "T")].label);
         assert.deepEqual((await accentStroke())?.dash, []);
         assert((await fills()).includes(.14));
-        const vertexScreen = await first();
-        assert((await evaluate(() => window.curveMapProbe.dots)).some(dot => distance(dot.point, vertexScreen) < .02));
+        assert.deepEqual(await dotsAt(vertex), [mapColors.light.bgPanel]);
         await tap(p);
         assert.equal(await depth(), 3);
         await move(away);
         await screenshot("round43-closed-curve");
 
-        await tap(outline.nodes[0].p);
+        await tap(vertex);
         assert.equal(await text("[data-curve-node] .subitem-label"), "节点 1");
         await move(outline.nodes[1].p);
         assert.equal((await frame()).hoverPath?.at(-1)?.kind, "vertex");
         await tap(outline.nodes[1].p);
         assert.equal(await text("[data-curve-node] .subitem-label"), "节点 2");
-        await tap(p);
-        assert.equal(await depth(), 3);
-
-        const dx = 30 / (await frame()).scale;
-        await drag(outline.nodes[0].p, 2);
-        assert.equal(await depth(), 4);
-        assert.equal(await text("[data-curve-node] .subitem-label"), "节点 1");
-        const { nodes } = literalCurve(await authored(), curveId(design, "T"));
-        const [x, y] = outline.nodes[0].p;
-        assert(distance(nodes[0].p, [x + dx, y]) < .02);
-        assert.deepEqual(nodes.slice(1), outline.nodes.slice(1));
-        await undo();
         await tap(p);
         assert.equal(await depth(), 3);
 
@@ -122,11 +157,17 @@ export function checkSelectionHierarchy(url: string) {
         await click("#remove-dialog button[value=cancel]");
 
         const ridgeNode = ridge.nodes[0].p;
-        await tap(ridgeNode); await tap(ridgeNode);
+        await tap(ridgeNode);
+        assert.equal(await depth(), 1);
+        assert.deepEqual(await dotsAt(ridgeNode), []);
+        await tap(ridgeNode);
         assert.equal(await depth(), 2);
         assert.equal(await active("#properties .geometry-box[aria-label=山脊线]"), "false");
         assert.equal(await text(parts), "");
-        await tap(ridgeNode); await tap(ridgeNode);
+        await move(away);
+        assert.deepEqual(await dotsAt(ridgeNode), [mapColors.light.bgPanel]);
+        await screenshot("round43-fix2-ridge");
+        await tap(ridgeNode);
         assert.equal(await depth(), 4);
         assert.equal(await text("[data-curve-node] .part-title"), "山脊 1");
         assert.equal(await text("[data-curve-node] .subitem-label"), "节点 1");

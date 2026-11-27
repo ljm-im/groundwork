@@ -161,7 +161,7 @@ export async function checkMapSelection(url: string) {
         assert(await evaluate(() => !!document.querySelector("[data-property-tab=region][aria-pressed=true]") &&
             !!document.querySelector("[data-outline] [aria-current=true]")));
         const corner = pixels(await frame(), [-46, 18], true);
-        assert(!(await evaluate(() => window.curveMapProbe.dots)).some(dot => distance(dot.point, corner) < .02));
+        assert((await evaluate(() => window.curveMapProbe.dots)).some(dot => distance(dot.point, corner) < .02));
 
         await click("[data-tab=marks]"); await click("[data-section=Q]");
         await tap(resolveDesign(original).sections[0].points[0]);
