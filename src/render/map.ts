@@ -34,6 +34,7 @@ export type LabelTarget = { kind: "geoNode" | "section"; id: string };
 type LabelHit = LabelTarget & { point: Point; box: Box };
 export type LabelPreview = LabelTarget & { offset: Point };
 export type MapHit = { path: SelectionPath; control?: GeoControl; handle?: Handle };
+type ClickHit = MapHit & { fullPath: SelectionPath; normalPath?: SelectionPath };
 export type CurvePlacement = { id: string; curve: Curve; offset?: Point };
 export type CurveChoice = { key: string; placements: readonly CurvePlacement[] };
 
@@ -80,25 +81,27 @@ function hitFaceOutlines(shape: RegionShape | undefined, point: Point) {
     if (outlines.length) return outlines;
 }
 
-export function nextMapHit(hits: Iterable<MapHit>, selection: SelectionPath | null, alternate = false) {
-    let first: MapHit | undefined, currentPath: SelectionPath | undefined;
+export function nextMapHit(hits: Iterable<MapHit>, selection: SelectionPath | null, alternate = false): ClickHit | undefined {
+    let first: MapHit | undefined, normalPath: SelectionPath | undefined;
     for (const hit of hits) {
         first ??= hit;
-        if (currentPath) return { path: selectionPrefix(hit.path, 1), currentPath };
+        if (normalPath) return { path: selectionPrefix(hit.path, 1), fullPath: hit.path, normalPath };
         if (!selection) break;
         const shared = commonSelectionLength(hit.path, selection);
         if (!shared) continue;
-        currentPath = hit.path;
-        if (!alternate) return { ...hit, path: hitsCurveControl(hit) ? hit.path : selectionPrefix(hit.path, shared + 1), currentPath };
+        const path = hitsCurveControl(hit) ? hit.path : selectionPrefix(hit.path, shared + 1);
+        if (!alternate) return { ...hit, path, fullPath: hit.path };
+        normalPath = path;
     }
-    if (first) return { path: selectionPrefix(first.path, 1), currentPath };
+    if (first) return { path: selectionPrefix(first.path, 1), fullPath: first.path, normalPath };
 }
 
-export function mapHoverHit(hits: Iterable<MapHit>, selection: SelectionPath | null, paused: boolean, alternate = false) {
+export function mapHoverHit(hits: Iterable<MapHit>, selection: SelectionPath | null, paused: SelectionPath | undefined, alternate = false) {
     const hit = nextMapHit(hits, selection, alternate);
-    if (!paused || !selection || !hit?.currentPath || !includesSelection(hit.currentPath, selection)) return { hit, paused: false };
-    const hide = !alternate && hit.path.length > selection.length && !hitsCurveControl(hit);
-    return { hit: hide ? undefined : hit, paused: true };
+    const path = alternate ? hit?.normalPath : hit?.path;
+    if (!hit || !paused || !path || path.length !== paused.length || !includesSelection(path, paused) ||
+        !alternate && hitsCurveControl(hit)) return { hit, paused: undefined };
+    return { hit: alternate ? hit : undefined, paused };
 }
 
 export function dragMapHit(hits: Iterable<MapHit>, selection: SelectionPath | null) {
@@ -439,7 +442,7 @@ export class ProjectMap {
         if (view.hoverPath?.length === 1 && view.hoverPath[0].kind === kind && view.hoverPath[0].id === id ||
             kind === "geoNode" && view.referencedGeo.includes(id)) return "hovered";
     }
-    *objectHits(view: MapView, screen: Point): Generator<MapHit> {
+    *objectHits(view: MapView, screen: Point, purpose: "select" | "drag" = "select"): Generator<MapHit> {
         const { authored, curves, project: { terrain, design }, selectionPath } = view, scale = this.scale;
         for (const handle of this.markHits(...screen)) {
             const root = { kind: "mark", id: handle.id } as const;
@@ -524,8 +527,8 @@ export class ProjectMap {
                     const path = placementSelection(authored, curves, root, holder);
                     const hit = this.curveBranch(view, path, curve, p, index, tolerance, "outline", hasHit);
                     if (!hit) continue;
-                    if (matches(holder)) selectedHolder = hit;
-                    if (hasHit?.fill) {
+                    if (matches(holder) && (purpose === "drag" || hasHit.edge || !parameter)) selectedHolder = hit;
+                    if (hasHit.fill) {
                         const size = hasHit.area();
                         if (size < area) {
                             outline = hit;

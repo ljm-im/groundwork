@@ -1,5 +1,5 @@
 import { checkGeometryObjects } from "./round42.ts";
-import { checkHoverStyles, checkMapHints, checkSelectionHierarchy, checkVisibleCurvePicker } from "./round43.ts";
+import { checkBranchHoverPause, checkHoverStyles, checkMapHints, checkSelectionHierarchy, checkVisibleCurvePicker } from "./round43.ts";
 import { resolveDesign } from "../../src/core/design/parameters.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -75,6 +75,7 @@ test("Editor interactions in Chromium", async t => {
         await t.test("Selection hierarchy, curve styling and replacing by face in Chromium", () => checkSelectionHierarchy(url));
         await t.test("Geometry hover matches across the map, inspector and curve previews in Chromium", () => checkHoverStyles(url));
         await t.test("Curve picking preserves visible map styling and honors geometry layers in Chromium", () => checkVisibleCurvePicker(url));
+        await t.test("Map clicks pause only the next layer of the clicked branch in Chromium", () => checkBranchHoverPause(url));
         await t.test("Map hints show all actions and fit narrow maps in Chromium", () => checkMapHints(url));
         await t.test("List and numeric reference searches match visible labels in Chromium", () => checkVisibleSearch(url));
     }

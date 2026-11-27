@@ -179,38 +179,73 @@ test("Repeated clicks still advance one layer until the end of the hit", () => {
     }
 });
 
-test("A map click holds the next layer's hover until the pointer leaves the selected path", async () => {
+test("A map click holds only the next layer of the branch under that click", async () => {
     const { Editor } = await import("../src/app/state/session.svelte.ts");
-    const editor = new Editor(testTerrainClient()), project = new Project(syntheticDesign());
+    const design = syntheticDesign(), owner = design.geoNodes[1];
+    const ridge = openCurve([{ p: [-19, -8], h: 8 }, { p: [-9, -8], h: 9 }]);
+    owner.function = fixtureFunction(design, { type: "mountain", ridges: [{ curve: withNodeSlope(ridge, 2) }], valleys: [], peaks: [] });
+    const editor = new Editor(testTerrainClient()), project = new Project(design);
     const map: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), { width: 1000, height: 700, markBoxes: [] });
     map.fit(project.terrain, false);
     Object.assign(editor, { project: testProjectModel(project), map });
-    const face: Point = [-14, -8], vertex: Point = [-21, -14], outside: Point = [0, 20];
+
+    const face: Point = [-14, -11], edge: Point = [-14, -14], line: Point = [-14, -8], vertex: Point = [-21, -14];
+    const root = { kind: "geoNode", id: owner.id } as const;
+    const outline = [root, holderLayer("outlines")], ridgePath = [root, holderLayer("ridges")];
+    const geometry = editor.placementPath(holderLayer("outlines"), root)!;
     const hits = (p: Point) => map.objectHits(editor.mapView!, map.screen(p));
-    const click = (p: Point) => editor.selectMapPath(nextMapHit(hits(p), editor.selectionPath)?.path ?? null);
+    const click = (p: Point) => {
+        const hit = nextMapHit(hits(p), editor.selectionPath);
+        editor.selectMapPath(hit?.path ?? null, hit?.fullPath);
+    };
     const hover = (p: Point, alternate = false) => {
-        const preview = mapHoverHit(hits(p), editor.selectionPath, editor.pauseNextLayerHover, alternate);
-        editor.pauseNextLayerHover = preview.paused;
+        const preview = mapHoverHit(hits(p), editor.selectionPath, editor.pausedHoverPath, alternate);
+        editor.pausedHoverPath = preview.paused;
         return preview.hit?.path;
     };
 
     click(face);
-    assert.equal(editor.selectionPath?.length, 1);
+    assert.deepEqual(editor.selectionPath, [root]);
+    assert.deepEqual(editor.pausedHoverPath, outline);
     assert.equal(hover(face), undefined);
-    assert.equal(hover(vertex)?.at(-1)?.kind, "vertex");
     assert.equal(hover(face, true)?.[0].id, "G");
     assert.equal(hover(face), undefined);
-    click(face);
-    assert.equal(editor.selectionPath?.length, 2);
-    assert.equal(hover(face), undefined);
-    assert.equal(hover([-13, -8]), undefined);
-    assert.equal(hover(outside)?.[0].id, "G");
-    assert.equal(hover(face)?.at(-1)?.kind, "geometry");
+    assert.deepEqual(hover(line), ridgePath);
+    assert.deepEqual(hover(face), outline);
 
+    click(edge);
+    assert.deepEqual(editor.selectionPath, outline);
+    assert.deepEqual(editor.pausedHoverPath, geometry);
+    assert.equal(hover(face), undefined);
+    assert.deepEqual(hover(line), ridgePath);
+    assert.deepEqual(nextMapHit(hits(line), editor.selectionPath)?.path, ridgePath);
+    const drag = dragMapHit(map.objectHits(editor.mapView!, map.screen(line), "drag"), editor.selectionPath);
+    assert.deepEqual(drag?.path, outline);
+    assert.deepEqual(hover(face), geometry);
+
+    editor.select(null);
+    editor.layers.geoNodes = true;
+    click(line);
+    assert.deepEqual(editor.selectionPath, [root]);
+    assert.deepEqual(editor.pausedHoverPath, ridgePath);
+    assert.equal(hover(line), undefined);
+    assert.deepEqual(hover(face), outline);
+
+    click(edge);
+    assert.equal(hover(vertex)?.at(-1)?.kind, "vertex");
+    assert.deepEqual(hover(face), geometry);
+    click(vertex);
+    assert.equal(editor.selectionPath?.at(-1)?.kind, "vertex");
+    assert.equal(editor.pausedHoverPath, undefined);
+
+    editor.select(null);
+    click(face);
+    assert.equal(hover([80, 80]), undefined);
+    assert.deepEqual(hover(face), outline);
     click(face);
     editor.focusGeometry({ kind: "outline", index: 0 });
-    assert.equal(editor.selectionPath?.at(-1)?.kind, "holder");
-    assert.equal(hover(face)?.at(-1)?.kind, "geometry");
+    assert.deepEqual(hover(face), geometry);
+    editor.dispose();
 });
 
 test("Every map tool supplies ordered primary hints and a shared navigation footer", () => {

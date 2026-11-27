@@ -79,7 +79,7 @@ export class Editor {
     });
     drawingReady = $derived(this.geoDraft ? drawingReady(this.geoDraft) : false);
     selectionPath = $state.raw<SelectionPath | null>(null);
-    pauseNextLayerHover = false;
+    pausedHoverPath?: SelectionPath;
     private layersSelected = $derived(selectionLayers(this.selectionPath));
     selection = $derived(this.layersSelected.root ?? null);
     selectedHolder = $derived(this.layersSelected.leaf?.kind === "holder" ? this.layersSelected.leaf : undefined);
@@ -333,7 +333,7 @@ export class Editor {
         this.setSelectionPath(selection ? [selection] : null);
     }
     private setSelectionPath(path: SelectionPath | null) {
-        this.pauseNextLayerHover = false;
+        this.pausedHoverPath = undefined;
         const next = validSelection(this.project.design, this.curves, path);
         const { root, holder } = selectionLayers(next);
         this.propertyTab = tabForSelection(root ?? null, this.propertyTab);
@@ -428,9 +428,11 @@ export class Editor {
         }
         if (path && path.length > 1) this.revealGeometry();
     }
-    selectMapPath(path: SelectionPath | null) {
+    selectMapPath(path: SelectionPath | null, fullPath?: SelectionPath) {
         this.selectPath(path);
-        this.pauseNextLayerHover = !!this.selectionPath;
+        const selected = this.selectionPath;
+        if (selected && fullPath && fullPath.length > selected.length && includesSelection(fullPath, selected))
+            this.pausedHoverPath = selectionPrefix(fullPath, selected.length + 1);
         this.hoverSelection();
     }
     stepSelectionOut() {

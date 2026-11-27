@@ -7,7 +7,7 @@ import { selectionLayers } from "../../core/edit/selection.ts";
 import { doubleClickTools, draftPointer, updatePreview } from "./geoTools.ts";
 import { controlSnap, sectionSnap, type SnapModifiers } from "./mapSnaps.ts";
 import { type GeoDraft } from "../../core/edit/types.ts";
-import { dragMapHit, hitsCurveControl, mapControlDrag, mapHoverHit, nextMapHit, type MapHit } from "../../render/map.ts";
+import { dragMapHit, hitsCurveControl, mapControlDrag, mapHoverHit, nextMapHit } from "../../render/map.ts";
 import { errorText, type Point } from "../types.ts";
 import * as session from "./session.svelte.ts";
 
@@ -73,7 +73,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
 
     function beginPan(ev: PointerEvent, screen: Point, pan: "middle" | "space" | "stationary", click?: () => void) {
         ev.preventDefault();
-        editor.pauseNextLayerHover = false;
+        editor.pausedHoverPath = undefined;
         editor.hoverSelection();
         editor.gesture = { pan, screen, center: map.center.slice(), pointer: ev.pointerId, click };
     }
@@ -88,10 +88,10 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
 
     function pick(screen: Point, alternate: boolean, hover = false) {
         const view = editor.mapView!, hits = map.objectHits(view, screen);
-        let hit: MapHit | undefined;
+        let hit: ReturnType<typeof nextMapHit>;
         if (hover) {
-            const preview = mapHoverHit(hits, view.selectionPath, editor.pauseNextLayerHover, alternate);
-            editor.pauseNextLayerHover = preview.paused;
+            const preview = mapHoverHit(hits, view.selectionPath, editor.pausedHoverPath, alternate);
+            editor.pausedHoverPath = preview.paused;
             hit = preview.hit;
             if (!hit) return;
         }
@@ -154,14 +154,14 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         if (!editor.mapCurrent) return;
         const hit = pick(screen, alternate);
         if (hit && "issues" in hit) editor.pickMarkers(hit.issues);
-        else editor.selectMapPath(hit?.path ?? null);
+        else editor.selectMapPath(hit?.path ?? null, hit?.fullPath);
         if (hoverPoint) hoverFrame ||= requestAnimationFrame(updateHover);
     }
     function beginSelectionDrag(down: PointerEvent, screen: Point) {
-        editor.pauseNextLayerHover = false;
+        editor.pausedHoverPath = undefined;
         if (!editor.mapCurrent) return;
         const view = editor.mapView!, p = map.world(...screen), pointer = down.pointerId;
-        const hit = dragMapHit(map.objectHits(view, screen), view.selectionPath);
+        const hit = dragMapHit(map.objectHits(view, screen, "drag"), view.selectionPath);
         const label = !selectionLayers(hit?.path).part && !map.markHits(...screen).next().value && map.hitLabel(...screen);
         if (label) {
             const { kind, id, point } = label;
@@ -369,7 +369,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
 
     canvas.addEventListener("pointerleave", () => {
         pointerInside = false;
-        editor.pauseNextLayerHover = false;
+        editor.pausedHoverPath = undefined;
         if (!editor.gesture && !editor.geoDraft?.down) editor.snapGuides = undefined;
         cancelAnimationFrame(hoverFrame); hoverFrame = 0;
         hoverPoint = undefined;

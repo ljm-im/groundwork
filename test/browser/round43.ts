@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { type Design, type Point } from "../../src/core/design/v5.ts";
+import { holderLayer } from "../../src/core/edit/selection.ts";
 import { mapColors, overlay } from "../../src/render/palette.ts";
 import { distance } from "../../src/core/math/geometry.ts";
 import { addLayer, fixtureCurve, fixtureMark, literalCurve, openCurve, rect, syntheticDesign, withNodeSlope } from "../scenarios.ts";
@@ -433,6 +434,58 @@ export function checkVisibleCurvePicker(url: string) {
         const selected = (await authored()).geoNodes.find(n => n.id === "T")!.construction;
         assert(selected.type === "outline" && "curve" in selected.outlines[0]);
         assert.equal(selected.outlines[0].curve, "freeClosed");
+    }, design);
+}
+
+export function checkBranchHoverPause(url: string) {
+    const design = syntheticDesign("ground");
+    const ridge = openCurve([{ p: [-26, 6], h: 9 }, { p: [-12, 6], h: 8 }]);
+    const mountain = addLayer(design, "M", rect(-33, -6, -6, 22), {
+        type: "mountain", ridges: [{ curve: withNodeSlope(ridge, 3) }], valleys: [], peaks: []
+    });
+    mountain.outline = true;
+    design.geoNodes.push(mountain);
+    return withCurveMap(url, "round43-branch-hover", async ({ click, evaluate, frame, paint, pixels, pointer, screenshot, tap }) => {
+        const face: Point = [-19, 1], edge: Point = [-19, -6], line: Point = [-19, 6];
+        const root = { kind: "geoNode", id: "M" } as const;
+        const outline = [root, holderLayer("outlines")], ridgePath = [root, holderLayer("ridges")];
+        const move = async (p: Point) => {
+            await pointer("mouseMoved", pixels(await frame(), p), 0, "none");
+            await paint();
+        };
+        await move(face); await tap(face);
+        assert.deepEqual((await frame()).selectionPath, [root]);
+        assert.equal((await frame()).hoverPath, undefined);
+        await move([-18, 1]);
+        assert.equal((await frame()).hoverPath, undefined);
+
+        await move(line);
+        assert.deepEqual((await frame()).hoverPath, ridgePath);
+        const start = pixels(await frame(), ridge.nodes[0].p, true);
+        const strokes = (await evaluate(() => window.curveMapProbe.strokes)).filter(s => distance(s.points[0], start) < .02);
+        assert.deepEqual(strokes.map(s => [s.width, s.color, s.alpha, s.dash]),
+            [[4, mapColors.light.accent, overlay.segmentHoverOpacity, [...overlay.dash]]]);
+        await screenshot("round43-fix6-ridge-hover");
+
+        await move(edge); await tap(edge);
+        assert.deepEqual((await frame()).selectionPath, outline);
+        await move(face);
+        assert.equal((await frame()).hoverPath, undefined);
+        await move(line);
+        assert.deepEqual((await frame()).hoverPath, ridgePath);
+        await move(face);
+        assert.equal((await frame()).hoverPath?.at(-1)?.kind, "geometry");
+
+        await tap([0, 53]);
+        assert.equal((await frame()).selectionPath, null);
+        await click("[data-tab=layers]");
+        await click("input[data-layer=geoNodes]");
+        await move(line); await tap(line);
+        assert.deepEqual((await frame()).selectionPath, [root]);
+        await move([-18, 6]);
+        assert.equal((await frame()).hoverPath, undefined);
+        await move(face);
+        assert.deepEqual((await frame()).hoverPath, outline);
     }, design);
 }
 
