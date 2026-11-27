@@ -619,6 +619,7 @@ export class ProjectMap {
         const { dragNode, dragNodes } = view, active = view.selectionPath?.[0], hovered = view.hoverPath?.[0];
         const draggedRegionId = dragNode && view.selectionPath?.length === 1 && hasOutlinePreview(dragNodes?.get(dragNode.id)?.paths) ? dragNode.id : undefined;
         const movedOutlines = dragNodes && new Map<string, Path2D>();
+        let unstrokedOutlineColor: string | undefined = base.boundary;
         for (const n of d.geoNodes) {
             if (n.disabled && !empty) continue;
             const preview = dragNodes?.get(n.id), moved = preview && hasOutlinePreview(preview.paths) ?
@@ -635,8 +636,9 @@ export class ProjectMap {
             }
             if (n.id !== draggedRegionId && (moved || empty || n.outline || view.layers.geoNodes)) {
                 ctx.strokeStyle = moved ? colors.accentHover : base.boundary;
-                ctx.lineWidth = .6 / scale;
+                ctx.lineWidth = overlay.boundaryWidth / scale;
                 ctx.stroke(moved ?? regionOutline(region, g));
+                if (active?.kind === "geoNode" && n.id === active.id) unstrokedOutlineColor = undefined;
             }
         }
         const contours = view.layers.contours && samples ? fieldContours(g, samples, fieldPrecision(d.fields[view.displayField]), scale) : undefined;
@@ -681,7 +683,7 @@ export class ProjectMap {
         }
         ctx.restore();
         this.drawOverlays(view, colors);
-        drawGeoOverlay(this, view, colors);
+        drawGeoOverlay(this, view, colors, unstrokedOutlineColor);
         this.drawLabels(ctx, view, colors);
         this.drawMarks(ctx, view, colors);
         if (contours && view.layers.contourLabels) this.drawContourLabels(ctx, contours, colors);

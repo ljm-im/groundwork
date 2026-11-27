@@ -49,6 +49,7 @@ export const canvasText = {
 } as const;
 
 export const overlay = {
+    boundaryWidth: .6,
     selectedWidth: 2,
     hoverWidth: 1,
     handleRadius: 4,
@@ -59,7 +60,7 @@ export const overlay = {
     derivedWidth: 1,
     segmentWidth: 4,
     segmentHoverOpacity: .3,
-    geometryFill: { normal: .06, hovered: .1, selected: .14 },
+    geometryFill: { hovered: .06, selected: .1 },
     labelHalo: 3,
     dash: [6, 4],
     dots: [1, 3]

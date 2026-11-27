@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { type Design, type Point } from "../../src/core/design/v5.ts";
-import { mapColors } from "../../src/render/palette.ts";
+import { baseMap, mapColors } from "../../src/render/palette.ts";
 import { distance } from "../../src/core/math/geometry.ts";
 import { addLayer, fixtureCurve, fixtureMark, literalCurve, openCurve, rect, syntheticDesign, withNodeSlope } from "../scenarios.ts";
 import { withCurveMap } from "./curveMapFixture.ts";
@@ -104,13 +104,15 @@ export function checkSelectionHierarchy(url: string) {
         assert.deepEqual(await dotsAt(otherVertex), []);
         await screenshot("round43-outline");
         await move(p);
-        assert((await fills()).includes(.1));
+        assert.equal((await frame()).hoverPath?.at(-1)?.kind, "geometry");
+        assert.deepEqual(await fills(), [.06]);
+        await screenshot("round43-fix3-hovered-curve");
         await tap(p);
         assert.equal(await depth(), 3);
         assert.equal(await active(tab), "true");
         assert.equal(await title(), design.geometry[curveId(design, "T")].label);
         assert.deepEqual((await accentStroke())?.dash, []);
-        assert((await fills()).includes(.14));
+        assert.deepEqual(await fills(), [.1]);
         assert.deepEqual(await dotsAt(vertex), [mapColors.light.bgPanel]);
         await tap(p);
         assert.equal(await depth(), 3);
@@ -119,6 +121,11 @@ export function checkSelectionHierarchy(url: string) {
 
         await tap(vertex);
         assert.equal(await text("[data-curve-node] .subitem-label"), "节点 1");
+        await move(p);
+        assert.deepEqual(await fills(), [.1]);
+        const boundary = await evaluate(() => [...window.curveMapProbe.strokes, ...window.curveMapProbe.pathStrokes]);
+        assert(boundary.some(s => s.color === baseMap.light.boundary && Math.abs(s.width - .6) < .001));
+        assert(!boundary.some(s => s.color === mapColors.light.parameterGeometry && s.width === 2));
         await move(outline.nodes[1].p);
         assert.equal((await frame()).hoverPath?.at(-1)?.kind, "vertex");
         await tap(outline.nodes[1].p);
@@ -138,14 +145,17 @@ export function checkSelectionHierarchy(url: string) {
         assert.equal(await depth(), 2);
         assert.equal(await active(curveInput), "false");
         assert(await evaluate(s => !!document.querySelector(s)?.parentElement?.classList.contains("selected"), row));
+        await move(p);
+        assert.deepEqual(await fills(), [.06]);
         await click(curveInput);
         const pick = ".property-title button[aria-label=选取或重画轮廓]";
-        await click(pick);
+        await click(pick); await paint();
+        assert.deepEqual(await fills(), []);
         await move([18, 16]);
-        assert((await fills()).includes(.1));
+        assert.deepEqual(await fills(), [.06]);
         assert((await strokes()).some(s => s.color === mapColors.light.parameterGeometry && s.width === 2 && !s.dash.length));
         await move([21, 19]);
-        assert((await fills()).includes(.1));
+        assert.deepEqual(await fills(), [.06]);
         await tap([21, 19]);
         await saved(); await paint();
         const d = await authored();
