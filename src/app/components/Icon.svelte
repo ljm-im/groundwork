@@ -67,7 +67,6 @@
         export: "M9 2v9m-3-3 3 3 3-3M3 10v5h12v-5",
         minus: "M3 9h12",
         plus: "M3 9h12M9 3v12",
-        more: "M4 9h.25M8.875 9h.25M13.75 9h.25",
         mouseLeft: mouseSplit,
         mouseRight: mouseSplit,
         mouseMiddle: mouseOutline,

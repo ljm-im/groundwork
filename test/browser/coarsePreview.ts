@@ -49,6 +49,12 @@ export async function checkCoarsePreview(url: string) {
         await mouse("mousePressed", x, y);
         for (const dx of [16, 32, 48]) await mouse("mouseMoved", x + dx, y);
         await wait(() => document.querySelector("#mode-hint .hint-text")?.textContent === "拖动中按 0.4 m 间距预览");
+        assert(await evaluate(async () => {
+            const bar = document.querySelector("#mode-hint")!, box = bar.getBoundingClientRect();
+            window.dispatchEvent(new PointerEvent("pointermove", { pointerType: "mouse", clientX: box.x + 5, clientY: box.y + 5 }));
+            await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+            return !bar.hasAttribute("aria-describedby") && !document.querySelector("[data-mode-hint-details]:popover-open");
+        }));
         const live = await evaluate(() => Number(document.querySelector("[data-input=A] .numeric-face")?.textContent?.trim()));
         await wait(value => document.querySelector<HTMLCanvasElement>("#map")?.dataset.terrainCells === "90000" &&
             window.previewFrames.at(-1)?.height === value, live);

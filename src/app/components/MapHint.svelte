@@ -23,18 +23,12 @@
 {/snippet}
 
 <div class="hint-area" bind:this={area}>
-    <div id="mode-hint" class="map-chip" bind:this={chip}>
+    <div id="mode-hint" class="map-chip" role="group" aria-label={hasMore ? "更多操作" : undefined}
+        aria-describedby={hasMore ? id : undefined} hidden={!visible.length} bind:this={chip}>
         {#each visible as item (item.text)}{@render entry(item)}{/each}
-        {#if hasMore}
-            <button class="hint-more" aria-label="更多操作" aria-expanded={open} aria-controls={id} data-tip="更多操作"
-                onfocus={() => focused = true} onblur={() => focused = false} onclick={() => focused = true} onkeydown={keydown}>
-                <Icon name="more" />
-            </button>
-        {/if}
     </div>
     <div class="hint-measure" aria-hidden="true" bind:this={measure}>
         {#each primary as item (item.text)}{@render entry(item)}{/each}
-        <span class="hint-more"><Icon name="more" /></span>
     </div>
     <div {id} class="popup hint-details" data-mode-hint-details popover="manual" bind:this={popup}>
         <ul aria-label="更多操作">
@@ -60,6 +54,7 @@
         height: 24px;
         padding-inline: var(--space-2);
     }
+    #mode-hint[hidden] { display: none; }
     .hint-measure {
         position: absolute;
         inset-inline-start: 0;
@@ -71,7 +66,7 @@
     .hint-entry, .hint-glyphs { white-space: nowrap; }
     .hint-mouse { display: inline-flex; }
     .mouse-name { position: absolute; width: 1px; height: 1px; clip-path: inset(50%); overflow: hidden; }
-    .hint-glyphs :global(svg.icon), .hint-more :global(svg.icon) { width: 14px; height: 14px; }
+    .hint-glyphs :global(svg.icon) { width: 14px; height: 14px; }
     kbd {
         display: inline-grid;
         place-items: center;
@@ -84,19 +79,6 @@
         font: inherit;
         color: var(--text);
     }
-    .hint-more {
-        display: inline-grid;
-        place-items: center;
-        flex: none;
-        width: 18px;
-        height: 18px;
-        min-height: 18px;
-        padding: 0;
-        border: 0;
-        background: transparent;
-        color: var(--text-secondary);
-    }
-    button.hint-more { pointer-events: auto; }
     .hint-details {
         width: max-content;
         padding: var(--space-2);
@@ -128,9 +110,9 @@
     let { items, chip = $bindable() }: { items: readonly HintItem[]; chip?: HTMLDivElement } = $props();
     let area: HTMLDivElement, measure: HTMLDivElement, popup: HTMLDivElement;
     let primary = $derived(items.filter(item => item.primary));
-    let count = $state(0), hovered = $state(false), focused = $state(false);
-    let visible = $derived(primary.slice(0, count)), hasMore = $derived(visible.length < items.length);
-    let open = $derived(hasMore && (hovered || focused));
+    let count = $state(0), hovered = $state(false);
+    let visible = $derived(primary.slice(0, count)), hasMore = $derived(!!visible.length && visible.length < items.length);
+    let open = $derived(hasMore && hovered);
 
     function fit() {
         if (!chip || !area || !measure) return;
@@ -138,14 +120,12 @@
         const chrome = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) +
             parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth);
         const widths = Array.from(measure.children, el => el.getBoundingClientRect().width);
-        const button = widths.pop() ?? 0;
-        let total = widths.reduce((sum, width) => sum + width, 0);
-        let next = primary.length;
-        while (next > 0) {
-            const more = next < items.length;
-            const width = chrome + total + (more ? button : 0) + spacing * (next - 1 + +more);
-            if (width <= area.clientWidth) break;
-            total -= widths[--next] ?? 0;
+        const available = area.getBoundingClientRect().width;
+        let total = chrome, next = 0;
+        for (const width of widths) {
+            total += width + (next ? spacing : 0);
+            if (total > available) break;
+            next++;
         }
         count = next;
     }
@@ -169,19 +149,14 @@
         if (!event.relatedTarget) hovered = false;
     }
     function press(event: PointerEvent) {
-        if (!(event.target instanceof Element) || !event.target.closest(".hint-more, .hint-details")) dismiss();
+        if (!(event.target instanceof Element) || !popup.contains(event.target)) dismiss();
     }
     function dismiss() {
-        hovered = focused = false;
-    }
-    function keydown(event: KeyboardEvent) {
-        if (event.key !== "Escape" || !open) return;
-        event.preventDefault();
-        event.stopPropagation();
-        dismiss();
+        hovered = false;
     }
     $effect(() => {
-        fit();
+        if (primary.length) fit();
+        else count = 0;
     });
     $effect(() => {
         if (open) {

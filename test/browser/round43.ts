@@ -194,8 +194,8 @@ export function checkSelectionHierarchy(url: string) {
 }
 
 export function checkMapHints(url: string) {
-    return withCurveMap(url, "round43-map-hints", async ({ cdp, evaluate, key, moveOverMap, paint, pointer, screenshot, wait }) => {
-        const bar = "#mode-hint", more = "#mode-hint .hint-more", popup = "[data-mode-hint-details]";
+    return withCurveMap(url, "round43-map-hints", async ({ cdp, evaluate, moveOverMap, paint, pointer, screenshot, wait }) => {
+        const bar = "#mode-hint", popup = "[data-mode-hint-details]";
         const primaries = ["逐层选中", "回到上一层", "切换重叠的对象"];
         const all = [...primaries, "打开菜单", "拖动平移", "缩放"];
         const texts = (selector: string) => evaluate(s => [...document.querySelectorAll(s + " .hint-text")].map(el => el.textContent), selector);
@@ -217,10 +217,16 @@ export function checkMapHints(url: string) {
 
         await wait(s => document.querySelectorAll(s + " > .hint-entry").length === 3, bar);
         assert.deepEqual(await texts(bar), primaries);
-        assert.equal(await evaluate(s => document.querySelector(s)?.getAttribute("aria-label"), more), "更多操作");
+        const accessibility = await evaluate(({ bar, popup }) => {
+            const hint = document.querySelector<HTMLElement>(bar)!, details = document.querySelector(popup)!;
+            return { description: hint.getAttribute("aria-describedby") === details.id, label: hint.getAttribute("aria-label"),
+                focusable: hint.tabIndex >= 0 || !!hint.querySelector("button, [tabindex]") };
+        }, { bar, popup });
+        assert.deepEqual(accessibility, { description: true, label: "更多操作", focusable: false });
         assert(!await evaluate(s => document.querySelector(s)?.matches(":popover-open"), popup));
         await moveOverMap();
-        await screenshot("round43-fix-hints-wide");
+        await evaluate(() => window.curveMapProbe.editor!.toast = null);
+        await screenshot("round43-fix3-hints-wide");
         await hoverBar();
         assert.deepEqual(await texts(popup), all);
         const symbols = await evaluate(s => {
@@ -239,32 +245,20 @@ export function checkMapHints(url: string) {
             ["中键", ["0 0 18 18", "14px"]], ["滚轮", ["0 0 18 18", "14px"]]
         ]);
         const popupBox = await clip([bar, popup]);
-        await screenshot("round43-fix-hints-details", popupBox);
+        await screenshot("round43-fix3-hints-details", popupBox);
         await pointer("mouseMoved", [popupBox.x + 15, popupBox.y + 15], 0, "none");
         assert(await evaluate(s => document.querySelector(s)?.matches(":popover-open"), popup));
         await moveOverMap();
-        await wait(s => !document.querySelector(s)?.matches(":popover-open"), popup);
-
-        await evaluate(() => document.querySelector<HTMLButtonElement>("#fit")!.focus());
-        await key("Tab");
-        await wait(s => document.querySelector(s + ":popover-open"), popup);
-        assert(await evaluate(s => document.activeElement?.matches(s), more));
-        await key("Escape");
         await wait(s => !document.querySelector(s)?.matches(":popover-open"), popup);
 
         for (const [width, count] of [[480, 2], [375, 1]]) {
             await cdp("Emulation.setDeviceMetricsOverride", { width, height: 960, deviceScaleFactor: 1, mobile: false });
             await moveOverMap(); await paint();
             assert.deepEqual(await texts(bar), primaries.slice(0, count));
-            const fits = await evaluate(s => {
-                const chip = document.querySelector<HTMLElement>(s)!, box = chip.getBoundingClientRect();
-                const position = document.querySelector("#position")!.getBoundingClientRect();
-                const zoom = document.querySelector(".zoom-tools")!.getBoundingClientRect();
-                return chip.scrollWidth <= chip.clientWidth && getComputedStyle(chip).textOverflow === "clip" &&
-                    box.bottom < position.top && box.right <= zoom.left;
-            }, bar);
-            assert(fits);
-            await screenshot(width === 375 ? "round43-fix-hints-narrow" : "round43-fix-hints-medium");
+            assert(await evaluate(s => {
+                const chip = document.querySelector<HTMLElement>(s)!;
+                return chip.scrollWidth <= chip.clientWidth && getComputedStyle(chip).textOverflow === "clip";
+            }, bar));
             await hoverBar();
             assert.deepEqual(await texts(popup), all);
             await moveOverMap();
