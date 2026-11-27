@@ -96,6 +96,8 @@ export function checkGeometryObjects(url: string) {
         await click("[data-tab=inputs]");
         assert(!await visible(list(shapeId)));
         const b = await rectangle([5, -26], [18, -12]);
+        await click("[data-tab=layers]");
+        await click("input[data-layer=geoNodes]");
         await selectOutline(b);
         const other = literalCurve(await authored(), shapeId);
         const pick = "#properties [aria-label=选取或重画轮廓]";

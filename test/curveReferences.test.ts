@@ -409,6 +409,7 @@ test("A map curve pick uses the same edit as the geometry row and Ctrl starts a 
     await editor.navigate(false);
     assert.equal(serializeDesign(editor.project.design), before);
 
+    editor.layers.geometry = true;
     const at: Point = [15, 10], click = { ctrlKey: false, shiftKey: false, altKey: false };
     editor.select(selection("T"));
     editor.pickOrRedrawCurve(key, "曲线");

@@ -69,7 +69,7 @@ export function strokeHighlight(ctx: CanvasRenderingContext2D, colors: MapColors
     ctx.restore();
 }
 
-export function showsParameterGeometry(view: MapView, node: PlacedGeoNode) {
+export function showsParameterGeometry(view: Pick<MapView, "layers" | "selectionPath">, node: PlacedGeoNode) {
     const selection = view.selectionPath?.[0];
     return selection?.kind === "geoNode" && selection.id === node.id || view.layers.geoNodes && !node.disabled;
 }
@@ -136,9 +136,13 @@ function drawCurveHighlight(map: ProjectMap, curve: Curve, colors: MapColors, st
     }, "dashed" in layer && layer.dashed);
 }
 
-function drawCurveCandidate(map: ProjectMap, curve: Curve, colors: MapColors, tolerance: number, hovered: boolean) {
-    if (hovered) drawCurveHighlight(map, curve, colors, "hovered", tolerance, { kind: "geometry" });
-    else strokeEdges(map, flattenPath(curve, tolerance), colors.parameterGeometry, overlay.parameterWidth);
+function drawingDraft(view: MapView) {
+    return view.draft?.curve?.pick ? undefined : view.draft;
+}
+
+function hoveredCurvePlacements(view: MapView) {
+    return view.draft?.curve?.pick ? view.curveChoices?.find(choice => choice.key === view.hoveredCurveChoice)?.placements ?? [] :
+        view.referenceCurves ?? [];
 }
 
 type Placement = Pick<CurvePlacement, "id" | "offset">;
@@ -148,8 +152,8 @@ function samePlacement(a: Placement, b: Placement) {
 }
 
 function highlightedPlacements(view: MapView): readonly Placement[] {
-    if (view.draft) return [];
-    const references = view.referenceCurves ?? [];
+    if (drawingDraft(view)) return [];
+    const references = hoveredCurvePlacements(view);
     const { root, holder, part } = selectionLayers(view.hoverPath);
     if (part) return references;
     if (root?.kind === "geometry") return [...references, root];
@@ -181,16 +185,16 @@ export function drawParameterGeometry(map: ProjectMap, view: MapView, colors: Ma
         if (paths) paths.add(holder.index);
         else hiddenPaths.set(id, new Set([holder.index]));
     }
-    const hoverPart = selectionLayers(view.hoverPath).part;
+    const hoverPart = selectionLayers(view.hoverPath).part, drawing = drawingDraft(view);
     ctx.save();
     for (const owner of d.geoNodes) {
         const visible = showsParameterGeometry(view, owner), preview = view.dragNodes?.get(owner.id);
         if (!visible && (!preview || owner.disabled)) continue;
         const n = preview?.node ?? owner;
-        const selected = !view.draft && focusedTarget(view.selectionPath, n);
-        const hovered = !view.draft && focusedTarget(view.hoverPath, n);
+        const selected = !drawing && focusedTarget(view.selectionPath, n);
+        const hovered = !drawing && focusedTarget(view.hoverPath, n);
         for (const [i, curve] of pathEntries(n)) {
-            if (i >= 0 || view.draft?.curve?.pick || !visible && !preview?.paths.has(i) || hiddenPaths.get(owner.id)?.has(i) ||
+            if (i >= 0 || !visible && !preview?.paths.has(i) || hiddenPaths.get(owner.id)?.has(i) ||
                 selected && selected.kind === "curve" && selected.index === i) continue;
             const edges = flattenPath(curve, tolerance);
             const hoveredSegment = hovered && hovered.kind === "curve" && hovered.index === i && hoverPart?.kind === "segment" && !view.hoverHandle;
@@ -241,7 +245,7 @@ function shapeAt(view: MapView, path: SelectionPath, preview: boolean): ({ index
 
 export function visibleControlCurves(view: MapView, preview = false): { curve: Curve; index: number; holder?: HolderLayer }[] {
     const path = view.selectionPath;
-    if (!path || view.draft) return [];
+    if (!path || drawingDraft(view)) return [];
     const { root, holder } = selectionLayers(path);
     if (root?.kind === "geoNode" && !holder) {
         const construction = placedNode(view, root.id, preview)?.construction;
@@ -306,11 +310,11 @@ function drawSelectedControls(map: ProjectMap, view: MapView, path: SelectionPat
 }
 
 export function drawGeoOverlay(map: ProjectMap, view: MapView, colors: MapColors) {
-    const ctx = map.ctx, scale = map.scale, d = view.project.design, draft = view.draft;
+    const ctx = map.ctx, scale = map.scale, d = view.project.design, draft = drawingDraft(view);
     const dot = (point: Point, state?: HandleState, control = false) => drawHandle(ctx, colors, ...map.screen(point), state, control);
     ctx.save();
     const active = view.selectionPath, hover = view.hoverPath;
-    if (draft?.owner && !draft.curve?.pick) {
+    if (draft?.owner) {
         const owner = d.geoNodes.find(n => n.id === draft.owner);
         if (owner?.construction.type === "outline") for (const path of owner.construction.outlines)
             strokeEdges(map, flattenPath(path, .6 / scale), colors.accent, overlay.selectedWidth);
@@ -334,16 +338,9 @@ export function drawGeoOverlay(map: ProjectMap, view: MapView, colors: MapColors
         if (hover && hoverIsPart && !hoverIsActive && hovered.part?.kind === "segment" && !view.hoverHandle)
             drawSelection(map, view, hover, colors, "hovered", tolerance);
         if (active) drawSelectedControls(map, view, active, colors);
-        for (const { curve } of view.referenceCurves ?? []) drawCurveHighlight(map, curve, colors, "hovered", tolerance, { kind: "geometry" });
+        for (const { curve } of hoveredCurvePlacements(view)) drawCurveHighlight(map, curve, colors, "hovered", tolerance, { kind: "geometry" });
     }
-    if (draft?.curve?.pick) {
-        const tolerance = displayCurveTolerance(d.grid.step / 8, scale), choices = view.curveChoices ?? [];
-        for (const { key, placements } of choices) if (key !== view.hoveredCurveChoice)
-            for (const { curve } of placements) drawCurveCandidate(map, curve, colors, tolerance, false);
-        for (const { key, placements } of choices) if (key === view.hoveredCurveChoice)
-            for (const { curve } of placements) drawCurveCandidate(map, curve, colors, tolerance, true);
-    }
-    else if (draft) {
+    else {
         if (draft.tool === "strip") {
             strokeEdges(map, draft.spine ?? [], colors.accent, overlay.selectedWidth);
             const upper = d.geoNodes.findLast(n => draft.ids.includes(n.id));

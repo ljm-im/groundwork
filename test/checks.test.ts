@@ -225,9 +225,11 @@ test("Selection and hover use the same strokes at each map layer", t => {
     const draft: GeoDraft = { tool: "redrawCurve", ids: [], nodes: [], anchors: [], reverse: false,
         curve: { key: "A", name: "A", original: closed, pen: "boundary", requiredClosed: true, pick: { label: "轮廓" } } };
     const choices = [{ key: "A", placements: [placed] }, { key: "B", placements: [loose] }];
-    draw({ draft, curveChoices: choices });
-    assert.deepEqual(fills, []);
-    assert.equal(strokes.filter(s => s.color === colors.parameterGeometry && s.width === 2 && !s.dash.length).length, 2);
+    const displayed = { selectionPath: outline, layers: { ...layers, geoNodes: true } };
+    draw(displayed);
+    const before = { fills: fills.slice(), strokes: strokes.slice(), dots: dots.slice() };
+    draw({ ...displayed, draft, curveChoices: choices });
+    assert.deepEqual({ fills, strokes, dots }, before);
     for (const { key, placements: [placement] } of choices) {
         draw({ draft, curveChoices: choices, hoveredCurveChoice: key });
         assert.deepEqual(fills, []);

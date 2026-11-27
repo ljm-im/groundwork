@@ -8,6 +8,7 @@ import { History } from "../src/core/edit/history.ts";
 import { commitControl, controlPreview, geoControls, geometryPath, insertCurveNode } from "../src/core/edit/geoControls.ts";
 import { holderLayer, holderTarget, selectionLayers, type SelectionPath } from "../src/core/edit/selection.ts";
 import { parseDesign } from "../src/core/design/model.ts";
+import { curveKey, geometrySlot } from "../src/core/design/curveReferences.ts";
 import { type Design } from "../src/core/design/v5.ts";
 import { drawingHint, hints, numberPreviewHint, positionReadings, readingRange } from "../src/app/state/mapText.ts";
 import { controlSnap, sectionSnap } from "../src/app/state/mapSnaps.ts";
@@ -1104,6 +1105,58 @@ test("Curve picking covers faces from smallest to largest and accepts open lines
     assert.equal(map.pickCurve(choices, [8, 8], .1), "large");
     assert.equal(map.pickCurve(choices, [0, 21.99], .1), "line");
     assert.equal(map.pickCurve(choices, [0, 22.01], .1), undefined);
+});
+
+test("Curve picking uses only the visible placements and excludes the original curve", async () => {
+    const { Editor } = await import("../src/app/state/session.svelte.ts");
+    const design = syntheticDesign("ground"), editor = new Editor(testTerrainClient());
+    const ridge = (a: Point, b: Point) => ({ curve: withNodeSlope(openCurve([{ p: a, h: 8 }, { p: b, h: 9 }]), 2) });
+    const mountain = addLayer(design, "M", rect(-45, -21, -22, 8), {
+        type: "mountain", ridges: [ridge([-41, -10], [-28, -10]), ridge([-42, 0], [-26, 0])], valleys: [], peaks: []
+    });
+    const free = rect(-9, 22, 1, 30).outlines[0].curve, freeId = "free";
+    design.geometry[freeId] = { label: "独立闭合曲线", curve: free, independent: true };
+    const hidden = addLayer(design, "H", { type: "outline", outlines: [{ curve: freeId, offset: [25, 0] }] }, {
+        type: "mountain", ridges: [ridge([18, 26], [24, 26])], valleys: [], peaks: []
+    });
+    const disabled = addLayer(design, "D", { type: "outline", outlines: [{ curve: freeId, offset: [-19, 8] }] }, { type: "flat", amount: 1 });
+    disabled.outline = disabled.disabled = true;
+    const painted = addLayer(design, "P", rect(10, -26, 24, -15), { type: "flat", amount: 1 });
+    painted.outline = true;
+    design.geoNodes.push(mountain, hidden, disabled, painted);
+    const project = new Project(design);
+    const map: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), { width: 1000, height: 700, canvas: { focus() {} } });
+    map.fit(project.terrain, false);
+    Object.assign(editor, { project: testProjectModel(project), map });
+    editor.select({ kind: "geoNode", id: mountain.id });
+    const from = geometrySlot(design, mountain.id, -1)!;
+    editor.pickOrRedrawCurve(from.key, "山脊线");
+
+    const sourceKey = (id: string, index: number) => editor.curves.source(geometrySlot(design, id, index)!).slot.key;
+    const freeKey = curveKey(freeId), choice = (key: string) => editor.curveChoices.find(candidate => candidate.key === key);
+    const pick = (point: Point) => map.pickCurve(editor.curveChoices, point, design.grid.step / 8);
+    const original: Point = [-4, 25], placed: Point = [21, 25], hiddenDisabled: Point = [-23, 33];
+
+    assert(!choice(sourceKey("M", -1)));
+    assert(choice(sourceKey("M", -2)));
+    assert(choice(sourceKey("P", 0)));
+    assert(!choice(sourceKey("H", -1)));
+    assert.deepEqual([pick(original), pick(placed), pick(hiddenDisabled)], [undefined, undefined, undefined]);
+
+    editor.layers.geometry = true;
+    assert.deepEqual(choice(freeKey)?.placements.map(p => p.offset), [undefined]);
+    assert.deepEqual([pick(original), pick(placed)], [freeKey, undefined]);
+
+    editor.layers.geometry = false;
+    editor.layers.geoNodes = true;
+    assert(choice(sourceKey("H", -1)));
+    assert(!choice(sourceKey("M", -1)));
+    assert.deepEqual(choice(freeKey)?.placements.map(p => p.offset), [[25, 0]]);
+    assert.deepEqual([pick(original), pick(placed), pick(hiddenDisabled)], [sourceKey("G", 0), freeKey, sourceKey("G", 0)]);
+
+    editor.layers.geometry = true;
+    assert.deepEqual(choice(freeKey)?.placements.map(p => p.offset), [undefined, [25, 0]]);
+    editor.dispose();
 });
 
 test("Coordinate slots use design grid and sample bounds while longer readings stay intact", () => {

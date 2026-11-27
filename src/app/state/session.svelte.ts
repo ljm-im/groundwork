@@ -37,7 +37,8 @@ import { contextMenuPoint } from "./popup.ts";
 import { penNodeGroup, readPenNodes, savePenNodes, type PenNodeMode } from "./penNodes.ts";
 import { objectIssues } from "../../core/checks/issues.ts";
 import { holderPropertyTab, propertyTabs, tabForSelection, type PropertyTab, type SubitemGroup } from "./inspector.ts";
-import { ProjectMap, type CurveChoice, type CurvePlacement, type LabelPreview, type LabelTarget, type MapView } from "../../render/map.ts";
+import { hasSamples, ProjectMap, showsGeoRegion, type CurveChoice, type CurvePlacement, type LabelPreview, type LabelTarget, type MapView } from "../../render/map.ts";
+import { showsParameterGeometry } from "../../render/geoOverlay.ts";
 import { DesignFiles, type FileAction, type SaveState } from "./files.ts";
 import { errorText, type Design, type Expression, type Gesture, type Issue, type Layer, type Mark, type Point, type Selection, type Tab, type Tool } from "../types.ts";
 
@@ -119,25 +120,36 @@ export class Editor {
         return slot && !slot.holder ? this.curvePlacements(slot) : [];
     });
     curveChoices = $derived.by((): CurveChoice[] => {
-        const draft = this.geoDraft?.curve;
-        if (!draft?.pick) return [];
+        const draft = this.geoDraft?.curve, project = this.mapProject;
+        if (!draft?.pick || !project) return [];
         const graph = this.curves, from = graph.slots.get(draft.key)!;
-        const { id } = graph.source(from);
+        const { id } = graph.source(from), empty = !hasSamples(project.terrain);
+        const display = { layers: this.layers, selectionPath: this.selectionPath };
+        const { root, holder } = selectionLayers(display.selectionPath);
+        const nodes = new Map(project.design.geoNodes.map(n => [n.id, n]));
         return [...graph.slots.values()].flatMap(slot => {
             if (slot.holder || slot.id === id || !graph.canUse(from, slot)) return [];
-            const placements = graph.curvePlacements(slot.id);
-            if (!placements.length && !this.project.design.geometry[slot.id].independent) return [];
-            return [{ key: slot.key, placements: this.curvePlacements(slot, placements) }];
+            const visible = graph.curvePlacements(slot.id).filter(placement => {
+                const node = nodes.get(placement.location.id);
+                if (!node || !placement.active) return false;
+                if (placement.index < 0) return showsParameterGeometry(display, node);
+                return showsGeoRegion(node, display.layers, empty) || root?.kind === "geoNode" && root.id === node.id &&
+                    (!holder || holder.group === "outlines" && holder.index === placement.index);
+            });
+            const ownPosition = display.layers.geometry && !!geometryAt(project.design, slot.id)?.independent;
+            const placements = this.curvePlacements(slot, visible, ownPosition);
+            return placements.length ? [{ key: slot.key, placements }] : [];
         });
     });
-    private curvePlacements(slot: Extract<CurveSlot, { id: string }>, placements = this.curves.curvePlacements(slot.id)) {
+    private curvePlacements(slot: Extract<CurveSlot, { id: string }>, placements = this.curves.curvePlacements(slot.id), ownPosition = !placements.length) {
         const graph = this.curves;
         const byOffset = new Map<string, CurvePlacement>();
+        if (ownPosition) byOffset.set("0,0", { id: slot.id, curve: slot.value });
         for (const holder of placements) {
             const offset = graph.offset(graph.ofHolder(holder)), key = offset.join(",");
             if (!byOffset.has(key)) byOffset.set(key, { id: slot.id, curve: translateCurve(slot.value, offset), offset });
         }
-        return byOffset.size ? [...byOffset.values()] : [{ id: slot.id, curve: slot.value }];
+        return [...byOffset.values()];
     }
     curvePath = $derived.by(() => {
         const { root, holder } = this.layersSelected;

@@ -295,6 +295,10 @@ export function hasSamples(terrain: Terrain) {
     return sampled;
 }
 
+export function showsGeoRegion(node: PlacedGeoNode, layers: MapView["layers"], empty: boolean) {
+    return empty || !node.disabled && !!(layers.geoNodes || node.outline || node.fill);
+}
+
 export function clampMarkPoint([x, y]: Point, [left, top, right, bottom]: Box, width: number, height: number, obstacles: readonly Box[] = []): Point {
     const fit = (value: number, low: number, high: number) => low <= high ? clamp(value, low, high) : (low + high) / 2;
     const fitX = (v: number) => fit(v, -left, width - right), fitY = (v: number) => fit(v, -top, height - bottom);
@@ -508,7 +512,7 @@ export class ProjectMap {
                 }
             }
             const shape = terrain.regions.get(node.id)?.shape, enabled = !node.disabled || empty;
-            const canHitBoundary = selected || empty || enabled && (view.layers.geoNodes || node.outline || node.fill);
+            const canHitBoundary = selected || showsGeoRegion(node, view.layers, empty);
             let outline: MapHit | undefined, area = Infinity, edgeGap = Infinity;
             if (node.construction.type === "outline" && (selected || !parameter) &&
                 (!shape || nearBox(p, shape.box, 7 / scale) || active.holder?.group === "outlines" && selected)) {
@@ -630,7 +634,7 @@ export class ProjectMap {
             if (n.disabled && !empty) continue;
             const preview = dragNodes?.get(n.id), moved = preview && hasOutlinePreview(preview.paths) ?
                 previewOutline(preview.node.construction, g.step / 8) : undefined;
-            if (!moved && !empty && !n.fill && !n.outline && !view.layers.geoNodes) continue;
+            if (!moved && !showsGeoRegion(n, view.layers, empty)) continue;
             const region = t.regions.get(n.id)!;
             if (moved) movedOutlines!.set(n.id, moved);
             if (n.fill && !empty) {

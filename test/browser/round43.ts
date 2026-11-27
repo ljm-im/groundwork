@@ -11,9 +11,11 @@ export function checkSelectionHierarchy(url: string) {
     const secondOutline = rect(1, -32, 11, -20).outlines[0];
     landform.construction.outlines.push(fixtureCurve(design, secondOutline));
     const ridge = openCurve([{ p: [-25, 16], h: 8 }, { p: [-17, 22], h: 9 }, { p: [-9, 16], h: 8 }], "corner", "ridge-");
+    const replacement = addLayer(design, "B", rect(10, 7, 28, 28), { type: "flat", amount: 2 });
+    replacement.outline = true;
     design.geoNodes.push(
         addLayer(design, "M", rect(-33, 6, -4, 34), { type: "mountain", ridges: [{ curve: withNodeSlope(ridge, 2) }], valleys: [], peaks: [] }),
-        addLayer(design, "B", rect(10, 7, 28, 28), { type: "flat", amount: 2 })
+        replacement
     );
     design.marks.push(fixtureMark(design, { id: "P", label: "标记 A", kind: "text", point: [32, -12], follow: "map" }));
     const curveId = (d: Design, id: string) => {
@@ -179,13 +181,12 @@ export function checkSelectionHierarchy(url: string) {
         await click(curveInput);
         const pick = ".property-title button[aria-label=选取或重画轮廓]";
         await click(pick); await paint();
-        assert.deepEqual(await fills(), []);
+        assert.deepEqual(await fills(), [.1]);
         await move([18, 16]);
-        assert.deepEqual(await fills(), []);
+        assert.deepEqual(await fills(), [.1]);
         await hoverStroke(4);
-        assert((await strokes()).some(s => s.color === mapColors.light.parameterGeometry && s.width === 2 && !s.dash.length));
         await move([21, 19]);
-        assert.deepEqual(await fills(), []);
+        assert.deepEqual(await fills(), [.1]);
         await hoverStroke(4);
         await tap([21, 19]);
         await saved(); await paint();
@@ -364,6 +365,74 @@ export function checkHoverStyles(url: string) {
         await verifyCurve(outline.nodes[0].p, 4);
         await capture("closed-outline", inside, 208, 168);
         await key("Escape");
+    }, design);
+}
+
+export function checkVisibleCurvePicker(url: string) {
+    const design = syntheticDesign();
+    const other = addLayer(design, "B", rect(-34, 8, -12, 30), { type: "flat", amount: 3 });
+    other.outline = true;
+    design.geoNodes.push(other);
+    const free = rect(16, 14, 30, 27).outlines[0].curve;
+    design.geometry.freeClosed = { label: "独立闭合曲线", curve: free, independent: true };
+    return withCurveMap(url, "round43-visible-picker", async ({ authored, click, disk, evaluate, frame, key, paint, pixels, pointer, saved, screenshot, tap, text }) => {
+        const pick = ".property-title button[aria-label=选取或重画轮廓]", freePoint: Point = [21, 20];
+        const move = async (p: Point) => {
+            await pointer("mouseMoved", pixels(await frame(), p), 0, "none");
+            await paint();
+        };
+        const openOutline = async () => {
+            await click("[data-tab=terrain]");
+            await click("[data-geo-node=T]");
+            await click("[data-property-tab=region]");
+            await click("#properties .geometry-box[aria-label=曲线]");
+            await pointer("mouseMoved", [16, 18], 0, "none");
+            await paint();
+        };
+        const hovered = () => evaluate(() => window.curveMapProbe.editor!.geoDraft?.curve?.pick?.hovered);
+        const canvasImage = () => evaluate(() => document.querySelector<HTMLCanvasElement>("#map")!.toDataURL());
+        const verifyHighlight = async () => {
+            const strokes = await evaluate(() => window.curveMapProbe.strokes);
+            assert.deepEqual(strokes.filter(s => s.alpha === overlay.segmentHoverOpacity).map(s => [s.width, s.color, s.dash]),
+                [[4, mapColors.light.accent, []]]);
+            assert.deepEqual(await evaluate(() => window.curveMapProbe.geometryFills), [.1]);
+        };
+
+        await openOutline();
+        const original = await disk();
+        await click(pick);
+        await move(freePoint);
+        assert.equal(await hovered(), undefined);
+        await tap(freePoint);
+        assert.match(await text(".drawing-status strong"), /^重画“/);
+        assert.equal(await evaluate(() => window.curveMapProbe.editor!.geoDraft?.nodes.length), 1);
+        await key("Escape");
+        assert.equal(await disk(), original);
+
+        await click("[data-tab=layers]");
+        await click("input[data-layer=geometry]");
+        await openOutline();
+        const before = await canvasImage();
+        await screenshot("round43-fix6-before-picking");
+        await click(pick); await paint();
+        assert.match(await text(".drawing-status strong"), /^选取或重画/);
+        assert.equal(await hovered(), undefined);
+        assert((await canvasImage()) === before, "Entering the picker preserves the canvas pixel for pixel");
+        await screenshot("round43-fix6-picking-idle");
+
+        await move([-21, 19]);
+        assert(await hovered());
+        await verifyHighlight();
+        await screenshot("round43-fix6-picking-hovered");
+
+        await move(freePoint);
+        assert.equal(await hovered(), "curve:freeClosed");
+        await verifyHighlight();
+        await tap(freePoint);
+        await saved(); await paint();
+        const selected = (await authored()).geoNodes.find(n => n.id === "T")!.construction;
+        assert(selected.type === "outline" && "curve" in selected.outlines[0]);
+        assert.equal(selected.outlines[0].curve, "freeClosed");
     }, design);
 }
 
