@@ -193,7 +193,7 @@ export function checkGeometryObjects(url: string) {
         await key("Delete");
         assert.match(await text("#remove-dialog"), /测点 A/);
         await click("#remove-dialog button[value=cancel]");
-        await click("[data-property-tab=general]");
+        await click("[data-property-tab=general]"); await paint();
         const clip = await evaluate(({ position, light, dark }) => {
             const map = window.curveMapProbe.editor!.map, [x, y] = map.screen(position);
             const bounds = map.canvas.getBoundingClientRect(), { dpr } = map;
