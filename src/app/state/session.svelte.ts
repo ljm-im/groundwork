@@ -969,8 +969,8 @@ export class Editor {
         if (this.selection?.kind !== selection.kind || this.selection.id !== selection.id) this.select(selection);
         this.selectControl(control);
     }
-    stepCurvePart(direction: -1 | 1) {
-        const control = this.vertex, selection = this.selection;
+    stepCurvePart(direction: -1 | 1, control = this.vertex) {
+        const selection = this.selection;
         const owner = this.geometryOwner(selection);
         if (!owner || control?.role !== "vertex" && control?.role !== "segment") return;
         const curve = geometryPath(owner, control.path);

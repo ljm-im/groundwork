@@ -65,6 +65,17 @@ export function checkGeometryObjects(url: string) {
         assert(created.geometry[listedId].independent && literalCurve(created, listedId).closed);
         assert(await visible(list(listedId)));
         assert(!await visible("#properties .side-tabs"));
+        const nodeTitle = "[data-curve-node] .subitem-label", segmentTitle = "[data-curve-segment] .subitem-label";
+        assert.equal(await text(nodeTitle), "节点 1");
+        assert.equal(await text(segmentTitle), "线段 1");
+        await click("[data-curve-node] [aria-label=下一个节点]"); await paint();
+        assert.equal((await frame()).vertex?.index, 1);
+        assert.equal(await text(nodeTitle), "节点 2");
+        assert.equal(await text(segmentTitle), "线段 1");
+        await click("[data-curve-segment] [aria-label=下一个线段]"); await paint();
+        assert.equal((await frame()).vertex?.role, "segment");
+        assert.equal(await text(nodeTitle), "节点 2");
+        assert.equal(await text(segmentTitle), "线段 2");
 
         await selectOutline("T");
         await useCurve(listedId);

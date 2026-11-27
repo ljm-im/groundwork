@@ -300,8 +300,8 @@ export function checkSharedCurves(url: string) {
 
         await click("[data-geo-node=S]"); await click("[data-property-tab=function]");
         await click(".part:has([aria-label=添加坡线]) .subitem-toggle");
-        await click("[aria-label=坡线]"); await tap(slopePoints[2]);
-        await click("[data-curve-node] [aria-label=继续画]");
+        await click("[aria-label=坡线]"); await tap(slopePoints[2], 0, "right");
+        await click(".context-menu [data-option=continue-curve]");
         await tap([-18, 16], 2); await tap(slopePoints[0]); await saved(); await paint();
         const slope = owner(await authored(), "S").function;
         assert(slope.type === "slope" && slope.kind === "path");
