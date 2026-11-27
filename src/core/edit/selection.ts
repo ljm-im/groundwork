@@ -29,8 +29,15 @@ function sameLayer(a: SelectionPath[number], b: SelectionPath[number]) {
     return b.kind === a.kind && "id" in a && "id" in b && a.id === b.id;
 }
 
+export function commonSelectionLength(a: SelectionPath, b: SelectionPath) {
+    const limit = Math.min(a.length, b.length);
+    let length = 0;
+    while (length < limit && sameLayer(a[length], b[length])) length++;
+    return length;
+}
+
 export function includesSelection(path: SelectionPath, prefix: SelectionPath) {
-    return prefix.length <= path.length && prefix.every((layer, i) => sameLayer(layer, path[i]));
+    return commonSelectionLength(path, prefix) === prefix.length;
 }
 
 export function selectionPrefix(path: SelectionPath, length: number): SelectionPath {

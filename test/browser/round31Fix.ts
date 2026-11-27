@@ -295,8 +295,8 @@ export async function checkRound31Fix(url: string) {
         await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] });
         await wait(() => document.documentElement.dataset.theme === "dark");
         await moveMap(start);
-        assert.equal((await frame()).hoverPath?.length, 1);
-        await assertHandle(start, "normal", "dark");
+        assert.equal((await frame()).hoverPath?.length, 2);
+        await assertHandle(start, "hovered", "dark");
         await assertHandle(end, "selected", "dark");
         await cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] });
         await wait(() => document.documentElement.dataset.theme === "light");

@@ -11,7 +11,7 @@ import { bounds, clamp, distance, nearest } from "../core/math/geometry.ts";
 import { objectIssues } from "../core/checks/issues.ts";
 import { displayCurveTolerance, hitGeoControl, parameterPoints, pathEntries, type ControlPreview, type GeoControl } from "../core/edit/geoControls.ts";
 import { nearestSegment } from "../core/edit/paths.ts";
-import { holderForTarget, holderLayer, holderTarget, includesSelection, placementSelection, selectionLayers, selectionPrefix,
+import { commonSelectionLength, holderForTarget, holderLayer, holderTarget, includesSelection, placementSelection, selectionLayers, selectionPrefix,
     withCurvePart, type HolderLayer, type SelectionPath } from "../core/edit/selection.ts";
 import { flattenPath } from "../core/design/path.ts";
 import { insidePolygon, polygonArea } from "../core/math/polygon.ts";
@@ -76,7 +76,10 @@ export function nextMapHit(hits: Iterable<MapHit>, selection: SelectionPath | nu
         if (next) return { path: selectionPrefix(hit.path, 1) };
         if (!selection) break;
         if (alternate) next = hit.path[0].kind === selection[0].kind && hit.path[0].id === selection[0].id;
-        else if (includesSelection(hit.path, selection)) return { ...hit, path: selectionPrefix(hit.path, selection.length + 1) };
+        else {
+            const shared = commonSelectionLength(hit.path, selection);
+            if (shared) return { ...hit, path: selectionPrefix(hit.path, shared + 1) };
+        }
     }
     if (first) return { path: selectionPrefix(first.path, 1) };
 }

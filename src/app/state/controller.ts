@@ -3,7 +3,7 @@ import { commitFocusedInput, isEditableText } from "./pendingInput.ts";
 import { distance } from "../../core/math/geometry.ts";
 import { moveHandle, moveSection, sectionHandlePoint } from "../../core/edit/controls.ts";
 import { commitControl, controlPreview } from "../../core/edit/geoControls.ts";
-import { includesSelection, selectionLayers, type SelectionPath } from "../../core/edit/selection.ts";
+import { selectionLayers, type SelectionPath } from "../../core/edit/selection.ts";
 import { doubleClickTools, draftPointer, updatePreview } from "./geoTools.ts";
 import { controlSnap, sectionSnap, type SnapModifiers } from "./mapSnaps.ts";
 import { type GeoDraft } from "../../core/edit/types.ts";
@@ -92,9 +92,9 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
 
     function pick(screen: Point, alternate: boolean) {
         const view = editor.mapView!;
-        const current = view.selectionPath, hit = nextMapHit(map.objectHits(view, screen), current, alternate);
-        const advances = current && hit && hit.path.length > current.length && includesSelection(hit.path, current);
-        if (!alternate && (!advances || editor.tab === "issues") && hit?.path[0].kind !== "mark" && !selectionLayers(hit?.path).part) {
+        const hit = nextMapHit(map.objectHits(view, screen), view.selectionPath, alternate);
+        if (!alternate && (!hit || hit.path.length === 1 || editor.tab === "issues") &&
+            hit?.path[0].kind !== "mark" && !selectionLayers(hit?.path).part) {
             const issues = map.issueHits(view, screen);
             if (issues.length) return { issues };
         }

@@ -381,11 +381,12 @@ export async function checkCurveEditing(url: string) {
         await key("Escape"); await paint();
         assert.equal((await frame()).vertex, undefined);
         assert.equal((await frame()).selectionPath?.at(-1)?.kind, "geometry");
-        await click("[data-property-tab=region]");
+        await click("[data-property-tab=region]"); await paint();
         const boundaryTwo = ".subitem:has(> .subitem-heading .subitem-toggle span)";
         assert.deepEqual(await evaluate(s => [...document.querySelectorAll(s + " > .subitem-heading .subitem-toggle")]
             .map(el => [el.textContent?.trim(), el.getAttribute("aria-expanded")]), boundaryTwo), [["轮廓 1", "false"], ["轮廓 2", "false"]]);
-        await tap([29, 37]); await tapLayer([33, 31], "vertex", "M");
+        await click("[data-geo-node=M]"); await paint();
+        await tapLayer([33, 31], "vertex", "M");
         assert.deepEqual(await nodeTitles(), ["节点 1"]);
         assert(await evaluate(() => {
             const nested = document.querySelector("[data-curve-node]")?.parentElement?.closest(".subitem");

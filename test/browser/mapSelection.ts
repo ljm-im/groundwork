@@ -113,7 +113,7 @@ export async function checkMapSelection(url: string) {
             await key("Escape");
         }
     });
-    await withCurveMap(url, "map-object-selection", async ({ assertSectionStroke, authored, boundary, click, curve, drag, evaluate, frame, owner, paint, pixels, pointer: mouse, tap, tapLayer, text, translated, undo }) => {
+    await withCurveMap(url, "map-object-selection", async ({ assertSectionStroke, authored, boundary, click, curve, drag, evaluate, frame, key, owner, paint, pixels, pointer: mouse, tap, tapLayer, text, translated, undo }) => {
         const alt = 1;
         const original = await authored(), dx = 30 / (await frame()).scale;
         const overlap: Point = [-5, 1];
@@ -175,7 +175,8 @@ export async function checkMapSelection(url: string) {
         await click("[data-tab=terrain]"); await click("[data-geo-node=M]"); await paint();
         await tapLayer(originalLine.nodes[0].p, "vertex", "M");
         assert.equal((await frame()).vertex?.index, 0);
-        await tapLayer([-35, 25], "holder", "M");
+        await key("Escape"); await key("Escape"); await paint();
+        assert.equal((await frame()).selectionPath?.at(-1)?.kind, "holder");
         await drag([-35, 25]);
         current = await authored();
         assert.equal((await frame()).geometry?.index, -1);

@@ -106,9 +106,35 @@ test("Map face hits include holes while the terrain raster uses even-odd coverag
     const [hit] = map.objectHits(editor.mapView!, screen);
     assert.deepEqual(hit.path.slice(0, 2), [{ kind: "geoNode", id: "T" }, holderLayer("outlines", 1)]);
     for (const depth of [1, 2, 3, 3]) assert.equal(click()?.length, depth);
-    assert.deepEqual(click(map.screen([12, 0])), [hit.path[0]]);
+    assert.deepEqual(click(map.screen([12, 0])), [hit.path[0], holderLayer("outlines", 0)]);
     click();
     assert.deepEqual(click(screen, true), [{ kind: "geoNode", id: "G" }]);
+});
+
+const landform = { kind: "geoNode", id: "A" } as const;
+const outlineA: SelectionPath = [landform, holderLayer("outlines"), { kind: "geometry", id: "A" }];
+const nodeA: SelectionPath = [...outlineA, { kind: "vertex", nodeId: "A" }];
+
+test("A single click chooses a sibling node on the current curve", () => {
+    const nodeB: SelectionPath = [...outlineA, { kind: "vertex", nodeId: "B" }];
+    assert.deepEqual(nextMapHit([{ path: nodeB }], nodeA)?.path, nodeB);
+});
+
+test("A single click in the face of the current node selects its curve", () => {
+    assert.deepEqual(nextMapHit([{ path: outlineA }], nodeA)?.path, outlineA);
+});
+
+test("A single click chooses a sibling outline in the same landform", () => {
+    const outlineB: SelectionPath = [landform, holderLayer("outlines", 1), { kind: "geometry", id: "B" }];
+    assert.deepEqual(nextMapHit([{ path: outlineB }], [landform, holderLayer("outlines")])?.path, outlineB.slice(0, 2));
+});
+
+test("Repeated clicks still advance one layer until the end of the hit", () => {
+    let current: SelectionPath | null = null;
+    for (const depth of [1, 2, 3, 3]) {
+        current = nextMapHit([{ path: outlineA }], current)!.path;
+        assert.deepEqual(current, outlineA.slice(0, depth));
+    }
 });
 
 test("Map gestures use only related alignment points and Shift and Ctrl bypass nearby snaps", async () => {

@@ -70,7 +70,16 @@ export function checkSelectionHierarchy(url: string) {
         await move(away);
         await screenshot("round43-closed-curve");
 
-        await click("[data-property-tab=region]");
+        await tap(outline.nodes[0].p);
+        assert.equal(await text("[data-curve-node] .subitem-label"), "节点 1");
+        await move(outline.nodes[1].p);
+        assert.equal((await frame()).hoverPath?.at(-1)?.kind, "vertex");
+        await tap(outline.nodes[1].p);
+        assert.equal(await text("[data-curve-node] .subitem-label"), "节点 2");
+        await tap(p);
+        assert.equal(await depth(), 3);
+
+        await click("[data-property-tab=region]"); await paint();
         assert.equal(await depth(), 2);
         assert.equal(await active(curveInput), "false");
         assert(await evaluate(s => !!document.querySelector(s)?.parentElement?.classList.contains("selected"), row));
