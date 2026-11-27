@@ -37,7 +37,7 @@
     let { editor }: { editor: session.Editor } = $props();
     let fields = $derived(declarationEntries("field", editor.project.design.fields).map(([id, f]) => ({ id, name: f.label, builtin: isBuiltin("field", id) })));
     const gridModes = [{ id: "meters", name: "固定米数" }, { id: "pixels", name: "固定像素" }];
-    const mapLayers = ["geoNodes", "labels", "sections", "marks", "issues"] as const;
+    const mapLayers = ["geoNodes", "labels", "sections", "marks", "issues", "geometry"] as const;
     function spacing(value: number) {
         if (!Number.isFinite(value) || value <= 0) throw Error("间距必须大于 0");
     }

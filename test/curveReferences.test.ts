@@ -342,6 +342,23 @@ test("Editor deletes exclusive geometry in one undo step and blocks deleting in-
     assert.deepEqual(JSON.parse(serializeDesign(editor.project.design)).marks[0].screen, [1, 2]);
 });
 
+test("Dragging a geometry curve moves every placement without changing the holders", () => {
+    const { d, first } = fixture(), before = resolveDesign(d), holders = structuredClone(d.geoNodes);
+    const selected = { kind: "geometry" as const, id: first.curve };
+    const control: GeoControl = { role: "curve", path: -1, index: 0, point: [5, 6] };
+    const at: Point = [8, 10], delta: Point = [3, 4];
+    const preview = controlPreview(d, before, curveGraph(d), selected, control, false)!(at);
+    commitControl(d, selected, control, at, false);
+    const after = resolveDesign(d);
+    assert.deepEqual(d.geoNodes, holders);
+    assert.deepEqual(preview.geometry, d.geometry[first.curve]);
+    for (const id of ["T", "A", "B", "C"]) {
+        const expected = shifted(positions(before, id), delta);
+        assert.deepEqual(positions(after, id), expected);
+        assert.deepEqual(geometryPath(preview.nodes.get(id)!.node, 0)!.nodes.map(n => n.p), expected);
+    }
+});
+
 test("Geometry reference count includes the independent reference and prunes one edit at a time", () => {
     const d = syntheticDesign(), holder = geo(d, "T").construction;
     assert(holder.type === "outline");

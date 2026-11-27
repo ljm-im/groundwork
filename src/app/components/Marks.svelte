@@ -9,7 +9,7 @@
             <PropertySelect label="跟随" value={mark!.follow} options={follows} choose={value => editor.setMarkFollow(mark!.id, value as MarkFollow)} />
             {#if mark.follow === "map"}
                 <GeometryInput label="位置" summary={editor.project.design.geometry[mark.point.point].label}
-                    active={editor.objectGeometry?.kind === "mark"} onclick={() => editor.openPoint(mark!.point.point)} />
+                    active={editor.objectGeometry?.kind === "mark"} onclick={() => editor.openPoint(mark!.point)} />
             {/if}
             {#if mark!.kind === "text"}
                 <CheckboxRow label="显示高度" checked={mark.showElevation ?? false} change={visible => {

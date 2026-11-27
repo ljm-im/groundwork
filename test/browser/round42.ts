@@ -9,7 +9,7 @@ export function checkGeometryObjects(url: string) {
     const position: Point = [-20, 22];
     design.marks.push(fixtureMark(design, { id: "A", label: "测点 A", kind: "text", point: position, follow: "map" }));
     return withCurveMap(url, "round42-geometry", async page => {
-        const { authored, click, evaluate, frame, key, paint, saved, screenshot, tap, text, tool, wait } = page;
+        const { authored, click, drag, evaluate, frame, key, paint, saved, screenshot, tap, text, tool, undo, wait } = page;
         const row = "#properties .geometry-box[aria-label=曲线]";
         const region = "[data-property-tab=region]", geometry = "[data-property-tab=geometry]";
         const list = (id: string) => "[data-select-geometry=" + JSON.stringify(id) + "]";
@@ -101,6 +101,9 @@ export function checkGeometryObjects(url: string) {
         assert(!await visible(list(shapeId)));
         await selectOutline(b);
         await click(row);
+        await click("#properties [aria-label=删除曲线]");
+        assert.match(await text("#remove-dialog"), /以下位置仍在使用它，请先修改。/);
+        await click("#remove-dialog button[value=cancel]");
         await click(await independentCheckbox());
         await saved(); await paint();
         await click("[data-tab=inputs]");
@@ -110,6 +113,43 @@ export function checkGeometryObjects(url: string) {
         assert.match(await text("#remove-dialog"), /以下位置仍在使用它，请先修改。/);
         assert.equal(await evaluate(() => document.querySelectorAll("#remove-dialog li").length), 2);
         await click("#remove-dialog button[value=cancel]");
+        for (const id of [a, b]) {
+            await selectOutline(id);
+            await click("#properties [aria-label=删除地件]");
+            await saved(); await paint();
+        }
+        assert((await authored()).geometry[shapeId].independent);
+        await click("[data-tab=inputs]");
+        const face: Point = [-17, 8];
+        await tap(face);
+        assert.notEqual((await frame()).selection?.id, listedId);
+        await click("[data-tab=inputs]");
+        const fills = () => evaluate(() => window.curveMapProbe.geometryFills);
+        const listBox = await evaluate(sel => {
+            const { left, top, width, height } = document.querySelector(sel)!.getBoundingClientRect();
+            return [left + width / 2, top + height / 2] as Point;
+        }, list(listedId));
+        await page.pointer("mouseMoved", listBox, 0, "none"); await paint();
+        assert.deepEqual(await fills(), [.18]);
+        await click("[data-tab=layers]");
+        const checkbox = "[data-layer=geometry]";
+        assert.equal(await evaluate(s => (document.querySelector(s) as HTMLInputElement).checked, checkbox), false);
+        await click(checkbox); await paint();
+        assert.deepEqual(await fills(), [.1, .1]);
+        assert(await evaluate(() => JSON.parse(localStorage.getItem("groundwork/map-display-v1")!).layers.geometry));
+        await tap(face);
+        assert.deepEqual((await frame()).selection, { kind: "geometry", id: listedId });
+        assert(await visible(list(listedId)));
+        assert.deepEqual(await fills(), [.1, .26]);
+        await page.pointer("mouseMoved", page.pixels(await frame(), face), 0, "none"); await paint();
+        assert.deepEqual(await fills(), [.1, .26]);
+        const geometryCurve = literalCurve(await authored(), listedId);
+        await tap(geometryCurve.nodes[0].p);
+        assert.equal((await frame()).vertex?.role, "vertex");
+        await drag(face, 2);
+        const movedCurve = literalCurve(await authored(), listedId);
+        const dx = 30 / (await frame()).scale;
+        page.translated(geometryCurve.nodes.map(n => n.p), movedCurve.nodes.map(n => n.p), dx);
 
         await click("[data-tab=marks]");
         await click("[data-mark=A]"); await paint();
@@ -117,6 +157,10 @@ export function checkGeometryObjects(url: string) {
         await click("#properties .geometry-box[aria-label=位置]");
         assert(await visible(geometry));
         assert(await visible("[data-property-tab=general][aria-label=文字标记]"));
+        await tap(position);
+        await key("Delete");
+        assert.match(await text("#remove-dialog"), /测点 A/);
+        await click("#remove-dialog button[value=cancel]");
         await click("[data-property-tab=general]");
         const clip = await evaluate(({ position, light, dark }) => {
             const map = window.curveMapProbe.editor!.map, [x, y] = map.screen(position);
@@ -147,5 +191,10 @@ export function checkGeometryObjects(url: string) {
         assert.notEqual(copyId, pointId);
         await click("#properties [aria-label=删除点]"); await saved();
         assert(!Object.hasOwn((await authored()).geometry, copyId));
+        await click(list(pointId));
+        await click(await independentCheckbox()); await saved(); await paint();
+        assert(!Object.hasOwn((await authored()).geometry, pointId));
+        await undo();
+        assert((await authored()).geometry[pointId].independent);
     }, design);
 }

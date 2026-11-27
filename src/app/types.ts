@@ -17,7 +17,7 @@ export type Layer = keyof typeof layerDefaults;
 
 interface GestureStart { screen: Point; pointer: number; changed?: boolean }
 export type Gesture = GestureStart & (
-  { preview: (at: Point) => ControlPreview; selection: Selection; control: GeoControl; independent: boolean; origin: Point; snap?: DragSnap; target?: Point } |
+  { preview: (at: Point) => ControlPreview; selection: Selection; control: GeoControl; independent: boolean; origin: Point; offset?: Point; snap?: DragSnap; target?: Point } |
   { label: LabelTarget; offset: Point } |
   { section: Section<"resolved"> } |
   { pan: "middle" | "space" | "stationary"; center: number[]; click?: () => void } |

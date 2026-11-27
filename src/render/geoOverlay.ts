@@ -1,8 +1,8 @@
-import { geometryAt } from "../core/design/curveReferences.ts";
+import { geometryAt, offsetPoint, translateCurve } from "../core/design/curveReferences.ts";
 import { type MapView, type ProjectMap } from "./map.ts";
-import { displayCurveTolerance, geoControls, geometryPath, parameterPoints, pathEntries, type CurveOwner, type GeoControl } from "../core/edit/geoControls.ts";
+import { displayCurveTolerance, geoControls, geometryPath, parameterPoints, pathEntries, type CurveOwner, type GeoControl, type GeometryTarget } from "../core/edit/geoControls.ts";
 import { flattenPath, flattenSegment } from "../core/design/path.ts";
-import { type Point, type PlacedGeoNode } from "../core/design/v5.ts";
+import { type Curve, type Point, type PlacedGeoNode } from "../core/design/v5.ts";
 import { type Segment } from "../core/design/regions.ts";
 import { overlay, type MapColors } from "./palette.ts";
 import { type SnapGuide } from "../core/edit/snapping.ts";
@@ -55,6 +55,24 @@ export function drawHandle(ctx: CanvasRenderingContext2D, colors: MapColors, x: 
     ctx.stroke();
 }
 
+export function geometryPageId(view: MapView) {
+    return view.holderGeometry?.id ?? (view.selection?.kind === "geometry" ? view.selection.id : undefined);
+}
+
+export function geometryOnMap(view: MapView, preview = false) {
+    const id = geometryPageId(view);
+    if (id === undefined) return;
+    const item = preview && view.dragGeometry || geometryAt(view.project.design, id);
+    if (!item) return;
+    const focus = view.holderGeometry, offset = focus?.offset;
+    if (preview && !view.dragGeometry && focus?.target && "curve" in item && view.selection?.kind === "geoNode") {
+        const node = view.dragNodes?.get(view.selection.id)?.node, curve = node && geometryPath(node, focus.target.index);
+        if (curve) return { ...item, curve };
+    }
+    if (!offset?.some(Boolean)) return item;
+    return "curve" in item ? { ...item, curve: translateCurve(item.curve, offset) } : { ...item, point: offsetPoint(item.point, offset) };
+}
+
 export function showsParameterGeometry(view: MapView, node: PlacedGeoNode) {
     return view.selection?.kind === "geoNode" && view.selection.id === node.id || view.layers.geoNodes && !node.disabled;
 }
@@ -80,6 +98,24 @@ function strokeEdges(map: ProjectMap, segments: Segment[], color: string, width:
     ctx.setLineDash([]);
 }
 
+function drawGeometryCurve(map: ProjectMap, curve: Curve, colors: MapColors, state: HandleState, tolerance: number) {
+    const ctx = map.ctx, edges = flattenPath(curve, tolerance);
+    if (curve.closed && edges.length) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(...map.screen(edges[0].a));
+        for (const { b } of edges) ctx.lineTo(...map.screen(b));
+        ctx.closePath();
+        ctx.fillStyle = colors.parameterGeometry;
+        ctx.globalAlpha *= overlay.geometryFill[state];
+        ctx.fill("evenodd");
+        ctx.restore();
+    }
+    if (state === "selected") strokeEdges(map, edges, colors.accent, overlay.segmentWidth, true);
+    else if (state === "hovered") strokeEdges(map, edges, colors.accentHover, overlay.hoverWidth);
+    else strokeEdges(map, edges, colors.parameterGeometry, overlay.parameterWidth, true);
+}
+
 function selectedLine(view: MapView, id: string) {
     const { selection, geometry, vertex } = view;
     if (!view.draft && selection?.kind === "geoNode" && selection.id === id && geometry?.kind === "curve" && geometry.index < 0 && !vertex)
@@ -101,18 +137,20 @@ export function drawParameterGeometry(map: ProjectMap, view: MapView, colors: Ma
         const n = preview?.node ?? owner;
         const whole = selectedLine(view, n.id), focused = view.selection?.kind === "geoNode" && view.selection.id === n.id;
         const part = !view.draft && focused ? view.vertex : undefined;
+        const page = !view.draft && focused ? view.holderGeometry?.target : undefined;
         const hover = !view.draft && !view.dragNode && view.hovered?.kind === "geoNode" && view.hovered.id === n.id ? view.hoverPart : undefined;
         const origin = !drag || view.dragCurve === undefined || view.dragCurve >= 0 || view.dragCommitting ? undefined : geometryPath(owner, view.dragCurve);
         if (origin) strokeEdges(map, flattenPath(origin, tolerance), colors.dragOrigin, overlay.parameterWidth, true);
         for (const [i, path] of pathEntries(n)) {
-            if (i >= 0 || i === whole || !visible && !preview?.paths.has(i)) continue;
+            if (i >= 0 || i === whole || i === page?.index && page.kind === "curve" ||
+                !visible && !preview?.paths.has(i)) continue;
             const edges = flattenPath(path, tolerance);
             const selected = part?.role === "segment" && part.path === i ? path.nodes[part.index]?.id : undefined;
             strokeEdges(map, selected ? edges.filter(edge => edge.from !== selected) : edges, colors.parameterGeometry, overlay.parameterWidth, true);
         }
         if (!visible) continue;
         for (const [i, point] of parameterPoints(n)) {
-            if (hover?.role === "parameter" && hover.path === i) continue;
+            if (hover?.role === "parameter" && hover.path === i || page?.kind === "parameter" && page.index === i) continue;
             if (view.draft || !focused || view.geometry?.kind !== "parameter" || view.geometry.index !== i)
                 drawHandle(ctx, colors, ...map.screen(point));
         }
@@ -156,16 +194,16 @@ export function drawGeoOverlay(map: ProjectMap, view: MapView, colors: MapColors
             const edges = segment === undefined ? flattenPath(path, tolerance) : flattenSegment(path, segment, tolerance);
             strokeEdges(map, edges, accent, overlay.segmentWidth, index < 0);
         }
-        function drawControls(target: CurveOwner, handle?: GeoControl) {
-            const controls = geoControls(target, view.geometry);
+        function drawControls(target: CurveOwner, geometry: GeometryTarget | undefined, part?: GeoControl, handle?: GeoControl) {
+            const controls = geoControls(target, geometry);
             for (const c of controls) if (c.role === "in" || c.role === "out") {
                 const node = geometryPath(target, c.path)!.nodes[c.index];
                 strokeEdges(map, [{ a: node.p, b: c.point }], accent, overlay.controlLine, node.mode === "auto");
             }
             for (const c of controls) {
                 const tangent = c.role === "in" || c.role === "out";
-                const hover = sameControl(handle, c), selected = sameControl(view.vertex, c);
-                const state = selected || c.role === "parameter" && view.holderGeometry?.target?.kind === "parameter" ? "selected" : hover ? "hovered" : "normal";
+                const hover = sameControl(handle, c), selected = sameControl(part, c);
+                const state = selected ? "selected" : hover ? "hovered" : "normal";
                 dot(c.point, state, tangent);
                 if (hover) handle = undefined;
             }
@@ -174,7 +212,7 @@ export function drawGeoOverlay(map: ProjectMap, view: MapView, colors: MapColors
         const hovered = view.hoverPart, hoverOwner = view.hovered?.kind === "geoNode" ? view.hovered.id : undefined;
         const onOwner = !!owner && hoverOwner === owner.id, whole = n && selectedLine(view, n.id);
         let hoverHandle: GeoControl | undefined;
-        if (hovered && !view.dragNode) {
+        if (hovered && !view.dragNode && !(view.holderGeometry && onOwner)) {
             if (hovered.role === "vertex" || hovered.role === "parameter" || hovered.role === "in" || hovered.role === "out" || hovered.role === "arc")
                 hoverHandle = hovered;
             else {
@@ -189,38 +227,41 @@ export function drawGeoOverlay(map: ProjectMap, view: MapView, colors: MapColors
                 }
             }
         }
-        if (n) {
-            const target = view.holderGeometry?.target, index = outline ?? whole;
+        if (n && !view.holderGeometry) {
+            const index = outline ?? whole;
             if (index !== undefined) highlight(n, index);
-            else if (target && target.kind !== "parameter") {
-                const path = geometryPath(n, target.index);
-                if (path) strokeEdges(map, flattenPath(path, tolerance), accent, overlay.selectedWidth, target.index < 0);
-            }
             if (view.vertex?.role === "segment") highlight(n, view.vertex.path, view.vertex.index);
-            const remaining = drawControls(n, onOwner ? hoverHandle : undefined);
+            const remaining = drawControls(n, view.geometry, view.vertex, onOwner ? hoverHandle : undefined);
             if (onOwner) hoverHandle = remaining;
         }
         if (hoverHandle) dot(hoverHandle.point, "hovered", hoverHandle.role === "in" || hoverHandle.role === "out");
-        const selected = view.selection, hover = view.hovered;
-        const item = selected?.kind === "geometry" ? geometryAt(d, selected.id) : undefined;
-        const hoveredItem = hover?.kind === "geometry" && hover.id !== selected?.id ? geometryAt(d, hover.id) : undefined;
-        if (hoveredItem) {
-            if ("point" in hoveredItem) dot(hoveredItem.point, "hovered");
-            else strokeEdges(map, flattenPath(hoveredItem.curve, tolerance), colors.accentHover, overlay.hoverWidth);
+
+        const selectedId = geometryPageId(view), hover = view.hovered;
+        const hoveredId = hover?.kind === "geometry" ? hover.id : undefined;
+        const hidesOwnPosition = !view.holderGeometry?.offset?.some(Boolean);
+        if (view.layers.geometry || hoveredId !== undefined) for (const [id, item] of Object.entries(d.geometry)) {
+            if (id === selectedId && hidesOwnPosition) continue;
+            const state = id === hoveredId ? "hovered" : undefined;
+            if (!state && (!view.layers.geometry || !item.independent)) continue;
+            if ("point" in item) dot(item.point, state);
+            else drawGeometryCurve(map, item.curve, colors, state ?? "normal", tolerance);
         }
-        if (item) {
-            const current = view.dragGeometry ?? item;
-            if ("point" in current) dot(current.point, "selected");
-            else {
-                if (view.dragGeometry && !view.dragCommitting && "curve" in item)
-                    strokeEdges(map, flattenPath(item.curve, tolerance), colors.dragOrigin, overlay.parameterWidth, true);
-                strokeEdges(map, flattenPath(current.curve, tolerance), accent, overlay.selectedWidth);
-                if (view.vertex?.role === "segment") highlight(current, -1, view.vertex.index);
-                drawControls(current, !view.dragGeometry && hover?.kind === "geometry" && hover.id === selected!.id ? view.hoverPart : undefined);
-            }
+        const current = geometryOnMap(view, true);
+        if (current && "point" in current) dot(current.point, "selected");
+        else if (current) {
+            const item = geometryOnMap(view);
+            if ((view.dragGeometry || view.dragNode) && !view.dragCommitting && item && "curve" in item)
+                strokeEdges(map, flattenPath(item.curve, tolerance), colors.dragOrigin, overlay.parameterWidth, true);
+            drawGeometryCurve(map, current.curve, colors, "selected", tolerance);
+            const part = view.vertex && { ...view.vertex, path: -1 };
+            if (part?.role === "segment") highlight(current, -1, part.index);
+            const selected = view.selection;
+            const handle = !view.dragGeometry && !view.dragNode && hover?.kind === selected?.kind && hover?.id === selected?.id && hovered ?
+                { ...hovered, path: -1 } : undefined;
+            drawControls(current, undefined, part, handle);
         }
         for (const curve of view.referenceCurves ?? [])
-            strokeEdges(map, flattenPath(curve, tolerance), colors.accentHover, overlay.hoverWidth);
+            drawGeometryCurve(map, curve, colors, "hovered", tolerance);
     }
     if (draft) {
         if (draft.tool === "strip") {

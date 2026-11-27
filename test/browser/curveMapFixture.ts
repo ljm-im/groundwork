@@ -23,7 +23,7 @@ interface Probe {
     editor?: import("../../src/app/state/session.svelte.ts").Editor;
     frame?: Frame; strokes: Stroke[]; pathStrokes: { color: string; width: number; hits?: boolean[] }[];
     arcStrokes: (Arc & Omit<Stroke, "points">)[];
-    pathChecks?: Point[];
+    pathChecks?: Point[]; geometryFills: number[];
     dots: { point: Point; color: string }[]; ticks: Reading[]; mapText: string[]; release?: () => void;
 }
 declare global {
@@ -31,7 +31,7 @@ declare global {
 }
 
 async function observeCurveMap() {
-    const probe: Probe = { strokes: [], pathStrokes: [], arcStrokes: [], dots: [], ticks: [], mapText: [] };
+    const probe: Probe = { strokes: [], pathStrokes: [], arcStrokes: [], dots: [], ticks: [], mapText: [], geometryFills: [] };
     window.curveMapProbe = probe;
     const mapModule = "/src/render/map.ts", editorModule = "/src/app/state/session.svelte.ts";
     const { ProjectMap } = await import(mapModule) as typeof import("../../src/render/map.ts");
@@ -65,6 +65,7 @@ async function observeCurveMap() {
     };
     ctx.fill = function (...args: [path?: Path2D | CanvasFillRule, rule?: CanvasFillRule]) {
         if (this.canvas.id === "map" && !args.length && circle) probe.dots.push({ point: circle.point, color: String(this.fillStyle) });
+        if (this.canvas.id === "map" && args[0] === "evenodd") probe.geometryFills.push(this.globalAlpha);
         Reflect.apply(fill, this, args);
     };
     ctx.stroke = function (...args: [Path2D?]) {
@@ -102,6 +103,7 @@ async function observeCurveMap() {
         probe.arcStrokes = [];
         probe.dots = [];
         probe.mapText = [];
+        probe.geometryFills = [];
         draw.call(this, view, theme);
         const localOrigin = this.screen([0, 0]), box = this.canvas.getBoundingClientRect();
         probe.frame = {

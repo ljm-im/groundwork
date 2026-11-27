@@ -5,7 +5,8 @@ export const layerNames = {
     sections: "剖面线",
     labels: "地件名称",
     marks: "标记",
-    issues: "问题位置"
+    issues: "问题位置",
+    geometry: "几何变量"
 };
 
 const storageKey = "groundwork/map-display-v1";

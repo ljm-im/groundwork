@@ -398,7 +398,7 @@ async function checkEditor(url: string) {
             const plane = [...document.querySelectorAll("#panel h3")].find(h => h.textContent === "平面图")!.closest("section")!;
             return [...plane.querySelectorAll("label")].map(label => [(label.control as HTMLInputElement)?.dataset.layer, label.textContent?.trim()]);
         });
-        assert.deepEqual(planeLayers, [["geoNodes", "地件轮廓"], ["labels", "地件名称"], ["sections", "剖面线"], ["marks", "标记"], ["issues", "问题位置"]]);
+        assert.deepEqual(planeLayers, [["geoNodes", "地件轮廓"], ["labels", "地件名称"], ["sections", "剖面线"], ["marks", "标记"], ["issues", "问题位置"], ["geometry", "几何变量"]]);
         for (const [layer] of planeLayers) {
             const selector = "input[data-layer=" + layer + "]";
             const checked = () => evaluate(s => document.querySelector<HTMLInputElement>(s)!.checked, selector);

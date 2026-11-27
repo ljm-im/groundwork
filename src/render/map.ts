@@ -9,11 +9,12 @@ import { type GridDisplay, type layerDefaults, pixelGridSpacing } from "../core/
 import { type Box } from "../core/math/geometry.ts";
 import { clamp, distance, nearest } from "../core/math/geometry.ts";
 import { objectIssues } from "../core/checks/issues.ts";
-import { hitGeoControl, hitOutlineVertex, hitParameterGeometries, hitPathSegment, hitSelectedSegment, parameterTarget, type ControlPreview, type GeoControl, type GeometryTarget } from "../core/edit/geoControls.ts";
+import { displayCurveTolerance, hitGeoControl, hitOutlineVertex, hitParameterGeometries, hitPathSegment, hitSelectedSegment, parameterTarget, type ControlPreview, type GeoControl, type GeometryTarget } from "../core/edit/geoControls.ts";
 import { flattenPath } from "../core/design/path.ts";
+import { insidePolygon } from "../core/math/polygon.ts";
 import { contourLabels, fieldContours } from "./fieldContours.ts";
 import { constrainGeoLabel, constrainSectionLabel, geoLabelPoint } from "./labelLayout.ts";
-import { drawGeoOverlay, drawHandle, drawParameterGeometry, drawSnapGuides, hasOutlinePreview, showsParameterGeometry } from "./geoOverlay.ts";
+import { drawGeoOverlay, drawHandle, drawParameterGeometry, drawSnapGuides, geometryOnMap, geometryPageId, hasOutlinePreview, showsParameterGeometry } from "./geoOverlay.ts";
 import { baseMap, canvasText, contourStyle, interfaceColors, mapColors, overlay, type MapColors, type Theme } from "./palette.ts";
 import { displayReading, displayValue } from "../core/design/display.ts";
 import { sectionHandles } from "../core/edit/controls.ts";
@@ -28,7 +29,7 @@ type Context = CanvasRenderingContext2D;
 export type LabelTarget = { kind: "geoNode" | "section"; id: string };
 type LabelHit = LabelTarget & { point: Point; box: Box };
 export type LabelPreview = LabelTarget & { offset: Point };
-export type MapHit = { selection: Selection; control?: GeoControl; handle?: Handle };
+export type MapHit = { selection: Selection; control?: GeoControl; handle?: Handle; geometryPage?: boolean };
 
 const sectionHitRadius = 5, endpointHitRadius = 9;
 
@@ -37,6 +38,19 @@ function geoHit(id: string, control: GeoControl): MapHit {
 }
 const bodyControl = (point: Point): GeoControl => ({ role: "body", path: 0, index: 0, point });
 const outlineControl = (path: number, point: Point): GeoControl => ({ role: "outline", path, index: 0, point });
+
+function hitGeometry(item: GeometryObject, point: Point, scale: number, tolerance: number, mode: "whole" | "handles" | "parts") {
+    if ("point" in item) {
+        if (distance(point, item.point) * scale <= 7)
+            return { role: "parameter", path: 0, index: 0, point: item.point } satisfies GeoControl;
+        return;
+    }
+    if (mode === "handles") return hitGeoControl(item, point, scale);
+    const edge = hitPathSegment(item, point, scale, tolerance);
+    if (edge && mode === "parts") return edge;
+    if (edge || item.curve.closed && insidePolygon({ points: flattenPath(item.curve, displayCurveTolerance(tolerance, scale)).map(s => s.a) }, point))
+        return { role: "curve", path: -1, index: 0, point } satisfies GeoControl;
+}
 
 function hitFaceOutlines(shape: RegionShape | undefined, point: Point) {
     if (!shape) return;
@@ -75,7 +89,7 @@ export type MapView = Readonly<{
     referencedGeo: readonly string[];
     geometry?: GeometryTarget;
     objectGeometry?: Selection;
-    holderGeometry?: { id: string; target?: GeometryTarget; index?: number };
+    holderGeometry?: { id: string; target?: GeometryTarget; index?: number; offset?: Point };
     referenceCurves?: readonly Curve[];
     vertex?: GeoControl;
     draft?: Readonly<GeoDraft>;
@@ -381,10 +395,15 @@ export class ProjectMap {
                 yield { selection: { kind: "section", id: s.id } };
         }
         const empty = !hasSamples(terrain), tolerance = grid.step / 8;
-        if (view.selection?.kind === "geometry") {
-            const item = geometryAt(design, view.selection.id);
-            const control = item && "curve" in item && hitPathSegment(item, p, scale, tolerance, view.geometry);
-            if (control) yield { selection: view.selection, control };
+        const selectedGeometry = this.geometryPageHit(view, p, mode === "cycle" ? "whole" : "parts");
+        if (selectedGeometry) yield selectedGeometry;
+        if (view.layers.geometry) {
+            const selectedId = geometryPageId(view);
+            for (const [id, item] of Object.entries(design.geometry).reverse()) {
+                if (!item.independent || id === selectedId && !view.holderGeometry?.offset?.some(Boolean)) continue;
+                const control = hitGeometry(item, p, scale, tolerance, "whole");
+                if (control) yield { selection: { kind: "geometry", id }, control };
+            }
         }
         for (let i = geoNodes.length - 1; i >= 0; i--) {
             const node = geoNodes[i], active = view.selection?.kind === "geoNode" && view.selection.id === node.id;
@@ -418,20 +437,26 @@ export class ProjectMap {
             yield geoHit(node.id, index === undefined ? bodyControl(p) : outlineControl(index, p));
         }
     }
+    private geometryPageHit(view: MapView, p: Point, mode: "whole" | "handles" | "parts"): MapHit | undefined {
+        const { selection, holderGeometry, project } = view, item = geometryOnMap(view);
+        if (!selection || !item) return;
+        const control = hitGeometry(item, p, this.scale, project.design.grid.step / 8, mode);
+        if (control) return {
+            selection, control: { ...control, path: holderGeometry?.target?.index ?? control.path }, geometryPage: true
+        };
+    }
     selectedControl(view: MapView, screen: Point): MapHit | undefined {
-        const { selection } = view;
+        const { selection } = view, p = this.world(...screen);
+        const geometry = this.geometryPageHit(view, p, "handles");
+        if (geometry) return geometry;
         if (selection?.kind === "section") {
             const h = this.hitSectionHandle(view, screen, selection.id);
             if (h) return { selection: h, handle: h };
         }
-        if (selection?.kind === "geoNode" || selection?.kind === "geometry") {
-            const design = view.project.design, p = this.world(...screen);
-            const item = selection.kind === "geometry" ? geometryAt(design, selection.id) : undefined;
-            if (item && "point" in item && distance(p, item.point) * this.scale <= 7)
-                return { selection, control: { role: "parameter", path: 0, index: 0, point: item.point } };
-            const owner = selection.kind === "geoNode" ? design.geoNodes.find(n => n.id === selection.id) : item && "curve" in item ? item : undefined;
+        if (selection?.kind === "geoNode" && !view.holderGeometry) {
+            const owner = view.project.design.geoNodes.find(n => n.id === selection.id);
             const control = owner && hitGeoControl(owner, p, this.scale, view.geometry);
-            if (control) return selection.kind === "geoNode" ? geoHit(selection.id, control) : { selection, control };
+            if (control) return geoHit(selection.id, control);
         }
     }
     selectedSegment(view: MapView, screen: Point): MapHit | undefined {
@@ -440,25 +465,21 @@ export class ProjectMap {
         const item = selection.kind === "geometry" ? geometryAt(design, selection.id) : undefined;
         const owner = item && "curve" in item ? item : design.geoNodes.find(n => n.id === selection.id);
         const control = owner && hitSelectedSegment(owner, vertex, this.world(...screen), this.scale, design.grid.step / 8);
-        if (control) return { selection, control };
+        if (control) return { selection, control, geometryPage: !!geometryPageId(view) };
     }
     selectedBody(view: MapView, screen: Point): MapHit | undefined {
         const { selection, project, geometry } = view;
         if (!selection) return;
+        const p = this.world(...screen), ownGeometry = this.geometryPageHit(view, p, "whole");
+        if (ownGeometry) return ownGeometry;
         if (selection.kind === "mark") {
             for (const h of this.markHits(...screen)) if (h.id === selection.id) return { selection: h, handle: h };
             return;
         }
-        const p = this.world(...screen);
         if (selection.kind === "section" && view.layers.sections) {
             const section = project.design.sections.find(s => s.id === selection.id);
             if (section && nearest(...p, section.points).distance * this.scale <= sectionHitRadius)
                 return { selection: { kind: "section", id: selection.id } };
-        }
-        if (selection.kind === "geometry") {
-            const item = geometryAt(project.design, selection.id);
-            const control = item && "curve" in item && hitPathSegment(item, p, this.scale, project.design.grid.step / 8, geometry);
-            if (control) return { selection, control };
         }
         if (selection.kind === "geoNode") {
             const node = project.design.geoNodes.find(n => n.id === selection.id);

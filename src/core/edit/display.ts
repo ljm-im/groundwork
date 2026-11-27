@@ -1,5 +1,6 @@
 export const layerDefaults = {
     geoNodes: false,
+    geometry: false,
     sections: true,
     contours: true,
     contourLabels: true,

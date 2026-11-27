@@ -16,7 +16,7 @@
             {#each section.points as holder, index (index)}
                 <GeometryInput label={index === 0 ? "起点" : "终点"} summary={editor.project.design.geometry[holder.point].label}
                     active={editor.objectGeometry?.kind === "section" && editor.objectGeometry.index === index}
-                    onclick={() => editor.openPoint(holder.point, undefined, index)} />
+                    onclick={() => editor.openPoint(holder, undefined, index)} />
             {/each}
         {/if}
     {/snippet}

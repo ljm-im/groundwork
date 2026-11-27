@@ -86,7 +86,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
 
     function pick(screen: Point, mode?: "edit" | "menu"): MapHit | { issues: Issue[] } | undefined {
         const view = editor.mapView!, control = map.selectedControl(view, screen);
-        if (mode && control) return control;
+        if (control && (mode || control.geometryPage)) return control;
         const top = map.objectHits(view, screen, mode ? "edit" : "select").next().value;
         if (top?.selection.kind === "mark") return top;
         if (control) return control;
@@ -100,7 +100,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
     }
     function clickControl(view: MapView, hit: MapHit, alternate: boolean) {
         const c = hit.control;
-        if (c && hit.selection.kind !== "geometry" && c.path < 0 && (alternate || view.selection?.id !== hit.selection.id ||
+        if (c && !hit.geometryPage && hit.selection.kind !== "geometry" && c.path < 0 && (alternate || view.selection?.id !== hit.selection.id ||
             view.geometry?.kind !== "curve" || view.geometry.index !== c.path)) return { ...c, role: "curve" as const };
         return c;
     }
@@ -155,9 +155,9 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
     }
     function selectHit(hit: MapHit, control = hit.control, dragging = false) {
         const { selection } = hit;
-        if (dragging && (control?.role === "body" || control?.role === "outline") &&
+        if (dragging && !editor.holderGeometry && (control?.role === "body" || control?.role === "outline") &&
             editor.selection?.kind === "geoNode" && editor.selection.id === selection.id) return;
-        editor.select(selection);
+        if (!hit.geometryPage) editor.select(selection);
         if (control) editor.selectControl(control);
     }
     function selectClick(screen: Point, alternate: boolean) {
@@ -180,7 +180,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         }
         const body = !control && !segment ? map.selectedBody(view, screen) : undefined;
         const top = !control && !segment ? map.objectHits(view, screen, "select").next().value : undefined;
-        const parameter = top?.selection.kind === "geoNode" && top.selection.id === body?.selection.id &&
+        const parameter = !body?.geometryPage && top?.selection.kind === "geoNode" && top.selection.id === body?.selection.id &&
             top.control && (top.control.path < 0 || top.control.role === "parameter");
         const hit = control ?? segment ?? (parameter ? top : body ?? top);
         if (!hit) return;
@@ -190,15 +190,16 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
             c = { ...part, role: part.path < 0 ? "curve" : "body" };
         else if (part?.role === "vertex" && part.path < 0 && hit !== control)
             c = { ...part, role: "curve" };
-        if (selection.kind === "geometry" && c?.role === "curve") return;
-        const focus = view.holderGeometry?.target;
-        if (focus && focus.kind !== "parameter" && selection.id === view.selection?.id && c &&
-            (c.role === "body" || c.path === focus.index && (c.role === "curve" || c.role === "outline"))) return;
+        if (selection.kind === "geometry" && !hit.geometryPage) return;
         selectHit(hit, c, true);
         if (c) {
-            const { design, resolved } = editor.project;
-            const independent = down.altKey, preview = controlPreview(design, resolved, editor.curves, selection, c, independent);
-            if (preview) editor.gesture = { preview, selection, control: c, independent, origin: p, snap: controlSnap(editor, selection, c), screen, pointer };
+            const { design, resolved } = editor.project, focus = view.holderGeometry;
+            const wholeGeometry = hit.geometryPage && focus && (c.role === "curve" || c.role === "parameter");
+            const moving: typeof selection = wholeGeometry ? { kind: "geometry", id: focus.id } : selection;
+            const offset = wholeGeometry ? focus.offset : undefined;
+            if (wholeGeometry) c = { ...c, path: c.role === "curve" ? -1 : 0 };
+            const independent = down.altKey, preview = controlPreview(design, resolved, editor.curves, moving, c, independent, offset);
+            if (preview) editor.gesture = { preview, selection: moving, control: c, independent, origin: p, offset, snap: controlSnap(editor, moving, c), screen, pointer };
         }
         else if (h) {
             const mark = h.kind === "mark" ? editor.project.design.marks.find(m => m.id === h.id)! : undefined;
@@ -432,7 +433,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
                 if (g.target) {
                     editor.dragCommitting = true;
                     await editor.edit(d => {
-                        commitControl(d, g.selection, g.control, g.target!, g.independent);
+                        commitControl(d, g.selection, g.control, g.target!, g.independent, g.offset);
                     });
                 }
             }

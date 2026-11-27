@@ -181,10 +181,13 @@ export function checkCurvePlacements(url: string) {
         assert.deepEqual(alias.ridges[0], { ref: "{geo:M.ridges.0}" });
 
         await click("[data-tab=inputs]"); await click("[data-select-geometry=S]"); await paint();
-        const originalShared = literalCurve(final, "S"), savedText = await disk();
+        const originalShared = literalCurve(final, "S"), savedText = await disk(), mapScale = (await frame()).scale;
         await drag(mixPoint(originalShared.nodes[0].p, originalShared.nodes[1].p, .5), 0, async () => {
-            assert(await evaluate(() => !window.curveMapProbe.editor!.dragPreview));
+            assert(await evaluate(() => !!window.curveMapProbe.editor!.dragPreview?.geometry));
+            assert.equal(await disk(), savedText);
         });
-        assert.equal(await disk(), savedText);
+        const shiftedShared = await authored();
+        translated(originalShared.nodes.map(n => n.p), literalCurve(shiftedShared, "S").nodes.map(n => n.p), 30 / mapScale);
+        assert.deepEqual(shiftedShared.geoNodes, final.geoNodes);
     }, d);
 }

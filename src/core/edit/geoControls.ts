@@ -215,6 +215,10 @@ function parameterHolder(n: GeoNode, path: number) {
 }
 
 function moveCurveControl(path: Curve, h: GeoControl, at: Point, independent: boolean, delta: Point) {
+    if (h.role === "curve") {
+        for (const node of path.nodes) node.p = offsetPoint(node.p, delta);
+        return;
+    }
     const v = path.nodes[h.index];
     if (h.role === "vertex") v.p = at;
     if (h.role === "segment") {
@@ -228,8 +232,8 @@ function moveCurveControl(path: Curve, h: GeoControl, at: Point, independent: bo
     if (h.role === "arc") setBulge(v, path.nodes[neighbor(path, h.index, 1)!].p, at);
 }
 
-function draggedPoint(d: Design, selection: Selection, control: GeoControl, index: number): PointHolder | undefined {
-    if (selection.kind === "geometry") return { point: selection.id };
+function draggedPoint(d: Design, selection: Selection, control: GeoControl, index: number, offset?: Point): PointHolder | undefined {
+    if (selection.kind === "geometry") return { point: selection.id, offset };
     if (selection.kind === "section") return d.sections.find(s => s.id === selection.id)?.points[control.index];
     if (selection.kind === "mark") {
         const mark = d.marks.find(m => m.id === selection.id);
@@ -245,13 +249,14 @@ export interface ControlPreview {
 }
 
 export function controlPreview(d: Design, resolved: ResolvedDesign, graph: ReturnType<typeof curveGraph>,
-    selection: Selection, control: GeoControl, independent: boolean): ((at: Point) => ControlPreview) | undefined {
+    selection: Selection, control: GeoControl, independent: boolean, offset?: Point): ((at: Point) => ControlPreview) | undefined {
     const { id } = selection, index = d.geoNodes.findIndex(n => n.id === id), selected = resolved.geoNodes[index];
-    const placing = movesPlacement(control), standalone = selection.kind === "geometry";
-    const curveSlot = !placing && control.role !== "parameter" ? geometrySlot(d, id, control.path, standalone) : undefined;
+    const standalone = selection.kind === "geometry", placing = !standalone && movesPlacement(control);
+    const curveSlot = control.role !== "parameter" && (!movesPlacement(control) || standalone && control.role === "curve") ?
+        geometrySlot(d, id, control.path, standalone) : undefined;
     const source = curveSlot && graph.source(curveSlot);
-    const moved = placing && !standalone ? movedHolders(graph, id, control) : undefined;
-    const point = control.role === "parameter" ? draggedPoint(d, selection, control, index) : undefined;
+    const moved = placing ? movedHolders(graph, id, control) : undefined;
+    const point = control.role === "parameter" ? draggedPoint(d, selection, control, index, offset) : undefined;
     const ownPoints = control.role === "body" && selected ? geoPointSlots(d.geoNodes[index], index) : [];
     const pointUsers = point ? geometryUsers(d).get(point.point)?.filter(slot => slot.location.kind === "geo" && "point" in slot.value) ?? [] : [];
     if (!moved?.size && !source && !point && !ownPoints.length) return;
@@ -288,14 +293,13 @@ export function controlPreview(d: Design, resolved: ResolvedDesign, graph: Retur
     };
 }
 
-export function commitControl(d: Design, selection: Selection, control: GeoControl, at: Point, independent: boolean) {
+export function commitControl(d: Design, selection: Selection, control: GeoControl, at: Point, independent: boolean, offset?: Point) {
     const { id } = selection, standalone = selection.kind === "geometry";
     if (control.role === "parameter") {
-        const holder = standalone ? { point: id } : parameterHolder(d.geoNodes.find(n => n.id === id)!, control.path);
+        const holder = draggedPoint(d, selection, control, d.geoNodes.findIndex(n => n.id === id), offset);
         if (holder) movePointGeometry(d, holder, at);
     }
-    else if (movesPlacement(control)) {
-        if (standalone) return;
+    else if (!standalone && movesPlacement(control)) {
         const delta = dragDelta(control, at);
         if (!delta.some(Boolean)) return;
         for (const { value } of movedHolders(curveGraph(d), id, control)) translateHolder(value, delta);
@@ -304,7 +308,8 @@ export function commitControl(d: Design, selection: Selection, control: GeoContr
             for (const slot of geoPointSlots(d.geoNodes[index], index)) translateHolder(slot.value, delta);
         }
     }
-    else editCurve(d, selection, control.path, (curve, local) => moveCurveControl(curve, control, local(at), independent, dragDelta(control, at)));
+    else if (!movesPlacement(control) || control.role === "curve")
+        editCurve(d, selection, control.path, (curve, local) => moveCurveControl(curve, control, local(at), independent, dragDelta(control, at)));
 }
 
 export function geometryItemCurveUses(d: Design, id: string, path: Address, index: number) {

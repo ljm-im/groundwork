@@ -7,10 +7,10 @@ import { readDisplaySettings, saveDisplaySettings } from "./layers.ts";
 import { type GridDisplay } from "../../core/edit/display.ts";
 import { bounds, type Box } from "../../core/math/geometry.ts";
 import { heightId, isBuiltin } from "../../core/design/defaults.ts";
-import { defaultFollow, type Curve, type GeoNode, type GeoFunction, type PlacedGeoNode, type CurveNode, type NodeQuantity, type Section, type CurveGeometry } from "../../core/design/v5.ts";
+import { defaultFollow, type Curve, type GeoNode, type GeoFunction, type PlacedGeoNode, type CurveNode, type NodeQuantity, type Section, type CurveGeometry, type PointHolder } from "../../core/design/v5.ts";
 import { geoParameter, slotName, type Slot } from "../../core/design/parameters.ts";
 import { numberEdits, type NumberChange } from "../../core/design/numberEdit.ts";
-import { curveGraph, curveKey, curveSlotName, geometryAt, geometryIndex, geometrySlot, geometryUsers, memberLabel, offsetPoint, profileGroupForTool, profileIndex, type CurveSlot, type FunctionMember, type ProfileGroup } from "../../core/design/curveReferences.ts";
+import { curveGraph, curveKey, curveSlotName, geometryAt, geometryIndex, geometrySlot, geometryUsers, memberLabel, offsetPoint, profileGroupForTool, profileIndex, translateCurve, type CurveSlot, type FunctionMember, type ProfileGroup } from "../../core/design/curveReferences.ts";
 import { curveNodeUsers, editCurve, setCurveOverride, setCurveReference } from "../../core/edit/curveEdits.ts";
 import { type ControlPreview, type GeoControl, type GeometryHover, type GeometryPart, type GeometrySelection, type GeometryTarget, controlOwner, copyGeometryItem, curveMember,
     geometryHover, geometryItemCurveUses, geometryPath, geometrySelection, insertCurveNode, parameterPoints, parameterTarget, removeCurveNode, removeCurveSegment, removeGeometryItem,
@@ -46,7 +46,7 @@ function nextSectionId(d: Design) {
     return [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ"].find(id => !ids.has(id)) ?? nextId(ids, "S");
 }
 
-interface HolderGeometry { id: string; target?: GeometryTarget; index?: number }
+interface HolderGeometry { id: string; target?: GeometryTarget; index?: number; offset?: Point }
 
 type RemovalItem = { text: string; locate: () => void };
 export type DescriptionTarget = { group: "design" } | { group: "geoNodes" | "sections"; id: string };
@@ -109,10 +109,17 @@ export class Editor {
         const graph = this.curves, holder = graph.holders.get(key);
         if (holder) return [graph.materialize(graph.ofHolder(holder))];
         const slot = graph.slots.get(key);
-        if (!slot || slot.holder) return [];
-        const places = graph.curvePlacements(slot.id);
-        return places.length ? places.map(place => graph.materialize(graph.ofHolder(place))) : [slot.value];
+        return slot && !slot.holder ? this.curvePlacements(slot) : [];
     });
+    private curvePlacements(slot: Extract<CurveSlot, { id: string }>, placements = this.curves.curvePlacements(slot.id)) {
+        const graph = this.curves;
+        const byOffset = new Map<string, Curve>();
+        for (const holder of placements) {
+            const offset = graph.offset(graph.ofHolder(holder)), key = offset.join(",");
+            if (!byOffset.has(key)) byOffset.set(key, translateCurve(slot.value, offset));
+        }
+        return byOffset.size ? [...byOffset.values()] : [slot.value];
+    }
     private selectedPart = $state.raw<GeometrySelection>();
     private resolvedPart = $derived(this.resolvePart(this.selection, this.selectedPart));
     outline = $derived(this.resolvedPart?.role === "outline" ? this.resolvedPart.path : undefined);
@@ -412,12 +419,12 @@ export class Editor {
     openCurve(slot: CurveSlot) {
         const index = geometryIndex(slot), target = { kind: index < 0 ? "curve" : "outline", index } as const;
         this.focusGeometry(target);
-        if (slot.holder) this.holderGeometry = { id: this.curves.source(slot).id, target };
+        if (slot.holder) this.holderGeometry = { id: this.curves.source(slot).id, target, offset: this.curves.offset(slot) };
     }
-    openPoint(id: string, target?: GeometryTarget, index?: number) {
+    openPoint(holder: PointHolder, target?: GeometryTarget, index?: number) {
         if (target) this.focusGeometry(target);
         else if (this.selection) this.focusObjectGeometry({ ...this.selection, index });
-        this.holderGeometry = { id, target, index };
+        this.holderGeometry = { id: holder.point, target, index, offset: holder.offset };
     }
     focusCurveHolder(key: string) {
         const holder = this.curves.holders.get(key);

@@ -1,9 +1,9 @@
 {#snippet param(address: Address)}
     <Parameter {editor} node={n} {address} />
 {/snippet}
-{#snippet geometry(label: string, id: string, index: number, redraw: DrawTool, member?: number)}
+{#snippet geometry(label: string, point: PointHolder, index: number, redraw: DrawTool, member?: number)}
     {@const active = editor.geometry?.kind === "parameter" && editor.geometry.index === index}
-    <GeometryInput {label} {active} summary={d.geometry[id].label} onclick={() => editor.openPoint(id, { kind: "parameter", index })}
+    <GeometryInput {label} {active} summary={d.geometry[point.point].label} onclick={() => editor.openPoint(point, { kind: "parameter", index })}
         onmouseenter={() => hover("parameter", index)} onmouseleave={clearHover}
         redraw={() => editor.setTool(redraw, n.id, member)} redrawing={editor.toolActive(redraw, n.id, member)} />
 {/snippet}
@@ -114,9 +114,9 @@
                     {:else if f.type === "coast" && p.key[0] === "shore"}
                         {@render curveInput(p.label, geometryPath(resolved, -1)!, -1)}
                     {:else if f.type === "coast"}
-                        {@render geometry(p.label, f.harbor.center.point, 0, "harbor")}
+                        {@render geometry(p.label, f.harbor.center, 0, "harbor")}
                     {:else if f.type === "slope"}
-                        {@render geometry(p.label, f.center.point, 0, "center")}
+                        {@render geometry(p.label, f.center, 0, "center")}
                     {/if}
                 {/each}
             </Part>
@@ -136,7 +136,7 @@
                         <Subitem label={"山峰 " + (j + 1)} open={editor.subitemOpen(n.id, "peaks", j)} onclick={() => editor.toggleSubitem(n.id, "peaks", j)}
                             onmouseenter={() => hover("parameter", f.ridges.length + j)} onmouseleave={clearHover}>
                             {#snippet actions()}{@render memberActions("peaks", j)}{/snippet}
-                            {@render geometry(geoParameter(n, ["function", "peaks", j, "at"])!.label, f.peaks[j].at.point, f.ridges.length + j, "peak", j)}
+                            {@render geometry(geoParameter(n, ["function", "peaks", j, "at"])!.label, f.peaks[j].at, f.ridges.length + j, "peak", j)}
                             {#each memberParameters("peaks", j) as key (key.join("."))}
                                 {@render param(key)}
                             {/each}
@@ -154,7 +154,7 @@
     import * as session from "../state/session.svelte.ts";
     import { allowedFunctions } from "../../core/edit/geoNodes.ts";
     import { geometrySlot, memberLabel, nodeQuantities, nodeQuantityPath, profileGroups, profileIndex, type FunctionMember, type ProfileGroup } from "../../core/design/curveReferences.ts";
-    import { type ProfileCurve, type GeoFunction, type Strip } from "../../core/design/v5.ts";
+    import { type PointHolder, type ProfileCurve, type GeoFunction, type Strip } from "../../core/design/v5.ts";
     import { declarationEntries, isBuiltin } from "../../core/design/defaults.ts";
     import { canWrite, functionParameters, functionTable, isBuiltinFunction, smoothIncrement } from "../../core/design/functionTable.ts";
     import { geoAt } from "../state/geoTools.ts";
