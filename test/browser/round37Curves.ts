@@ -232,13 +232,17 @@ export function checkSharedCurves(url: string) {
         assert.deepEqual(westNode, literalCurve(reshaped, id).nodes[0].p);
 
         await click("[aria-label='为“轮廓 1”引用曲线']");
-        assert.equal(await text(option("geo:T.construction.outlines.0")), "西台.轮廓 1");
         assert(await evaluate(s => document.querySelector(s)?.getAttribute("aria-selected") === "true", option("curve:" + id)));
         await cropped(page, "round37-curve-reference-menu", menu);
-        await click(option("geo:T.construction.outlines.0")); await saved();
+        await key("Escape");
+        const sameMenu = ".reference-menu[aria-label=引用轮廓]";
+        await click("#properties [aria-label=引用轮廓]");
+        assert.equal(await text(sameMenu + " [data-option='geo:T.construction.outlines.0']"), "西台.轮廓 1");
+        await click(sameMenu + " [data-option='geo:T.construction.outlines.0']"); await saved();
         const eastAttached = owner(await authored(), "E").construction;
         assert(eastAttached.type === "outline" && "ref" in eastAttached.outlines[0]);
-        await useSource("轮廓 1", "unlink");
+        await click("#properties [aria-label=引用轮廓]");
+        await click(sameMenu + " [data-option=unlink]"); await saved();
         const detached = owner(await authored(), "E").construction, west = owner(reshaped, "T").construction;
         assert(detached.type === "outline" && west.type === "outline" && "curve" in detached.outlines[0] && "curve" in west.outlines[0]);
         assert.notEqual(detached.outlines[0].curve, west.outlines[0].curve);

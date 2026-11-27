@@ -55,7 +55,7 @@
         {#each Array(count).keys() as j (editor.subitemKey(n.id, group, j))}
             {@const path = profileIndex(f, group, j)}
             <Subitem label={spec.label + " " + (j + 1)} open={editor.subitemOpen(n.id, group, j)} onclick={() => editor.toggleSubitem(n.id, group, j)}
-                onmouseenter={() => hover("curve", path)} onmouseleave={clearHover}>
+                onmouseenter={() => hover("curve", path)} onmouseleave={clearHover} reference={{ editor, slot: geometrySlot(d, n.id, path)! }}>
                 {#snippet actions()}{@render memberActions(group, j)}{/snippet}
                 {@render curveInput(spec.curve, geometryPath(resolved, path)!, path, { group, index: j })}
             </Subitem>
@@ -78,7 +78,8 @@
                     {#each c.outlines.keys() as i (editor.subitemKey(n.id, "outlines", i))}
                         {@const outline = geometryPath(resolved, i)!}
                         <Subitem label={"轮廓 " + (i + 1)} open={editor.subitemOpen(n.id, "outlines", i)} onclick={() => editor.toggleSubitem(n.id, "outlines", i)}
-                            outline={outline.nodes[0].id} selected={editor.outline === i} onmouseenter={() => hover("outline", i)} onmouseleave={clearHover}>
+                            outline={outline.nodes[0].id} selected={editor.outline === i} onmouseenter={() => hover("outline", i)} onmouseleave={clearHover}
+                            reference={{ editor, slot: geometrySlot(d, n.id, i)! }}>
                             {#snippet actions()}
                                 {#if c.outlines.length > 1}
                                     <button class="icon-button danger" aria-label="删除轮廓" data-tip="删除轮廓" onclick={() => editor.removeOutline(n.id, i)}><Icon name="delete" /></button>

@@ -10,7 +10,7 @@ import { heightId, isBuiltin } from "../../core/design/defaults.ts";
 import { defaultFollow, type Curve, type GeoNode, type GeoFunction, type PlacedGeoNode, type CurveNode, type NodeQuantity, type Section, type CurveGeometry } from "../../core/design/v5.ts";
 import { geoParameter, slotName, type Slot } from "../../core/design/parameters.ts";
 import { numberEdits, type NumberChange } from "../../core/design/numberEdit.ts";
-import { curveGraph, curveKey, curveSlotName, geometryAt, geometryIndex, geometrySlot, geometryUsers, isHolderRef, memberLabel, offsetPoint, profileGroupForTool, profileIndex, type CurveSlot, type FunctionMember, type ProfileGroup } from "../../core/design/curveReferences.ts";
+import { curveGraph, curveKey, curveSlotName, geometryAt, geometryIndex, geometrySlot, geometryUsers, memberLabel, offsetPoint, profileGroupForTool, profileIndex, type CurveSlot, type FunctionMember, type ProfileGroup } from "../../core/design/curveReferences.ts";
 import { curveNodeUsers, editCurve, setCurveOverride, setCurveReference } from "../../core/edit/curveEdits.ts";
 import { type ControlPreview, type GeoControl, type GeometryHover, type GeometryPart, type GeometrySelection, type GeometryTarget, controlOwner, copyGeometryItem, curveMember,
     geometryHover, geometryItemCurveUses, geometryPath, geometrySelection, insertCurveNode, parameterPoints, parameterTarget, removeCurveNode, removeCurveSegment, removeGeometryItem,
@@ -412,13 +412,19 @@ export class Editor {
     openCurve(slot: CurveSlot) {
         const index = geometryIndex(slot), target = { kind: index < 0 ? "curve" : "outline", index } as const;
         this.focusGeometry(target);
-        if (slot.holder && !isHolderRef(slot.holder.value))
-            this.holderGeometry = { id: slot.holder.value.curve, target };
+        if (slot.holder) this.holderGeometry = { id: this.curves.source(slot).id, target };
     }
     openPoint(id: string, target?: GeometryTarget, index?: number) {
         if (target) this.focusGeometry(target);
         else if (this.selection) this.focusObjectGeometry({ ...this.selection, index });
         this.holderGeometry = { id, target, index };
+    }
+    focusCurveHolder(key: string) {
+        const holder = this.curves.holders.get(key);
+        if (!holder) return;
+        const index = geometryIndex(holder);
+        this.focus("geoNode", holder.location.id);
+        this.focusGeometry({ kind: index < 0 ? "curve" : "outline", index });
     }
     redrawGeometry(id: string) {
         const target = this.holderGeometry?.target, selection = this.selection;
@@ -552,11 +558,13 @@ export class Editor {
         const h = this.selection, slot = h && geometrySlot(this.project.design, h.id, control.path, h.kind === "geometry");
         if (slot) this.drawCurve(slot.key, control.index);
     }
-    changeCurveReference(slot: CurveSlot, target?: string) {
+    changeCurveReference(slot: CurveSlot, target?: string, useSource = false) {
+        const graph = this.curves;
+        const edited = useSource && slot.holder ? graph.ofHolder(graph.holder(slot.holder)) : slot;
         return this.edit(d => {
-            setCurveReference(d, slot.key, target);
+            setCurveReference(d, edited.key, target);
         },
-        () => this.focusGeometry({ kind: slot.closed && geometryIndex(slot) >= 0 ? "outline" : "curve", index: geometryIndex(slot) }));
+        () => this.focusGeometry({ kind: geometryIndex(slot) >= 0 ? "outline" : "curve", index: geometryIndex(slot) }));
     }
     cancelDrawing() {
         const part = this.geoDraft?.tool === "continueCurve" ? this.selectedPart : undefined;

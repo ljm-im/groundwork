@@ -26,12 +26,13 @@ export function checkCurvePlacements(url: string) {
         const menu = ".reference-menu[aria-label=引用曲线]";
         const outlineToggle = "[aria-label='为“轮廓 1”引用曲线']";
         const ridgeToggle = "[aria-label='为“山脊线”引用曲线']";
-        const option = (id: string) => menu + " [data-option=" + JSON.stringify(id) + "]";
+        const outlineHolderMenu = ".reference-menu[aria-label=引用轮廓]", ridgeHolderMenu = ".reference-menu[aria-label=引用山脊]";
+        const option = (id: string, selector = menu) => selector + " [data-option=" + JSON.stringify(id) + "]";
         const outlineKey = "geo:M.construction.outlines.0";
         const fixture = d.geoNodes.find(n => n.id === "M")!;
         assert(fixture.construction.type === "outline" && "curve" in fixture.construction.outlines[0] && fixture.function.type === "mountain" && "curve" in fixture.function.ridges[0]);
         const shape = "curve:" + fixture.construction.outlines[0].curve, ridge = "curve:" + fixture.function.ridges[0].curve;
-        const groups = () => evaluate(selector => [...document.querySelectorAll(selector + " .group-name")].map(n => n.textContent), menu);
+        const groups = (selector = menu) => evaluate(s => [...document.querySelectorAll(s + " .group-name")].map(n => n.textContent), selector);
         async function select(id: string) {
             await click("[data-tab=terrain]");
             await click("[data-geo-node=" + id + "]");
@@ -77,16 +78,29 @@ export function checkCurvePlacements(url: string) {
         }
 
         await openOutlineMenu("A");
-        assert.deepEqual(await groups(), ["轮廓", "闭合曲线"]);
-        assert.equal(await text(option(outlineKey)), "山脉.轮廓 1");
+        assert.deepEqual(await groups(), ["闭合曲线"]);
+        assert(!await evaluate(s => document.querySelector(s), option(outlineKey)));
         assert.match(await text(option(shape)), /^曲线 \d+$/);
         assert.equal(await text(option("curve:S")), "共享环");
-        assert(!await evaluate(s => document.querySelector(s), option("geo:A.construction.outlines.0")));
-        await click(option(outlineKey)); await saved(); await paint();
-        assert.equal(await text(".geometry-box .ref-chip"), "山脉.轮廓 1");
+        await key("Escape");
+        await click("#properties [aria-label=引用轮廓]");
+        assert.deepEqual(await groups(outlineHolderMenu), ["轮廓"]);
+        assert.equal(await text(option(outlineKey, outlineHolderMenu)), "山脉.轮廓 1");
+        assert(!await evaluate(s => document.querySelector(s), option("geo:A.construction.outlines.0", outlineHolderMenu)));
+        await click(option(outlineKey, outlineHolderMenu)); await saved(); await paint();
+        assert.equal(await text(".subitem-source"), "山脉.轮廓 1");
+        assert.equal(await text(".geometry-box"), d.geometry[shape.slice(6)].label);
+        await click(".subitem-source");
+        assert.equal((await frame()).selection?.id, "M");
+        assert.equal(await evaluate(() => document.querySelector("#properties .geometry-box")?.getAttribute("aria-pressed")), "true");
+        await openOutlineMenu("A");
+        assert(!await evaluate(s => document.querySelector(s), option("unlink")));
+        await key("Escape");
+        await click("#properties [aria-label=引用轮廓]");
+        assert(await evaluate(s => document.querySelector(s)?.getAttribute("aria-selected") === "true", option(outlineKey, outlineHolderMenu)));
+        assert.equal(await text(option("unlink", outlineHolderMenu)), "解除引用");
+        await key("Escape");
         await click(outlineToggle);
-        assert(await evaluate(s => document.querySelector(s)?.getAttribute("aria-selected") === "true", option(outlineKey)));
-        assert.equal(await text(menu + " .menu-group:first-child button:first-child"), "解除引用");
         const viewport = { width: 1440, height: 960, deviceScaleFactor: 1, mobile: false };
         await page.cdp("Emulation.setDeviceMetricsOverride", { ...viewport, height: 1180 });
         await paint();
@@ -146,12 +160,15 @@ export function checkCurvePlacements(url: string) {
         if (!await evaluate(s => !!document.querySelector(s), ridgeToggle))
             await click(".part:has([aria-label=添加山脊]) .subitem-toggle");
         await click(ridgeToggle);
-        assert.deepEqual(await groups(), ["山脊", "曲线"]);
-        assert.equal(await text(option("geo:M.ridges.0")), "山脉.山脊 1");
+        assert.deepEqual(await groups(), ["曲线"]);
+        assert(!await evaluate(s => document.querySelector(s), option("geo:M.ridges.0")));
         assert.match(await text(option(ridge)), /^曲线 \d+$/);
         await menuScreenshot("round38-ridge-reference-menu-light");
-        await click(option("geo:M.ridges.0")); await saved(); await paint();
-        assert.equal(await text("[aria-label=山脊线] .ref-chip"), "山脉.山脊 1");
+        await key("Escape");
+        await click("#properties [aria-label=引用山脊]");
+        assert.equal(await text(option("geo:M.ridges.0", ridgeHolderMenu)), "山脉.山脊 1");
+        await click(option("geo:M.ridges.0", ridgeHolderMenu)); await saved(); await paint();
+        assert.equal(await text(".subitem-source"), "山脉.山脊 1");
         await tap(geometryPath(page.owner(await authored(), "R"), -1)!.nodes[0].p);
         await click("#properties [data-parameter$='.ridges.0.slope.ridge-0'] .numeric-face");
         await evaluate(() => document.getSelection()!.selectAllChildren(document.querySelector(".numeric-edit")!));

@@ -117,7 +117,8 @@ export function checkSingleOutlineAndButtons(url: string) {
         assert.equal((await outlineStroke())?.alpha, 1);
         const outline = "[data-outline].selected > .subitem-heading";
         assert.equal(await text(outline + " .subitem-toggle"), "轮廓 1");
-        assert.deepEqual(await evaluate(sel => [...document.querySelectorAll(sel + " button")].map(button => button.className.includes("subitem-toggle")), outline), [true]);
+        assert.deepEqual(await evaluate(sel => [...document.querySelectorAll(sel + " button")].map(button => button.classList.contains("subitem-toggle") ?
+            "展开轮廓" : button.getAttribute("aria-label")), outline), ["展开轮廓", "引用轮廓"]);
 
         await click(".geometry-reference");
         assert(await evaluate(() => document.activeElement?.matches(".reference-menu")));
@@ -177,7 +178,7 @@ export function checkOutlineHoleHits(url: string) {
         assert.equal((await frame()).outline, 1);
         assert.equal(await text("[data-outline].selected .subitem-toggle"), "轮廓 2");
         assert.deepEqual(await evaluate(() => [...document.querySelectorAll("[data-outline].selected .row-actions button")]
-            .map(button => button.getAttribute("aria-label"))), ["删除轮廓"]);
+            .map(button => button.getAttribute("aria-label"))), ["引用轮廓", "删除轮廓"]);
         await tap(point, 1);
         assert.equal((await frame()).outline, 0);
         await tap(point, 1);

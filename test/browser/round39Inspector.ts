@@ -118,7 +118,16 @@ export function checkInspectorActions(url: string) {
     assert(region.type === "outline" && "curve" in region.outlines[0]);
     const boundary = rect(-26, -16, -5, 2).outlines[0].curve;
     d.geometry.boundary = { label: "共享的台地边界曲线", independent: true, curve: boundary };
-    region.outlines[0] = { curve: "boundary" };
+    const owner = addLayer(d, "R", rect(-26, -16, -5, 2), { type: "flat", amount: 1 });
+    assert(owner.construction.type === "outline");
+    delete d.geometry[region.outlines[0].curve];
+    const replaced = owner.construction.outlines[0];
+    assert("curve" in replaced);
+    delete d.geometry[replaced.curve];
+    owner.label = "一条需要在窄属性栏里省略的轮廓引用来源";
+    owner.construction.outlines[0] = { curve: "boundary" };
+    region.outlines[0] = { ref: "{geo:R.construction.outlines.0}" };
+    d.geoNodes.unshift(owner);
     const ridgePoints: Point[] = [[-23, -12], [-19, -8], [-12, -8], [-9, -4]];
     const curve = openCurve<never>(ridgePoints.map(p => ({ p })), "corner", "ridge-");
     curve.nodes[1].bulge = .5;
@@ -133,6 +142,17 @@ export function checkInspectorActions(url: string) {
         const outlineRow = "[data-outline] .geometry-control";
         if (!await evaluate(s => !!document.querySelector(s), outlineRow)) await click("[data-outline] .subitem-toggle");
         await assertRow(page, outlineRow, ":scope > button", 3);
+        assert.deepEqual(await evaluate(() => {
+            const header = document.querySelector<HTMLElement>("[data-outline] > .subitem-heading")!;
+            const controls = [...header.querySelectorAll<HTMLElement>("button")];
+            const placements = controls.map(button => button.getBoundingClientRect());
+            const [left, right] = [header.getBoundingClientRect().left, header.getBoundingClientRect().right];
+            const label = header.querySelector<HTMLElement>(".subitem-source .ref-chip > span")!;
+            return {
+                fits: placements.every((box, i) => box.left >= left && box.right <= right && (i === 0 || box.left >= placements[i - 1].right)),
+                truncated: label.scrollWidth > label.clientWidth
+            };
+        }), { fits: true, truncated: true });
         await click(outlineRow + " .geometry-reference");
         await wait(() => !!document.querySelector("[aria-label=引用曲线][role=listbox]"));
         await key("Escape");
