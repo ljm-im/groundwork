@@ -48,7 +48,7 @@ export async function checkCoarsePreview(url: string) {
         });
         await mouse("mousePressed", x, y);
         for (const dx of [16, 32, 48]) await mouse("mouseMoved", x + dx, y);
-        await wait(() => document.querySelector("#mode-hint")?.textContent === "拖动中按 0.4 m 间距预览");
+        await wait(() => document.querySelector("#mode-hint .hint-text")?.textContent === "拖动中按 0.4 m 间距预览");
         const live = await evaluate(() => Number(document.querySelector("[data-input=A] .numeric-face")?.textContent?.trim()));
         await wait(value => document.querySelector<HTMLCanvasElement>("#map")?.dataset.terrainCells === "90000" &&
             window.previewFrames.at(-1)?.height === value, live);
@@ -60,7 +60,7 @@ export async function checkCoarsePreview(url: string) {
         });
         await mouse("mouseReleased", x + 48, y);
         await saved();
-        await wait(() => !document.querySelector("#mode-hint")?.textContent?.includes("间距预览") &&
+        await wait(() => !document.querySelector("#mode-hint .hint-text")?.textContent?.includes("间距预览") &&
             document.querySelector<HTMLCanvasElement>("#map")?.dataset.terrainCells === "360000");
         assert.equal(await evaluate(() => document.querySelector<HTMLCanvasElement>("#map")?.dataset.terrainStep), "0.2");
         const committed = parseDesign(await evaluate(() => window.disk("preview.json")));

@@ -116,7 +116,9 @@ export function checkSegmentDragAndGuides(url: string) {
 
 export function checkDrawingConstraints(url: string) {
     return withCurveMap(url, "round39-shift-drawing", async page => {
-        const { authored, boundary, frame, key, paint, pixels, pointer, saved, tap, text, tool, undo } = page;
+        const { authored, boundary, evaluate, frame, key, paint, pixels, pointer, saved, tap, tool, undo } = page;
+        const hintKeys = () => evaluate(() => Object.fromEntries([...document.querySelectorAll("[data-mode-hint-details] li")]
+            .map(row => [row.querySelector(".hint-text")?.textContent, row.querySelector("kbd")?.textContent])));
         const latest = async () => {
             const d = await authored();
             return boundary(d, d.geoNodes.find(n => n.id.startsWith("geo-"))!.id).nodes;
@@ -124,7 +126,9 @@ export function checkDrawingConstraints(url: string) {
         const checkPoint = (actual: Point, expected: Point) => assert(distance(actual, expected) < 1e-7, JSON.stringify({ actual, expected }));
 
         await tool("地件", "rect");
-        assert.match(await text("#mode-hint"), /按住 Shift 画正方形，按住 Ctrl 不吸附/);
+        const rectKeys = await hintKeys();
+        assert.equal(rectKeys["画正方形"], "Shift");
+        assert.equal(rectKeys["不吸附"], "Ctrl");
         const f = await frame(), start = pixels(f, [9, 13]), end = pixels(f, [22, 20]);
         await pointer("mousePressed", start, shift);
         await pointer("mouseMoved", end, shift);
@@ -153,7 +157,9 @@ export function checkDrawingConstraints(url: string) {
         await undo();
 
         await tool("地件", "pen");
-        assert.match(await text("#mode-hint"), /按住 Shift 约束方向，按住 Ctrl 不吸附/);
+        const penKeys = await hintKeys();
+        assert.equal(penKeys["约束方向"], "Shift");
+        assert.equal(penKeys["不吸附"], "Ctrl");
         await tap([4, 12], shift);
         const penView = await frame(), node = pixels(penView, [16, 21]), handle = pixels(penView, [21, 22]);
         await pointer("mousePressed", node, shift);

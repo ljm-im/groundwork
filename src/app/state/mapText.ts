@@ -8,36 +8,60 @@ import { type GridSpec } from "../../core/math/geometry.ts";
 import { type Tool } from "../types.ts";
 
 const lineEnd = "回车或双击结束，单击首个节点闭合";
-const penHint = "单击放置节点，按 S 切换尖角和自动平滑，按住 Shift 约束方向，按住 Ctrl 不吸附，";
-const closedPenHint = penHint + "回车、双击或单击首点闭合";
-const lineHint = penHint + lineEnd;
 const continueEnd = "回车或双击完成，单击另一端闭合";
 const pickCurveHint = "单击曲线换用它，单击空白处开始画，按住 Ctrl 单击在曲线上开始画，Esc 取消";
 
-const hints: Record<Tool, string> = {
-    select: "单击逐层选中，Alt 单击切换重叠的对象，Esc 回到上一层，中键或按住空格拖动平移，滚轮缩放",
-    pen: closedPenHint,
-    rect: "拖动或单击矩形的两个对角，按住 Shift 画正方形，按住 Ctrl 不吸附",
-    circle: "拖出半径或单击圆心和圆周",
-    sector: "拖出半径或单击圆心和圆周，再单击确定终止角",
-    strip: "单击要沿的地件，按住 Alt 单击可选被遮住的地件",
-    addOutline: closedPenHint,
-    shore: closedPenHint,
-    ridge: lineHint,
-    valley: lineHint,
-    slopeLine: lineHint,
-    peak: "单击放置山峰",
-    center: "单击选择圆心",
-    harbor: "单击选择港湾圆心",
-    textMark: "单击放置文字标记",
-    scaleMark: "单击放置比例尺",
-    section: "单击起点和终点",
-    geometryPoint: "单击地图放置",
-    geometryCurve: "单击添加节点，双击结束",
-    geometryClosed: closedPenHint,
-    redrawCurve: lineHint,
-    continueCurve: penHint + continueEnd
+export type HintGlyph = { key: string } | { mouse: "left" | "right" | "middle" | "wheel" } | "plus" | "or";
+export interface HintItem { glyphs: HintGlyph[]; text: string; primary?: boolean }
+
+const left = { mouse: "left" } as const;
+const right = { mouse: "right" } as const;
+const esc = { key: "Esc" }, enter = { key: "Enter" }, alt = { key: "Alt" }, shift = { key: "Shift" }, ctrl = { key: "Ctrl" };
+const hint = (text: string, glyphs: HintGlyph[], primary = false): HintItem => ({ glyphs, text, primary });
+const cancel = hint("取消", [esc], true);
+const node = hint("放置节点", [left], true);
+const square = hint("画正方形", [shift]), noSnap = hint("不吸附", [ctrl]);
+const penControls = [hint("切换尖角和自动平滑", [{ key: "S" }]), hint("约束方向", [shift]), noSnap];
+const alternate = hint("选被遮住的地件", [alt, "plus", left]);
+const navigate = [
+    hint("拖动平移", [{ mouse: "middle" }, "or", { key: "Space" }, "plus", left]),
+    hint("缩放", [{ mouse: "wheel" }])
+];
+const closedPen = [node, hint("闭合", [enter], true), cancel, hint("双击或单击首个节点闭合", [left]), ...penControls];
+const lineEndHints = [node, hint("结束", [enter], true), cancel, hint("双击结束", [left])];
+const line = [...lineEndHints, hint("单击首个节点闭合", [left]), ...penControls];
+const radius = hint("拖出半径，或单击圆心和圆周", [left], true);
+const finishAngle = hint("确定终止角", [left], true);
+const point = (label: string) => [hint("放置" + label, [left], true), cancel];
+
+export const hints: Record<Tool, readonly HintItem[]> = {
+    select: [hint("逐层选中", [left], true), hint("回到上一层", [esc], true),
+        hint("切换重叠的对象", [alt, "plus", left], true), hint("打开菜单", [right])],
+    pen: closedPen,
+    rect: [hint("拖动或单击两个对角", [left], true), cancel, square, noSnap],
+    circle: [radius, cancel],
+    sector: [radius, hint("再单击确定终止角", [left], true), cancel],
+    strip: [hint("单击要沿的地件", [left], true), cancel, alternate],
+    addOutline: closedPen,
+    shore: closedPen,
+    ridge: line,
+    valley: line,
+    slopeLine: line,
+    peak: point("山峰"),
+    center: point("圆心"),
+    harbor: point("港湾圆心"),
+    textMark: point("文字标记"),
+    scaleMark: point("比例尺"),
+    section: [hint("单击起点和终点", [left], true), cancel],
+    geometryPoint: point("点"),
+    geometryCurve: [node, hint("双击结束", [left], true), cancel],
+    geometryClosed: closedPen,
+    redrawCurve: line,
+    continueCurve: [node, hint("完成", [enter], true), hint("放弃这次加的节点", [esc], true),
+        hint("双击完成", [left]), hint("单击另一端闭合", [left]), hint("删除上一个节点", [{ key: "Backspace" }]), ...penControls]
 };
+const pickCurve = [hint("单击曲线换用它", [left], true), hint("单击空白处开始画", [left], true), cancel,
+    hint("在曲线上开始画", [ctrl, "plus", left])];
 
 export function drawingStatus(mode: Exclude<Tool, "select">, name: string, owner?: string, member?: number, names: string[] = [], curve?: GeoDraft["curve"]) {
     const label = "“" + name + "”", pen = "回车、双击或单击首点结束", point = "单击地图放置";
@@ -70,25 +94,34 @@ export function drawingStatus(mode: Exclude<Tool, "select">, name: string, owner
     return { title, end, finish, owner, member };
 }
 
-export function drawingHint(tool: Tool, draft?: GeoDraft, finish?: string) {
-    if (draft?.curve?.pick) return pickCurveHint;
-    if (tool === "select") return hints.select;
-    if (draft?.radius) return "单击确定终止角，Esc 取消";
-    if (draft?.sizing) return tool === "rect" ? "单击确定对角，按住 Shift 画正方形，按住 Ctrl 不吸附，Esc 取消" : "单击确定半径，Esc 取消";
-    let hint = tool === "redrawCurve" && draft?.curve?.requiredClosed ? closedPenHint : hints[tool];
-    if (tool === "strip" && draft) {
-        if (draft.anchors.length === 1) hint = "单击终止节点";
-        else if (draft.anchors.length === 2) hint = "Tab 交换方向，回车确认";
-        else if (draft.owner) hint = finish ?? hint;
-        else if (draft.ids.length === 1) hint = "单击另一个地件改沿公共边，单击起止节点只取一段，或回车取整圈";
-        else if (draft.ids.length === 2) hint = "单击起止节点只取一段，或回车取整条公共边";
-    }
-    return hint + "，Esc 取消";
+function stripHints(draft: GeoDraft) {
+    const swap = hint("交换方向", [{ key: "Tab" }], true);
+    const confirm = hint("确认", [enter], true);
+    const range = hint("单击起止节点只取一段", [left], true);
+    if (draft.anchors.length === 1) return [hint("单击终止节点", [left], true), cancel];
+    if (draft.anchors.length === 2) return [swap, confirm, cancel];
+    if (draft.owner) return [hint("单击起止节点", [left], true), swap, confirm, { ...cancel, primary: false }];
+    if (draft.ids.length === 1) return [hint("单击另一个地件改沿公共边", [left], true), range, cancel,
+        hint("取整圈", [enter]), alternate];
+    if (draft.ids.length === 2) return [range, hint("取整条公共边", [enter], true), cancel];
+    return hints.strip;
 }
 
-export function numberPreviewHint(step: number) {
+export function drawingHint(tool: Tool, draft?: GeoDraft): HintItem[] {
+    let items = hints[tool];
+    if (draft?.curve?.pick) items = pickCurve;
+    else if (draft?.radius) items = [finishAngle, cancel];
+    else if (draft?.sizing) items = tool === "rect" ? [hint("确定对角", [left], true), cancel, square, noSnap] :
+        [hint("确定半径", [left], true), cancel];
+    else if (tool === "redrawCurve" && draft?.curve?.requiredClosed) items = closedPen;
+    else if (tool === "redrawCurve" && draft?.curve?.openOnly) items = [...lineEndHints, ...penControls];
+    else if (tool === "strip" && draft) items = stripHints(draft);
+    return [...items, ...navigate];
+}
+
+export function numberPreviewHint(step: number): HintItem[] {
     const spacing = Number(displayValue(step, gridStep.step));
-    return "拖动中按 " + spacing + " " + gridStep.unit + " 间距预览";
+    return [hint("拖动中按 " + spacing + " " + gridStep.unit + " 间距预览", [], true)];
 }
 
 export function readingRange(samples?: FieldSamples): [number, number] | undefined {

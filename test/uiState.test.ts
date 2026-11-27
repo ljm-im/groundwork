@@ -9,7 +9,7 @@ import { commitControl, controlPreview, geometryPath, insertCurveNode } from "..
 import { holderLayer, holderTarget, selectionLayers, type SelectionPath } from "../src/core/edit/selection.ts";
 import { parseDesign } from "../src/core/design/model.ts";
 import { type Design } from "../src/core/design/v5.ts";
-import { positionReadings, readingRange } from "../src/app/state/mapText.ts";
+import { drawingHint, hints, numberPreviewHint, positionReadings, readingRange } from "../src/app/state/mapText.ts";
 import { controlSnap, sectionSnap } from "../src/app/state/mapSnaps.ts";
 import { draftPointer } from "../src/app/state/geoTools.ts";
 import { propertyTabs } from "../src/app/state/inspector.ts";
@@ -135,6 +135,21 @@ test("Repeated clicks still advance one layer until the end of the hit", () => {
         current = nextMapHit([{ path: outlineA }], current)!.path;
         assert.deepEqual(current, outlineA.slice(0, depth));
     }
+});
+
+test("Every map tool supplies ordered primary hints and a shared navigation footer", () => {
+    for (const key of Object.keys(hints) as (keyof typeof hints)[]) {
+        const items = drawingHint(key), primary = items.filter(item => item.primary);
+        assert(primary.length >= 1 && primary.length <= 3, key);
+        assert(items.every(item => item.text.length && item.glyphs.length), key);
+        assert.deepEqual(items.slice(-2).map(item => item.text), ["拖动平移", "缩放"], key);
+    }
+    const selected = drawingHint("select").filter(item => item.primary);
+    assert.deepEqual(selected.map(item => item.text), ["逐层选中", "回到上一层", "切换重叠的对象"]);
+    assert.deepEqual(selected.map(item => item.glyphs), [[{ mouse: "left" }], [{ key: "Esc" }], [{ key: "Alt" }, "plus", { mouse: "left" }]]);
+    assert(drawingHint("continueCurve").some(item => item.text === "删除上一个节点" &&
+        item.glyphs.some(glyph => typeof glyph === "object" && "key" in glyph && glyph.key === "Backspace")));
+    assert.deepEqual(numberPreviewHint(.4)[0]?.text, "拖动中按 0.4 m 间距预览");
 });
 
 test("Map gestures use only related alignment points and Shift and Ctrl bypass nearby snaps", async () => {

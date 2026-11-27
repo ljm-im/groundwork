@@ -78,7 +78,7 @@ export async function checkSpacePan(url: string) {
         const face = coveredLandformPoints[0], other: Point = [32, 12];
         await tap(face);
         assert.equal((await frame()).selection?.id, "B");
-        assert.equal(await text("#mode-hint"), "单击逐层选中，Alt 单击切换重叠的对象，Esc 回到上一层，中键或按住空格拖动平移，滚轮缩放");
+        assert.equal(await text("#mode-hint .hint-text"), "逐层选中");
         await move(other);
         await evaluate(() => {
             const button = document.querySelector<HTMLButtonElement>("#fit")!;

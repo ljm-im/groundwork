@@ -1,5 +1,5 @@
 import { checkGeometryObjects } from "./round42.ts";
-import { checkSelectionHierarchy } from "./round43.ts";
+import { checkMapHints, checkSelectionHierarchy } from "./round43.ts";
 import { resolveDesign } from "../../src/core/design/parameters.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -73,6 +73,7 @@ test("Editor interactions in Chromium", async t => {
         await t.test("Node profiles, slope lines, valleys and localized inspector labels in Chromium", () => checkProfilesAndLabels(url));
         await t.test("Geometry objects, holders and mark anchors in Chromium", () => checkGeometryObjects(url));
         await t.test("Selection hierarchy, curve styling and replacing by face in Chromium", () => checkSelectionHierarchy(url));
+        await t.test("Map hints show all actions and fit narrow maps in Chromium", () => checkMapHints(url));
         await t.test("List and numeric reference searches match visible labels in Chromium", () => checkVisibleSearch(url));
     }
     finally {
@@ -363,12 +364,12 @@ async function checkEditor(url: string) {
         console.log("Immediate function and slope form switches, with undo");
         await choose("函数", "海岸");
         assert.equal(await evaluate(() => document.querySelector("[aria-label=海岸线]")?.getAttribute("aria-pressed")), "true");
-        assert.match(await text("#mode-hint"), /单击逐层选中/);
+        assert.equal(await text("#mode-hint .hint-text"), "逐层选中");
         await click("#undo"); await idle();
         await wait(() => document.querySelector("button.choice-face[aria-label=函数] span")?.textContent === "升降");
         await choose("函数", "坡面");
         assert(await evaluate(() => !!document.querySelector("[aria-label=添加坡线]") && !document.querySelector("[aria-label=坡线]")));
-        assert.match(await text("#mode-hint"), /单击逐层选中/);
+        assert.equal(await text("#mode-hint .hint-text"), "逐层选中");
         await choose("坡面形式", "径向");
         assert.equal(await text("[data-parameter$=\".function.rate\"] .unit"), "m/m");
         const maxWidth = await evaluate(() => {
@@ -515,7 +516,7 @@ async function checkEditor(url: string) {
                 await cdp("Input.dispatchMouseEvent", { type, x, y, button, clickCount, modifiers });
         }
         const status = ".drawing-status";
-        const selected = () => wait(() => !document.querySelector(".drawing-status") && document.querySelector("#mode-hint")?.textContent?.startsWith("单击逐层选中"));
+        const selected = () => wait(() => !document.querySelector(".drawing-status") && document.querySelector("#mode-hint .hint-text")?.textContent === "逐层选中");
         async function chooseTool(category: "地件" | "标记", id: string) {
             await click("button[aria-label=新建" + category + "]");
             await click(".creation-menu [data-option=" + id + "]");
@@ -551,7 +552,7 @@ async function checkEditor(url: string) {
             assert(await disk() === original, "One undo must restore the previous design");
             await start(); await vertices(closed, firstModifiers);
             await tap(end); await tap([end[0] + 1, end[1]], 2); await idle(); await saved();
-            assert.match(await text("#mode-hint"), /单击逐层选中/);
+            assert.equal(await text("#mode-hint .hint-text"), "逐层选中");
             assert(await disk() === byEnter, "Double-click and Enter must save identical geometry");
         }
         console.log("Drawing status, Escape, undo, selection and placement cancellation");
@@ -614,7 +615,7 @@ async function checkEditor(url: string) {
         await pen(); await vertices(false);
         await tap(a); await tap(a, 2); await idle();
         assert.match(await text("#toast"), /至少需要三个节点/);
-        assert.match(await text("#mode-hint"), /单击放置节点，按 S 切换尖角和自动平滑/);
+        assert.equal(await text("#mode-hint .hint-text"), "放置节点");
         await tap(c); await key("Enter"); await idle(); await saved();
         assert(await disk() === triangle, "An incomplete double-click must leave the original vertices and IDs intact");
 
@@ -628,7 +629,7 @@ async function checkEditor(url: string) {
             await cdp("Input.dispatchMouseEvent", { ...second, type: "mouseReleased" });
             await idle(); await saved();
             assert(await disk() === triangle, "Double-clicking the first node must close exactly once");
-            assert.match(await text("#mode-hint"), /单击逐层选中/);
+            assert.equal(await text("#mode-hint .hint-text"), "逐层选中");
             assert.equal(await evaluate(() => !!document.querySelector("[aria-label=节点类型]")), false);
         }
         await undo();
@@ -640,7 +641,7 @@ async function checkEditor(url: string) {
         }
         await cdp("Emulation.setTouchEmulationEnabled", { enabled: false });
         await idle(); await saved();
-        assert.match(await text("#mode-hint"), /单击逐层选中/);
+        assert.equal(await text("#mode-hint .hint-text"), "逐层选中");
         assert(await disk() === triangle, "A native double-tap must finish the same drawing");
         for (let i = 0; i < 3; i++) await tap(a);
         await tap(a, 2); await idle(); await saved();

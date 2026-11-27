@@ -180,7 +180,7 @@ async function checkDrawnCurves(url: string) {
         await click("[data-geo-node=M]");
         await click("[data-property-tab=function]");
         await click("button[aria-label=添加山脊]");
-        assert.equal(await text("#mode-hint"), "单击放置节点，按 S 切换尖角和自动平滑，按住 Shift 约束方向，按住 Ctrl 不吸附，回车或双击结束，单击首个节点闭合，Esc 取消");
+        assert.equal(await text("#mode-hint .hint-text"), "放置节点");
         assert.match(await text(".drawing-status"), /回车或双击结束，单击首个节点闭合/);
         await tap([-36, -12]);
         await drag(await screen([-23, 5]), await screen([-18, 8]));

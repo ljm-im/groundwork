@@ -7,6 +7,7 @@ import { withLayeredMap } from "./layeredMapFixture.ts";
 export async function checkStripSelection(url: string) {
     await withLayeredMap(url, "strip-selection", async ({ at, authored, click, evaluate, key, paint, saved, screenshot, tap, text, undo }) => {
         const status = ".drawing-status";
+        const hintActions = () => evaluate(() => [...document.querySelectorAll("[data-mode-hint-details] .hint-text")].map(el => el.textContent));
         async function stripTool() {
             await click("button[aria-label=新建地件]");
             await click(".creation-menu [data-option=strip]");
@@ -42,16 +43,16 @@ export async function checkStripSelection(url: string) {
         console.log("whole strips, selection colors and Alt cycling");
         await stripTool();
         assert.equal(await text(status + " span"), "单击要沿的地件");
-        assert.equal(await text("#mode-hint"), "单击要沿的地件，按住 Alt 单击可选被遮住的地件，Esc 取消");
+        assert.deepEqual((await hintActions()).slice(0, -2), ["单击要沿的地件", "取消", "选被遮住的地件"]);
         await tap(await at([-27, 7]));
         assert.equal(await text(status + " span"), "沿“台地 A”，回车确认");
-        assert.equal(await text("#mode-hint"), "单击另一个地件改沿公共边，单击起止节点只取一段，或回车取整圈，Esc 取消");
+        assert.deepEqual((await hintActions()).slice(0, -2), ["单击另一个地件改沿公共边", "单击起止节点只取一段", "取消", "取整圈", "选被遮住的地件"]);
         await key("Enter"); await saved(); await assertStrip(["A"]); await undo();
         await stripTool();
         await tap(await at([-27, 7]));
         await tap(await at([0, 6]));
         assert.equal(await text(status + " span"), "沿“台地 A”、“台地 B”，回车确认");
-        assert.equal(await text("#mode-hint"), "单击起止节点只取一段，或回车取整条公共边，Esc 取消");
+        assert.deepEqual((await hintActions()).slice(0, -2), ["单击起止节点只取一段", "取整条公共边", "取消"]);
         await paint();
         assert(await selectedPixels([-36, 1]));
         assert(await selectedPixels([32, 1]));

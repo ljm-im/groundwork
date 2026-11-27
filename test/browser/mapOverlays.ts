@@ -124,7 +124,7 @@ export async function checkMapOverlays(url: string) {
 async function checkOverlayPointers(url: string) {
     await withLayeredMap(url, "map-overlays", async ({ cdp, click, d, evaluate, fit, frame, key, openDesign, paint, panel, point, saved, screenshot, wait }) => {
         const overlaySelectors = ["#mode-hint", "#position", ".zoom-tools"];
-        const passThrough = ["#mode-hint", "#position"];
+        const passThrough = ["#mode-hint .hint-entry", "#position"];
         const park = async () => {
             await evaluate(() => window.scrollTo(0, 0));
             await paint();
@@ -206,11 +206,11 @@ async function checkOverlayPointers(url: string) {
             for (const [i, target] of targets.entries()) {
                 await pointer("mouseMoved", target, "none");
                 assert.equal(await evaluate(at => document.elementFromPoint(...at)?.id, target), "map");
-                if (!i && width === 375) await wait(() => document.querySelector(".tooltip:popover-open")?.textContent === document.querySelector("#mode-hint")?.textContent);
+                if (!i) await wait(() => document.querySelector("[data-mode-hint-details]:popover-open"));
                 await tap(target);
                 assert.equal(await selected(), "map-" + i);
                 await drag(target, [target[0], target[1] - 34], "left", async () => {
-                    assert(!await evaluate(() => !!document.querySelector(".tooltip:popover-open")));
+                    assert(!await evaluate(() => !!document.querySelector("[data-mode-hint-details]:popover-open")));
                 });
                 await saved();
                 const edited = await authored(name);

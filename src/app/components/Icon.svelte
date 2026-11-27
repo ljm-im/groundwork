@@ -11,9 +11,12 @@
         {#if subtype}<path d={icons[name]} />{/if}
         {#if builtin}<circle cx="15" cy="3" r="2.5" fill="currentColor" stroke="none" />{/if}
     {:else}<path d={icons[name]} />{/if}
+    {#if fill}<path d={fill} fill="currentColor" stroke="none" />{/if}
 </svg>
 
 <script module lang="ts">
+    const mouseOutline = "M9 1.8a5.5 5.5 0 0 1 5.5 5.5v3.4a5.5 5.5 0 1 1-11 0V7.3A5.5 5.5 0 0 1 9 1.8z M3.5 8h11";
+    const mouseSplit = mouseOutline + " M9 1.8V8";
     const icons = {
         point: "M9 1v4m0 8v4M1 9h4m8 0h4M12 9a3 3 0 1 1-6 0 3 3 0 1 1 6 0z",
         curve: "M4.5 13.5C6 5 12 13 13.5 4.5 M6 13.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 1 1 3 0z M15 4.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 1 1 3 0z",
@@ -64,13 +67,24 @@
         export: "M9 2v9m-3-3 3 3 3-3M3 10v5h12v-5",
         minus: "M3 9h12",
         plus: "M3 9h12M9 3v12",
+        more: "M4 9h.25M8.875 9h.25M13.75 9h.25",
+        mouseLeft: mouseSplit,
+        mouseRight: mouseSplit,
+        mouseMiddle: mouseOutline,
+        mouseWheel: mouseOutline + " M8 4.2a1 1 0 0 1 2 0v1.6a1 1 0 0 1-2 0z",
         fit: "M2 7V3h4m6 0h4v4m0 5v4h-4m-6 0H2v-4"
     };
     export type IconName = keyof typeof icons;
+    const mouseButtonFill: Partial<Record<IconName, string>> = {
+        mouseLeft: "M8.8 2.1v5.7H3.8v-.5a5.2 5.2 0 0 1 5-5.2z",
+        mouseRight: "M9.2 2.1a5.2 5.2 0 0 1 5 5.2v.5h-5z",
+        mouseMiddle: "M9 2.7a1.65 1.65 0 0 1 1.65 1.65v1.5a1.65 1.65 0 1 1-3.3 0v-1.5A1.65 1.65 0 0 1 9 2.7z"
+    };
 </script>
 
 <script lang="ts">
     const id = $props.id();
     let { name, builtin = false }: { name: IconName; builtin?: boolean } = $props();
     let subtype = $derived(name === "textMark" || name === "scaleMark" || name === "sectionMark");
+    let fill = $derived(mouseButtonFill[name]);
 </script>

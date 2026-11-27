@@ -1,5 +1,5 @@
 <section class="map-wrap" aria-label="全图平面图" data-busy={!!editor.busy} class:create={editor.tool !== "select"} class:empty={!editor.project}>
-    <canvas bind:this={canvas} id="map" data-tip-proxy="mode-hint" tabindex={editor.project ? 0 : -1} aria-label="可编辑的地形平面图"></canvas>
+    <canvas bind:this={canvas} id="map" tabindex={editor.project ? 0 : -1} aria-label="可编辑的地形平面图"></canvas>
     {#if !editor.project}
         <div class="empty-state">
             {#if !editor.files.supported}<div class="browser-required">需要 Chrome 或 Edge</div>{/if}
@@ -40,7 +40,7 @@
                     data-min={reading.min} data-max={reading.max}>{reading.value}</span>{/each}
             </output>
         </div>
-        <div id="mode-hint" class="map-chip" bind:this={hintChip} data-tip={hint}>{hint}</div>
+        <MapHint items={hint} bind:chip={hintChip} />
     {/if}
     <Messages {editor} />
 </section>
@@ -119,7 +119,7 @@
         .drawing-status strong { font-weight: 600; }
         .drawing-status span { font-size: var(--text-sm); line-height: var(--leading-sm); color: var(--text-secondary); }
         .drawing-actions { display: flex; gap: var(--space-1); margin-inline-start: auto; }
-        #mode-hint, #position {
+        #position {
             max-width: 100%;
             height: 24px;
             padding-inline: var(--space-2);
@@ -129,7 +129,6 @@
             overflow: hidden;
             text-overflow: ellipsis;
         }
-        #mode-hint { grid-area: 3 / 1; justify-self: start; white-space: nowrap; }
         #position { width: max-content; font-variant-numeric: tabular-nums; white-space: pre; }
         #position .reading { display: inline-block; text-align: right; vertical-align: top; }
         #position .reading::before, #position .reading::after { display: block; height: 0; overflow: hidden; visibility: hidden; }
@@ -143,7 +142,6 @@
             }
             .map-reading { display: contents; }
             .zoom-tools { grid-area: 3 / 2; justify-self: end; }
-            #mode-hint { grid-area: 3 / 1; }
             #position { grid-area: 4 / 1 / 5 / 3; justify-self: end; }
         }
     }
@@ -159,6 +157,7 @@
     import { nodeModes } from "../state/inspector.ts";
     import * as session from "../state/session.svelte.ts";
     import Icon from "./Icon.svelte";
+    import MapHint from "./MapHint.svelte";
     import Messages from "./Messages.svelte";
     import NumberInput from "./NumberInput.svelte";
     import SegmentedButtons from "./SegmentedButtons.svelte";
@@ -166,7 +165,7 @@
     let { editor, theme }: { editor: session.Editor; theme: Theme } = $props();
     const penModes = [nodeModes[0], nodeModes[1]];
     let drawView = $derived(editor.mapView && { view: editor.mapView, theme });
-    let hint = $derived(editor.numberPreviewStep === undefined ? drawingHint(editor.tool, editor.geoDraft, editor.drawing?.end)
+    let hint = $derived(editor.numberPreviewStep === undefined ? drawingHint(editor.tool, editor.geoDraft)
         : numberPreviewHint(editor.numberPreviewStep));
     let field = $derived(editor.project?.design.fields[editor.displayField]);
     let range = $derived(readingRange(editor.mapProject?.terrain.fields[editor.displayField]));
