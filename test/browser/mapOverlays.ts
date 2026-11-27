@@ -60,10 +60,14 @@ export async function checkMapOverlays(url: string) {
                     position: rect("#position"), zoom: rect(".zoom-tools"), toast: rect("#toast"),
                     percent: rect("#zoom-value .number-box"), font: getComputedStyle(document.querySelector("#zoom-value .number-box")!).fontSize,
                     readingWidth: { content: reading.scrollWidth, available: reading.clientWidth },
-                    buttons: [...document.querySelectorAll(".zoom-tools .icon-button")].map(el => {
-                        const box = el.getBoundingClientRect();
-                        return [box.height, box.width, getComputedStyle(el).borderLeftWidth];
-                    }),
+                    readingPadding: [getComputedStyle(reading).paddingLeft, getComputedStyle(reading).paddingRight],
+                    zoomPadding: getComputedStyle(document.querySelector(".zoom-tools")!).padding,
+                    buttons: [...document.querySelectorAll(".zoom-tools .icon-button")].map(el => ({
+                        box: el.getBoundingClientRect().toJSON() as DOMRect,
+                        border: getComputedStyle(el).borderLeftWidth,
+                        radius: getComputedStyle(el).borderTopLeftRadius,
+                        background: getComputedStyle(el).backgroundColor
+                    })),
                     status: !!document.querySelector(".coords"), gap: parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--space-2")) };
             });
             const { canvas, map, hint, position, zoom, toast, gap } = boxes;
@@ -75,10 +79,20 @@ export async function checkMapOverlays(url: string) {
             assert.equal(zoom.bottom, position.bottom);
             assert.equal(toast.bottom, zoom.bottom);
             assert(Math.abs((toast.left + toast.right - map.left - map.right) / 2) < 1);
-            for (const box of [hint, position, zoom, toast, boxes.percent]) assert.equal(box.height, 28);
+            for (const box of [hint, position, zoom, toast]) assert.equal(box.height, 28);
+            assert.equal(boxes.percent.height, 24);
             assert.equal(boxes.font, "13px");
+            assert.deepEqual(boxes.readingPadding, ["12px", "12px"]);
+            assert.equal(boxes.zoomPadding, "2px");
             assert(boxes.readingWidth.content <= boxes.readingWidth.available, JSON.stringify({ width, reading: boxes.readingWidth }));
-            assert.deepEqual(boxes.buttons, Array.from({ length: 3 }, () => [28, 28, "0px"]));
+            assert.equal(boxes.buttons.length, 3);
+            assert.equal(boxes.buttons[0].box.left - zoom.left, 2);
+            assert.equal(zoom.right - boxes.buttons[2].box.right, 2);
+            for (const { box, border, radius } of boxes.buttons) {
+                assert.equal(box.top - zoom.top, 2);
+                assert.equal(zoom.bottom - box.bottom, 2);
+                assert.deepEqual([box.width, box.height, border, radius], [24, 24, "0px", "4px"]);
+            }
             if (width === 375) {
                 assert.equal(position.top - hint.bottom, gap);
                 assert.equal(hint.right, zoom.right);
@@ -89,6 +103,17 @@ export async function checkMapOverlays(url: string) {
                 assert(hint.right < position.left);
             }
             await screenshot(width === 375 ? "map-bottom-narrow" : "map-bottom-wide");
+            if (width === 1440) {
+                const { box, background } = boxes.buttons[0];
+                await mouse("mouseMoved", [box.left + box.width / 2, box.top + box.height / 2], 0, "none");
+                await paint();
+                const color = await evaluate(() => {
+                    const button = document.querySelector("#minus")!;
+                    return button.matches(":hover") && getComputedStyle(button).backgroundColor;
+                });
+                assert(color && color !== background);
+                await screenshot("round43-fix4-zoom-hover", { x: zoom.left - 7, y: zoom.top - 7, width: zoom.width + 14, height: zoom.height + 14 });
+            }
             await mouse("mouseMoved", [map.right - 5, map.top - 4], 0, "none");
             await wait(() => document.querySelector<HTMLElement>("#position")?.hidden);
             assert.deepEqual(await evaluate(() => document.querySelector(".zoom-tools")!.getBoundingClientRect().toJSON()), zoom);

@@ -91,17 +91,25 @@
         }
         .map-reading { grid-area: 1 / 2; min-width: 0; display: flex; justify-content: flex-end; gap: var(--space-2); }
         .zoom-tools {
+            --zoom-padding: calc(var(--space-1) / 2);
+            --zoom-control-size: calc(var(--control-h) - 2 * var(--zoom-padding));
             display: flex;
             flex: none;
             align-items: center;
-            padding-inline: calc(var(--space-1) / 2);
+            padding: var(--zoom-padding);
             border: 0;
             outline: 1px solid var(--border-region);
             outline-offset: -1px;
         }
         .zoom-tools button { pointer-events: auto; }
+        .zoom-tools .icon-button {
+            width: var(--zoom-control-size);
+            height: var(--zoom-control-size);
+            min-height: var(--zoom-control-size);
+            border-radius: var(--radius);
+        }
         .zoom-tools #zoom-value { position: relative; width: 48px; min-width: 0; pointer-events: auto; }
-        .zoom-tools #zoom-value .number-box { height: var(--control-h); font-size: var(--text-sm); }
+        .zoom-tools #zoom-value .number-box { height: var(--zoom-control-size); font-size: var(--text-sm); }
         .zoom-tools #zoom-value .number-error {
             position: absolute; bottom: calc(100% + var(--space-2)); right: 0; width: max-content; pointer-events: none;
             padding: var(--space-1) var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-panel);
@@ -128,7 +136,7 @@
         .drawing-actions { display: flex; gap: var(--space-1); margin-inline-start: auto; }
         #position {
             min-width: 0;
-            padding-inline: var(--space-1);
+            padding-inline: var(--space-3);
             font-size: var(--text-xs);
             line-height: calc(var(--control-h) - 2px);
             color: var(--text-secondary);
