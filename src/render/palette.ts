@@ -59,7 +59,7 @@ export const overlay = {
     derivedWidth: 1,
     segmentWidth: 4,
     segmentHoverOpacity: .3,
-    geometryFill: { normal: .1, hovered: .18, selected: .26 },
+    geometryFill: { normal: .06, hovered: .1, selected: .14 },
     labelHalo: 3,
     dash: [6, 4],
     dots: [1, 3]
