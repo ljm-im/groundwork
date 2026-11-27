@@ -4,8 +4,12 @@
 <style>
     :global {
         .toast {
-            grid-area: 3 / 2;
-            justify-self: center;
+            position: absolute;
+            bottom: var(--space-3);
+            left: 50%;
+            transform: translateX(-50%);
+            width: max-content;
+            min-height: var(--control-h);
             z-index: var(--z-pop);
             background: var(--bg-panel);
             color: var(--text);
@@ -17,7 +21,7 @@
             line-height: var(--leading-sm);
             white-space: pre-line;
             overflow-wrap: anywhere;
-            max-width: 40cqw;
+            max-width: calc(100% - 2 * var(--space-3));
             pointer-events: none;
         }
         .toast.waiting { animation: show-busy 200ms steps(1, end) both; will-change: opacity; }
@@ -26,17 +30,12 @@
             to { opacity: 1; }
         }
         .toast.near {
-            position: absolute;
-            grid-area: auto;
-            width: max-content;
+            bottom: auto;
+            transform: none;
             max-width: calc(100% - 8px);
         }
         .toast[hidden] {
             display: none;
-        }
-        @container map-column (max-width: 680px) {
-            .toast:not(.near) { grid-area: 2 / 1 / 3 / 3; max-width: 100%; }
-            .map-wrap.empty .toast:not(.near) { grid-row: 4; }
         }
     }
 </style>

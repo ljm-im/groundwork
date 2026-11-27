@@ -55,30 +55,58 @@ export async function checkMapOverlays(url: string) {
             await paint();
             const boxes = await evaluate(() => {
                 const rect = (s: string) => document.querySelector(s)!.getBoundingClientRect().toJSON() as DOMRect;
+                const reading = document.querySelector("#position")!;
                 return { canvas: rect("#map"), map: rect(".map-wrap"), hint: rect("#mode-hint"),
                     position: rect("#position"), zoom: rect(".zoom-tools"), toast: rect("#toast"),
+                    percent: rect("#zoom-value .number-box"), font: getComputedStyle(document.querySelector("#zoom-value .number-box")!).fontSize,
+                    readingWidth: { content: reading.scrollWidth, available: reading.clientWidth },
+                    buttons: [...document.querySelectorAll(".zoom-tools .icon-button")].map(el => {
+                        const box = el.getBoundingClientRect();
+                        return [box.height, box.width, getComputedStyle(el).borderLeftWidth];
+                    }),
                     status: !!document.querySelector(".coords"), gap: parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--space-2")) };
             });
             const { canvas, map, hint, position, zoom, toast, gap } = boxes;
             assert(!boxes.status);
             assert.equal(canvas.bottom, map.bottom);
-            assert.equal(hint.left - map.left, 12);
-            assert.equal(map.right - position.right, 12);
-            assert.equal(map.bottom - position.bottom, 12);
-            assert.equal(zoom.right, position.right);
-            assert.equal(position.top - zoom.bottom, gap);
+            assert.equal(map.right - zoom.right, 12);
+            assert.equal(map.bottom - zoom.bottom, 12);
+            assert.equal(zoom.left - position.right, gap);
+            assert.equal(zoom.bottom, position.bottom);
+            assert.equal(toast.bottom, zoom.bottom);
             assert(Math.abs((toast.left + toast.right - map.left - map.right) / 2) < 1);
+            for (const box of [hint, position, zoom, toast, boxes.percent]) assert.equal(box.height, 28);
+            assert.equal(boxes.font, "13px");
+            assert(boxes.readingWidth.content <= boxes.readingWidth.available, JSON.stringify({ width, reading: boxes.readingWidth }));
+            assert.deepEqual(boxes.buttons, Array.from({ length: 3 }, () => [28, 28, "0px"]));
             if (width === 375) {
-                assert(hint.bottom < position.top && hint.right <= zoom.left);
-                assert(toast.bottom < hint.top);
+                assert.equal(position.top - hint.bottom, gap);
+                assert.equal(hint.right, zoom.right);
             }
             else {
-                assert(hint.right < toast.left && toast.right < position.left);
+                assert.equal(hint.left - map.left, 12);
+                assert.equal(hint.bottom, zoom.bottom);
+                assert(hint.right < position.left);
             }
             await screenshot(width === 375 ? "map-bottom-narrow" : "map-bottom-wide");
             await mouse("mouseMoved", [map.right - 5, map.top - 4], 0, "none");
             await wait(() => document.querySelector<HTMLElement>("#position")?.hidden);
+            assert.deepEqual(await evaluate(() => document.querySelector(".zoom-tools")!.getBoundingClientRect().toJSON()), zoom);
         }
+        await evaluate(() => {
+            const { map } = window.curveMapProbe.editor!;
+            map.zoomAt(30 / map.zoomFactor());
+        });
+        await wait(() => document.querySelector("#zoom-value .numeric-label")?.textContent?.trim() === "3000%");
+        assert(await evaluate(() => {
+            const face = document.querySelector("#zoom-value .numeric-face")!;
+            return face.scrollWidth <= face.clientWidth;
+        }));
+        await evaluate(() => {
+            const editor = window.curveMapProbe.editor!;
+            editor.map.fit(editor.project.terrain);
+        });
+        await paint();
 
         const visible = () => evaluate(() => {
             const el = document.querySelector<HTMLElement>("#toast")!;
@@ -99,6 +127,9 @@ export async function checkMapOverlays(url: string) {
             return flashed;
         }), false);
         assert.equal(await visible(), "");
+        await moveOverMap();
+        const zoomBox = () => evaluate(() => document.querySelector(".zoom-tools")!.getBoundingClientRect().toJSON());
+        const zoomBefore = await zoomBox();
         await evaluate(() => {
             const probe = window.curveMapProbe;
             void probe.editor!.working("正在更新地件…", () => new Promise<void>(resolve => {
@@ -111,6 +142,21 @@ export async function checkMapOverlays(url: string) {
             const toast = document.querySelector<HTMLElement>("#toast")!;
             return toast.textContent === "计算中" && !toast.hidden && Number(getComputedStyle(toast).opacity) === 1;
         });
+        assert.deepEqual(await zoomBox(), zoomBefore);
+        assert(await evaluate(() => {
+            const toast = document.querySelector<HTMLElement>("#toast")!, a = toast.getBoundingClientRect();
+            const reading = document.querySelector<HTMLElement>("#position")!, b = reading.getBoundingClientRect();
+            const left = Math.max(a.left, b.left), right = Math.min(a.right, b.right);
+            if (right <= left || a.bottom !== b.bottom) return false;
+            toast.style.pointerEvents = reading.style.pointerEvents = "auto";
+            try {
+                return document.elementFromPoint((left + right) / 2, (a.top + a.bottom) / 2) === toast;
+            }
+            finally {
+                toast.style.pointerEvents = reading.style.pointerEvents = "";
+            }
+        }));
+        await screenshot("map-bottom-busy");
         await evaluate(() => window.curveMapProbe.editor!.message("已新建设计"));
         assert.equal(await visible(), "已新建设计");
         await wait(() => document.querySelector("#toast")?.textContent === "计算中");
@@ -177,7 +223,7 @@ async function checkOverlayPointers(url: string) {
             const [hint,, zoom] = boxes, home: Point = [a + 22, b + 75];
             const screenMarks: Mark[] = [
                 fixtureMark(d, { kind: "scale", id: "hint-ruler", label: "提示比例尺", point: [hint[0] + 7, (hint[1] + hint[3]) / 2], follow: "screen" }),
-                fixtureMark(d, { kind: "scale", id: "zoom-ruler", label: "工具栏比例尺", point: [zoom[0] - 14, (zoom[1] + zoom[3]) / 2], follow: "screen" }),
+                fixtureMark(d, { kind: "scale", id: "zoom-ruler", label: "工具栏比例尺", point: [zoom[2] - 8, (zoom[1] + zoom[3]) / 2], follow: "screen" }),
                 fixtureMark(d, { kind: "text", id: "screen-text", label: "屏幕文字".repeat(20), point: [camera.width / 2, height - 20], follow: "screen" })
             ];
             const mapMarks: Mark[] = [...targets, await point("#fit")].map((at, i) => (fixtureMark(d, {
@@ -199,7 +245,7 @@ async function checkOverlayPointers(url: string) {
             for (const [i, m] of screenMarks.slice(0, 2).entries()) {
                 const { point: [x, y] } = await mark(m.id), from: Point = [a + x + 12, b + y];
                 await drag(from, [home[0] + i * 125, home[1] + 25]); await saved();
-                assert.equal(await selected(), m.id);
+                assert.equal(await selected(), m.id, "Screen mark drag at " + width + "px from " + from.join(", "));
                 assert(distance((await authored(name)).marks[i].screen, m.screen) > 25);
             }
 
@@ -227,7 +273,7 @@ async function checkOverlayPointers(url: string) {
             await park();
             await tap(await evaluate(() => {
                 const { left, top } = document.querySelector(".zoom-tools")!.getBoundingClientRect();
-                return [left + 2, top + 2];
+                return [left + 1, top + 2];
             })); await saved(); await paint();
             const added = (await authored(name)).marks.at(-1)!;
             assert.equal(added.kind, "scale");

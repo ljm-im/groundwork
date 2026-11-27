@@ -323,7 +323,7 @@ export async function checkRound31Fix(url: string) {
         const readingSize = () => evaluate(() => {
             const position = document.querySelector<HTMLOutputElement>("#position")!, zoom = document.querySelector(".zoom-tools")!;
             const box = position.getBoundingClientRect();
-            return { width: box.width, right: box.right, zoomRight: zoom.getBoundingClientRect().right,
+            return { width: box.width, right: box.right, zoomLeft: zoom.getBoundingClientRect().left,
                 clipped: position.scrollWidth > position.clientWidth,
                 slots: [...position.querySelectorAll(".reading")].map(el => el.getBoundingClientRect().width),
                 font: getComputedStyle(position).fontFamily, digits: getComputedStyle(position).fontVariantNumeric };
@@ -340,13 +340,13 @@ export async function checkRound31Fix(url: string) {
         assert.deepEqual(await readingSize(), reading);
         assert.match(await readAt([61, 0]), /高度 –$/);
         assert.deepEqual(await readingSize(), reading);
-        assert.equal(reading.right, reading.zoomRight);
+        assert.equal(reading.zoomLeft - reading.right, 8);
         assert.equal(reading.digits, "tabular-nums");
         assert.equal(reading.font, await evaluate(() => getComputedStyle(document.body).fontFamily));
         const clip = await evaluate(() => {
             const reading = document.querySelector("#position")!.getBoundingClientRect(), zoom = document.querySelector(".zoom-tools")!.getBoundingClientRect();
-            const x = Math.min(reading.left, zoom.left) - 8, y = zoom.top - 8;
-            return { x, y, width: reading.right - x + 8, height: reading.bottom - y + 8 };
+            const x = reading.left - 8, y = zoom.top - 8;
+            return { x, y, width: zoom.right - x + 8, height: zoom.bottom - y + 8 };
         });
         await screenshot("coordinate-reading", clip);
         const originalCamera = await camera();
@@ -371,7 +371,7 @@ export async function checkRound31Fix(url: string) {
         const expanded = await readingSize();
         assert(expanded.width > reading.width && expanded.slots[0] > reading.slots[0] && expanded.slots[1] > reading.slots[1]);
         assert.equal(expanded.slots[2], reading.slots[2]);
-        assert.equal(expanded.right, expanded.zoomRight);
+        assert.equal(expanded.zoomLeft - expanded.right, 8);
         assert(!expanded.clipped);
 
         await panTo(originalCamera.center);

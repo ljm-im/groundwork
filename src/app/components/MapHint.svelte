@@ -22,7 +22,7 @@
     </span>
 {/snippet}
 
-<div class="hint-area" bind:this={area}>
+<div class="hint-area" class:stacked bind:this={area}>
     <div id="mode-hint" class="map-chip" role="group" aria-label={hasMore ? "更多操作" : undefined}
         aria-describedby={hasMore ? id : undefined} hidden={!visible.length} bind:this={chip}>
         {#each visible as item (item.text)}{@render entry(item)}{/each}
@@ -40,7 +40,7 @@
 </div>
 
 <style>
-    .hint-area { grid-area: 3 / 1; min-width: 0; position: relative; pointer-events: none; }
+    .hint-area { grid-area: 1 / 1; width: max(0px, 100% - var(--space-2)); pointer-events: none; }
     #mode-hint, .hint-measure {
         display: flex;
         align-items: center;
@@ -51,10 +51,10 @@
     #mode-hint {
         width: max-content;
         max-width: 100%;
-        height: 24px;
         padding-inline: var(--space-2);
     }
     #mode-hint[hidden] { display: none; }
+    .stacked #mode-hint { position: absolute; right: 0; bottom: calc(100% + var(--space-2)); }
     .hint-measure {
         position: absolute;
         inset-inline-start: 0;
@@ -110,7 +110,7 @@
     let { items, chip = $bindable() }: { items: readonly HintItem[]; chip?: HTMLDivElement } = $props();
     let area: HTMLDivElement, measure: HTMLDivElement, popup: HTMLDivElement;
     let primary = $derived(items.filter(item => item.primary));
-    let count = $state(0), hovered = $state(false);
+    let count = $state(0), stacked = $state(false), hovered = $state(false);
     let visible = $derived(primary.slice(0, count)), hasMore = $derived(!!visible.length && visible.length < items.length);
     let open = $derived(hasMore && hovered);
 
@@ -120,7 +120,9 @@
         const chrome = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) +
             parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth);
         const widths = Array.from(measure.children, el => el.getBoundingClientRect().width);
-        const available = area.getBoundingClientRect().width;
+        const inline = area.getBoundingClientRect().width;
+        stacked = !!widths.length && chrome + widths[0] > inline;
+        const available = stacked ? area.parentElement!.getBoundingClientRect().width : inline;
         let total = chrome, next = 0;
         for (const width of widths) {
             total += width + (next ? spacing : 0);
@@ -131,11 +133,14 @@
     }
     function positionPopup() {
         if (!chip) return;
-        const anchor = chip.getBoundingClientRect(), surface = area.closest(".map-wrap")!.getBoundingClientRect();
-        const left = Math.max(12, anchor.left), top = Math.max(0, surface.top);
-        popup.style.left = left + "px";
+        const anchor = chip.getBoundingClientRect(), row = area.parentElement!.getBoundingClientRect();
+        const top = Math.max(0, area.closest(".map-wrap")!.getBoundingClientRect().top);
+        const left = Math.max(0, row.left), right = Math.min(innerWidth, row.right);
+        const anchorLeft = Math.max(left, anchor.left), anchorRight = Math.min(right, anchor.right);
+        popup.style.left = stacked ? "" : anchorLeft + "px";
+        popup.style.right = stacked ? innerWidth - anchorRight + "px" : "";
         popup.style.bottom = Math.max(0, innerHeight - anchor.top + gap) + "px";
-        popup.style.maxWidth = Math.max(0, Math.min(surface.right, innerWidth) - left - 12) + "px";
+        popup.style.maxWidth = Math.max(0, stacked ? anchorRight - left : right - anchorLeft) + "px";
         popup.style.maxHeight = Math.max(0, anchor.top - top - gap - 16) + "px";
     }
     function over(box: DOMRect, event: PointerEvent, extension = 0) {
@@ -171,6 +176,7 @@
             if (open) positionPopup();
         });
         observer.observe(area);
+        observer.observe(area.parentElement!);
         observer.observe(measure);
         const reposition = () => {
             if (open) positionPopup();

@@ -1,4 +1,4 @@
-<section class="map-wrap" aria-label="全图平面图" data-busy={!!editor.busy} class:create={editor.tool !== "select"} class:empty={!editor.project}>
+<section class="map-wrap" aria-label="全图平面图" data-busy={!!editor.busy} class:create={editor.tool !== "select"}>
     <canvas bind:this={canvas} id="map" tabindex={editor.project ? 0 : -1} aria-label="可编辑的地形平面图"></canvas>
     {#if !editor.project}
         <div class="empty-state">
@@ -26,21 +26,23 @@
         </div>
     {/if}
     {#if editor.project}
-        <div class="map-reading">
-            <div class="zoom-tools map-chip" bind:this={zoomChip}>
-                <button class="icon-button" id="minus" aria-label="缩小" data-tip="缩小" onclick={() => editor.map.zoomAt(1 / 1.4)}><Icon name="minus" /></button>
-                <NumberInput {editor} label="缩放百分比" compact kind="literal" step={1} range={zoomPercentRange} unit="%" faceUnit stepButtons={false}
-                    attributes={{ id: "zoom-value" }} setting={{ value: Math.round(zoom * 100), retainDraft: true,
-                        change: value => editor.map.zoomAt(value / (100 * editor.map.zoomFactor())), validate: validateZoom }} />
-                <button class="icon-button" id="plus" aria-label="放大" data-tip="放大" onclick={() => editor.map.zoomAt(1.4)}><Icon name="plus" /></button>
-                <button class="icon-button" id="fit" aria-label="适应" data-tip="适应" onclick={() => editor.map.fit(editor.project.terrain)}><Icon name="fit" /></button>
+        <div class="map-bottom">
+            <MapHint items={hint} bind:chip={hintChip} />
+            <div class="map-reading">
+                <output id="position" class="map-chip" bind:this={positionChip} hidden={!editor.cursor || !field}>
+                    {#each readings as reading, i (i)}{i ? "  " : ""}{reading.label + " "}<span class="reading"
+                        data-min={reading.min} data-max={reading.max}>{reading.value}</span>{/each}
+                </output>
+                <div class="zoom-tools map-chip" bind:this={zoomChip}>
+                    <button class="icon-button" id="minus" aria-label="缩小" data-tip="缩小" onclick={() => editor.map.zoomAt(1 / 1.4)}><Icon name="minus" /></button>
+                    <NumberInput {editor} label="缩放百分比" compact kind="literal" step={1} range={zoomPercentRange} unit="%" faceUnit stepButtons={false}
+                        attributes={{ id: "zoom-value" }} setting={{ value: Math.round(zoom * 100), retainDraft: true,
+                            change: value => editor.map.zoomAt(value / (100 * editor.map.zoomFactor())), validate: validateZoom }} />
+                    <button class="icon-button" id="plus" aria-label="放大" data-tip="放大" onclick={() => editor.map.zoomAt(1.4)}><Icon name="plus" /></button>
+                    <button class="icon-button" id="fit" aria-label="适应" data-tip="适应" onclick={() => editor.map.fit(editor.project.terrain)}><Icon name="fit" /></button>
+                </div>
             </div>
-            <output id="position" class="map-chip" bind:this={positionChip} hidden={!editor.cursor || !field}>
-                {#each readings as reading, i (i)}{i ? "  " : ""}{reading.label + " "}<span class="reading"
-                    data-min={reading.min} data-max={reading.max}>{reading.value}</span>{/each}
-            </output>
         </div>
-        <MapHint items={hint} bind:chip={hintChip} />
     {/if}
     <Messages {editor} />
 </section>
@@ -48,12 +50,6 @@
 <style>
     :global {
         .map-wrap {
-            display: grid;
-            grid-template-columns: minmax(0, 1fr) minmax(0, max-content) minmax(0, 1fr);
-            grid-template-rows: minmax(0, 1fr) auto minmax(24px, auto);
-            gap: var(--space-2);
-            align-items: end;
-            padding: 0 var(--space-3) var(--space-3);
             position: relative;
             background: var(--bg-app);
             overflow: hidden;
@@ -76,25 +72,36 @@
         .map-wrap.pan #map { cursor: grab; }
         .map-wrap.drag #map { cursor: grabbing; }
         .map-wrap.create #map { cursor: crosshair; }
-        .map-chip {
+        .map-bottom {
+            position: absolute;
+            inset: auto var(--space-3) var(--space-3);
             z-index: 1;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(0, max-content);
+            grid-template-rows: var(--control-h);
+            pointer-events: none;
+        }
+        .map-chip {
+            height: var(--control-h);
             border: 1px solid var(--border-region);
             border-radius: var(--radius-lg);
             background: var(--bg-map-chip);
             box-shadow: var(--shadow-pop);
             pointer-events: none;
         }
-        .map-reading { grid-area: 2 / 3 / 4 / 4; min-width: 0; display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-2); pointer-events: none; }
+        .map-reading { grid-area: 1 / 2; min-width: 0; display: flex; justify-content: flex-end; gap: var(--space-2); }
         .zoom-tools {
             display: flex;
-            max-width: 100%;
+            flex: none;
             align-items: center;
-            gap: var(--space-1);
-            padding: var(--space-1);
+            padding-inline: calc(var(--space-1) / 2);
+            border: 0;
+            outline: 1px solid var(--border-region);
+            outline-offset: -1px;
         }
         .zoom-tools button { pointer-events: auto; }
-        .zoom-tools #zoom-value { position: relative; flex: 0 1 62px; width: 62px; min-width: 0; pointer-events: auto; font-size: var(--text-xs); }
-        .zoom-tools #zoom-value .number-box { height: var(--row-h); }
+        .zoom-tools #zoom-value { position: relative; width: 48px; min-width: 0; pointer-events: auto; }
+        .zoom-tools #zoom-value .number-box { height: var(--control-h); font-size: var(--text-sm); }
         .zoom-tools #zoom-value .number-error {
             position: absolute; bottom: calc(100% + var(--space-2)); right: 0; width: max-content; pointer-events: none;
             padding: var(--space-1) var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-panel);
@@ -120,11 +127,10 @@
         .drawing-status span { font-size: var(--text-sm); line-height: var(--leading-sm); color: var(--text-secondary); }
         .drawing-actions { display: flex; gap: var(--space-1); margin-inline-start: auto; }
         #position {
-            max-width: 100%;
-            height: 24px;
-            padding-inline: var(--space-2);
+            min-width: 0;
+            padding-inline: var(--space-1);
             font-size: var(--text-xs);
-            line-height: 22px;
+            line-height: calc(var(--control-h) - 2px);
             color: var(--text-secondary);
             overflow: hidden;
             text-overflow: ellipsis;
@@ -135,15 +141,6 @@
         #position .reading::before { content: attr(data-min); }
         #position .reading::after { content: attr(data-max); }
         #position[hidden] { display: block; visibility: hidden; }
-        @container map-column (max-width: 680px) {
-            .map-wrap {
-                grid-template-columns: minmax(0, 1fr) minmax(0, max-content);
-                grid-template-rows: minmax(0, 1fr) auto auto minmax(24px, auto);
-            }
-            .map-reading { display: contents; }
-            .zoom-tools { grid-area: 3 / 2; justify-self: end; }
-            #position { grid-area: 4 / 1 / 5 / 3; justify-self: end; }
-        }
     }
 </style>
 

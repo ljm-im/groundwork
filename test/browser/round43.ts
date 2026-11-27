@@ -251,14 +251,35 @@ export function checkMapHints(url: string) {
         await moveOverMap();
         await wait(s => !document.querySelector(s)?.matches(":popover-open"), popup);
 
-        for (const [width, count] of [[480, 2], [375, 1]]) {
+        for (const width of [960, 375]) {
             await cdp("Emulation.setDeviceMetricsOverride", { width, height: 960, deviceScaleFactor: 1, mobile: false });
             await moveOverMap(); await paint();
-            assert.deepEqual(await texts(bar), primaries.slice(0, count));
-            assert(await evaluate(s => {
-                const chip = document.querySelector<HTMLElement>(s)!;
-                return chip.scrollWidth <= chip.clientWidth && getComputedStyle(chip).textOverflow === "clip";
-            }, bar));
+            const visible = await texts(bar);
+            assert(visible.length > 0 && visible.length < primaries.length);
+            assert.deepEqual(visible, primaries.slice(0, visible.length));
+            const layout = await evaluate(s => {
+                const chip = document.querySelector<HTMLElement>(s)!, box = chip.getBoundingClientRect();
+                const position = document.querySelector("#position")!.getBoundingClientRect();
+                const zoom = document.querySelector(".zoom-tools")!.getBoundingClientRect();
+                const surface = document.querySelector(".map-wrap")!.getBoundingClientRect();
+                const area = chip.parentElement!.getBoundingClientRect();
+                const style = getComputedStyle(chip);
+                const first = chip.querySelector(".hint-entry")!.getBoundingClientRect().width +
+                    [style.paddingLeft, style.paddingRight, style.borderLeftWidth, style.borderRightWidth].reduce((sum, v) => sum + parseFloat(v), 0);
+                return { whole: chip.scrollWidth <= chip.clientWidth && style.textOverflow === "clip",
+                    sameRow: box.bottom === zoom.bottom && box.right <= position.left, mapWidth: surface.width,
+                    above: box.bottom < position.top && box.right === zoom.right,
+                    room: area.width, first };
+            }, bar);
+            assert(layout.whole && layout.mapWidth < 680);
+            if (width === 375) {
+                assert(layout.above && layout.room < layout.first);
+                await screenshot("round43-fix3-hints-narrow");
+            }
+            else {
+                assert(layout.sameRow && layout.room >= layout.first);
+                await screenshot("round43-fix3-hints-compact");
+            }
             await hoverBar();
             assert.deepEqual(await texts(popup), all);
             await moveOverMap();
