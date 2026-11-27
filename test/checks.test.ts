@@ -103,12 +103,13 @@ test("Selection and hover use the same strokes at each map layer", t => {
         if (source) Object.defineProperty(globalThis, "Path2D", source);
         else Reflect.deleteProperty(globalThis, "Path2D");
     });
-    const fills: number[] = [], dots: [string, number][] = [], strokes: {
-        color: string; width: number; alpha: number; dash: number[]; radius?: number
+    const fills: number[] = [], dots: { color: string; alpha: number; center: Point }[] = [], strokes: {
+        color: string; width: number; alpha: number; dash: number[]; radius?: number; center?: Point
     }[] = [];
     const stack: { globalAlpha: number; strokeStyle: string; lineWidth: number; dash: number[]; fillStyle: string }[] = [];
     const ctx = {
-        globalAlpha: 1, strokeStyle: "", lineWidth: 0, dash: [] as number[], fillStyle: "", radius: undefined as number | undefined,
+        globalAlpha: 1, strokeStyle: "", lineWidth: 0, dash: [] as number[], fillStyle: "",
+        radius: undefined as number | undefined, center: undefined as Point | undefined,
         save() {
             const { globalAlpha, strokeStyle, lineWidth, dash, fillStyle } = this;
             stack.push({ globalAlpha, strokeStyle, lineWidth, dash, fillStyle });
@@ -118,22 +119,23 @@ test("Selection and hover use the same strokes at each map layer", t => {
         },
         setTransform() {}, fillRect() {}, translate() {}, scale() {},
         beginPath() {
-            this.radius = undefined;
+            this.radius = this.center = undefined;
         },
         moveTo() {}, lineTo() {}, closePath() {},
         setLineDash(dash: number[]) {
             this.dash = dash.slice();
         },
-        arc(_x: number, _y: number, radius: number) {
+        arc(x: number, y: number, radius: number) {
+            this.center = [x, y];
             this.radius = radius;
         },
         fill(rule?: Path2D | CanvasFillRule) {
             if (rule === "evenodd") fills.push(this.globalAlpha);
-            else if (!rule && this.radius !== undefined) dots.push([this.fillStyle, this.globalAlpha]);
+            else if (!rule && this.center) dots.push({ color: this.fillStyle, alpha: this.globalAlpha, center: this.center });
         },
         stroke(path?: Path2D) {
             strokes.push({ color: this.strokeStyle, width: this.lineWidth, alpha: this.globalAlpha,
-                dash: this.dash, radius: path ? undefined : this.radius });
+                dash: this.dash, radius: path ? undefined : this.radius, center: path ? undefined : this.center });
         }
     };
     const map = Object.assign(Object.create(ProjectMap.prototype) as ProjectMap,
@@ -144,9 +146,9 @@ test("Selection and hover use the same strokes at each map layer", t => {
         assert.equal(ctx.globalAlpha, 1);
         assert.deepEqual(stack, []);
     };
-    const highlights = () => strokes.filter(s => s.color === accent && s.width >= 2).map(s => [s.width, s.dash, s.alpha, s.radius]);
+    const highlights = () => strokes.filter(s => s.color === accent && s.width >= 2).map(s => [s.width, s.dash, s.alpha]);
     const dash = [...overlay.dash];
-    const cases: { path: SelectionPath; width: number; dashes?: number[]; hoverFill?: number[]; selectionFill?: number[]; radius?: number }[] = [
+    const cases: { path: SelectionPath; width: number; dashes?: number[]; selectionFill?: number[]; segment?: boolean }[] = [
         { path: [geo(owner.id)], width: 2 },
         { path: [section], width: 2 },
         { path: holder(owner.id, "outlines"), width: 4 },
@@ -156,37 +158,61 @@ test("Selection and hover use the same strokes at each map layer", t => {
         { path: shore, width: 4, selectionFill: [.1] },
         { path: ridge, width: 2 },
         { path: independent("open"), width: 2 },
-        { path: independent(closedId), width: 4, hoverFill: [.06], selectionFill: [.1] },
-        { path: independent("point"), width: 2, radius: 7 },
-        { path: placementSelection(design, base.curves, section, endpoint), width: 2, radius: 7 },
-        { path: seg(outline, closed.nodes[0].id), width: 4, selectionFill: [.1] },
-        { path: seg(ridge, line.nodes[0].id), width: 4, dashes: dash }
+        { path: independent(closedId), width: 4, selectionFill: [.1] },
+        { path: seg(outline, closed.nodes[0].id), width: 4, selectionFill: [.1], segment: true },
+        { path: seg(ridge, line.nodes[0].id), width: 4, dashes: dash, segment: true }
     ];
-    for (const { path, width, dashes = [], hoverFill = [], selectionFill = [], radius } of cases) {
+    for (const { path, width, dashes = [], selectionFill = [], segment } of cases) {
         draw({ hoverPath: path });
-        assert.deepEqual(highlights(), [[width, dashes, hoverAlpha, radius]], JSON.stringify(path));
-        assert.deepEqual(fills, hoverFill);
+        assert.deepEqual(highlights(), [[width, dashes, hoverAlpha]], JSON.stringify(path));
+        assert.deepEqual(fills, []);
         assert(strokes.filter(s => s.alpha === hoverAlpha).every(s => s.color === accent));
         if (path[0].kind === "section" && path.length === 1)
-            assert.deepEqual(dots.filter(([color, alpha]) => color === accent && alpha === hoverAlpha), [[accent, hoverAlpha], [accent, hoverAlpha]]);
+            assert.equal(dots.filter(dot => dot.color === accent && dot.alpha === hoverAlpha).length, 2);
         draw({ selectionPath: path });
-        assert.deepEqual(highlights(), [[width, dashes, 1, radius]], JSON.stringify(path));
+        const selectedStroke = [width, dashes, 1];
+        assert.deepEqual(highlights(), segment ? [[2, [], 1], selectedStroke] : [selectedStroke], JSON.stringify(path));
         assert.deepEqual(fills, selectionFill);
     }
+
+    const peak = holder("M", "peaks"), shoreCenter = holder("C", "harbor");
+    const endpointPath = placementSelection(design, base.curves, section, endpoint);
+    const points: [SelectionPath, Point][] = [
+        [independent("point"), [15, -12]],
+        [peak, [-26, 22]],
+        [held("M", "peaks"), [-26, 22]],
+        [shoreCenter, [18, 22]],
+        [held("C", "harbor"), [18, 22]],
+        [[section, endpoint], [-10, 9]],
+        [endpointPath, [-10, 9]]
+    ];
+    for (const [path, [x, y]] of points) for (const state of ["selected", "hovered"] as const) {
+        draw(state === "selected" ? { selectionPath: path } : { hoverPath: path });
+        const selected = state === "selected";
+        const handleFills = dots.filter(dot => dot.center[0] === x && dot.center[1] === y).map(({ color, alpha }) => [color, alpha]);
+        assert.deepEqual(handleFills, selected ? [[accent, 1]] : [[colors.bgPanel, 1], [accent, hoverAlpha]]);
+        const handleStrokes = strokes.filter(s => s.center?.[0] === x && s.center[1] === y);
+        assert.deepEqual(handleStrokes.map(s => [s.color, s.width, s.alpha, s.radius, s.dash]), [[accent, 1.5, 1, 4, []]]);
+    }
+
     const vertex: SelectionPath = [...outline, { kind: "vertex", nodeId: closed.nodes[0].id }];
-    for (const path of [holder("M", "peaks"), holder("C", "harbor"), [section, endpoint] as const, vertex]) {
-        draw({ hoverPath: path });
-        assert.deepEqual(highlights(), []);
-        assert.deepEqual(dots.filter(([color]) => color === accent), [[accent, hoverAlpha]]);
+    const ridgeVertex: SelectionPath = [...ridge, { kind: "vertex", nodeId: line.nodes[0].id }];
+    for (const [path, fill] of [[vertex, [.1]], [ridgeVertex, []]] as const) {
         draw({ selectionPath: path });
-        assert.deepEqual(dots.filter(([color]) => color === accent), [[accent, 1]]);
+        assert.deepEqual(fills, fill);
+        assert.deepEqual(highlights(), [[2, [], 1]]);
+        assert.equal(dots.filter(dot => dot.color === accent && dot.alpha === 1).length, 1);
+        draw({ hoverPath: path });
+        assert.deepEqual(fills, []);
+        assert.deepEqual(highlights(), []);
+        assert.equal(dots.filter(dot => dot.color === accent && dot.alpha === hoverAlpha).length, 1);
     }
 
     draw({ hoverPath: shore, layers: { ...base.layers, geoNodes: true } });
     assert.equal(strokes.filter(s => s.color === colors.parameterGeometry).length, 1, "Only the idle ridge is purple");
     draw({ selectionPath: vertex, hoverPath: outline });
     assert.deepEqual(fills, [.1]);
-    assert.deepEqual(highlights(), [[4, [], hoverAlpha, undefined]]);
+    assert.deepEqual(highlights(), [[4, [], hoverAlpha], [2, [], 1]]);
 
     const layers = { ...base.layers, geometry: true };
     draw({ hoverPath: [section], layers });
@@ -202,12 +228,12 @@ test("Selection and hover use the same strokes at each map layer", t => {
     draw({ draft, curveChoices: choices });
     assert.deepEqual(fills, []);
     assert.equal(strokes.filter(s => s.color === colors.parameterGeometry && s.width === 2 && !s.dash.length).length, 2);
-    for (const [key, placement, expected] of [["A", placed, []], ["B", loose, [.06]]] as const) {
+    for (const { key, placements: [placement] } of choices) {
         draw({ draft, curveChoices: choices, hoveredCurveChoice: key });
-        assert.deepEqual(fills, expected);
-        assert.deepEqual(highlights(), [[4, [], hoverAlpha, undefined]]);
+        assert.deepEqual(fills, []);
+        assert.deepEqual(highlights(), [[4, [], hoverAlpha]]);
         draw({ referenceCurves: [placement] });
-        assert.deepEqual(fills, expected);
-        assert.deepEqual(highlights(), [[4, [], hoverAlpha, undefined]]);
+        assert.deepEqual(fills, []);
+        assert.deepEqual(highlights(), [[4, [], hoverAlpha]]);
     }
 });

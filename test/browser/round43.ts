@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { type Design, type Point } from "../../src/core/design/v5.ts";
-import { baseMap, mapColors, overlay } from "../../src/render/palette.ts";
+import { mapColors, overlay } from "../../src/render/palette.ts";
 import { distance } from "../../src/core/math/geometry.ts";
 import { addLayer, fixtureCurve, fixtureMark, literalCurve, openCurve, rect, syntheticDesign, withNodeSlope } from "../scenarios.ts";
 import { withCurveMap } from "./curveMapFixture.ts";
@@ -146,11 +146,14 @@ export function checkSelectionHierarchy(url: string) {
 
         await tap(vertex);
         assert.equal(await text("[data-curve-node] .subitem-label"), "节点 1");
+        await move(away);
+        assert.deepEqual(await fills(), [.1]);
+        const start = pixels(await frame(), vertex, true);
+        const curveStrokes = (await strokes()).filter(s => distance(s.points[0], start) < .02);
+        assert.deepEqual(curveStrokes.map(s => [s.width, s.color, s.alpha, s.dash]), [[2, mapColors.light.accent, 1, []]]);
+        await screenshot("round43-fix5-selected-node");
         await move(p);
         assert.deepEqual(await fills(), [.1]);
-        const boundary = await evaluate(() => [...window.curveMapProbe.strokes, ...window.curveMapProbe.pathStrokes]);
-        assert(boundary.some(s => s.color === baseMap.light.boundary && Math.abs(s.width - .6) < .001));
-        assert(!boundary.some(s => s.color === mapColors.light.parameterGeometry && s.width === 2));
         await move(outline.nodes[1].p);
         assert.equal((await frame()).hoverPath?.at(-1)?.kind, "vertex");
         await tap(outline.nodes[1].p);
@@ -227,7 +230,9 @@ export function checkSelectionHierarchy(url: string) {
         await tap(mark); await tap(mark);
         assert.equal((await frame()).selectionPath?.[1]?.kind, "geometry");
         const at = pixels(await frame(), mark, true);
-        assert((await evaluate(() => window.curveMapProbe.arcStrokes)).some(arc => arc.radius === 7 && arc.width === 2 && distance(arc.point, at) < .02));
+        const handles = (await evaluate(() => window.curveMapProbe.arcStrokes))
+            .filter(arc => arc.color === mapColors.light.accent && distance(arc.point, at) < .02);
+        assert.deepEqual(handles.map(arc => [arc.radius, arc.width, arc.alpha]), [[overlay.handleRadius, overlay.handleOutline, 1]]);
     }, design);
 }
 
@@ -270,16 +275,16 @@ export function checkHoverStyles(url: string) {
         };
         const capture = async (name: string, p: Point, width: number, height: number) => {
             const [x, y] = pixels(await frame(), p);
-            await screenshot("round43-fix4-" + name, { x: Math.round(x - width / 2), y: Math.round(y - height / 2), width, height });
+            await screenshot("round43-fix5-" + name, { x: Math.round(x - width / 2), y: Math.round(y - height / 2), width, height });
         };
-        const verifyPoint = async (p: Point, ring = true) => {
+        const verifyPoint = async (p: Point) => {
             const at = pixels(await frame(), p, true);
             const { dots, arcs } = await evaluate(() => ({ dots: window.curveMapProbe.dots, arcs: window.curveMapProbe.arcStrokes }));
             assert.deepEqual(dots.filter(dot => distance(dot.point, at) < .02).map(dot => dot.color), [bgPanel, accent]);
-            assert.deepEqual(arcs.filter(arc => arc.radius === 7 && distance(arc.point, at) < .02)
-                .map(arc => [arc.color, arc.width, arc.alpha, arc.dash]), ring ? [[accent, 2, alpha, []]] : []);
+            assert.deepEqual(arcs.filter(arc => distance(arc.point, at) < .02)
+                .map(arc => [arc.color, arc.radius, arc.width, arc.alpha, arc.dash]), [[accent, overlay.handleRadius, overlay.handleOutline, 1, []]]);
         };
-        const verifyCurve = async (start: Point, width: number, fills: number[] = []) => {
+        const verifyCurve = async (start: Point, width: number) => {
             const at = pixels(await frame(), start, true);
             const { geometryFills, strokes } = await evaluate(() => {
                 const { geometryFills, strokes } = window.curveMapProbe;
@@ -287,7 +292,7 @@ export function checkHoverStyles(url: string) {
             });
             const traces = strokes.filter(stroke => distance(stroke.points[0], at) < .02);
             assert.deepEqual(traces.map(trace => [trace.color, trace.width, trace.alpha, trace.dash]), [[accent, width, alpha, []]]);
-            assert.deepEqual(geometryFills, fills);
+            assert.deepEqual(geometryFills, []);
         };
         const landform = async (id: string, tab: string) => {
             await click("[data-tab=terrain]");
@@ -314,25 +319,24 @@ export function checkHoverStyles(url: string) {
         await verifyCurve(open.nodes[0].p, 2);
         await capture("open-independent", [-18, 17], 236, 115);
         await move(fill);
-        await verifyCurve(closed.nodes[0].p, 4, [.06]);
+        await verifyCurve(closed.nodes[0].p, 4);
         await capture("closed-independent", fill, 208, 168);
 
         await click("[data-tab=inputs]");
         await moveTo("[data-select-geometry=freeOpen]");
         assert.deepEqual((await frame()).hoverPath, [{ kind: "geometry", id: "freeOpen" }]);
         await verifyCurve(open.nodes[0].p, 2);
-        await screenshot("round43-fix4-variable-hover");
+        await screenshot("round43-fix5-variable-hover");
 
         await landform("M", "function");
         await move(peak);
         assert.equal((await frame()).hoverPath?.at(-1)?.kind, "holder");
-        await verifyPoint(peak, false);
+        await verifyPoint(peak);
         await capture("point-peak-holder", peak, 106, 90);
         await click(pointRow + " .subitem-toggle");
         await moveTo(pointRow + " .geometry-box");
         assert.equal((await frame()).hoverPath?.at(-1)?.kind, "geometry");
         await verifyPoint(peak);
-        await capture("point-peak-geometry", peak, 106, 90);
         await click(ridgeRow + " .subitem-toggle");
         await moveTo(ridgeRow + " .geometry-box");
         assert.equal((await frame()).hoverPath?.at(-1)?.kind, "geometry");
@@ -346,11 +350,11 @@ export function checkHoverStyles(url: string) {
 
         await click(outlineRow + " .geometry-reference");
         await moveTo(referenceOption("freeClosed"));
-        await verifyCurve(closed.nodes[0].p, 4, [.06]);
+        await verifyCurve(closed.nodes[0].p, 4);
         await key("Escape");
         await click(outlineRow + " .geometry-redraw");
         await move(fill);
-        await verifyCurve(closed.nodes[0].p, 4, [.06]);
+        await verifyCurve(closed.nodes[0].p, 4);
         await key("Escape");
         await tap([0, 54]);
 

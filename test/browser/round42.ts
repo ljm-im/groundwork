@@ -162,7 +162,7 @@ export function checkGeometryObjects(url: string) {
             return [left + width / 2, top + height / 2] as Point;
         }, list(listedId));
         await page.pointer("mouseMoved", listBox, 0, "none"); await paint();
-        assert.deepEqual(await fills(), [.06]);
+        assert.deepEqual(await fills(), []);
         await click("[data-tab=layers]");
         const checkbox = "[data-layer=geometry]";
         assert.equal(await evaluate(s => (document.querySelector(s) as HTMLInputElement).checked, checkbox), false);

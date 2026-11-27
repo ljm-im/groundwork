@@ -17,7 +17,7 @@ import { flattenPath } from "../core/design/path.ts";
 import { insidePolygon, polygonArea } from "../core/math/polygon.ts";
 import { contourLabels, fieldContours } from "./fieldContours.ts";
 import { constrainGeoLabel, constrainSectionLabel, geoLabelPoint } from "./labelLayout.ts";
-import { drawGeoOverlay, drawHandle, drawParameterGeometry, drawPoint, drawSnapGuides, hasOutlinePreview, showsParameterGeometry,
+import { drawGeoOverlay, drawHandle, drawParameterGeometry, drawSnapGuides, hasOutlinePreview, showsParameterGeometry,
     strokeHighlight, visibleControlCurves, type HighlightState } from "./geoOverlay.ts";
 import { baseMap, canvasText, contourStyle, interfaceColors, mapColors, overlay, type MapColors, type Theme } from "./palette.ts";
 import { displayReading, displayValue } from "../core/design/display.ts";
@@ -626,7 +626,6 @@ export class ProjectMap {
         const { dragNode, dragNodes } = view, active = view.selectionPath?.[0], hovered = view.hoverPath?.[0];
         const draggedRegionId = dragNode && view.selectionPath?.length === 1 && hasOutlinePreview(dragNodes?.get(dragNode.id)?.paths) ? dragNode.id : undefined;
         const movedOutlines = dragNodes && new Map<string, Path2D>();
-        let unstrokedOutlineColor: string | undefined = base.boundary;
         for (const n of d.geoNodes) {
             if (n.disabled && !empty) continue;
             const preview = dragNodes?.get(n.id), moved = preview && hasOutlinePreview(preview.paths) ?
@@ -645,7 +644,6 @@ export class ProjectMap {
                 ctx.strokeStyle = moved ? colors.accentHover : base.boundary;
                 ctx.lineWidth = overlay.boundaryWidth / scale;
                 ctx.stroke(moved ?? regionOutline(region, g));
-                if (active?.kind === "geoNode" && n.id === active.id) unstrokedOutlineColor = undefined;
             }
         }
         const contours = view.layers.contours && samples ? fieldContours(g, samples, fieldPrecision(d.fields[view.displayField]), scale) : undefined;
@@ -695,7 +693,7 @@ export class ProjectMap {
         }
         ctx.restore();
         this.drawOverlays(view, colors);
-        drawGeoOverlay(this, view, colors, unstrokedOutlineColor);
+        drawGeoOverlay(this, view, colors);
         this.drawLabels(ctx, view, colors);
         this.drawMarks(ctx, view, colors);
         if (contours && view.layers.contourLabels) this.drawContourLabels(ctx, contours, colors);
@@ -863,7 +861,7 @@ export class ProjectMap {
                 circle(ctx, x, y, 4, colors.text, colors.bgPanel, 2);
                 mapText(ctx, colors, text, x + 8, y, true, width);
             }
-            if (selectedPoint || hoveredPoint) drawPoint(ctx, colors, x, y, selectedPoint ? "selected" : "hovered");
+            if (selectedPoint || hoveredPoint) drawHandle(ctx, colors, x, y, selectedPoint ? "selected" : "hovered");
             const [l, t, r, b] = box;
             if (view.layers.marks) this.markBoxes.push({ mark: handle, box: [x + l, y + t, x + r, y + b] });
             ctx.restore();
@@ -893,9 +891,7 @@ export class ProjectMap {
             const matches = (layers: typeof active) => layers.root?.kind === "section" && layers.root.id === h.id && layers.holder?.index === h.index;
             const selected = matches(active), hovered = matches(hover);
             const hoverSection = hover.leaf?.kind === "section" && hover.leaf.id === h.id && this.outlineState(view, "section", h.id) === "hovered";
-            if (selected && active.geometry || hovered && hover.geometry)
-                drawPoint(ctx, colors, x, y, selected && active.geometry ? "selected" : "hovered", selected ? "selected" : "hovered");
-            else drawHandle(ctx, colors, x, y, selected ? "selected" : hovered || hoverSection ? "hovered" : "normal");
+            drawHandle(ctx, colors, x, y, selected ? "selected" : hovered || hoverSection ? "hovered" : "normal");
         }
         for (const issue of view.selectedIssues ?? []) {
             if (!view.project.issues.includes(issue)) continue;

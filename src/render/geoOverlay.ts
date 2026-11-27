@@ -69,15 +69,6 @@ export function strokeHighlight(ctx: CanvasRenderingContext2D, colors: MapColors
     ctx.restore();
 }
 
-export function drawPoint(ctx: CanvasRenderingContext2D, colors: MapColors, x: number, y: number, state: HighlightState, handle: HandleState = state) {
-    drawHandle(ctx, colors, x, y, handle);
-    strokeHighlight(ctx, colors, state, 2, () => {
-        ctx.beginPath();
-        ctx.arc(x, y, 7, 0, Math.PI * 2);
-        ctx.stroke();
-    });
-}
-
 export function showsParameterGeometry(view: MapView, node: PlacedGeoNode) {
     const selection = view.selectionPath?.[0];
     return selection?.kind === "geoNode" && selection.id === node.id || view.layers.geoNodes && !node.disabled;
@@ -109,7 +100,7 @@ function strokeEdges(map: ProjectMap, segments: Segment[], color: string, width:
     ctx.setLineDash([]);
 }
 
-function fillCurveFace(map: ProjectMap, edges: Segment[], colors: MapColors, state: keyof typeof overlay.geometryFill) {
+function fillCurveFace(map: ProjectMap, edges: Segment[], colors: MapColors) {
     if (!edges.length) return;
     const { ctx } = map;
     ctx.save();
@@ -118,14 +109,13 @@ function fillCurveFace(map: ProjectMap, edges: Segment[], colors: MapColors, sta
     for (const { b } of edges) ctx.lineTo(...map.screen(b));
     ctx.closePath();
     ctx.fillStyle = colors.parameterGeometry;
-    ctx.globalAlpha *= overlay.geometryFill[state];
+    ctx.globalAlpha *= overlay.geometryFill;
     ctx.fill("evenodd");
     ctx.restore();
 }
 
 type CurveLayer = ({
-    kind: "geometry";
-    independent: boolean;
+    kind: "geometry" | "parentCurve";
 } | {
     kind: "holder";
     dashed: boolean;
@@ -137,24 +127,18 @@ type CurveLayer = ({
 
 function drawCurveHighlight(map: ProjectMap, curve: Curve, colors: MapColors, state: HighlightState, tolerance: number, layer: CurveLayer) {
     const edges = layer.kind === "segment" ? flattenSegment(curve, layer.index, tolerance) : flattenPath(curve, tolerance);
-    const geometry = layer.kind === "geometry";
-    if (geometry && curve.closed && (state === "selected" || layer.independent)) fillCurveFace(map, edges, colors, state);
-    const width = geometry && !curve.closed ? overlay.parameterWidth : overlay.segmentWidth;
+    const geometry = layer.kind === "geometry" || layer.kind === "parentCurve";
+    if (geometry && curve.closed && state === "selected") fillCurveFace(map, edges, colors);
+    const width = layer.kind === "parentCurve" || geometry && !curve.closed ? overlay.selectedWidth : overlay.segmentWidth;
     strokeHighlight(map.ctx, colors, state, width, () => {
         traceEdges(map, edges);
         map.ctx.stroke();
-    }, !geometry && layer.dashed);
+    }, "dashed" in layer && layer.dashed);
 }
 
-function hoverPlacedCurve(map: ProjectMap, view: MapView, placement: CurvePlacement, colors: MapColors, tolerance: number) {
-    drawCurveHighlight(map, placement.curve, colors, "hovered", tolerance, {
-        kind: "geometry", independent: !placement.offset && !!geometryAt(view.project.design, placement.id)?.independent
-    });
-}
-
-function drawCurveCandidate(map: ProjectMap, view: MapView, placement: CurvePlacement, colors: MapColors, tolerance: number, hovered: boolean) {
-    if (hovered) hoverPlacedCurve(map, view, placement, colors, tolerance);
-    else strokeEdges(map, flattenPath(placement.curve, tolerance), colors.parameterGeometry, overlay.parameterWidth);
+function drawCurveCandidate(map: ProjectMap, curve: Curve, colors: MapColors, tolerance: number, hovered: boolean) {
+    if (hovered) drawCurveHighlight(map, curve, colors, "hovered", tolerance, { kind: "geometry" });
+    else strokeEdges(map, flattenPath(curve, tolerance), colors.parameterGeometry, overlay.parameterWidth);
 }
 
 type Placement = Pick<CurvePlacement, "id" | "offset">;
@@ -268,16 +252,13 @@ export function visibleControlCurves(view: MapView, preview = false): { curve: C
     return shape && "curve" in shape ? [{ ...shape, holder }] : [];
 }
 
-function drawSelection(map: ProjectMap, view: MapView, path: SelectionPath, colors: MapColors, state: HighlightState,
-    tolerance: number, outlineColor?: string) {
+function drawSelection(map: ProjectMap, view: MapView, path: SelectionPath, colors: MapColors, state: HighlightState, tolerance: number) {
     const { leaf, part, root } = selectionLayers(path), selected = state === "selected";
     const shape = shapeAt(view, path, selected);
     if (!leaf || !shape) return;
     const { ctx } = map;
     if ("point" in shape) {
-        const screen = map.screen(shape.point);
-        if (leaf.kind === "geometry") drawPoint(ctx, colors, ...screen, state);
-        else drawHandle(ctx, colors, ...screen, state);
+        drawHandle(ctx, colors, ...map.screen(shape.point), state);
         return;
     }
     const { curve, index } = shape, parameter = root?.kind === "geoNode" && index < 0;
@@ -290,29 +271,12 @@ function drawSelection(map: ProjectMap, view: MapView, path: SelectionPath, colo
         drawCurveHighlight(map, curve, colors, state, tolerance, { kind: "holder", dashed: parameter });
     }
     else if (leaf.kind === "geometry") {
-        const faceSelected = view.selectionPath && includesSelection(view.selectionPath, path);
-        drawCurveHighlight(map, curve, colors, state, tolerance, {
-            kind: "geometry", independent: !faceSelected && root?.kind === "geometry" && !!geometryAt(view.project.design, root.id)?.independent
-        });
+        drawCurveHighlight(map, curve, colors, state, tolerance, { kind: "geometry" });
     }
     else if (part) {
         const control = partControl(curve, part, index, selected ? part.kind : view.hoverHandle ?? part.kind);
         if (!control) return;
-        if (selected) {
-            const edges = flattenPath(curve, tolerance);
-            if (curve.closed) fillCurveFace(map, edges, colors, "selected");
-            const visible = part.kind === "segment" ? edges.filter(edge => edge.from !== part.nodeId) : edges;
-            if (parameter || root?.kind === "geometry") {
-                const hover = view.hoverPath, hoveringCurve = hover && includesSelection(hover, geometrySelectionPath(path));
-                if (!hoveringCurve || hover.at(-1)?.kind !== "geometry") {
-                    const hoveredPart = hoveringCurve && selectionLayers(hover).part;
-                    const idle = !view.hoverHandle && hoveredPart && hoveredPart.kind === "segment" ?
-                        visible.filter(edge => edge.from !== hoveredPart.nodeId) : visible;
-                    strokeEdges(map, idle, colors.parameterGeometry, overlay.parameterWidth, parameter);
-                }
-            }
-            else if (outlineColor) strokeEdges(map, visible, outlineColor, overlay.boundaryWidth);
-        }
+        if (selected) drawCurveHighlight(map, curve, colors, state, tolerance, { kind: "parentCurve" });
         if (control.role === "segment") {
             drawCurveHighlight(map, curve, colors, state, tolerance, { kind: "segment", dashed: parameter, index: control.index });
         }
@@ -341,7 +305,7 @@ function drawSelectedControls(map: ProjectMap, view: MapView, path: SelectionPat
     }
 }
 
-export function drawGeoOverlay(map: ProjectMap, view: MapView, colors: MapColors, outlineColor?: string) {
+export function drawGeoOverlay(map: ProjectMap, view: MapView, colors: MapColors) {
     const ctx = map.ctx, scale = map.scale, d = view.project.design, draft = view.draft;
     const dot = (point: Point, state?: HandleState, control = false) => drawHandle(ctx, colors, ...map.screen(point), state, control);
     ctx.save();
@@ -366,18 +330,18 @@ export function drawGeoOverlay(map: ProjectMap, view: MapView, colors: MapColors
         const hoverIsActive = active && hover && active.length === hover.length && includesSelection(active, hover);
         const hoverIsPart = hovered.part && active && hover && includesSelection(hover, geometrySelectionPath(active));
         if (hover && !hoverIsActive && !hoverIsPart) drawSelection(map, view, hover, colors, "hovered", tolerance);
-        if (active) drawSelection(map, view, active, colors, "selected", tolerance, outlineColor);
+        if (active) drawSelection(map, view, active, colors, "selected", tolerance);
         if (hover && hoverIsPart && !hoverIsActive && hovered.part?.kind === "segment" && !view.hoverHandle)
             drawSelection(map, view, hover, colors, "hovered", tolerance);
         if (active) drawSelectedControls(map, view, active, colors);
-        for (const placement of view.referenceCurves ?? []) hoverPlacedCurve(map, view, placement, colors, tolerance);
+        for (const { curve } of view.referenceCurves ?? []) drawCurveHighlight(map, curve, colors, "hovered", tolerance, { kind: "geometry" });
     }
     if (draft?.curve?.pick) {
         const tolerance = displayCurveTolerance(d.grid.step / 8, scale), choices = view.curveChoices ?? [];
         for (const { key, placements } of choices) if (key !== view.hoveredCurveChoice)
-            for (const placement of placements) drawCurveCandidate(map, view, placement, colors, tolerance, false);
+            for (const { curve } of placements) drawCurveCandidate(map, curve, colors, tolerance, false);
         for (const { key, placements } of choices) if (key === view.hoveredCurveChoice)
-            for (const placement of placements) drawCurveCandidate(map, view, placement, colors, tolerance, true);
+            for (const { curve } of placements) drawCurveCandidate(map, curve, colors, tolerance, true);
     }
     else if (draft) {
         if (draft.tool === "strip") {
