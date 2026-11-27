@@ -1026,7 +1026,7 @@ test("Curve picking covers faces from smallest to largest and accepts open lines
     const map: ProjectMap = Object.assign(Object.create(ProjectMap.prototype), { scale: 4 });
     const small = resolvedRect(-3, -3, 3, 3).outlines[0], large = resolvedRect(-12, -12, 12, 12).outlines[0];
     const line = openCurve([{ p: [-9, 20] }, { p: [9, 20] }]);
-    const choices = [{ key: "large", placements: [large] }, { key: "small", placements: [small] }, { key: "line", placements: [line] }];
+    const choices = Object.entries({ large, small, line }).map(([id, curve]) => ({ key: id, placements: [{ id, curve }] }));
     assert.equal(map.pickCurve(choices, [0, 0], .1), "small");
     assert.equal(map.pickCurve(choices, [3, 0], .1), "small");
     assert.equal(map.pickCurve(choices, [8, 8], .1), "large");

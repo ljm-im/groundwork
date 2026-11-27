@@ -23,7 +23,7 @@ interface Frame {
 }
 interface Probe {
     editor?: import("../../src/app/state/session.svelte.ts").Editor;
-    frame?: Frame; strokes: Stroke[]; pathStrokes: { color: string; width: number; hits?: boolean[] }[];
+    frame?: Frame; strokes: Stroke[]; pathStrokes: (Omit<Stroke, "points"> & { hits?: boolean[] })[];
     arcStrokes: (Arc & Omit<Stroke, "points">)[];
     pathChecks?: Point[]; geometryFills: number[];
     dots: { point: Point; color: string }[]; ticks: Reading[]; mapText: string[]; release?: () => void;
@@ -75,6 +75,7 @@ async function observeCurveMap() {
         if (this.canvas.id === "map") {
             if (args.length) {
                 probe.pathStrokes.push({ color: String(this.strokeStyle), width: this.lineWidth * this.getTransform().a / devicePixelRatio,
+                    alpha: this.globalAlpha, dash: this.getLineDash(),
                     hits: probe.pathChecks?.map(([x, y]) => this.isPointInStroke(args[0]!, x * devicePixelRatio, y * devicePixelRatio)) });
             }
             else if (points.length >= 2 || circle) {

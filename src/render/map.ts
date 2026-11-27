@@ -18,7 +18,7 @@ import { insidePolygon, polygonArea } from "../core/math/polygon.ts";
 import { contourLabels, fieldContours } from "./fieldContours.ts";
 import { constrainGeoLabel, constrainSectionLabel, geoLabelPoint } from "./labelLayout.ts";
 import { drawGeoOverlay, drawHandle, drawParameterGeometry, drawPoint, drawSnapGuides, hasOutlinePreview, showsParameterGeometry,
-    visibleControlCurves } from "./geoOverlay.ts";
+    strokeHighlight, visibleControlCurves, type HighlightState } from "./geoOverlay.ts";
 import { baseMap, canvasText, contourStyle, interfaceColors, mapColors, overlay, type MapColors, type Theme } from "./palette.ts";
 import { displayReading, displayValue } from "../core/design/display.ts";
 import { sectionHandles } from "../core/edit/controls.ts";
@@ -34,7 +34,8 @@ export type LabelTarget = { kind: "geoNode" | "section"; id: string };
 type LabelHit = LabelTarget & { point: Point; box: Box };
 export type LabelPreview = LabelTarget & { offset: Point };
 export type MapHit = { path: SelectionPath; control?: GeoControl; handle?: Handle };
-export type CurveChoice = { key: string; placements: readonly Curve[] };
+export type CurvePlacement = { id: string; curve: Curve; offset?: Point };
+export type CurveChoice = { key: string; placements: readonly CurvePlacement[] };
 
 const sectionHitRadius = 5, endpointHitRadius = 9;
 
@@ -144,7 +145,7 @@ export type MapView = Readonly<{
     hoverPath?: SelectionPath;
     hoverHandle?: "in" | "out" | "arc";
     referencedGeo: readonly string[];
-    referenceCurves?: readonly Curve[];
+    referenceCurves?: readonly CurvePlacement[];
     curveChoices?: readonly CurveChoice[];
     hoveredCurveChoice?: string;
     draft?: Readonly<GeoDraft>;
@@ -426,13 +427,12 @@ export class ProjectMap {
             ctx.restore();
         }
     }
-    private outlineStyle(view: MapView, kind: string, id: string, colors: MapColors) {
+    private outlineState(view: MapView, kind: "geoNode" | "section", id: string): HighlightState | undefined {
         const selected = view.selectionPath?.length === 1 && view.selectionPath[0].id === id && view.selectionPath[0].kind === kind;
         const stripSource = kind === "geoNode" && view.draft?.tool === "strip" && view.draft.ids.includes(id);
-        if (selected || stripSource) return { color: colors.accent, width: overlay.selectedWidth / this.scale };
+        if (selected || stripSource) return "selected";
         if (view.hoverPath?.length === 1 && view.hoverPath[0].kind === kind && view.hoverPath[0].id === id ||
-            kind === "geoNode" && view.referencedGeo.includes(id))
-            return { color: colors.accentHover, width: overlay.hoverWidth / this.scale };
+            kind === "geoNode" && view.referencedGeo.includes(id)) return "hovered";
     }
     *objectHits(view: MapView, screen: Point): Generator<MapHit> {
         const { authored, curves, project: { terrain, design }, selectionPath } = view, scale = this.scale;
@@ -570,7 +570,7 @@ export class ProjectMap {
     }
     pickCurve(choices: readonly CurveChoice[], point: Point, tolerance: number) {
         let key: string | undefined, faceArea = Infinity, gap = Infinity;
-        for (const choice of choices) for (const curve of choice.placements) {
+        for (const choice of choices) for (const { curve } of choice.placements) {
             const hit = hitCurve(curve, point, this.scale, tolerance, curve.closed ? 5 : 8);
             if (!hit) continue;
             if (curve.closed) {
@@ -659,19 +659,21 @@ export class ProjectMap {
         if (view.draft?.tool === "strip") for (const id of view.draft.ids) outlined.add(id);
         if (hovered?.kind === "geoNode") outlined.add(hovered.id);
         for (const id of outlined) {
-            const r = t.regions.get(id), outline = this.outlineStyle(view, "geoNode", id, colors);
-            if (!r || !outline) continue;
-            if (r.shape.spine) {
-                drawRegionArea(ctx, r, g, colors.stripArea, regionHighlights);
-                for (const edge of r.shape.spine) stroke(ctx, [edge.a, edge.b], outline.color, outline.width);
-            }
-            ctx.lineWidth = outline.width;
-            if (id === draggedRegionId && !view.dragCommitting) {
-                ctx.strokeStyle = colors.dragOrigin;
-                ctx.stroke(regionOutline(r, g));
-            }
-            ctx.strokeStyle = outline.color;
-            ctx.stroke(movedOutlines?.get(id) ?? regionOutline(r, g));
+            const r = t.regions.get(id), state = this.outlineState(view, "geoNode", id);
+            if (!r || !state) continue;
+            if (r.shape.spine) drawRegionArea(ctx, r, g, colors.stripArea, regionHighlights);
+            strokeHighlight(ctx, colors, state, overlay.selectedWidth / scale, () => {
+                for (const edge of r.shape.spine ?? []) {
+                    line(ctx, [edge.a, edge.b]);
+                    ctx.stroke();
+                }
+                if (id === draggedRegionId && !view.dragCommitting) {
+                    ctx.strokeStyle = colors.dragOrigin;
+                    ctx.stroke(regionOutline(r, g));
+                    ctx.strokeStyle = colors.accent;
+                }
+                ctx.stroke(movedOutlines?.get(id) ?? regionOutline(r, g));
+            });
         }
         this.drawIssueShapes(ctx, view, colors);
         ctx.restore();
@@ -683,8 +685,11 @@ export class ProjectMap {
         for (const sec of d.sections) {
             if (!view.layers.sections && !(hovered?.kind === "section" && hovered.id === sec.id) &&
                 !(active?.kind === "section" && active.id === sec.id)) continue;
-            const points = sec.points.map(p => this.screen(p)), outline = this.outlineStyle(view, "section", sec.id, colors);
-            if (outline) stroke(ctx, points, outline.color, outline.width * scale);
+            const points = sec.points.map(p => this.screen(p)), state = this.outlineState(view, "section", sec.id);
+            if (state) strokeHighlight(ctx, colors, state, overlay.selectedWidth, () => {
+                line(ctx, points);
+                ctx.stroke();
+            });
             else stroke(ctx, points, base.sectionLine, .85, [...overlay.dash]);
         }
         ctx.restore();
@@ -886,9 +891,10 @@ export class ProjectMap {
             if (x < -12 || y < -12 || x > this.width + 12 || y > this.height + 12) continue;
             const matches = (layers: typeof active) => layers.root?.kind === "section" && layers.root.id === h.id && layers.holder?.index === h.index;
             const selected = matches(active), hovered = matches(hover);
+            const hoverSection = hover.leaf?.kind === "section" && hover.leaf.id === h.id && this.outlineState(view, "section", h.id) === "hovered";
             if (selected && active.geometry || hovered && hover.geometry)
                 drawPoint(ctx, colors, x, y, selected && active.geometry ? "selected" : "hovered", selected ? "selected" : "hovered");
-            else drawHandle(ctx, colors, x, y, selected ? "selected" : hovered ? "hovered" : "normal");
+            else drawHandle(ctx, colors, x, y, selected ? "selected" : hovered || hoverSection ? "hovered" : "normal");
         }
         for (const issue of view.selectedIssues ?? []) {
             if (!view.project.issues.includes(issue)) continue;

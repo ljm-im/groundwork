@@ -37,7 +37,7 @@ import { contextMenuPoint } from "./popup.ts";
 import { penNodeGroup, readPenNodes, savePenNodes, type PenNodeMode } from "./penNodes.ts";
 import { objectIssues } from "../../core/checks/issues.ts";
 import { holderPropertyTab, propertyTabs, tabForSelection, type PropertyTab, type SubitemGroup } from "./inspector.ts";
-import { ProjectMap, type CurveChoice, type LabelPreview, type LabelTarget, type MapView } from "../../render/map.ts";
+import { ProjectMap, type CurveChoice, type CurvePlacement, type LabelPreview, type LabelTarget, type MapView } from "../../render/map.ts";
 import { DesignFiles, type FileAction, type SaveState } from "./files.ts";
 import { errorText, type Design, type Expression, type Gesture, type Issue, type Layer, type Mark, type Point, type Selection, type Tab, type Tool } from "../types.ts";
 
@@ -107,11 +107,14 @@ export class Editor {
     });
     geometryUses = $derived(geometryUsers(this.project.design));
     private hoveredCurveReference = $state<string>();
-    private referenceCurves = $derived.by(() => {
+    private referenceCurves = $derived.by((): CurvePlacement[] => {
         const key = this.hoveredCurveReference;
         if (!key) return [];
         const graph = this.curves, holder = graph.holders.get(key);
-        if (holder) return [graph.materialize(graph.ofHolder(holder))];
+        if (holder) {
+            const slot = graph.ofHolder(holder);
+            return [{ id: graph.source(slot).id, curve: graph.materialize(slot), offset: graph.offset(slot) }];
+        }
         const slot = graph.slots.get(key);
         return slot && !slot.holder ? this.curvePlacements(slot) : [];
     });
@@ -129,12 +132,12 @@ export class Editor {
     });
     private curvePlacements(slot: Extract<CurveSlot, { id: string }>, placements = this.curves.curvePlacements(slot.id)) {
         const graph = this.curves;
-        const byOffset = new Map<string, Curve>();
+        const byOffset = new Map<string, CurvePlacement>();
         for (const holder of placements) {
             const offset = graph.offset(graph.ofHolder(holder)), key = offset.join(",");
-            if (!byOffset.has(key)) byOffset.set(key, translateCurve(slot.value, offset));
+            if (!byOffset.has(key)) byOffset.set(key, { id: slot.id, curve: translateCurve(slot.value, offset), offset });
         }
-        return byOffset.size ? [...byOffset.values()] : [slot.value];
+        return byOffset.size ? [...byOffset.values()] : [{ id: slot.id, curve: slot.value }];
     }
     curvePath = $derived.by(() => {
         const { root, holder } = this.layersSelected;
@@ -477,6 +480,7 @@ export class Editor {
         this.map.canvas.focus({ preventScroll: true });
     }
     hoverCurveReference(key?: string) {
+        if (key) this.hoverSelection();
         this.hoveredCurveReference = key;
     }
     focusGeometry(target: GeometryTarget) {

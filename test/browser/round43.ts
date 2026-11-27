@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { type Design, type Point } from "../../src/core/design/v5.ts";
-import { baseMap, mapColors } from "../../src/render/palette.ts";
+import { baseMap, mapColors, overlay } from "../../src/render/palette.ts";
 import { distance } from "../../src/core/math/geometry.ts";
 import { addLayer, fixtureCurve, fixtureMark, literalCurve, openCurve, rect, syntheticDesign, withNodeSlope } from "../scenarios.ts";
 import { withCurveMap } from "./curveMapFixture.ts";
@@ -34,6 +34,10 @@ export function checkSelectionHierarchy(url: string) {
         const title = () => evaluate(() => document.querySelector<HTMLInputElement>(".property-title input")?.value);
         const fills = () => evaluate(() => window.curveMapProbe.geometryFills);
         const strokes = () => evaluate(() => window.curveMapProbe.strokes);
+        const hoverStroke = async (width: number) => {
+            const lines = (await strokes()).filter(s => s.alpha === overlay.segmentHoverOpacity);
+            assert.deepEqual(lines.map(s => [s.color, s.width, s.dash]), [[mapColors.light.accent, width, []]]);
+        };
         const depth = async () => (await frame()).selectionPath?.length ?? 0;
         const outlineId = curveId(design, "T"), outline = literalCurve(design, outlineId), vertex = outline.nodes[0].p;
         const otherVertex = secondOutline.curve.nodes[0].p;
@@ -111,8 +115,9 @@ export function checkSelectionHierarchy(url: string) {
         await screenshot("round43-outline");
         await move(p);
         assert.equal((await frame()).hoverPath?.at(-1)?.kind, "geometry");
-        assert.deepEqual(await fills(), [.06]);
-        await screenshot("round43-fix3-hovered-curve");
+        assert.deepEqual(await fills(), []);
+        await hoverStroke(4);
+        await screenshot("round43-fix4-hovered-outline-curve");
         await tap(p);
         assert.equal(await depth(), 3);
         assert.equal(await active(tab), "true");
@@ -152,16 +157,19 @@ export function checkSelectionHierarchy(url: string) {
         assert.equal(await active(curveInput), "false");
         assert(await evaluate(s => !!document.querySelector(s)?.parentElement?.classList.contains("selected"), row));
         await move(p);
-        assert.deepEqual(await fills(), [.06]);
+        assert.deepEqual(await fills(), []);
+        await hoverStroke(4);
         await click(curveInput);
         const pick = ".property-title button[aria-label=选取或重画轮廓]";
         await click(pick); await paint();
         assert.deepEqual(await fills(), []);
         await move([18, 16]);
-        assert.deepEqual(await fills(), [.06]);
+        assert.deepEqual(await fills(), []);
+        await hoverStroke(4);
         assert((await strokes()).some(s => s.color === mapColors.light.parameterGeometry && s.width === 2 && !s.dash.length));
         await move([21, 19]);
-        assert.deepEqual(await fills(), [.06]);
+        assert.deepEqual(await fills(), []);
+        await hoverStroke(4);
         await tap([21, 19]);
         await saved(); await paint();
         const d = await authored();
@@ -206,6 +214,138 @@ export function checkSelectionHierarchy(url: string) {
         assert.equal((await frame()).selectionPath?.[1]?.kind, "geometry");
         const at = pixels(await frame(), mark, true);
         assert((await evaluate(() => window.curveMapProbe.arcStrokes)).some(arc => arc.radius === 7 && arc.width === 2 && distance(arc.point, at) < .02));
+    }, design);
+}
+
+export function checkHoverStyles(url: string) {
+    const design = syntheticDesign("ground");
+    const point: Point = [-31, 29], peak: Point = [-28, -12];
+    const points: Point[] = [[-27, 14], [-18, 20], [-9, 14]];
+    const open = openCurve(points.map(p => ({ p })), "corner", "open-");
+    const ridge = openCurve(points.map(([x, y]) => ({ p: [x + 1, y - 19], h: 8 })), "corner", "ridge-");
+    const closed = rect(12, 15, 25, 27).outlines[0].curve;
+    const outline = rect(10, -19, 23, -7).outlines[0].curve;
+    design.geometry.freePoint = { label: "独立点", point, independent: true };
+    design.geometry.freeOpen = { label: "独立开放曲线", curve: open, independent: true };
+    design.geometry.freeClosed = { label: "独立闭合曲线", curve: closed, independent: true };
+    design.geoNodes.push(
+        addLayer(design, "M", rect(-37, -23, -3, 5), {
+            type: "mountain", ridges: [{ curve: withNodeSlope(ridge, 2) }], valleys: [],
+            peaks: [{ at: peak, height: 11, radius: 8, noise: 0, scale: 1 }]
+        }),
+        addLayer(design, "T", rect(10, -19, 23, -7), { type: "flat", amount: 2 })
+    );
+    const { construction } = design.geoNodes.find(n => n.id === "T")!;
+    assert(construction.type === "outline" && "curve" in construction.outlines[0]);
+    const outlineId = construction.outlines[0].curve;
+    return withCurveMap(url, "round43-hover-styles", async ({ click, evaluate, frame, key, paint, pixels, pointer, screenshot, tap }) => {
+        const { accent, bgPanel } = mapColors.light, alpha = overlay.segmentHoverOpacity;
+        const move = async (p: Point) => {
+            await pointer("mouseMoved", pixels(await frame(), p), 0, "none");
+            await paint();
+        };
+        const moveTo = async (selector: string) => {
+            const target = await evaluate(selector => {
+                const element = document.querySelector(selector)!;
+                element.scrollIntoView({ block: "nearest" });
+                const { x, y, width, height } = element.getBoundingClientRect();
+                return [x + width / 2, y + height / 2] as Point;
+            }, selector);
+            await pointer("mouseMoved", target, 0, "none");
+            await paint();
+        };
+        const capture = async (name: string, p: Point, width: number, height: number) => {
+            const [x, y] = pixels(await frame(), p);
+            await screenshot("round43-fix4-" + name, { x: Math.round(x - width / 2), y: Math.round(y - height / 2), width, height });
+        };
+        const verifyPoint = async (p: Point, ring = true) => {
+            const at = pixels(await frame(), p, true);
+            const { dots, arcs } = await evaluate(() => ({ dots: window.curveMapProbe.dots, arcs: window.curveMapProbe.arcStrokes }));
+            assert.deepEqual(dots.filter(dot => distance(dot.point, at) < .02).map(dot => dot.color), [bgPanel, accent]);
+            assert.deepEqual(arcs.filter(arc => arc.radius === 7 && distance(arc.point, at) < .02)
+                .map(arc => [arc.color, arc.width, arc.alpha, arc.dash]), ring ? [[accent, 2, alpha, []]] : []);
+        };
+        const verifyCurve = async (start: Point, width: number, fills: number[] = []) => {
+            const at = pixels(await frame(), start, true);
+            const { geometryFills, strokes } = await evaluate(() => {
+                const { geometryFills, strokes } = window.curveMapProbe;
+                return { geometryFills, strokes };
+            });
+            const traces = strokes.filter(stroke => distance(stroke.points[0], at) < .02);
+            assert.deepEqual(traces.map(trace => [trace.color, trace.width, trace.alpha, trace.dash]), [[accent, width, alpha, []]]);
+            assert.deepEqual(geometryFills, fills);
+        };
+        const landform = async (id: string, tab: string) => {
+            await click("[data-tab=terrain]");
+            await click("[data-geo-node=" + id + "]");
+            await click("[data-property-tab=" + tab + "]");
+            await paint();
+        };
+        const fill: Point = [18.5, 21], inside: Point = [16.5, -13];
+        const pointRow = ".subitem:has([aria-label=删除山峰])", ridgeRow = ".subitem:has([aria-label=删除山脊])";
+        const outlineRow = "#properties [data-outline]";
+        const referenceOption = (id: string) => ".reference-menu [data-option=" + JSON.stringify("curve:" + id) + "]";
+
+        await click("[data-tab=layers]");
+        await click("input[data-layer=geometry]");
+        await click("input[data-layer=geoNodes]");
+        await click("input[data-layer=issues]");
+        await click("input[data-layer=contours]");
+        await click("input[data-layer=grid]");
+        await move(point);
+        assert.deepEqual((await frame()).hoverPath, [{ kind: "geometry", id: "freePoint" }]);
+        await verifyPoint(point);
+        await capture("point-independent", point, 106, 90);
+        await move([-22.5, 17]);
+        await verifyCurve(open.nodes[0].p, 2);
+        await capture("open-independent", [-18, 17], 236, 115);
+        await move(fill);
+        await verifyCurve(closed.nodes[0].p, 4, [.06]);
+        await capture("closed-independent", fill, 208, 168);
+
+        await click("[data-tab=inputs]");
+        await moveTo("[data-select-geometry=freeOpen]");
+        assert.deepEqual((await frame()).hoverPath, [{ kind: "geometry", id: "freeOpen" }]);
+        await verifyCurve(open.nodes[0].p, 2);
+        await screenshot("round43-fix4-variable-hover");
+
+        await landform("M", "function");
+        await move(peak);
+        assert.equal((await frame()).hoverPath?.at(-1)?.kind, "holder");
+        await verifyPoint(peak, false);
+        await capture("point-peak-holder", peak, 106, 90);
+        await click(pointRow + " .subitem-toggle");
+        await moveTo(pointRow + " .geometry-box");
+        assert.equal((await frame()).hoverPath?.at(-1)?.kind, "geometry");
+        await verifyPoint(peak);
+        await capture("point-peak-geometry", peak, 106, 90);
+        await click(ridgeRow + " .subitem-toggle");
+        await moveTo(ridgeRow + " .geometry-box");
+        assert.equal((await frame()).hoverPath?.at(-1)?.kind, "geometry");
+        await verifyCurve(ridge.nodes[0].p, 2);
+        await capture("open-ridge", [-17, -2], 236, 115);
+
+        await landform("T", "region");
+        await moveTo(outlineRow + " .geometry-box");
+        assert.equal((await frame()).hoverPath?.at(-1)?.kind, "geometry");
+        await verifyCurve(outline.nodes[0].p, 4);
+
+        await click(outlineRow + " .geometry-reference");
+        await moveTo(referenceOption("freeClosed"));
+        await verifyCurve(closed.nodes[0].p, 4, [.06]);
+        await key("Escape");
+        await click(outlineRow + " .geometry-redraw");
+        await move(fill);
+        await verifyCurve(closed.nodes[0].p, 4, [.06]);
+        await key("Escape");
+        await tap([0, 54]);
+
+        await landform("M", "region");
+        await click(outlineRow + " .geometry-reference");
+        await moveTo(referenceOption(outlineId));
+        await verifyCurve(outline.nodes[0].p, 4);
+        await capture("closed-outline", inside, 208, 168);
+        await key("Escape");
     }, design);
 }
 

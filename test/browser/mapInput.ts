@@ -11,11 +11,7 @@ export async function checkLayeredHits(url: string) {
         await click("input[data-layer=geoNodes]");
         await click("input[data-layer=issues]");
         const blank: Point = [0, 53];
-        const hoverColor = await evaluate(color => {
-            const ctx = document.createElement("canvas").getContext("2d")!;
-            ctx.strokeStyle = color;
-            return String(ctx.strokeStyle);
-        }, mapColors.light.accentHover);
+        const hoverColor = mapColors.light.accent;
         for (const point of coveredLandformPoints) {
             await tap(blank);
             await pointer("mouseMoved", pixels(await frame(), point), 0, "none"); await paint();
@@ -23,7 +19,8 @@ export async function checkLayeredHits(url: string) {
             assert.equal(hover.hovered?.id, "B");
             assert.equal(hover.hoverPart, undefined);
             const strokes = await evaluate(() => window.curveMapProbe.pathStrokes);
-            assert.equal(strokes.filter(s => s.color === hoverColor && Math.abs(s.width - overlay.hoverWidth) < .001).length, 1);
+            assert.equal(strokes.filter(s => s.color === hoverColor && Math.abs(s.width - overlay.selectedWidth) < .001 &&
+                s.alpha === overlay.segmentHoverOpacity && !s.dash.length).length, 1);
 
             await tap(point);
             assert.equal((await frame()).selection?.id, "B");

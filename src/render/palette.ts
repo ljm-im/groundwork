@@ -51,7 +51,6 @@ export const canvasText = {
 export const overlay = {
     boundaryWidth: .6,
     selectedWidth: 2,
-    hoverWidth: 1,
     handleRadius: 4,
     controlRadius: 3,
     handleOutline: 1.5,

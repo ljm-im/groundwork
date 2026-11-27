@@ -175,13 +175,16 @@ export async function checkRound31Fix(url: string) {
             return { center, scale };
         });
         const viewport = await camera();
+        const hoveredBoundary = () => evaluate(({ accent, width, alpha }) => window.curveMapProbe.pathStrokes.some(s =>
+            Math.abs(s.width - width) < .001 && s.color === accent && s.alpha === alpha && !s.dash.length),
+        { accent, width: overlay.selectedWidth, alpha: overlay.segmentHoverOpacity });
         await click("[data-tab=layers]"); await click("input[data-layer=geoNodes]"); await click("[data-tab=terrain]");
         for (const id of ["M", "D"]) {
             await moveTo("[data-geo-node=" + id + "]");
             assert.equal((await frame()).hovered?.id, id);
-            assert(await evaluate(() => window.curveMapProbe.pathStrokes.some(s => Math.abs(s.width - 1) < .001 && s.color === "rgba(34, 102, 89, 0.5)")));
+            assert(await hoveredBoundary());
             await leave();
-            assert(!await evaluate(() => window.curveMapProbe.pathStrokes.some(s => Math.abs(s.width - 1) < .001)));
+            assert(!await hoveredBoundary());
         }
         await evaluate(() => document.querySelector<HTMLButtonElement>("[data-geo-node=D]")!.focus());
         await paint();
@@ -241,7 +244,9 @@ export async function checkRound31Fix(url: string) {
         await leave();
         await moveTo(".parameter-row:has([aria-label=山脊线])");
         assert.equal((await frame()).hoverPath?.at(-1)?.kind, "geometry");
-        assert(await evaluate(() => window.curveMapProbe.strokes.some(s => s.width === 2 && !s.dash.length && s.color === "rgba(34, 102, 89, 0.5)")));
+        assert(await evaluate(({ accent, alpha }) => window.curveMapProbe.strokes.some(s =>
+            s.width === 2 && !s.dash.length && s.color === accent && s.alpha === alpha),
+        { accent, alpha: overlay.segmentHoverOpacity }));
         await leave();
         assert.deepEqual(await hoverStrokes(), []);
         await tapLayer(mixPoint(ridge.nodes[0].p, node, .5), "segment", "M");
