@@ -13,7 +13,7 @@ export function checkPointReferences(url: string) {
     const node = curve.nodes[2], nodeAt: Point = [node.p[0] + 5, node.p[1]], otherNode = curve.nodes[3],
         otherAt: Point = [otherNode.p[0] + 5, otherNode.p[1]], free: Point = [33, 26];
     source.construction.outlines[0].offset = [5, 0];
-    source.outline = true;
+    source.fill = "#88a173";
     d.geometry[curveId].label = "备选轮廓";
     const m = addLayer(d, "M", rect(-34, 12, -7, 34), {
         type: "mountain", ridges: [], valleys: [], peaks: [{ at: [-18, 22], height: 14, radius: 3, noise: 0, scale: 1 }]
@@ -62,6 +62,16 @@ export function checkPointReferences(url: string) {
             await paint();
         }
         await peakRow();
+        await click("[data-tab=layers]");
+        const geometryLayer = "input[data-layer=geoNodes]";
+        if (await evaluate(sel => document.querySelector<HTMLInputElement>(sel)!.checked, geometryLayer)) await click(geometryLayer);
+        await click(pen);
+        await move(nodeAt);
+        assert(!(await dotColors(nodeAt)).includes(mapColors.light.accent), "A fill-only outline has no visible node candidate");
+        await key("Escape");
+        await click(geometryLayer);
+        await click("[data-tab=terrain]");
+
         await click(ref);
         const names = await menuNames();
         assert(names.includes("共用点") && names.includes("自由点"));
@@ -123,7 +133,7 @@ export function checkPointReferences(url: string) {
         if (!(await evaluate(() => !!document.querySelector("#properties [aria-label=选取或重画轮廓]"))))
             await click("#properties [data-outline] .subitem-toggle");
         await click("#properties [aria-label=选取或重画轮廓]");
-        await tap([38, -18]);
+        await tap([58, -18]);
         await wait(() => document.querySelector<HTMLDialogElement>("#remove-dialog")?.open);
         assert.equal(await text("#remove-heading"), "无法重画“备选轮廓”");
         assert.match(await text("#remove-dialog"), /山\.山峰 1\.位置/);

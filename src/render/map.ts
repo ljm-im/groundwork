@@ -301,8 +301,12 @@ export function hasSamples(terrain: Terrain) {
     return sampled;
 }
 
+export function showsGeoBoundary(node: PlacedGeoNode, layers: MapView["layers"], empty: boolean) {
+    return empty || !node.disabled && !!(layers.geoNodes || node.outline);
+}
+
 export function showsGeoRegion(node: PlacedGeoNode, layers: MapView["layers"], empty: boolean) {
-    return empty || !node.disabled && !!(layers.geoNodes || node.outline || node.fill);
+    return showsGeoBoundary(node, layers, empty) || !node.disabled && !!node.fill;
 }
 
 export function clampMarkPoint([x, y]: Point, [left, top, right, bottom]: Box, width: number, height: number, obstacles: readonly Box[] = []): Point {
@@ -698,7 +702,7 @@ export class ProjectMap {
                 }
                 else drawRegionArea(ctx, region, g, n.fill);
             }
-            if (n.id !== draggedRegionId && (moved || empty || n.outline || view.layers.geoNodes)) {
+            if (n.id !== draggedRegionId && (moved || showsGeoBoundary(n, view.layers, empty))) {
                 ctx.strokeStyle = moved ? colors.accentHover : base.boundary;
                 ctx.lineWidth = overlay.boundaryWidth / scale;
                 ctx.stroke(moved ?? regionOutline(region, g));
