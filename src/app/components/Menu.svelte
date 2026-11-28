@@ -24,7 +24,7 @@
                                     hover?.(item.id);
                                 }} onmouseleave={() => hover?.()} onclick={() => choose(item.id)}>
                                 {#if item.icon}<Icon name={item.icon} builtin={item.builtin} />{/if}
-                                {item.name}
+                                {#if singleLine}<span class="option-name">{item.name}</span>{:else}{item.name}{/if}
                                 {#if item.reading}<small class="menu-reading">{item.reading}</small>{/if}
                                 {#if item.branch}<span class="sub-arrow"><Icon name="chevronRight" /></span>{/if}
                             </button>
@@ -46,6 +46,7 @@
     .menu-separator { flex: none; align-self: stretch; width: 1px; background: var(--border); }
     .context-menu:global(.stacked) .menu-columns { flex-direction: column; }
     .context-menu:global(.stacked) .menu-separator { width: auto; height: 1px; margin: var(--space-1) var(--space-2); }
+    .option-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .menu-reading { margin-inline-start: auto; color: var(--text-secondary); white-space: nowrap; }
     .sub-arrow { margin-inline-start: auto; display: inline-flex; }
 </style>
@@ -64,15 +65,15 @@
     import Icon from "./Icon.svelte";
     import EmptyState from "./EmptyState.svelte";
 
-    let { label, groups = [], columns, choose, close, variant, kind = "menu", anchor, point, surface, viewport = false, keyboardTarget,
-        back, searching = false, openingKey, pointerOpened = false, hover, empty = "没有可用的变量" }: {
+    let { label, groups = [], columns, choose, close, variant, kind = "menu", anchor, trigger, point, surface, viewport = false, keyboardTarget,
+        back, searching = false, openingKey, pointerOpened = false, singleLine = false, hover, empty = "没有可用的变量" }: {
         label: string; groups?: MenuGroup[]; columns?: MenuGroup[][]; choose: (id: string) => void; close: (focus?: boolean, event?: KeyboardEvent) => void;
-        variant: string; kind?: "menu" | "listbox"; anchor?: HTMLElement; point?: { x: number; y: number }; surface?: HTMLElement;
+        variant: string; kind?: "menu" | "listbox"; anchor?: HTMLElement; trigger?: HTMLElement; point?: { x: number; y: number }; surface?: HTMLElement;
         viewport?: boolean; keyboardTarget?: HTMLElement; back?: () => void; searching?: boolean; openingKey?: string;
-        pointerOpened?: boolean; hover?: (id?: string) => void; empty?: string;
+        pointerOpened?: boolean; singleLine?: boolean; hover?: (id?: string) => void; empty?: string;
     } = $props();
     let menu: HTMLElement;
-    let placement = $derived(point ? { point, close, surface } : { anchor: anchor!, close, viewport });
+    let placement = $derived(point ? { point, close, surface } : { anchor: anchor!, trigger, close, viewport });
     let inputNavigation = $derived(!!keyboardTarget && !pointerOpened);
     let menuColumns = $derived(columns ?? [groups]);
     let items = $derived(menuColumns.flat().flatMap(group => group.items).filter(item => !item.disabled));
@@ -103,7 +104,7 @@
         if (e.key === "Escape") {
             e.preventDefault(); close(true, e); return;
         }
-        if (e.target !== anchor && e.target !== keyboardTarget && !(e.target instanceof Node && menu?.contains(e.target))) return;
+        if (e.target !== (trigger ?? anchor) && e.target !== keyboardTarget && !(e.target instanceof Node && menu?.contains(e.target))) return;
         const targets = buttons();
         if (inputNavigation && e.key === "Enter") {
             e.preventDefault(); e.stopPropagation(); itemButton(current)?.click(); return;

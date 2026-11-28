@@ -2,7 +2,7 @@ import { composingKey } from "./numbers.ts";
 
 interface AnchorBounds { top: number; bottom: number; left: number; width: number }
 type PopupPosition = { close: () => void } & (
-    { anchor: HTMLElement; viewport?: boolean; expanded?: boolean } | { point: { x: number; y: number }; surface?: HTMLElement }
+    { anchor: HTMLElement; trigger?: HTMLElement; viewport?: boolean; expanded?: boolean } | { point: { x: number; y: number }; surface?: HTMLElement }
 );
 
 const clearance = 16;
@@ -24,6 +24,7 @@ export function popupBounds(box: AnchorBounds, top: number, bottom: number, desi
 
 export function placePopup(menu: HTMLElement, config: PopupPosition) {
     const anchor = "anchor" in config ? config.anchor : null;
+    const trigger = "anchor" in config ? config.trigger ?? anchor : null;
     const surface = "point" in config ? config.surface : undefined;
     const expanded = "expanded" in config && config.expanded;
     const panel = "viewport" in config && config.viewport ? null : anchor?.closest<HTMLElement>(".panel-content");
@@ -80,7 +81,7 @@ export function placePopup(menu: HTMLElement, config: PopupPosition) {
     }
     function outside(event: PointerEvent) {
         const path = event.composedPath();
-        if (anchor && path.includes(anchor) || path.includes(menu) ||
+        if (trigger && path.includes(trigger) || path.includes(menu) ||
             expanded && path.some(n => n instanceof Element && n.matches(".reference-menu"))) return;
         config.close();
     }

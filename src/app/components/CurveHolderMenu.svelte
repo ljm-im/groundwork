@@ -4,12 +4,12 @@
     else opened = true;
 }}><Icon name="collapse" /></button>
 {#if opened}
-    <Menu {label} variant="reference-menu" kind="listbox" anchor={button} groups={choices} empty={"没有可用的" + category}
+    <Menu {label} variant="reference-menu" kind="listbox" anchor={button.closest<HTMLElement>(".subitem-heading")!} trigger={button} singleLine groups={choices} empty={"没有可用的" + category}
         {pointerOpened} close={focus => close(focus)} choose={choose} hover={key => editor.hoverCurveReference(key)} />
 {/if}
 
 <script lang="ts">
-    import { onDestroy } from "svelte";
+    import { onDestroy, tick } from "svelte";
     import { curveSlotName, holderLabel, isHolderRef, refKey, type CurveSlot } from "../../core/design/curveReferences.ts";
     import * as session from "../state/session.svelte.ts";
     import Icon from "./Icon.svelte";
@@ -36,8 +36,11 @@
         editor.hoverCurveReference();
         if (focus) button.focus({ preventScroll: true });
     }
-    function choose(id: string) {
+    async function choose(id: string) {
         close(true);
-        if (id !== current) void editor.changeCurveReference(slot, id === "unlink" ? undefined : id);
+        if (id === current) return;
+        await editor.changeCurveReference(slot, id === "unlink" ? undefined : id);
+        await tick();
+        if (button?.isConnected && document.activeElement === document.body) button.focus({ preventScroll: true });
     }
 </script>
