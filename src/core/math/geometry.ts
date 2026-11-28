@@ -74,6 +74,85 @@ export function nearest(x: number, y: number, points: Point[], closed = false) {
     return { distance: Math.sqrt(squared), segment, t };
 }
 
+/** Prepare projection along interpolated vertex normals for repeated queries on a polyline. */
+export function normalProjection(points: Point[], closed = false) {
+    const firstPoint = points[0], lastPoint = points.at(-1);
+    const repeatedEnd = closed && firstPoint && lastPoint && firstPoint[0] === lastPoint[0] && firstPoint[1] === lastPoint[1];
+    const count = points.length - +!!repeatedEnd, end = closed ? count : count - 1;
+    if (end <= 0) return (x: number, y: number) => nearest(x, y, points, closed);
+    if (!closed && end === 1) {
+        const [ax, ay] = points[0], [bx, by] = points[1];
+        const dx = bx - ax, dy = by - ay, squaredLength = dx * dx + dy * dy || 1;
+        return (x: number, y: number) => {
+            const t = clamp(((x - ax) * dx + (y - ay) * dy) / squaredLength);
+            const ox = ax + t * dx - x, oy = ay + t * dy - y;
+            return { distance: Math.sqrt(ox * ox + oy * oy), segment: 0, t };
+        };
+    }
+    const edges = Array.from({ length: end }, (_, i) => {
+        const [ax, ay] = points[i], [bx, by] = points[(i + 1) % count];
+        const dx = bx - ax, dy = by - ay, length = Math.hypot(dx, dy) || 1;
+        return { ax, ay, bx, by, dx, dy, nx: -dy / length, ny: dx / length };
+    });
+    if (!closed && edges.every(({ dx, dy }) => edges[0].dx * dy === edges[0].dy * dx &&
+        edges[0].dx * dx + edges[0].dy * dy > 0))
+        return (x: number, y: number) => nearest(x, y, points);
+    const normals = Array.from({ length: count }, (_, i): Point => {
+        const before = edges[i - 1] ?? edges.at(-1), after = edges[i] ?? edges[0];
+        if (!closed && i === 0) return [after.nx, after.ny];
+        if (!closed && i === count - 1) return [before.nx, before.ny];
+        const x = before.nx + after.nx, y = before.ny + after.ny, length = Math.hypot(x, y);
+        return length ? [x / length, y / length] : [after.nx, after.ny];
+    });
+    const segments = edges.map(({ ax, ay, bx, by, dx, dy }, i) => {
+        const [nx, ny] = normals[i], [nextX, nextY] = normals[(i + 1) % count];
+        const dnx = nextX - nx, dny = nextY - ny;
+        return { ax, ay, dx, dy, nx, ny, dnx, dny, linear: dy * nx - dx * ny, quadratic: dy * dnx - dx * dny,
+            left: Math.min(ax, bx), right: Math.max(ax, bx), bottom: Math.min(ay, by), top: Math.max(ay, by) };
+    });
+    const epsilon = 1e-12;
+    return (x: number, y: number) => {
+        let squared = Infinity, segment = 0, t = 0;
+        if (!closed && firstPoint && lastPoint) {
+            squared = (firstPoint[0] - x) ** 2 + (firstPoint[1] - y) ** 2;
+            const lastSquared = (lastPoint[0] - x) ** 2 + (lastPoint[1] - y) ** 2;
+            if (lastSquared < squared) {
+                squared = lastSquared; segment = end - 1; t = 1;
+            }
+        }
+        for (let i = 0; i < end; i++) {
+            const { ax, ay, dx, dy, nx, ny, dnx, dny, linear, quadratic, left, right, bottom, top } = segments[i];
+            const gapX = Math.max(left - x, x - right, 0), gapY = Math.max(bottom - y, y - top, 0);
+            if (gapX * gapX + gapY * gapY >= squared) continue;
+            const px = x - ax, py = y - ay;
+            // Expand cross(p - c(t), n(t)) as a quadratic.
+            const a = quadratic, b = px * dny - py * dnx + linear, c = px * ny - py * nx;
+            let first: number, second = NaN;
+            if (Math.abs(a) <= epsilon * Math.abs(b))
+                first = b ? -c / b : c ? NaN : clamp((px * dx + py * dy) / (dx * dx + dy * dy || 1));
+            else {
+                // The three Bernstein coefficients bound the polynomial on [0, 1].
+                const middle = c + b / 2, last = c + b + a;
+                if (c > 0 && middle > 0 && last > 0 || c < 0 && middle < 0 && last < 0) continue;
+                const discriminant = b * b - 4 * a * c;
+                if (discriminant < 0) continue;
+                const root = Math.sqrt(discriminant), q = -(b + (b < 0 ? -root : root)) / 2;
+                first = q ? q / a : 0;
+                if (q) second = c / q;
+            }
+            for (let j = 0; j < 2; j++) {
+                const root = j ? second : first;
+                if (!(root >= -epsilon && root <= 1 + epsilon)) continue;
+                const u = clamp(root), ox = ax + u * dx - x, oy = ay + u * dy - y, d = ox * ox + oy * oy;
+                if (d < squared) {
+                    squared = d; segment = i; t = u;
+                }
+            }
+        }
+        return squared < Infinity ? { distance: Math.sqrt(squared), segment, t } : nearest(x, y, points, closed);
+    };
+}
+
 export function stations(points: Point[]) {
     const s = new Float64Array(points.length);
     for (let i = 1; i < s.length; i++) s[i] = s[i - 1] + distance(points[i - 1], points[i]);

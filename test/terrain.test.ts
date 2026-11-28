@@ -3,11 +3,13 @@ import { resolveDesign } from "../src/core/design/parameters.ts";
 import assert from "node:assert/strict";
 import { type ClosedCurve, type Point } from "../src/core/design/v5.ts";
 import { parseDesign } from "../src/core/design/model.ts";
-import { distance, nearest, sampleDefined, spline } from "../src/core/math/geometry.ts";
+import { createGrid, distance, nearest, normalProjection, sampleDefined, smooth, spline } from "../src/core/math/geometry.ts";
 import { fbm, noise } from "../src/core/math/noise.ts";
 import { regionMaskAt, signedBoundaryDistance } from "../src/core/design/regions.ts";
 import { shapePath } from "../src/core/edit/paths.ts";
-import { flattenPath } from "../src/core/design/path.ts";
+import { bulgeFromDegrees, flattenPath } from "../src/core/design/path.ts";
+import { numericProfile } from "../src/core/design/polyline.ts";
+import { evaluateLayer } from "../src/core/terrain/functions.ts";
 import { evaluateStack, generateTerrain } from "../src/core/terrain/terrain.ts";
 import { mountainProfile } from "../src/core/terrain/mountain.ts";
 import { terrainIssues } from "../src/core/checks/terrain.ts";
@@ -283,6 +285,65 @@ test("Slope ridges round the crown and foot, interpolate heights and merge at th
     const second = { curve: withNodeSlope(openCurve([{ p: [-20, 20], h: 28 }, { p: [20, 20], h: 28 }]), .75) };
     const merged = mountainProfile({ ...f, ridges: [...f.ridges, second] }, .0625, 0);
     assert(Math.abs(merged(0, 10, 0) - height(0, 10, 0) - 1.25) < 1e-9);
+});
+
+test("Ridges, valleys and slope lines follow a smooth height profile on both sides of an arc", () => {
+    const curve = openCurve([{ p: [20, 0], h: 8, slope: .5 }, { p: [0, 20], h: 14, slope: .5 }], "corner");
+    curve.nodes[0].bulge = bulgeFromDegrees(90);
+    const step = .1, tolerance = step / 8, crest = 2, area = rect(-40, -40, 40, 40);
+    const d = resolveDesign(design([
+        layer("M", area, { type: "mountain", ridges: [{ curve }], valleys: [], peaks: [], crestRound: crest, blend: 0, footRound: 0 }),
+        layer("S", area, { type: "slope", kind: "path", lines: [{ curve: openCurve(curve.nodes, "corner"), ease: true }], center: [0, 0], radius: 1, value: 0, rate: 0 })
+    ], step));
+    const [mountain, slope] = d.geoNodes;
+    assert(mountain.function.type === "mountain" && slope.function.type === "slope");
+    assert(slope.function.kind === "path");
+    slope.function.lines[0].curve.nodes[0].bulge = curve.nodes[0].bulge;
+    const ridge = mountainProfile(mountain.function, tolerance, 0);
+    const valley = mountainProfile({ ...mountain.function, valleys: mountain.function.ridges, ridges: [] }, tolerance, 0);
+    const count = 60, normal = Math.hypot(1, .5);
+    for (const [radius, limit] of [[30, .15], [10, .20]]) {
+        const angles = Array.from({ length: count }, (_, i) => Math.PI / 4 + i * step / radius);
+        const points: Point[] = angles.map(angle => [radius * Math.cos(angle), radius * Math.sin(angle)]);
+        const heights = angles.map(angle => 8 + 6 * smooth(20 * angle / (10 * Math.PI)));
+        const drop = crest * (1 - 1 / normal) + (Math.abs(radius - 20) - crest * .5 / normal) * .5;
+        const grid = createGrid({ xMin: 0, xMax: count * step, yMin: 0, yMax: count * step, step });
+        // Sample the arc directly while exercising the production layer evaluator.
+        const samples = { ...grid, x: (i: number) => points[i][0], y: (i: number) => points[i][1] };
+        const defined = new Uint8Array(grid.size).fill(1);
+        const cells = Int32Array.from(points, (_, i) => i * (count + 1));
+        const layerValues = evaluateLayer(slope, {
+            shape: { box: [-40, -40, 40, 40], contains: () => true, boundary: () => [] },
+            cells, mask: defined, left: 0, top: 0, width: count, height: count, canvasWidth: count
+        }, { grid: samples, fields: { height: { defined, values: new Float32Array(grid.size) } } }).values;
+        const alongArc = (readings: ArrayLike<number>, reference: number[], name: string) => {
+            for (let i = 1; i < count; i++) {
+                const actual = (readings[i] - readings[i - 1]) / step, expected = (reference[i] - reference[i - 1]) / step;
+                assert(Math.abs(actual / expected - 1) <= limit, name + " at radius " + radius + ", sample " + i + ": " + actual + " vs " + expected);
+            }
+        };
+        alongArc(points.map(([x, y]) => ridge(x, y, -100)), heights.map(height => height - drop), "ridge");
+        alongArc(points.map(([x, y]) => valley(x, y, 100)), heights.map(height => height + drop), "valley");
+        alongArc(layerValues, heights, "slope");
+    }
+
+    const profile = numericProfile(mountain.function.ridges[0].curve, tolerance);
+    const project = normalProjection(profile.points);
+    for (const point of [[30, -8], [-12, 32]] as Point[]) assert.deepEqual(project(...point), nearest(...point, profile.points));
+});
+
+test("Interpolated normals preserve straight projections and wrap at the closed seam", () => {
+    const straight: Point[] = [[-12, -6], [0, 0], [16, 8]];
+    const project = normalProjection(straight);
+    for (const point of [[0, 10], [1, -3], [-50, 0], [30, 20]] as Point[]) assert.deepEqual(project(...point), nearest(...point, straight));
+
+    const square: Point[] = [[0, 0], [4, 0], [4, 4], [0, 4]];
+    const closed = normalProjection(square, true), repeated = normalProjection([...square, square[0]], true);
+    const a = closed(-1.1, -1), b = closed(-1, -1.1);
+    assert.equal(a.segment, 3);
+    assert.equal(b.segment, 0);
+    assert(a.t < 1 && b.t > 0);
+    assert.deepEqual(repeated(-1.1, -1), a);
 });
 
 test("Noise gullies cut a bounded proportion of positive heights and leave the sea floor unchanged", () => {

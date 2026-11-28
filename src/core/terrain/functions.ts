@@ -4,7 +4,7 @@ import { fieldExpressions, functionTable } from "../design/functionTable.ts";
 import { type FieldSamples } from "../design/results.ts";
 import { evaluate, fieldValue, sampleValue } from "../design/expression.ts";
 import { type CrossSection, type Region, type RegionShape, type Segment, shapeWork, regionMaskAt, regionMaskIndex, signedBoundaryDistance } from "../design/regions.ts";
-import { clamp, nearest, polygonField, createGrid, sampleDefined, smooth, gridSpec, type Grid, type GridFrame, type GridSpec } from "../math/geometry.ts";
+import { clamp, normalProjection, polygonField, createGrid, sampleDefined, smooth, gridSpec, type Grid, type GridFrame, type GridSpec } from "../math/geometry.ts";
 import { fbm, noise } from "../math/noise.ts";
 import { erosionSampler, prepareErosion, type ErosionData } from "./erosion.ts";
 import { flattenPath } from "../design/path.ts";
@@ -254,11 +254,21 @@ export function evaluateLayerCells(context: LayerCells, grid: Grid, shape: Regio
                     return (k, x, y) => source[k] + base + f.rate * (Math.hypot(x - f.center[0], y - f.center[1]) - f.radius);
                 }
                 if (!f.lines.length) return k => source[k];
-                const lines = f.lines.map(({ curve, ease }) => ({ profile: numericProfile(curve, grid.step / 8), ease }));
+                const lines = f.lines.map(({ curve, ease }) => {
+                    const profile = numericProfile(curve, grid.step / 8);
+                    return { profile, project: normalProjection(profile.points, curve.closed), ease };
+                });
+                if (lines.length === 1) {
+                    const { profile, project, ease } = lines[0];
+                    return (k, x, y) => {
+                        const { segment, t } = project(x, y);
+                        return source[k] + profile.value(profile.station(segment, t), ease);
+                    };
+                }
                 return (k, x, y) => {
                     let distance = Infinity, increment = 0;
-                    for (const { profile, ease } of lines) {
-                        const hit = nearest(x, y, profile.points);
+                    for (const { profile, project, ease } of lines) {
+                        const hit = project(x, y);
                         if (hit.distance >= distance) continue;
                         distance = hit.distance;
                         increment = profile.value(profile.station(hit.segment, hit.t), ease);

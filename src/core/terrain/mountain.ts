@@ -1,6 +1,6 @@
 import { numericProfile } from "../design/polyline.ts";
 import { type ResolvedFunction } from "../design/v5.ts";
-import { distance, nearest } from "../math/geometry.ts";
+import { distance, normalProjection } from "../math/geometry.ts";
 import { noise } from "../math/noise.ts";
 
 type Mountain = Extract<ResolvedFunction, { type: "mountain" }>;
@@ -25,8 +25,9 @@ export function mountainProfile(f: Mountain, tolerance: number, seed: number) {
     const pattern = noise(seed + 202);
     function profile({ curve }: Mountain["ridges"][number]) {
         const heights = numericProfile(curve, tolerance), slopes = numericProfile(curve, tolerance, "slope");
+        const project = normalProjection(heights.points, curve.closed);
         return (x: number, y: number, direction: -1 | 1) => {
-            const hit = nearest(x, y, heights.points), s = heights.station(hit.segment, hit.t);
+            const hit = project(x, y), s = heights.station(hit.segment, hit.t);
             const drop = roundCrest(hit.distance, slopes.value(s, true), f.crestRound);
             return direction === -1 ? heights.value(s, true) - drop : heights.value(s, true) + drop;
         };
