@@ -16,10 +16,10 @@ import { sampleField, type Terrain } from "../../core/design/results.ts";
 import { mapSnapTargets, modifiedSnapPoint, parameterSnapGroup, type SnapModifiers } from "./mapSnaps.ts";
 type Editor = import("./session.svelte.ts").Editor;
 
-export const drawingTools: DrawTool[] = ["pen", "rect", "circle", "sector", "strip", "addOutline", "shore", "ridge", "valley", "peak", "slopeLine", "center", "harbor", "section", "geometryPoint", "geometryCurve", "geometryClosed", "redrawCurve", "continueCurve"];
+export const drawingTools: DrawTool[] = ["pen", "rect", "circle", "sector", "strip", "addOutline", "shore", "ridge", "valley", "peak", "slopeLine", "center", "section", "geometryPoint", "geometryCurve", "geometryClosed", "redrawCurve", "continueCurve"];
 const closedTools: DrawTool[] = ["pen", "addOutline", "shore", "geometryClosed"];
 export const doubleClickTools: DrawTool[] = [...closedTools, "ridge", "valley", "slopeLine", "geometryCurve", "redrawCurve", "continueCurve"];
-const pointTools: DrawTool[] = ["peak", "center", "harbor", "geometryPoint"];
+const pointTools: DrawTool[] = ["peak", "center", "geometryPoint"];
 
 export function startDrawing(e: Editor, tool: DrawTool, owner?: string, member?: number): GeoDraft {
     const d = e.project.design;
@@ -128,8 +128,7 @@ function drawingSnap(e: Editor, draft: GeoDraft) {
     const path = tool === "shore" ? -1 : f && group && member !== undefined ? profileIndex(f, group, member) : undefined;
     const slot = curve ? e.curves.slots.get(curve.key) : owner && path !== undefined ? geometrySlot(design, owner, path) : undefined;
     const source = slot && e.curves.source(slot).slot;
-    const index = tool === "harbor" && f?.type === "coast" || tool === "center" && f?.type === "slope" && f.kind === "radial" ? 0 :
-        tool === "peak" && f?.type === "mountain" && member !== undefined ? f.ridges.length + member : undefined;
+    const index = tool === "center" && f?.type === "slope" && f.kind === "radial" ? 0 : undefined;
     const exclude = source ? { group: source.key, indices: curve?.endpoint === undefined ? undefined : [curve.endpoint] } :
         owner && index !== undefined ? { group: parameterSnapGroup(owner), indices: [index] } : undefined;
     return (point: Point, alignmentPoints: readonly Point[]) => snap(point, e.map.scale, { alignmentPoints, exclude });
@@ -209,13 +208,9 @@ export function finishDraft(d: Design, terrain: Terrain, draft: GeoDraft) {
         if (!p) throw Error("请先在地图上选择一个点");
         const h = tenth(sampleField(terrain, heightId, p));
         if (tool === "peak" && n?.function.type === "mountain") {
-            if (member !== undefined) movePointGeometry(d, n.function.peaks[member].at, p);
-            else {
-                const path = ["peaks", n.function.peaks.length];
-                writeAt(n.function, path, { at: holdPoint(d, p), height: h }); fillFunctionParameters(n.function, path);
-            }
+            const path = ["peaks", n.function.peaks.length];
+            writeAt(n.function, path, { at: holdPoint(d, p), height: h }); fillFunctionParameters(n.function, path);
         }
-        if (tool === "harbor" && n?.function.type === "coast") movePointGeometry(d, n.function.harbor.center, p);
         if (tool === "center" && n) {
             if (n.function.type === "slope") movePointGeometry(d, n.function.center, p);
             else n.function = defaultFunction(d, "slope", { slope: "radial", center: p });
@@ -253,6 +248,18 @@ function closingPoint(draft: GeoDraft, at: Point, scale: number) {
 export function draftPointer(e: Editor, phase: "down" | "move" | "up", raw: Point, ev: SnapModifiers & { altKey: boolean }) {
     const draft = e.geoDraft;
     if (!draft) return false;
+    if (draft.point) {
+        const choice = ev.ctrlKey ? undefined : e.pickPoint(raw);
+        draft.point.hovered = choice?.point;
+        draft.cursor = raw;
+        if (phase === "down") draft.down = raw;
+        if (phase === "up") {
+            const down = draft.down;
+            draft.down = undefined;
+            if (down && distance(raw, down) * e.map.scale <= 3) void e.finishPointPlacement(raw, choice?.reference);
+        }
+        return true;
+    }
     const pick = draft.curve?.pick;
     if (pick) {
         const candidate = ev.ctrlKey ? undefined : e.map.pickCurve(e.curveChoices, raw, e.project.design.grid.step / 8);
@@ -269,6 +276,7 @@ export function draftPointer(e: Editor, phase: "down" | "move" | "up", raw: Poin
             draft.down = raw;
             return true;
         }
+        if (e.blockCurveRedraw(draft.curve!.key)) return true;
         delete draft.curve!.pick;
     }
     const { tool, downRaw } = draft;

@@ -1,7 +1,7 @@
 import { copyAt } from "../design/address.ts";
 import { parameters, readAt, writeAt, type Address } from "../design/parameters.ts";
 import { type Curve, type CurveGeometry, type Design, type GeoNode, type GeometryObject, type PlacedGeoNode, type ResolvedDesign, type Held, type Point, type PointHolder } from "../design/v5.ts";
-import { curveGraph, geoPointSlots, geometryAt, geometryIndex, geometrySlot, geometryUsers, offsetPoint, placedPoint, profileGroupsFor, profileIndex, resolvedCurvePath, translateCurve, type FunctionMember } from "../design/curveReferences.ts";
+import { curveGraph, geoPointSlots, geometryAt, geometryIndex, geometrySlot, geometryUsers, offsetPoint, placedPoint, pointGeometryId, profileGroupsFor, profileIndex, resolvedCurvePath, translateCurve, type FunctionMember, type PointSlot } from "../design/curveReferences.ts";
 import { editCurve, localPoint } from "./curveEdits.ts";
 import { movePointGeometry, translateHolder } from "./controls.ts";
 import { type Selection } from "./types.ts";
@@ -87,6 +87,10 @@ function editablePaths(n: CurveOwner, target?: GeometryTarget) {
     return pathEntries(n).filter(([i]) => target ? target.kind !== "parameter" && i === target.index : i >= 0 || "curve" in n);
 }
 const handleRadius = 7, segmentRadius = 5;
+export function hitPointHandle(point: Point, pointer: Point, scale: number, radius = handleRadius) {
+    return distance(point, pointer) * scale <= radius;
+}
+
 function hitGeoHandle(controls: GeoControl[], p: Point, scale: number) {
     let best: GeoControl | undefined, gap = handleRadius;
     for (const control of controls) {
@@ -113,6 +117,11 @@ export function hitControl(n: CurveOwner, p: Point, scale: number, tolerance: nu
 export function hitGeoControl(n: CurveOwner, p: Point, scale: number, target?: GeometryTarget) {
     return hitGeoHandle(geoControls(n, target), p, scale);
 }
+export function hitCurveVertex(curve: Curve, p: Point, scale: number, excluded?: string) {
+    return hitGeoHandle(curve.nodes.flatMap(({ p: point, id }, index): GeoControl[] =>
+        id === excluded ? [] : [{ role: "vertex", path: -1, index, point }]), p, scale);
+}
+
 export function hitPathSegment(n: CurveOwner, p: Point, scale: number, tolerance: number, target?: GeometryTarget) {
     return hitSegments(editablePaths(n, target), p, scale, tolerance);
 }
@@ -172,6 +181,13 @@ export interface ControlPreview {
     nodes: ReadonlyMap<string, { node: PlacedGeoNode; paths: ReadonlySet<number> }>;
     geometry?: GeometryObject;
     point?: { id: string; point: Point };
+    curve?: { id: string; curve: Curve };
+}
+
+export function previewPoint(holder: PointHolder, preview: Pick<ControlPreview, "point" | "curve">) {
+    const point = "point" in holder ? preview.point?.id === holder.point ? preview.point.point : undefined :
+        preview.curve?.id === holder.curve ? preview.curve.curve.nodes.find(node => node.id === holder.node)?.p : undefined;
+    return point && offsetPoint(point, holder.offset ?? [0, 0]);
 }
 
 export function controlPreview(d: Design, resolved: ResolvedDesign, graph: ReturnType<typeof curveGraph>,
@@ -181,12 +197,14 @@ export function controlPreview(d: Design, resolved: ResolvedDesign, graph: Retur
     const placingPoint = control.role === "pointHolder";
     const curveSlot = control.role !== "parameter" && !placingPoint && (!movesPlacement(control) || standalone && control.role === "curve") ?
         geometrySlot(d, id, control.path, standalone) : undefined;
-    const source = curveSlot && graph.source(curveSlot);
     const moved = placing ? movedHolders(graph, id, control) : undefined;
     const point = control.role === "parameter" || placingPoint ? draggedPoint(d, selection, control, index, offset) : undefined;
+    const nodeSlot = point && !placingPoint && "node" in point ? geometrySlot(d, point.curve, -1, true) : undefined;
+    const sourceSlot = curveSlot ?? nodeSlot, source = sourceSlot && graph.source(sourceSlot);
     const ownPoints = selected && (control.role === "body" || placingPoint) ?
         geoPointSlots(d.geoNodes[index], index).filter(slot => !placingPoint || slot.value === point) : [];
-    const pointUsers = point && !placingPoint ? geometryUsers(d).get(point.point)?.filter(slot => slot.location.kind === "geo" && "point" in slot.value) ?? [] : [];
+    const shapeId = source?.id ?? (point && !placingPoint ? pointGeometryId(point) : undefined);
+    const pointUsers = shapeId ? geometryUsers(d).get(shapeId)?.filter((slot): slot is PointSlot => !("kind" in slot) && slot.location.kind === "geo") ?? [] : [];
     if (!moved?.size && !source && !point && !ownPoints.length) return;
     const affected = moved ? [...moved].flatMap(graph.holderPlacements) : source ? graph.curvePlacements(source.id) : [];
     const placements = affected.filter(item => item.active).map(holder => {
@@ -202,22 +220,26 @@ export function controlPreview(d: Design, resolved: ResolvedDesign, graph: Retur
             nodes.set(owner, entry);
         }
         const delta = dragDelta(control, at), local = point && !placingPoint ? localPoint(point.offset ?? [0, 0], at) : undefined;
-        if (local && point) for (const item of pointUsers) if ("point" in item.value) {
-            const at = item.location;
-            if (at.kind !== "geo") continue;
-            update(at.id, at.index!, at.path, offsetPoint(local, item.value.offset ?? [0, 0]));
-        }
         for (const item of ownPoints)
             update(id, index, item.location.path, offsetPoint(placedPoint(d, item.value), delta));
         const edited = source && structuredClone(source.curve);
-        if (edited && curveSlot) moveCurveControl(edited, control, localPoint(graph.offset(curveSlot), at), independent, delta);
+        if (edited && curveSlot) moveCurveControl(edited, control, localPoint(offset ?? graph.offset(curveSlot), at), independent, delta);
+        if (edited && local && point && "node" in point) edited.nodes.find(node => node.id === point.node)!.p = local;
+        const preview = {
+            point: local && point && "point" in point ? { id: point.point, point: local } : undefined,
+            curve: edited ? { id: source!.id, curve: edited } : undefined
+        };
+        for (const item of pointUsers) {
+            const at = item.location, position = previewPoint(item.value, preview);
+            if (at.kind === "geo" && position) update(at.id, at.index!, at.path, position);
+        }
         for (const { slot, holder, offset, curve } of placements) {
             const placed = translateCurve(curve ?? edited!, placing ? addOffset(offset, delta) : offset);
             update(holder.location.id, holder.location.index, resolvedCurvePath(slot).slice(2), placed, holder.index);
         }
         const item = standalone && geometryAt(d, id);
         const geometry = item && (edited ? { ...item, curve: edited } : local ? { ...item, point: local } : undefined);
-        return { nodes, ...(geometry && { geometry }), ...(local && point && { point: { id: point.point, point: local } }) };
+        return { nodes, ...preview, ...(geometry && { geometry }) };
     };
 }
 
@@ -238,7 +260,7 @@ export function commitControl(d: Design, selection: Selection, control: GeoContr
         }
     }
     else if (!movesPlacement(control) || control.role === "curve")
-        editCurve(d, selection, control.path, (curve, local) => moveCurveControl(curve, control, local(at), independent, dragDelta(control, at)));
+        editCurve(d, selection, control.path, (curve, local) => moveCurveControl(curve, control, offset ? localPoint(offset, at) : local(at), independent, dragDelta(control, at)));
 }
 
 export function geometryItemCurveUses(d: Design, id: string, path: Address, index: number) {

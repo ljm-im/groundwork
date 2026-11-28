@@ -1,12 +1,6 @@
 {#snippet param(address: Address)}
     <Parameter {editor} node={n} {address} />
 {/snippet}
-{#snippet geometry(label: string, point: PointHolder, holder: HolderLayer, redraw: DrawTool, member?: number)}
-    <GeometryInput {label} active={holder.group !== "peaks" && editor.holderSelected(holder.group, holder.index)}
-        summary={d.geometry[point.point].label} onclick={() => editor.openPoint(holder)}
-        onmouseenter={() => editor.hoverHolder(holder.group, holder.index, true)} onmouseleave={clearHover}
-        redraw={() => editor.setTool(redraw, n.id, member)} redrawing={editor.toolActive(redraw, n.id, member)} />
-{/snippet}
 {#snippet curveInput(label: string, curve: ProfileCurve, index: number, holder: HolderLayer)}
     {@const slot = geometrySlot(d, n.id, index)!}
     {@const redrawLabel = "选取或重画" + placementRedrawLabel(slot)}
@@ -98,9 +92,9 @@
                     {:else if f.type === "coast" && p.key[0] === "shore"}
                         {@render curveInput(p.label, geometryPath(resolved, -1)!, -1, holderLayer("shore"))}
                     {:else if f.type === "coast"}
-                        {@render geometry(p.label, f.harbor.center, holderLayer("harbor"), "harbor")}
+                        <PointInput {editor} label={p.label} holder={holderLayer("harbor")} />
                     {:else if f.type === "slope"}
-                        {@render geometry(p.label, f.center, holderLayer("center"), "center")}
+                        <PointInput {editor} label={p.label} holder={holderLayer("center")} />
                     {/if}
                 {/each}
             </Part>
@@ -120,7 +114,7 @@
                         <Subitem label={"山峰 " + (j + 1)} open={editor.subitemOpen(n.id, "peaks", j)} onclick={() => editor.toggleSubitem(n.id, "peaks", j)}
                             selected={editor.holderSelected("peaks", j)} onmouseenter={() => editor.hoverHolder("peaks", j)} onmouseleave={clearHover}>
                             {#snippet actions()}{@render memberActions("peaks", j)}{/snippet}
-                            {@render geometry(geoParameter(n, ["function", "peaks", j, "at"])!.label, f.peaks[j].at, holderLayer("peaks", j), "peak", j)}
+                            <PointInput {editor} label={geoParameter(n, ["function", "peaks", j, "at"])!.label} holder={holderLayer("peaks", j)} />
                             {#each memberParameters("peaks", j) as key (key.join("."))}
                                 {@render param(key)}
                             {/each}
@@ -138,11 +132,10 @@
     import * as session from "../state/session.svelte.ts";
     import { allowedFunctions } from "../../core/edit/geoNodes.ts";
     import { geometrySlot, memberLabel, profileGroups, profileIndex, type FunctionMember, type ProfileGroup } from "../../core/design/curveReferences.ts";
-    import { type PointHolder, type ProfileCurve, type GeoFunction, type Strip } from "../../core/design/v5.ts";
+    import { type ProfileCurve, type GeoFunction, type Strip } from "../../core/design/v5.ts";
     import { declarationEntries, isBuiltin } from "../../core/design/defaults.ts";
     import { canWrite, functionParameters, functionTable, isBuiltinFunction, smoothIncrement } from "../../core/design/functionTable.ts";
     import { geoAt } from "../state/geoTools.ts";
-    import { type DrawTool } from "../../core/edit/types.ts";
     import { geoParameter, type Address } from "../../core/design/parameters.ts";
     import { geometryPath } from "../../core/edit/geoControls.ts";
     import { holderLayer, placementRedrawLabel, type HolderLayer } from "../../core/edit/selection.ts";
@@ -150,6 +143,7 @@
     import AddButton from "./AddButton.svelte";
     import CheckboxRow from "./CheckboxRow.svelte";
     import GeometryInput from "./GeometryInput.svelte";
+    import PointInput from "./PointInput.svelte";
     import Part from "./Part.svelte";
     import LabelProperties from "./LabelProperties.svelte";
     import ObjectProblems from "./ObjectProblems.svelte";

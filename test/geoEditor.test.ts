@@ -344,6 +344,7 @@ test("Copying a mountain member preserves its geometry and the targets of existi
     design.inputs.B.value = "{geo:T.peaks.1.height}";
     copyGeometryItem(design, n, ["peaks"], 0);
     const [a, b] = n.function.peaks;
+    assert("point" in a.at && "point" in b.at);
     assert.notEqual(a.at.point, b.at.point);
     assert.deepEqual({ ...a, at: placedPoint(d, a.at) }, { ...b, at: placedPoint(d, b.at) });
     assert.equal(n.function.peaks[0].radius, "{geo:T.peaks.2.radius}");

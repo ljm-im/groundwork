@@ -1,17 +1,17 @@
 import { type PlacedGeoNode, type Curve, type Design, type GeometryObject, type Mark, type TextMark, type Point } from "../core/design/v5.ts";
-import { geometryAt, type curveGraph } from "../core/design/curveReferences.ts";
+import { geometryAt, samePointSource, type curveGraph } from "../core/design/curveReferences.ts";
 import { displaySteps, markParameters } from "../core/design/functionTable.ts";
 import { fieldPrecision, heightId } from "../core/design/defaults.ts";
 import { type Issue, type Terrain } from "../core/design/results.ts";
-import { type GeoDraft, type Handle, type Selection } from "../core/edit/types.ts";
+import { type GeoDraft, type Handle, type PointChoice, type Selection } from "../core/edit/types.ts";
 import { type ProjectView } from "../core/project.ts";
 import { type GridDisplay, type layerDefaults, pixelGridSpacing } from "../core/edit/display.ts";
 import { type Box } from "../core/math/geometry.ts";
 import { bounds, clamp, distance, nearest } from "../core/math/geometry.ts";
 import { objectIssues } from "../core/checks/issues.ts";
-import { displayCurveTolerance, hitGeoControl, parameterPoints, pathEntries, type ControlPreview, type GeoControl } from "../core/edit/geoControls.ts";
+import { displayCurveTolerance, hitCurveVertex, hitGeoControl, hitPointHandle, parameterPoints, pathEntries, type ControlPreview, type GeoControl } from "../core/edit/geoControls.ts";
 import { nearestSegment } from "../core/edit/paths.ts";
-import { commonSelectionLength, geometrySelectionPath, holderForTarget, holderLayer, holderTarget, includesSelection, placementSelection, selectionLayers, selectionPrefix,
+import { commonSelectionLength, geometrySelectionPath, holderForTarget, holderLayer, holderTarget, includesSelection, placementSelection, selectionLayers, selectionPlacement, selectionPrefix,
     withCurvePart, type HolderLayer, type SelectionPath } from "../core/edit/selection.ts";
 import { flattenPath } from "../core/design/path.ts";
 import { insidePolygon, polygonArea } from "../core/math/polygon.ts";
@@ -33,7 +33,7 @@ type Context = CanvasRenderingContext2D;
 export type LabelTarget = { kind: "geoNode" | "section"; id: string };
 type LabelHit = LabelTarget & { point: Point; box: Box };
 export type LabelPreview = LabelTarget & { offset: Point };
-export type MapHit = { path: SelectionPath; control?: GeoControl; handle?: Handle };
+export type MapHit = { path: SelectionPath; control?: GeoControl; handle?: Handle; pointCurve?: { offset?: Point } };
 type ClickHit = MapHit & { fullPath: SelectionPath; normalPath?: SelectionPath };
 export type CurvePlacement = { id: string; curve: Curve; offset?: Point };
 export type CurveChoice = { key: string; placements: readonly CurvePlacement[] };
@@ -85,6 +85,7 @@ export function nextMapHit(hits: Iterable<MapHit>, selection: SelectionPath | nu
     let first: MapHit | undefined, normalPath: SelectionPath | undefined;
     for (const hit of hits) {
         first ??= hit;
+        if (hit.pointCurve && !alternate) return { ...hit, fullPath: hit.path };
         if (normalPath) return { path: selectionPrefix(hit.path, 1), fullPath: hit.path, normalPath };
         if (!selection) break;
         const shared = commonSelectionLength(hit.path, selection);
@@ -109,13 +110,13 @@ export function dragMapHit(hits: Iterable<MapHit>, selection: SelectionPath | nu
     for (const hit of hits) {
         first ??= hit;
         if (!selection) break;
-        if (hitsCurveControl(hit) && includesSelection(hit.path, geometrySelectionPath(selection))) return hit;
+        if (hitsCurveControl(hit) && (hit.pointCurve || includesSelection(hit.path, geometrySelectionPath(selection)))) return hit;
         if (includesSelection(hit.path, selection)) return { ...hit, path: selection };
     }
     if (first) return { ...first, path: selectionPrefix(first.path, 1) };
 }
 
-export function mapControlDrag(hit: MapHit, view: MapView, world: Point): { selection: Selection; control: GeoControl } | undefined {
+export function mapControlDrag(hit: MapHit, view: MapView, world: Point): { selection: Selection; control: GeoControl; offset?: Point } | undefined {
     const { root, holder, geometry, leaf, part } = selectionLayers(hit.path);
     if (!root || !leaf) return;
     let control: GeoControl | undefined, selection = root;
@@ -134,7 +135,7 @@ export function mapControlDrag(hit: MapHit, view: MapView, world: Point): { sele
         }
         else if (item) control = hit.control ?? { role: "parameter", path: 0, index: 0, point: item.point };
     }
-    if (control) return { selection, control };
+    if (control) return { selection, control, ...(hit.pointCurve?.offset && { offset: hit.pointCurve.offset }) };
 }
 
 export type MapView = Readonly<{
@@ -149,12 +150,14 @@ export type MapView = Readonly<{
     hoverHandle?: "in" | "out" | "arc";
     referencedGeo: readonly string[];
     referenceCurves?: readonly CurvePlacement[];
+    referencePoints?: readonly Point[];
     curveChoices?: readonly CurveChoice[];
     hoveredCurveChoice?: string;
     draft?: Readonly<GeoDraft>;
     dragNode?: PlacedGeoNode;
     dragGeometry?: GeometryObject;
     dragNodes?: ControlPreview["nodes"];
+    dragCurve?: ControlPreview["curve"];
     dragControl?: GeoControl;
     dragCommitting?: boolean;
     snapGuides?: readonly SnapGuide[];
@@ -442,42 +445,58 @@ export class ProjectMap {
         if (view.hoverPath?.length === 1 && view.hoverPath[0].kind === kind && view.hoverPath[0].id === id ||
             kind === "geoNode" && view.referencedGeo.includes(id)) return "hovered";
     }
-    *objectHits(view: MapView, screen: Point, purpose: "select" | "drag" = "select"): Generator<MapHit> {
+    *objectHits(view: MapView, screen: Point, purpose: "select" | "drag" | "point" = "select"): Generator<MapHit> {
         const { authored, curves, project: { terrain, design }, selectionPath } = view, scale = this.scale;
-        for (const handle of this.markHits(...screen)) {
+        const p = this.world(...screen), active = selectionLayers(selectionPath), pickingPoint = purpose === "point";
+        const linkedSelection = !pickingPoint && active.part && !active.geometry;
+        if (linkedSelection) {
+            const control = this.curvePartHit(view, p);
+            if (control) yield control;
+        }
+        if (pickingPoint) {
+            if (view.layers.marks) for (const mark of design.marks.toReversed()) {
+                if (mark.follow !== "map" || !hitPointHandle(mark.point, p, scale)) continue;
+                const root = { kind: "mark", id: mark.id } as const;
+                yield { path: placementSelection(authored, curves, root), handle: { ...root, role: "body", point: mark.point } };
+            }
+        }
+        else for (const handle of this.markHits(...screen)) {
             const root = { kind: "mark", id: handle.id } as const;
             yield { path: placementSelection(authored, curves, root), handle };
         }
-        const p = this.world(...screen), active = selectionLayers(selectionPath);
         for (const section of design.sections.toReversed()) {
             if (!view.layers.sections && (active.root?.kind !== "section" || active.root.id !== section.id)) continue;
             const root = { kind: "section", id: section.id } as const;
             const index = distance(section.points[0], p) <= distance(section.points[1], p) ? 0 : 1;
-            const point = section.points[index];
-            if (distance(point, p) * scale < endpointHitRadius) {
-                const holder = holderLayer("endpoints", index);
-                yield { path: placementSelection(authored, curves, root, holder), handle: { ...root, role: "vertex", index, point } };
+            const endpoints = pickingPoint ? [index, 1 - index] : [index];
+            for (const i of endpoints) {
+                const point = section.points[i];
+                if (distance(point, p) * scale >= endpointHitRadius) continue;
+                const holder = holderLayer("endpoints", i);
+                yield { path: placementSelection(authored, curves, root, holder), handle: { ...root, role: "vertex", index: i, point } };
             }
-            else if (nearest(...p, section.points).distance * scale <= sectionHitRadius) yield { path: [root] };
+            if (!pickingPoint && distance(section.points[index], p) * scale >= endpointHitRadius &&
+                nearest(...p, section.points).distance * scale <= sectionHitRadius) yield { path: [root] };
         }
-        const empty = !hasSamples(terrain), tolerance = design.grid.step / 8, controlHit = this.curvePartHit(view, p);
-        if (active.root?.kind === "geometry") {
+        const empty = !hasSamples(terrain), tolerance = design.grid.step / 8;
+        const controlHit = pickingPoint || linkedSelection ? undefined : this.curvePartHit(view, p);
+        if (!pickingPoint && active.root?.kind === "geometry") {
             const item = geometryAt(design, active.root.id);
             if (controlHit) yield controlHit;
             else if (item) {
                 const path: SelectionPath = [active.root];
                 const hit = "curve" in item ? this.curveBranch(view, path, item.curve, p, -1, tolerance, "curve") :
-                    distance(p, item.point) * scale <= 7 ? { path } : undefined;
+                    hitPointHandle(item.point, p, scale) ? { path } : undefined;
                 if (hit) yield hit;
             }
         }
         if (view.layers.geometry) for (const [id, item] of Object.entries(design.geometry).reverse()) {
-            if (!item.independent || active.root?.kind === "geometry" && active.root.id === id) continue;
+            if (!item.independent || !pickingPoint && active.root?.kind === "geometry" && active.root.id === id) continue;
             const path: SelectionPath = [{ kind: "geometry", id }];
             if ("point" in item) {
-                if (distance(p, item.point) * scale <= 7) yield { path };
+                if (hitPointHandle(item.point, p, scale)) yield { path };
             }
-            else {
+            else if (!pickingPoint) {
                 const hit = this.curveBranch(view, path, item.curve, p, -1, tolerance, "curve");
                 if (hit) yield hit;
             }
@@ -496,11 +515,15 @@ export class ProjectMap {
             if (showsParameterGeometry(view, node)) {
                 for (const [index, point] of parameterPoints(node).reverse()) {
                     const holder = holderForTarget(node, { kind: "parameter", index });
-                    if (!holder || distance(p, point) * scale > 7) continue;
+                    if (!holder || !hitPointHandle(point, p, scale)) continue;
                     const hit = { path: placementSelection(authored, curves, root, holder), control: { role: "parameter", path: index, index: 0, point } } satisfies MapHit;
-                    parameter ??= hit;
-                    if (matches(holder)) selectedHolder = hit;
+                    if (pickingPoint) yield hit;
+                    else {
+                        parameter ??= hit;
+                        if (matches(holder)) selectedHolder = hit;
+                    }
                 }
+                if (pickingPoint) continue;
                 for (const [index, curve] of pathEntries(node).reverse()) {
                     if (index >= 0) continue;
                     const holder = holderForTarget(node, { kind: "curve", index });
@@ -514,6 +537,7 @@ export class ProjectMap {
                     if (matches(holder)) selectedHolder = hit;
                 }
             }
+            if (pickingPoint) continue;
             const shape = terrain.regions.get(node.id)?.shape, enabled = !node.disabled || empty;
             const canHitBoundary = selected || showsGeoRegion(node, view.layers, empty);
             let outline: MapHit | undefined, area = Infinity, edgeGap = Infinity;
@@ -552,8 +576,9 @@ export class ProjectMap {
         const targets = visibleControlCurves(view), tolerance = view.project.design.grid.step / 8;
         let best: { target: typeof targets[number]; control: GeoControl } | undefined, bestGap = Infinity;
         for (const target of targets) {
-            const { curve, index } = target;
+            const { curve, index, pointPlacement } = target;
             const handle = hitGeoControl({ label: "", curve }, point, this.scale);
+            if (handle?.role === "vertex" && curve.nodes[handle.index].id === pointPlacement?.nodeId) continue;
             const hasHandle = best && best.control.role !== "segment";
             const control = handle ? { ...handle, path: index } : includeSegments && !hasHandle ?
                 segmentControl(curve, index, hitCurve(curve, point, this.scale, tolerance)?.edge) : undefined;
@@ -565,7 +590,11 @@ export class ProjectMap {
             }
         }
         if (!best) return;
-        const { target: { curve, holder }, control } = best;
+        const { target: { curve, holder, pointPlacement }, control } = best;
+        if (pointPlacement) {
+            const path = withCurvePart([{ kind: "geometry", id: pointPlacement.id }], curve, control);
+            return { path, control, pointCurve: { offset: pointPlacement.offset } };
+        }
         const path = placementSelection(view.authored, view.curves, root, holder);
         return { path: withCurvePart(path, curve, control), control };
     }
@@ -575,6 +604,28 @@ export class ProjectMap {
         const part = view.selectionPath && includesSelection(view.selectionPath, path) && segmentControl(curve, index, hit.edge);
         if (part) return { path: withCurvePart(path, curve, part), control: part };
         return { path, control: { role, path: index, index: 0, point } };
+    }
+    pickPoint(view: MapView, placements: readonly CurvePlacement[], point: Point, current: PointChoice["reference"], excluded: ReadonlySet<string>): PointChoice | undefined {
+        for (const { path, control, handle } of this.objectHits(view, this.screen(point), "point")) {
+            const { root, holder } = selectionLayers(path);
+            if (!root) continue;
+            const placement = selectionPlacement(view.authored, view.curves, root, holder);
+            const item = root.kind === "geometry" ? geometryAt(view.authored, root.id) : undefined;
+            const reference = placement?.point ?? (item && "point" in item ? { point: root.id } : undefined);
+            const position = control?.point ?? handle?.point ?? (item && "point" in item ? item.point : undefined);
+            if (reference && position && !samePointSource(reference, current) && !("point" in reference && excluded.has(reference.point)))
+                return { reference, point: position };
+        }
+        let best: PointChoice | undefined, gap = Infinity;
+        for (const { id, curve, offset } of placements) {
+            const control = hitCurveVertex(curve, point, this.scale, "node" in current && current.curve === id ? current.node : undefined);
+            if (!control) continue;
+            const distanceToNode = distance(point, control.point);
+            if (distanceToNode >= gap) continue;
+            gap = distanceToNode;
+            best = { reference: { curve: id, node: curve.nodes[control.index].id, ...(offset?.some(Boolean) && { offset }) }, point: control.point };
+        }
+        return best;
     }
     pickCurve(choices: readonly CurveChoice[], point: Point, tolerance: number) {
         let key: string | undefined, faceArea = Infinity, gap = Infinity;
@@ -847,7 +898,9 @@ export class ProjectMap {
             const { text, width, ruler, box } = this.markLayout(mark, ctx);
             const screen = mark.follow === "screen";
             const [x, y] = this.visibleMarkPoint(mark, point, box);
-            const selectedMark = selected && !selectedPoint, hoveredMark = hovered && !hoveredPoint;
+            const selectedNode = selected && view.selectionPath?.[1]?.kind === "vertex";
+            const hoveredNode = hovered && view.hoverPath?.[1]?.kind === "vertex";
+            const selectedMark = selected && !selectedPoint && !selectedNode, hoveredMark = hovered && !hoveredPoint && !hoveredNode;
             const handle: Handle = { kind: "mark", id: mark.id, role: "body", point: screen ? [x, y] : point };
             ctx.save();
             ctx.textAlign = "left";

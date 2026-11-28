@@ -12,8 +12,10 @@
 
     let { editor }: { editor: session.Editor } = $props();
     let menu = $derived(editor.menu);
+    let page = $derived(editor.geometryPage);
+    let linkedNode = $derived(page?.point && "node" in page.point && editor.vertex ? { id: page.id, control: editor.vertex } : undefined);
     let columns = $derived(menu?.issue ? issueMenuColumns(menu.issue) :
-        menu && editor.selection ? contextMenuColumns(editor.project.resolved, editor.selection, !!menu.map, menu.control) : []);
+        menu && editor.selection ? contextMenuColumns(editor.project.resolved, editor.selection, !!menu.map, menu.control, linkedNode) : []);
     function choose(id: string) {
         const action = columns.flat().flatMap(group => group.items).find(item => item.id === id);
         editor.menu = null;

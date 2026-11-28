@@ -87,7 +87,8 @@ export function issueMenuColumns(issue: Issue): Group[][] {
     ] }]];
 }
 
-export function contextMenuColumns(design: ResolvedDesign, h: Selection, map: boolean, hit?: GeoControl): Group[][] {
+export function contextMenuColumns(design: ResolvedDesign, h: Selection, map: boolean, hit?: GeoControl,
+    linkedNode?: { id: string; control: GeoControl }): Group[][] {
     const { kind, id } = h, control = controlOwner(hit);
     const handle = hit?.role === "in" || hit?.role === "out" ? hit.role : undefined;
     if ((kind === "input" || kind === "field") && isBuiltin(kind, id)) return [];
@@ -96,6 +97,11 @@ export function contextMenuColumns(design: ResolvedDesign, h: Selection, map: bo
     const geometry = kind === "geometry" ? geometryAt(design, id) : undefined;
     if (geometry && "curve" in geometry && map && control && (control.role === "vertex" || control.role === "segment"))
         left.push(...geometryGroups(h, control, geometry.curve, handle));
+    if (map && linkedNode) {
+        const source = geometryAt(design, linkedNode.id);
+        if (source && "curve" in source)
+            left.push(...geometryGroups({ kind: "geometry", id: linkedNode.id }, linkedNode.control, source.curve));
+    }
     const items: Action[] = [];
     let title: string;
     if (!map && (kind === "geoNode" || kind === "mark" || kind === "section"))

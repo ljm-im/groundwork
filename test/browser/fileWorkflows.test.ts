@@ -310,6 +310,7 @@ async function checkFileWorkflows(baseUrl: string, fixture: string) {
         assert.notDeepEqual(before, after);
         if (mark.follow === "screen") expected.marks.find((m: { id: string }) => m.id === mark.id).screen = after;
         else {
+            assert("point" in mark.point);
             const [x, y] = expected.geometry[mark.point.point].point;
             expected.marks.find((m: { id: string }) => m.id === mark.id).point.offset = [after[0] - x, after[1] - y];
         }

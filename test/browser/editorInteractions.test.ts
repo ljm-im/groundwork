@@ -1,5 +1,6 @@
 import { checkGeometryObjects } from "./round42.ts";
 import { checkHolderMenus } from "./holderReferenceMenus.ts";
+import { checkPointReferences } from "./round44.ts";
 import { checkBranchHoverPause, checkHoverStyles, checkMapHints, checkSelectionHierarchy, checkVisibleCurvePicker } from "./round43.ts";
 import { resolveDesign } from "../../src/core/design/parameters.ts";
 import assert from "node:assert/strict";
@@ -80,6 +81,7 @@ test("Editor interactions in Chromium", async t => {
         await t.test("Map hints show all actions and fit narrow maps in Chromium", () => checkMapHints(url));
         await t.test("List and numeric reference searches match visible labels in Chromium", () => checkVisibleSearch(url));
         await t.test("Subitem reference menus align with their heading in Chromium", () => checkHolderMenus(url));
+        await t.test("Point and curve node references in Chromium", () => checkPointReferences(url));
     }
     finally {
         await server.close();

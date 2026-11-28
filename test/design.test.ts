@@ -183,6 +183,7 @@ test("Built-in seed and ranges materialize while zero-radius harbor parameters s
     assert.equal(serializeDesign(parseDesign(bytes)), bytes);
     assert.deepEqual(parseDesign(bytes), hydrated);
     const disabled = generateTerrain(hydrated).fields.height.values;
+    assert("point" in f.harbor.center);
     Object.assign(hydrated.geometry[f.harbor.center.point], { point: [2, 2] });
     f.harbor.span = 20;
     assert.deepEqual(generateTerrain(hydrated).fields.height.values, disabled);

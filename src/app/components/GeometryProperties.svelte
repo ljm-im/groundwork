@@ -4,9 +4,10 @@
             rename={label => editor.edit(d => {
                 d.geometry[id].label = label;
             })}
-            redraw={"curve" in item ? () => editor.redrawGeometry(id) : undefined}
-            redrawLabel={slot ? "选取或重画" + placementRedrawLabel(slot) : undefined}
-            redrawing={editor.curveToolActive(slot?.key ?? curveKey(id))}
+            redraw={() => pointTarget || "point" in item ? editor.movePointOnMap(pointTarget ?? id) : editor.redrawGeometry(id)}
+            redrawLabel={pointSlot ? "选取或移动" + pointSlot.label.split(".").at(-1) : "point" in item ? "移动点" :
+                slot ? "选取或重画" + placementRedrawLabel(slot) : undefined}
+            redrawing={pointTarget || "point" in item ? editor.pointToolActive(pointTarget ?? id) : editor.curveToolActive(slot?.key ?? curveKey(id))}
             copy={() => editor.duplicateGeometry(id)} remove={() => editor.removeElement({ kind: "geometry", id })} />
     {/snippet}
     <CheckboxRow label="独立" checked={!!item.independent} change={value => editor.setGeometryIndependent(id, value)} />
@@ -30,6 +31,13 @@
             {/snippet}
         </SelectedCurvePart>
         <SelectedCurvePart {editor} curve={item.curve} control={control(item.curve, "segment", segmentId)} />
+        {#if references.length}
+            <Part title="引用方">
+                {#each references as reference (reference.key)}
+                    <ListRow name={reference.name} icon={reference.point ? "point" : geometryIcon(item)} select={reference.locate} />
+                {/each}
+            </Part>
+        {/if}
     {/if}
 </PropertyPane>
 
@@ -38,7 +46,7 @@
     import { geometryPath, type GeoControl } from "../../core/edit/geoControls.ts";
     import { curveKey, memberLabel, nodeQuantities, nodeQuantityPath, profileGroups } from "../../core/design/curveReferences.ts";
     import { interpolates, needsNodeValue } from "../../core/design/polyline.ts";
-    import { placementRedrawLabel } from "../../core/edit/selection.ts";
+    import { placementRedrawLabel, pointSlotForSelection } from "../../core/edit/selection.ts";
     import CheckboxRow from "./CheckboxRow.svelte";
     import { geometryIcon } from "../state/inspector.ts";
     import * as session from "../state/session.svelte.ts";
@@ -47,10 +55,14 @@
     import SelectedCurvePart from "./SelectedCurvePart.svelte";
     import Part from "./Part.svelte";
     import Parameter from "./Parameter.svelte";
+    import ListRow from "./ListRow.svelte";
 
     let { editor, id, item, path = -1 }: { editor: session.Editor; id: string; item: GeometryObject; path?: number } = $props();
     let category = $derived("curve" in item ? "曲线" : "点");
     let slot = $derived(editor.geometryPage?.slot);
+    let pointTarget = $derived(editor.geometryPage?.point && editor.selection ? { root: editor.selection, holder: editor.geometryPage.holder } : undefined);
+    let pointSlot = $derived(pointTarget && pointSlotForSelection(editor.project.design, pointTarget));
+    let references = $derived("curve" in item ? editor.geometryReferences(id) : []);
     let profile = $derived.by(() => {
         const holder = editor.geometryPage?.holder;
         if (!holder || !slot?.holder || holder.group !== "ridges" && holder.group !== "valleys" && holder.group !== "lines") return;

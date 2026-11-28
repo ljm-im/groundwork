@@ -1,4 +1,4 @@
-import { geometryAt, geometryIndex, type CurveSlot } from "../../core/design/curveReferences.ts";
+import { geometryAt, geometryIndex, translateCurve, type CurveSlot } from "../../core/design/curveReferences.ts";
 import { flattenPath, neighbor } from "../../core/design/path.ts";
 import { type Curve, type Point } from "../../core/design/v5.ts";
 import { displayCurveTolerance, geometryPath, parameterPoints, pathEntries, type GeoControl } from "../../core/edit/geoControls.ts";
@@ -75,7 +75,7 @@ export function mapSnapTargets(editor: Editor) {
     return { snap: indexSnapTargets(points, lines, map.scale), curveGroup };
 }
 
-export function controlSnap(editor: Editor, selection: Selection, control: GeoControl): DragSnap | undefined {
+export function controlSnap(editor: Editor, selection: Selection, control: GeoControl, offset?: Point): DragSnap | undefined {
     const { role, point, index, path } = control, { kind, id } = selection;
     if (role === "body" || role === "outline" || role === "curve" || role === "arc") return;
 
@@ -89,7 +89,8 @@ export function controlSnap(editor: Editor, selection: Selection, control: GeoCo
     }
 
     const owner = editor.geometryOwner(selection)!;
-    const curve = geometryPath(owner, path)!;
+    const original = geometryPath(owner, path)!;
+    const curve = offset ? translateCurve(original, offset) : original;
     const group = curveGroup(kind, id, path);
     if (role === "segment") {
         const next = neighbor(curve, index, 1)!;

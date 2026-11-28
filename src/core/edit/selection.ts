@@ -1,13 +1,12 @@
-import { readAt, type Address } from "../design/address.ts";
-import { curveGraph, geometryAt, profileIndex, type CurveSlot, type FunctionMember } from "../design/curveReferences.ts";
+import { type Address } from "../design/address.ts";
+import { curveGraph, geoPointSlots, geometryAt, markPointSlot, pointGeometryId, profileIndex, sectionPointSlot, type CurveSlot } from "../design/curveReferences.ts";
 import { neighbor, pathHandle } from "../design/path.ts";
-import { type Curve, type Design, type GeoNode, type PlacedGeoNode, type PointHolder } from "../design/v5.ts";
+import { type Curve, type Design, type GeoNode, type PlacedGeoNode } from "../design/v5.ts";
 import { arcHandle } from "./paths.ts";
 import { controlOwner, curveMember, type GeoControl, type GeometryTarget } from "./geoControls.ts";
-import { type Selection } from "./types.ts";
+import { type HolderGroup, type HolderLayer, type PointTarget, type Selection } from "./types.ts";
 
-export type HolderGroup = FunctionMember | "outlines" | "shore" | "harbor" | "center" | "endpoints";
-export type HolderLayer = { kind: "holder"; group: HolderGroup; index: number };
+export { type HolderGroup, type HolderLayer, type PointTarget } from "./types.ts";
 type GeometryLayer = { kind: "geometry"; id: string };
 export type CurvePartLayer = { kind: "vertex" | "segment"; nodeId: string };
 type ChildLayer = HolderLayer | GeometryLayer | CurvePartLayer;
@@ -87,33 +86,42 @@ function holderAddress({ group, index }: HolderLayer): Address {
     return ["function", group, index];
 }
 
-export function selectionPlacement(design: Design, graph: ReturnType<typeof curveGraph>, root: Selection, holder?: HolderLayer) {
-    let point: PointHolder | undefined;
+export function pointSlotForSelection(d: Design, { root, holder }: PointTarget) {
     if (root.kind === "mark" && !holder) {
-        const mark = design.marks.find(m => m.id === root.id);
-        if (mark?.follow === "map") point = mark.point;
+        const index = d.marks.findIndex(mark => mark.id === root.id), mark = d.marks[index];
+        if (mark?.follow === "map") return markPointSlot(mark, index);
     }
-    if (root.kind === "section" && holder?.group === "endpoints")
-        point = design.sections.find(s => s.id === root.id)?.points[holder.index];
-    if (root.kind === "geoNode" && holder) {
-        const n = design.geoNodes.find(node => node.id === root.id), target = n && holderTarget(n, holder);
-        if (!target) return;
+    if (root.kind === "section" && holder?.group === "endpoints") {
+        const index = d.sections.findIndex(section => section.id === root.id), section = d.sections[index];
+        if (section?.points[holder.index]) return sectionPointSlot(section, index, holder.index);
+    }
+    if (root.kind === "geoNode" && holder && (holder.group === "peaks" || holder.group === "harbor" || holder.group === "center")) {
+        const index = d.geoNodes.findIndex(node => node.id === root.id), node = d.geoNodes[index];
+        if (!node || holderTarget(node, holder)?.kind !== "parameter") return;
         const address = holderAddress(holder);
-        if (target.kind === "parameter") point = readAt(n, address) as PointHolder;
-        else {
-            const property = address[0] === "function" ? address.slice(1) : address;
-            const slot = graph.slots.get("geo:" + n!.id + "." + property.join(".") + ".curve");
-            if (!slot) return;
-            return { id: graph.source(slot).id, offset: graph.offset(slot), slot };
-        }
+        return geoPointSlots(node, index).find(slot => address.length === slot.location.path.length &&
+            address.every((value, i) => value === slot.location.path[i]));
     }
-    if (point) return { id: point.point, offset: point.offset, slot: undefined };
+}
+
+export function selectionPlacement(design: Design, graph: ReturnType<typeof curveGraph>, root: Selection, holder?: HolderLayer) {
+    const point = pointSlotForSelection(design, { root, holder })?.value;
+    if (point) return { id: pointGeometryId(point), offset: point.offset, point, slot: undefined };
+    if (root.kind === "geoNode" && holder) {
+        const n = design.geoNodes.find(node => node.id === root.id);
+        if (!n || !holderTarget(n, holder)) return;
+        const address = holderAddress(holder);
+        const property = address[0] === "function" ? address.slice(1) : address;
+        const slot = graph.slots.get("geo:" + n.id + "." + property.join(".") + ".curve");
+        if (slot) return { id: graph.source(slot).id, offset: graph.offset(slot), slot, point: undefined };
+    }
 }
 
 export function placementSelection(design: Design, graph: ReturnType<typeof curveGraph>, root: Selection, holder?: HolderLayer): SelectionPath {
     const placement = selectionPlacement(design, graph, root, holder);
     if (!placement) return [root];
-    const layer = { kind: "geometry", id: placement.id } as const;
+    const layer = placement.point && "node" in placement.point ? { kind: "vertex", nodeId: placement.point.node } as const :
+        { kind: "geometry", id: placement.id } as const;
     return holder ? [root, holder, layer] : [root, layer];
 }
 
@@ -131,9 +139,13 @@ export function existsSelection(design: Design, root: Selection) {
 export function validSelection(design: Design, graph: ReturnType<typeof curveGraph>, path: SelectionPath | null): SelectionPath | null {
     const { root, holder, geometry, part } = selectionLayers(path);
     if (!path || !root || !existsSelection(design, root)) return null;
-    const placement = root.kind !== "geometry" && (holder || geometry) ? selectionPlacement(design, graph, root, holder) : undefined;
+    const placement = root.kind !== "geometry" && (holder || geometry || part) ? selectionPlacement(design, graph, root, holder) : undefined;
     if (holder && !placement) return selectionPrefix(path, 1);
-    if (!geometry) return path;
+    if (!geometry) {
+        if (!part) return path;
+        return part.kind === "vertex" && placement?.point && "node" in placement.point && placement.point.node === part.nodeId &&
+            "curve" in (geometryAt(design, placement.id) ?? {}) ? path : geometrySelectionPath(path);
+    }
     const item = geometryAt(design, geometry.id);
     if (!item || root.kind !== "geometry" && placement?.id !== geometry.id)
         return selectionPrefix(path, holder ? 2 : 1);

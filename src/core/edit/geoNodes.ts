@@ -1,4 +1,5 @@
-import { curveGraph, curveSlotName, geoHolderSlots, geoPointSlots, geometryAt, geometryReferenceCount, geometryUsers, isHolderRef, type GeometryHolderSlot, type HolderSlot } from "../design/curveReferences.ts";
+import { curveGraph, curveSlotName, geoHolderSlots, geoPointSlots, geometryAt, geometryReferenceCount, geometryUsers, isHolderRef, pointSource, samePointSource, screenMarkPoints, type GeometryHolderSlot, type HolderSlot } from "../design/curveReferences.ts";
+import { type Address } from "../design/address.ts";
 import { quotedLocation, type Location } from "../design/problems.ts";
 import { type Design, type GeoFunction, type GeoNode, type ClosedCurve, type Curve, type CurveHolder, type Point, type PointHolder, type Strip } from "../design/v5.ts";
 import { defaultInputRange, heightId, isBuiltin } from "../design/defaults.ts";
@@ -191,6 +192,7 @@ export function copyGeometry(d: Design, id: string, independent = false) {
 export function copyHeldGeometry(d: Design, holders: (PointHolder | CurveHolder)[], inside: (location: Location) => boolean) {
     const users = geometryUsers(d), copies = new Map<string, string>();
     for (const holder of holders) {
+        if ("node" in holder) continue;
         const id = "point" in holder ? holder.point : holder.curve;
         if (geometryAt(d, id)?.independent || !users.get(id)?.every(user => inside(user.location))) continue;
         const copy = copies.get(id) ?? copyGeometry(d, id);
@@ -198,6 +200,8 @@ export function copyHeldGeometry(d: Design, holders: (PointHolder | CurveHolder)
         if ("point" in holder) holder.point = copy;
         else holder.curve = copy;
     }
+    for (const holder of holders) if ("node" in holder && copies.has(holder.curve))
+        holder.curve = copies.get(holder.curve)!;
 }
 
 export function setGeometryIndependent(d: Design, id: string, independent: boolean) {
@@ -213,8 +217,30 @@ export function removeUnusedGeometry(before: Design, after: Design) {
             delete after.geometry[id];
 }
 
-export function holdPoint(d: Design, point: Point): PointHolder {
+export function holdPoint(d: Design, point: Point): Extract<PointHolder, { point: string }> {
     return { point: addGeometry(d, { point }) };
+}
+
+export function canUnlinkPoint(d: Design, holder: PointHolder, users = geometryUsers(d)) {
+    return "node" in holder || geometryReferenceCount(d, holder.point, users) > 1;
+}
+
+export function pointMenuReference(d: Design, id: string, users = geometryUsers(d)): PointHolder {
+    const first = users.get(id)?.[0]?.value;
+    return { point: id, ...(first?.offset?.some(Boolean) && { offset: [...first.offset] }) };
+}
+
+export function setPointReference(d: Design, path: Address, target?: PointHolder) {
+    const current = readAt(d, path) as PointHolder;
+    if (!target) {
+        if (!canUnlinkPoint(d, current)) return;
+        const point = holdPoint(d, [...pointSource(d, current)]);
+        writeAt(d, path, { ...point, ...(current.offset && { offset: current.offset }) });
+        return;
+    }
+    if (samePointSource(current, target) || "point" in target && screenMarkPoints(d).has(target.point)) return;
+    pointSource(d, target);
+    writeAt(d, path, structuredClone(target));
 }
 
 export function allowedFunctions(n: GeoNode) {

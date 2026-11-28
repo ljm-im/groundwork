@@ -6,7 +6,7 @@ type NumericProperties<T, N> = { [K in keyof T]: Exclude<T[K], undefined> extend
 export interface Labeled { id: string; label: string; showLabel?: boolean }
 interface MapLabel extends Labeled { labelOffset?: Point }
 type GeometryState = "authored" | "resolved";
-export interface PointHolder { offset?: Point; point: string }
+export type PointHolder = { offset?: Point } & ({ point: string } | { curve: string; node: string });
 type Position<State extends GeometryState> = State extends "resolved" ? Point : PointHolder;
 export interface Section<State extends GeometryState = "authored"> extends MapLabel {
     points: [Position<State>, Position<State>];

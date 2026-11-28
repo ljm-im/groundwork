@@ -1,7 +1,7 @@
 import { type Design, type ResolvedDesign, type Section, type Point, type PointHolder } from "../design/v5.ts";
 import { type Handle, type Selection } from "./types.ts";
 import { distance } from "../math/geometry.ts";
-import { geometryAt, offsetPoint, placedPoint } from "../design/curveReferences.ts";
+import { geometryAt, offsetPoint, placedPoint, pointGeometryId, samePointSource } from "../design/curveReferences.ts";
 import { localPoint } from "./curveEdits.ts";
 
 export function sectionHandles(design: ResolvedDesign, visible: boolean, focus?: Selection): Handle[] {
@@ -26,8 +26,12 @@ export function translateHolder(holder: { offset?: Point }, delta: Point) {
 }
 
 export function movePointGeometry(d: Design, holder: PointHolder, point: Point) {
-    const item = geometryAt(d, holder.point);
-    if (item && "point" in item) item.point = localPoint(holder.offset ?? [0, 0], point);
+    const item = geometryAt(d, pointGeometryId(holder)), local = localPoint(holder.offset ?? [0, 0], point);
+    if (item && "point" in item) item.point = local;
+    else if (item && "node" in holder) {
+        const node = item.curve.nodes.find(node => node.id === holder.node);
+        if (node) node.p = local;
+    }
 }
 
 export function moveSection(d: Design, id: string, delta: Point) {
@@ -45,7 +49,7 @@ export function moveHandle(d: Design, h: Handle, p: Point, movePoint = true) {
     if (h.kind === "section") {
         const section = d.sections.find(s => s.id === h.id)!, index = h.index!;
         const holder = section.points[index], other = section.points[1 - index];
-        if (movePoint && holder.point === other.point || distance(p, placedPoint(d, other)) >= 1) {
+        if (movePoint && samePointSource(holder, other) || distance(p, placedPoint(d, other)) >= 1) {
             if (movePoint) movePointGeometry(d, holder, p);
             else translateHolder(holder, localPoint(placedPoint(d, holder), p));
         }

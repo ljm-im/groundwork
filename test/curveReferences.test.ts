@@ -1,14 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { curveGraph, geometryAt, geometryUsers, isHolderRef, placedPoint } from "../src/core/design/curveReferences.ts";
+import { curveGraph, geometryAt, geometryReferenceCount, geometrySlot, geometryUsers, isHolderRef, placedPoint, pointHolderName } from "../src/core/design/curveReferences.ts";
 import { defaultInputRange } from "../src/core/design/defaults.ts";
 import { parseDesign, serializeDesign } from "../src/core/design/model.ts";
 import { expressionGraph, resolveDesign } from "../src/core/design/parameters.ts";
 import { type Design, type Held, type Point, type ResolvedDesign } from "../src/core/design/v5.ts";
 import { moveHandle, moveSection } from "../src/core/edit/controls.ts";
-import { setCurveReference } from "../src/core/edit/curveEdits.ts";
-import { commitControl, controlPreview, copyGeometryItem, geometryPath, insertCurveNode, removeCurveNode, removeGeometryItem, type GeoControl } from "../src/core/edit/geoControls.ts";
-import { copyGeo, createStrip, deleteGeo, holdPoint, removalUses, removeDeclaration, removeUnusedGeometry, setGeometryIndependent } from "../src/core/edit/geoNodes.ts";
+import { curveNodeUsers, editCurveSource, setCurveReference } from "../src/core/edit/curveEdits.ts";
+import { commitControl, controlPreview, copyGeometryItem, geometryPath, insertCurveNode, removeCurveNode, removeCurveSegment, removeGeometryItem, type GeoControl } from "../src/core/edit/geoControls.ts";
+import { canUnlinkPoint, copyGeo, createStrip, deleteGeo, holdPoint, pointMenuReference, removalUses, removeDeclaration, removeUnusedGeometry, setGeometryIndependent, setPointReference } from "../src/core/edit/geoNodes.ts";
+import { holderLayer, placementSelection } from "../src/core/edit/selection.ts";
 import { History } from "../src/core/edit/history.ts";
 import { Project } from "../src/core/project.ts";
 import { addLayer, fixtureCurve, fixtureMark, fixtureSection, literalCurve, openCurve, rect, syntheticDesign } from "./scenarios.ts";
@@ -247,6 +248,7 @@ test("Copies keep node IDs, rebase internal holders and retain geometry shared o
     assert.notEqual(owned(c.outlines[1]).curve, own.curve);
     assert.deepEqual(literalCurve(d, c.outlines[1]), literalCurve(d, own));
     assert.deepEqual(c.outlines[2], ref(outline(copy.id, 1)));
+    assert("point" in f.peaks[0].at);
     assert.notEqual(f.peaks[0].at.point, peak.point);
     assert.deepEqual(placedPoint(d, f.peaks[0].at), placedPoint(d, peak));
     assert.deepEqual(f.ridges[1], ref(ridge(copy.id)));
@@ -307,7 +309,9 @@ test("Editor deletes exclusive geometry in one undo step and blocks deleting in-
         { ...owned(fixtureCurve(d, { curve: openCurve([{ p: [-4, 2] }, { p: [-4, 3] }]) })), h: { "node-0": 0, "node-1": 1 } }
     ] };
     d.sections.push(fixtureSection(d, { id: "S", label: "S", points: [[0, 0], [3, 4]] }));
-    const replaced = d.sections[0].points[0].point;
+    const endpoint = d.sections[0].points[0];
+    assert("point" in endpoint);
+    const replaced = endpoint.point;
     d.sections[0].points[0] = peak;
     delete d.geometry[replaced];
     d.marks.push(fixtureMark(d, { id: "A", label: "A", kind: "text", follow: "map", point: [1, 2] }));
@@ -388,6 +392,168 @@ test("Geometry reference count includes the independent reference and prunes one
     removeDeclaration(removed, "geometry", standalone);
     removeUnusedGeometry(next, removed);
     assert.deepEqual(removed, unchecked);
+});
+
+function pointFixture() {
+    const d = syntheticDesign(), t = geo(d, "T");
+    assert(t.construction.type === "outline");
+    const outline = owned(t.construction.outlines[0]), curve = literalCurve(d, outline);
+    outline.offset = [5, 0];
+    const target = { curve: outline.curve, node: curve.nodes[2].id, offset: [5, 0] as Point };
+    const m = addLayer(d, "M", rect(-17, 10, 15, 34),
+        { type: "mountain", valleys: [], ridges: [], peaks: [{ at: target, height: 14, radius: 2, noise: 0, scale: 1 }] });
+    d.geoNodes.push(m);
+    assert(m.function.type === "mountain");
+    const peak = m.function.peaks[0], path = ["geoNodes", d.geoNodes.length - 1, "function", "peaks", 0, "at"];
+    return { d, t, m, outline, curve, target, peak, path };
+}
+
+test("Point holders store and validate point or node references and resolve local node positions", () => {
+    const { d, target, outline, curve, peak } = pointFixture(), node = curve.nodes[2];
+    const point = holdPoint(d, [1, 3]);
+    d.sections.push({ id: "S", label: "S", points: [point, { ...target, offset: [10, 1] }] });
+    node.bulge = .2;
+    outline.offset = [99, 20];
+    assert.deepEqual(placedPoint(d, peak.at), shifted([node.p], [5, 0])[0]);
+    assert.equal(pointHolderName(d, peak.at), d.geometry[target.curve].label + ".节点 3");
+    assert.deepEqual(parseDesign(serializeDesign(parseDesign(d))), parseDesign(d));
+
+    for (const [holder, error] of [
+        [{ ...target, ...point }, /无效/], [{ node: target.node }, /curve 无效/], [{ curve: target.curve }, /node 无效/],
+        [{ curve: "missing", node: target.node }, /找不到曲线/], [{ ...target, node: "missing" }, /找不到节点/],
+        [{ ...target, curve: point.point }, /需要曲线/], [{ point: target.curve }, /需要点/], [{ point: "missing" }, /找不到点/]
+    ] as const) {
+        Object.assign(peak, { at: holder });
+        assert.throws(() => parseDesign(d), error);
+    }
+});
+
+test("Moving either placement of a linked node updates the curve and its point users, while holder drags translate", () => {
+    const { d, curve, target, peak } = pointFixture(), node = curve.nodes[2];
+    const holder = holderLayer("peaks");
+    const graph = curveGraph(d);
+    assert.deepEqual(placementSelection(d, graph, selection("M"), holder), [selection("M"), holder, { kind: "vertex", nodeId: target.node }]);
+    const placed = placedPoint(d, peak.at), to = shifted([placed], [1, 2])[0];
+    const preview = controlPreview(d, resolveDesign(d), graph, selection("T"), vertex(placed, 0, 2), false)!(to);
+    const shown = preview.nodes.get("M")!.node.function;
+    assert(shown.type === "mountain");
+    assert.deepEqual(shown.peaks[0].at, to);
+    commitControl(d, selection("T"), vertex(placed, 0, 2), to, false);
+    assert.deepEqual(placedPoint(d, peak.at), to);
+
+    commitControl(d, selection("M"), { role: "parameter", path: 0, index: 0, point: to }, [10, 12], false);
+    assert.deepEqual(positions(resolveDesign(d), "T")[2], [10, 12]);
+    assert.deepEqual(placedPoint(d, peak.at), [10, 12]);
+    assert.deepEqual(peak.at.offset, [5, 0]);
+    const coord = literalCurve(d, target.curve).nodes.find(n => n.id === node.id)!.p;
+    commitControl(d, selection("M"), { role: "pointHolder", path: 0, index: 0, point: [10, 12] }, [11, 14], false);
+    assert.deepEqual(peak.at.offset, [6, 2]);
+    commitControl(d, selection("M"), body, [4, 2], false);
+    assert.deepEqual(peak.at.offset, [10, 4]);
+    assert.deepEqual(literalCurve(d, target.curve).nodes[2].p, coord);
+    assert.deepEqual(placedPoint(d, peak.at), shifted([coord], [10, 4])[0]);
+});
+
+test("Referenced nodes block removal, merging and redraw, and survive edits to other nodes", () => {
+    const { d, target, peak } = pointFixture(), slot = geometrySlot(d, "T", 0)!;
+    const at = placedPoint(d, peak.at);
+    assert.equal(curveNodeUsers(d, slot, 2).points[0].label, "山峰 1.位置");
+    const original = serializeDesign(d), message = /仍被引用[^]*“M.山峰 1.位置”/;
+    assert.throws(() => removeCurveNode(d, selection("T"), vertex(at, 0, 2)), message);
+    assert.throws(() => removeCurveSegment(d, selection("T"), { role: "segment", path: 0, index: 1, point: at }), message);
+    assert.throws(() => editCurveSource(d, slot.key, shape => {
+        shape.nodes = shape.nodes.map((node, i) => ({ ...node, id: "new-" + i }));
+    }, { redraw: () => 0 }), message);
+    assert.equal(serializeDesign(d), original);
+    removeCurveNode(d, selection("T"), vertex(at, 0, 0));
+    const a = positions(resolveDesign(d), "T");
+    assert.equal(a.length, 3);
+    assert(insertCurveNode(d, selection("T"), { role: "segment", path: 0, index: 0, point: [(a[0][0] + a[1][0]) / 2, (a[0][1] + a[1][1]) / 2] }));
+    assert.deepEqual(placedPoint(d, peak.at), at);
+    assert(literalCurve(d, target.curve).nodes.some(node => node.id === target.node));
+});
+
+test("Point switching takes the chosen placement, and unlinking preserves the position", () => {
+    const { d, peak, target, path } = pointFixture(), p = placedPoint(d, target);
+    assert(canUnlinkPoint(d, peak.at));
+    const count = () => geometryReferenceCount(d, target.curve, geometryUsers(d));
+    assert.equal(count(), 2);
+    setPointReference(d, path);
+    assert("point" in peak.at);
+    assert(!geometryAt(d, peak.at.point)?.independent);
+    assert.deepEqual(peak.at.offset, [5, 0]);
+    assert.deepEqual(placedPoint(d, peak.at), p);
+    assert.equal(count(), 1);
+    assert(!canUnlinkPoint(d, peak.at));
+
+    setPointReference(d, path, target);
+    assert.deepEqual(placedPoint(d, peak.at), p);
+    const independent = holdPoint(d, [0, 2]);
+    setGeometryIndependent(d, independent.point, true);
+    const candidate = pointMenuReference(d, independent.point);
+    assert.deepEqual(candidate, independent);
+    setPointReference(d, path, candidate);
+    assert.deepEqual(peak.at, independent);
+    assert(canUnlinkPoint(d, peak.at));
+    setPointReference(d, path);
+    assert("point" in peak.at && peak.at.point !== independent.point);
+});
+
+test("A landform copy follows the duplicated local curve and retains an external node reference", () => {
+    const { d, m, target, peak } = pointFixture(), own = m.construction;
+    assert(own.type === "outline" && m.function.type === "mountain");
+    const local = owned(own.outlines[0]).curve, node = literalCurve(d, local).nodes[2].id;
+    m.function.peaks.push({ ...peak, at: { curve: local, node, offset: [1, 2] } });
+    const copied = copyGeo(d, m);
+    assert(copied.construction.type === "outline" && copied.function.type === "mountain");
+    const copiedCurve = owned(copied.construction.outlines[0]).curve;
+    assert.notEqual(local, copiedCurve);
+    assert.deepEqual(copied.function.peaks[0].at, target);
+    assert.deepEqual(copied.function.peaks[1].at, { curve: copiedCurve, node, offset: [1, 2] });
+});
+
+test("The editor prunes a node-only curve with one undo step and blocks shared map marks from following the screen", async () => {
+    await import("../configs/register-svelte.ts");
+    const { Editor } = await import("../src/app/state/session.svelte.ts");
+    const { d, target, peak } = pointFixture();
+    assert(deleteGeo(d, "T"));
+    assert.equal(geometryReferenceCount(d, target.curve, geometryUsers(d)), 1);
+    assert.throws(() => removeDeclaration(d, "geometry", target.curve), /M.山峰 1.位置/);
+    const point = holdPoint(d, [8, 24]), editor = new Editor(testTerrainClient());
+    d.geometry[point.point].independent = true;
+    d.marks.push(fixtureMark(d, { id: "S", label: "屏幕标记", kind: "text", follow: "screen", point: [10, 12] }));
+    Object.assign(editor, { map: { frame() {} } });
+    await editor.replace(d, true);
+    editor.history = new History(editor.project.design);
+    const before = serializeDesign(editor.project.design), at = { root: selection("M"), holder: holderLayer("peaks") };
+    const screen = d.marks[0].point;
+    assert("point" in screen && editor.screenPointIds.has(screen.point));
+    await editor.changePointReference(at, screen.point);
+    assert.equal(serializeDesign(editor.project.design), before);
+    await editor.changePointReference(at, point.point);
+    assert(!geometryAt(editor.project.design, target.curve));
+    await editor.navigate(false);
+    assert.equal(serializeDesign(editor.project.design), before);
+
+    const m = fixtureMark(d, { id: "B", label: "说明", kind: "text", follow: "map", point: [2, 4] });
+    assert("point" in m.point);
+    delete d.geometry[m.point.point];
+    m.point = structuredClone(target);
+    d.marks.push(m);
+    await editor.replace(d, true);
+    editor.setMarkFollow("B", "screen");
+    assert.deepEqual(editor.removal?.items?.map(item => item.text), ["“" + d.geometry[target.curve].label + "”"]);
+
+    const common = holdPoint(d, [8, 9]);
+    peak.at = { ...common, offset: [2, 3] };
+    m.point = { ...common, offset: [-1, 4] };
+    await editor.replace(d, true);
+    editor.setMarkFollow("B", "screen");
+    assert.equal(editor.removal?.title, "无法改为跟随屏幕");
+    assert.equal(editor.removal?.detail, "这个位置还在和别处共用，请先解除引用。");
+    assert.deepEqual(editor.removal?.items?.map(item => item.text), ["“M.山峰 1.位置”"]);
+    assert.deepEqual(pointMenuReference(d, common.point), { ...common, offset: [2, 3] });
+    editor.dispose();
 });
 
 test("A map curve pick uses the same edit as the geometry row and Ctrl starts a redraw", async () => {

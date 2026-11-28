@@ -1,4 +1,4 @@
-import { geometryAt } from "../core/design/curveReferences.ts";
+import { geometryAt, pointGeometryId, translateCurve } from "../core/design/curveReferences.ts";
 import { geometrySelectionPath, holderLayer, holderTarget, includesSelection, partControl, selectionLayers, selectionPlacement,
     type HolderLayer, type SelectionPath } from "../core/edit/selection.ts";
 import { type CurvePlacement, type MapView, type ProjectMap } from "./map.ts";
@@ -137,7 +137,7 @@ function drawCurveHighlight(map: ProjectMap, curve: Curve, colors: MapColors, st
 }
 
 function drawingDraft(view: MapView) {
-    return view.draft?.curve?.pick ? undefined : view.draft;
+    return view.draft?.curve?.pick || view.draft?.point ? undefined : view.draft;
 }
 
 function hoveredCurvePlacements(view: MapView) {
@@ -159,11 +159,11 @@ function highlightedPlacements(view: MapView): readonly Placement[] {
     if (root?.kind === "geometry") return [...references, root];
     if (root && holder) {
         const placement = selectionPlacement(view.authored, view.curves, root, holder);
-        if (placement) return [...references, placement];
+        if (placement && (!placement.point || "point" in placement.point)) return [...references, placement];
     }
     if (root?.kind === "section" && !holder) {
         const section = view.authored.sections.find(section => section.id === root.id);
-        if (section) return [...references, ...section.points.map(({ point: id, offset }) => ({ id, offset }))];
+        if (section) return [...references, ...section.points.filter(point => "point" in point).map(point => ({ id: pointGeometryId(point), offset: point.offset }))];
     }
     return references;
 }
@@ -224,8 +224,17 @@ function placedNode(view: MapView, id: string, preview: boolean) {
     return (preview ? view.dragNodes?.get(id)?.node : undefined) ?? view.project.design.geoNodes.find(n => n.id === id);
 }
 
-function shapeAt(view: MapView, path: SelectionPath, preview: boolean): ({ index: number } & ({ curve: Curve } | { point: Point })) | undefined {
-    const { root, holder } = selectionLayers(path);
+function shapeAt(view: MapView, path: SelectionPath, preview: boolean): ({ index: number } & ({ curve: Curve; pointPlacement?: { id: string; nodeId: string; offset?: Point } } | { point: Point })) | undefined {
+    const { root, holder, part, geometry } = selectionLayers(path);
+    if (root && part?.kind === "vertex" && !geometry) {
+        const placement = selectionPlacement(view.authored, view.curves, root, holder);
+        const item = placement && geometryAt(view.authored, placement.id);
+        if (placement && item && "curve" in item) {
+            const curve = preview && view.dragCurve?.id === placement.id ? view.dragCurve.curve : item.curve;
+            return { index: -1, curve: translateCurve(curve, placement.offset ?? [0, 0]),
+                pointPlacement: { id: placement.id, nodeId: part.nodeId, offset: placement.offset } };
+        }
+    }
     if (root?.kind === "geometry") {
         const item = preview && view.dragGeometry || geometryAt(view.project.design, root.id);
         if (item) return "curve" in item ? { index: -1, curve: item.curve } : { index: -1, point: item.point };
@@ -243,7 +252,9 @@ function shapeAt(view: MapView, path: SelectionPath, preview: boolean): ({ index
     return curve && { index, curve };
 }
 
-export function visibleControlCurves(view: MapView, preview = false): { curve: Curve; index: number; holder?: HolderLayer }[] {
+export function visibleControlCurves(view: MapView, preview = false): {
+    curve: Curve; index: number; holder?: HolderLayer; pointPlacement?: { id: string; nodeId: string; offset?: Point }
+}[] {
     const path = view.selectionPath;
     if (!path || drawingDraft(view)) return [];
     const { root, holder } = selectionLayers(path);
@@ -333,12 +344,17 @@ export function drawGeoOverlay(map: ProjectMap, view: MapView, colors: MapColors
         }
         const hoverIsActive = active && hover && active.length === hover.length && includesSelection(active, hover);
         const hoverIsPart = hovered.part && active && hover && includesSelection(hover, geometrySelectionPath(active));
-        if (hover && !hoverIsActive && !hoverIsPart) drawSelection(map, view, hover, colors, "hovered", tolerance);
+        if (hover && !hoverIsActive && (!hoverIsPart || !hovered.geometry && !selectionLayers(active).part))
+            drawSelection(map, view, hover, colors, "hovered", tolerance);
         if (active) drawSelection(map, view, active, colors, "selected", tolerance);
         if (hover && hoverIsPart && !hoverIsActive && hovered.part?.kind === "segment" && !view.hoverHandle)
             drawSelection(map, view, hover, colors, "hovered", tolerance);
         if (active) drawSelectedControls(map, view, active, colors);
         for (const { curve } of hoveredCurvePlacements(view)) drawCurveHighlight(map, curve, colors, "hovered", tolerance, { kind: "geometry" });
+        for (const point of view.referencePoints ?? []) dot(point, "hovered");
+        const pointDraft = view.draft?.point;
+        if (pointDraft?.hovered) dot(pointDraft.hovered, "hovered");
+        else if (pointDraft?.id && view.draft?.cursor) dot(view.draft.cursor);
     }
     else {
         if (draft.tool === "strip") {
@@ -348,7 +364,7 @@ export function drawGeoOverlay(map: ProjectMap, view: MapView, colors: MapColors
                 dot(v.p, draft.anchors.includes(v.id) ? "selected" : "normal");
         }
         else {
-            if (["peak", "center", "harbor", "geometryPoint"].includes(draft.tool)) {
+            if (["peak", "center", "geometryPoint"].includes(draft.tool)) {
                 if (!draft.nodes.length && draft.cursor) dot(draft.cursor);
             }
             else if (draft.path) strokeEdges(map, flattenPath(draft.path, .5 / scale), colors.accent, overlay.selectedWidth, true);

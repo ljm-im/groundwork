@@ -94,8 +94,11 @@ export function validateGeometry(d: Design) {
 
 export function validatePointHolder(value: unknown, at: Location): asserts value is PointHolder {
     check(record(value), "需要点的持有者", at);
-    const holder = value as PointHolder;
-    check(typeof holder.point === "string" && holder.point, "无效", { ...at, path: [...at.path, "point"] });
+    const holder = value as Record<string, unknown>;
+    const usesNode = Object.hasOwn(holder, "curve") || Object.hasOwn(holder, "node");
+    if (usesNode) check(!Object.hasOwn(holder, "point"), "无效", at);
+    for (const key of usesNode ? ["curve", "node"] : ["point"])
+        check(typeof holder[key] === "string" && holder[key], "无效", { ...at, path: [...at.path, key] });
     if (Object.hasOwn(holder, "offset")) check(point(holder.offset), "只能填写两个有限数", { ...at, path: [...at.path, "offset"] });
 }
 

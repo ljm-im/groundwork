@@ -77,7 +77,9 @@ test("Selection and hover use the same strokes at each map layer", t => {
         })
     );
     design.sections.push(fixtureSection(design, { id: "Q", label: "剖面线", points: [[-10, 9], [10, 9]], showLabel: false }));
-    design.geometry[design.sections[0].points[0].point].independent = true;
+    const endpointPoint = design.sections[0].points[0];
+    assert("point" in endpointPoint);
+    design.geometry[endpointPoint.point].independent = true;
 
     const project = new Project(design), base = view(project, { grid: false, labels: false, issues: false });
     const colors = mapColors.light, accent = colors.accent, hoverAlpha = overlay.segmentHoverOpacity;

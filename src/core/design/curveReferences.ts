@@ -1,7 +1,7 @@
 import { type Address } from "./address.ts";
 import { check, quotedLocation, type Location } from "./problems.ts";
 import { type Curve, type CurveHolder, type Design, type GeoFunction, type GeoNode, type Held, type HolderRef, type NodeQuantity,
-    type NodeRecords, type Point, type PointHolder, type ProfileCurve } from "./v5.ts";
+    type Mark, type NodeRecords, type Point, type PointHolder, type ProfileCurve, type Section } from "./v5.ts";
 
 const holderLabels = { outline: "轮廓", ridge: "山脊", valley: "山谷", shore: "海岸线", line: "坡线" } as const;
 type HolderKind = keyof typeof holderLabels;
@@ -40,7 +40,7 @@ export interface HolderSlot extends ReferenceSlot {
     value: HolderValue;
 }
 type OwnedSlot = HolderSlot & { value: CurveHolder<HolderParameters> };
-interface PointSlot extends GeometryUse { value: PointHolder }
+export interface PointSlot extends GeometryUse { label: string; value: PointHolder }
 export type CurveSlot = ReferenceSlot & { closed: boolean } &
     ({ holder: HolderSlot } | { holder?: undefined; id: string; value: Curve });
 
@@ -95,17 +95,21 @@ export function geoPointSlots(n: GeoNode, index: number): PointSlot[] {
     return slots;
 }
 
+export function sectionPointSlot(section: Section, index: number, endpoint: number): PointSlot {
+    return { name: section.label, label: endpoint === 0 ? "起点" : "终点", path: ["sections", index, "points", endpoint],
+        location: { kind: "section", id: section.id, index, path: ["points", endpoint] }, value: section.points[endpoint] };
+}
+
+export function markPointSlot(mark: Mark, index: number): PointSlot {
+    return { name: mark.label, label: "位置", path: ["marks", index, "point"],
+        location: { kind: "mark", id: mark.id, index, path: ["point"] }, value: mark.point };
+}
+
 export function pointHolderSlots(d: Design): PointSlot[] {
     return [
         ...d.geoNodes.flatMap(geoPointSlots),
-        ...d.sections.flatMap((s, index) => s.points.map((value, i): PointSlot => ({
-            name: s.label, label: i === 0 ? "起点" : "终点", path: ["sections", index, "points", i],
-            location: { kind: "section", id: s.id, index, path: ["points", i] }, value
-        }))),
-        ...d.marks.map((m, index): PointSlot => ({
-            name: m.label, label: "位置", path: ["marks", index, "point"],
-            location: { kind: "mark", id: m.id, index, path: ["point"] }, value: m.point
-        }))
+        ...d.sections.flatMap((s, i) => s.points.map((_, endpoint) => sectionPointSlot(s, i, endpoint))),
+        ...d.marks.map(markPointSlot)
     ];
 }
 
@@ -119,7 +123,7 @@ export function geometryUsers(d: Design) {
         else users.set(id, [slot]);
     }
     for (const s of d.geoNodes.flatMap(geoHolderSlots)) if (!isHolderRef(s.value)) add(s.value.curve, { ...s, value: s.value });
-    for (const s of pointHolderSlots(d)) add(s.value.point, s);
+    for (const s of pointHolderSlots(d)) add(pointGeometryId(s.value), s);
     return users;
 }
 
@@ -131,12 +135,39 @@ export function geometryReferenceCount(d: Design, id: string, users: ReadonlyMap
     return (users.get(id)?.length ?? 0) + (geometryAt(d, id)?.independent ? 1 : 0);
 }
 
+export const pointGeometryId = (holder: PointHolder) => "point" in holder ? holder.point : holder.curve;
+export const samePointSource = (a: PointHolder, b: PointHolder) => "point" in a ?
+    "point" in b && a.point === b.point : "node" in b && a.curve === b.curve && a.node === b.node;
+
+export function screenMarkPoints(d: Design) {
+    return new Set(d.marks.flatMap(mark => mark.follow === "screen" && "point" in mark.point ? [mark.point.point] : []));
+}
+
+export function pointSource(d: Design, holder: PointHolder, at?: Location): Point {
+    const id = pointGeometryId(holder), item = geometryAt(d, id);
+    if ("point" in holder) {
+        check(item, "找不到点“" + id + "”", at);
+        check("point" in item, "需要点", at);
+        return item.point;
+    }
+    check(item, "找不到曲线“" + id + "”", at);
+    check("curve" in item, "需要曲线", at);
+    const node = item.curve.nodes.find(node => node.id === holder.node);
+    check(node, "找不到节点“" + holder.node + "”", at);
+    return node.p;
+}
+
+export function pointHolderName(d: Design, holder: PointHolder) {
+    const item = geometryAt(d, pointGeometryId(holder))!;
+    if ("node" in holder && "curve" in item)
+        return item.label + ".节点 " + (item.curve.nodes.findIndex(node => node.id === holder.node) + 1);
+    return item.label;
+}
+
 export function placedPoint(d: Design, holder: PointHolder, at?: Location): Point {
-    const { point, offset } = holder, item = geometryAt(d, point);
-    check(item, "找不到点“" + point + "”", at);
-    check("point" in item, "需要点", at);
-    if (!offset) return [...item.point];
-    const placed = offsetPoint(item.point, offset);
+    const source = pointSource(d, holder, at);
+    if (!holder.offset) return [...source];
+    const placed = offsetPoint(source, holder.offset);
     check(placed.every(Number.isFinite), "只能填写数字坐标", at);
     return placed;
 }
@@ -267,8 +298,9 @@ export function curveGraph(d: Design) {
     function canUse(from: CurveSlot, candidate: CurveSlot) {
         return !candidate.holder && (!from.closed || candidate.value.closed);
     }
+    let allUsers: ReturnType<typeof geometryUsers> | undefined;
     function canUnlinkShape(slot: CurveSlot) {
-        return !!slot.holder && geometryReferenceCount(d, source(slot).id, users) > 1;
+        return !!slot.holder && geometryReferenceCount(d, source(slot).id, allUsers ??= geometryUsers(d)) > 1;
     }
     function canUnlink(slot: CurveSlot) {
         return !!slot.holder && (isHolderRef(slot.holder.value) || canUnlinkShape(slot));

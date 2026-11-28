@@ -1,5 +1,6 @@
 import { readAt, writeAt, type Address } from "../design/address.ts";
-import { curveGraph, geometrySlot, isHolderRef, nodeQuantities, nodeQuantityPath, refKey, translateCurve, type CurveSlot } from "../design/curveReferences.ts";
+import { curveGraph, geometrySlot, geometryUsers, isHolderRef, nodeQuantities, nodeQuantityPath, refKey, translateCurve, type CurveSlot, type PointSlot } from "../design/curveReferences.ts";
+import { quotedLocation } from "../design/problems.ts";
 import { references } from "../design/expression.ts";
 import { defaultNodeSlope, slopeEndpointValues } from "../design/functionTable.ts";
 import { expressionLookup, parameters, slotName, type Slot } from "../design/parameters.ts";
@@ -36,9 +37,15 @@ function requireUnusedNodes(uses: Slot[]) {
     if (uses.length) throw Error("仍被引用：\n" + [...new Set(uses.map(slotName))].join("\n"));
 }
 
+export function curveNodePointUsers(d: Design, id: string, ids?: readonly string[]) {
+    if (ids?.length === 0) return [];
+    return (geometryUsers(d).get(id) ?? []).filter((slot): slot is PointSlot =>
+        !("kind" in slot) && "node" in slot.value && (!ids || ids.includes(slot.value.node)));
+}
+
 export function curveNodeUsers(d: Design, slot: CurveSlot, index: number, graph = curveGraph(d)) {
-    const { id, curve } = graph.source(slot);
-    return nodeRemovalUsers(d, graph, graph.curvePlacements(id).map(graph.ofHolder), [curve.nodes[index].id]);
+    const { id, curve } = graph.source(slot), ids = [curve.nodes[index].id];
+    return { parameters: nodeRemovalUsers(d, graph, graph.curvePlacements(id).map(graph.ofHolder), ids), points: curveNodePointUsers(d, id, ids) };
 }
 
 export function seedProfile(curve: ProfileCurve, quantities: readonly NodeQuantity[], tolerance: number, ease: boolean, height: (p: Point) => number,
@@ -141,6 +148,8 @@ export function editCurveSource<T>(d: Design, key: string, change: (curve: Curve
 
     const placements = graph.curvePlacements(source.id).map(graph.ofHolder);
     const owners = placements.filter(p => p.holder && !isHolderRef(p.holder.value) && nodeQuantities(p.holder.kind).length);
+    const points = curveNodePointUsers(d, source.id, edit.redraw ? undefined : removedNodes(source.curve, next));
+    if (points.length) throw Error("仍被引用：\n" + points.map(slot => quotedLocation(slot.name, slot.label)).join("\n"));
     if (edit.redraw && owners.length) for (const [i, node] of next.nodes.entries()) node.id = source.curve.nodes[i]?.id ?? node.id;
     requireUnusedNodes(nodeRemovalUsers(d, graph, placements, removedNodes(source.curve, next)));
 

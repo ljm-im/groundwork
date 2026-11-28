@@ -1,13 +1,15 @@
 import { composingKey } from "./numbers.ts";
 import { commitFocusedInput, isEditableText } from "./pendingInput.ts";
 import { distance } from "../../core/math/geometry.ts";
+import { samePointSource } from "../../core/design/curveReferences.ts";
 import { moveHandle, moveSection, sectionHandlePoint } from "../../core/edit/controls.ts";
 import { commitControl, controlPreview } from "../../core/edit/geoControls.ts";
-import { selectionLayers } from "../../core/edit/selection.ts";
+import { localPoint as geometryLocalPoint } from "../../core/edit/curveEdits.ts";
+import { geometrySelectionPath, selectionLayers } from "../../core/edit/selection.ts";
 import { doubleClickTools, draftPointer, updatePreview } from "./geoTools.ts";
 import { controlSnap, sectionSnap, type SnapModifiers } from "./mapSnaps.ts";
 import { type GeoDraft } from "../../core/edit/types.ts";
-import { dragMapHit, hitsCurveControl, mapControlDrag, mapHoverHit, nextMapHit } from "../../render/map.ts";
+import { dragMapHit, hitsCurveControl, mapControlDrag, mapHoverHit, nextMapHit, type MapHit } from "../../render/map.ts";
 import { errorText, type Point } from "../types.ts";
 import * as session from "./session.svelte.ts";
 
@@ -108,8 +110,9 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         if (!editor.mapView || !editor.mapCurrent || !hoverPoint || editor.tool !== "select" || editor.gesture || editor.busy || spaceHeld) return;
         const hit = pick(hoverPoint, hoverAlternate, true);
         if (!hit || "issues" in hit) return editor.hoverSelection();
-        const role = selectionLayers(hit.path).part && hit.control?.role;
-        editor.hoverSelectionPath(hit.path, role === "in" || role === "out" || role === "arc" ? role : undefined);
+        const { part } = selectionLayers(hit.path), role = part && hit.control?.role, selected = editor.selectionPath;
+        const path = hit.pointCurve && part && selected ? [...geometrySelectionPath(selected), part] as const : hit.path;
+        editor.hoverSelectionPath(path, role === "in" || role === "out" || role === "arc" ? role : undefined);
     }
     function hoverModifier(ev: KeyboardEvent) {
         if (ev.key !== "Alt" || hoverAlternate === ev.altKey) return;
@@ -123,8 +126,11 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         const view = editor.mapView!, screen = localPoint(ev);
         const hit = map.objectHits(view, screen).next().value;
         if (hit && (hit.path[0].kind === "mark" || selectionLayers(hit.path).part || !map.issueHits(view, screen).length))
-            editor.openMapMenu(hit.path, ev, hit.control);
+            editor.openMapMenu(hit.path, ev, localCurveControl(hit));
     }, { signal });
+    function localCurveControl({ control, pointCurve }: MapHit) {
+        return control && pointCurve?.offset ? { ...control, point: geometryLocalPoint(pointCurve.offset, control.point) } : control;
+    }
     function beginPointer(ev: PointerEvent) {
         const screen = localPoint(ev), p = map.world(...screen);
         if (ev.button === 1) {
@@ -179,7 +185,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         }
         else if (h) {
             const mark = root.kind === "mark" ? design.marks.find(m => m.id === root.id) : undefined;
-            const at = mark ? map.markCoordinate(screen, mark.follow) : p, movePoint = leaf.kind === "geometry";
+            const at = mark ? map.markCoordinate(screen, mark.follow) : p, movePoint = leaf.kind === "geometry" || part?.kind === "vertex";
             const pointPreview = movePoint ? controlPreview(design, resolved, editor.curves, root,
                 { role: "parameter", path: h.index ?? 0, index: h.index ?? 0, point: h.point }, false) : undefined;
             editor.gesture = { handle: h, offset: [h.point[0] - at[0], h.point[1] - at[1]], movePoint, pointPreview,
@@ -188,10 +194,10 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         else {
             const action = mapControlDrag(hit, view, p);
             if (!action) return;
-            const { selection, control } = action, independent = down.altKey;
-            const preview = controlPreview(design, resolved, editor.curves, selection, control, independent);
-            if (preview) editor.gesture = { preview, selection, control, independent, origin: p,
-                snap: controlSnap(editor, selection, control), screen, pointer };
+            const { selection, control, offset } = action, independent = down.altKey;
+            const preview = controlPreview(design, resolved, editor.curves, selection, control, independent, offset);
+            if (preview) editor.gesture = { preview, selection, control, independent, offset, origin: p,
+                snap: controlSnap(editor, selection, control, offset), screen, pointer };
         }
     }
 
@@ -263,7 +269,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         ev.preventDefault();
         const view = editor.mapView!;
         const hit = map.curvePartHit(view, map.world(...localPoint(ev)), true);
-        const control = hit?.control;
+        const control = hit && localCurveControl(hit);
         if (hit && control) {
             editor.selectPath(hit.path);
             if (control.role === "segment") editor.insertNode(hit.path[0].id, control);
@@ -357,7 +363,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         const result = editor.gesture.snap?.(target, ev);
         const [a, b] = d.sections.find(s => s.id === h.id)!.points;
         const point = sectionHandlePoint(section, index, result?.point ?? target, ev.shiftKey && !ev.ctrlKey || !!result?.snapped,
-            editor.gesture.movePoint && a.point === b.point);
+            editor.gesture.movePoint && samePointSource(a, b));
         editor.snapGuides = point ? result?.guides : undefined;
         if (point) {
             const points = [...section.points] as typeof section.points;
@@ -376,6 +382,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
         editor.readPosition();
         const pick = editor.geoDraft?.curve?.pick;
         if (pick) pick.hovered = undefined;
+        if (editor.geoDraft?.point) editor.geoDraft.point.hovered = undefined;
         editor.hoverSelection();
     }, { signal });
 
@@ -412,7 +419,7 @@ export function attachController(editor: session.Editor, canvas: HTMLCanvasEleme
                 if (g.target) {
                     editor.dragCommitting = true;
                     await editor.edit(d => {
-                        commitControl(d, g.selection, g.control, g.target!, g.independent);
+                        commitControl(d, g.selection, g.control, g.target!, g.independent, g.offset);
                     });
                 }
             }

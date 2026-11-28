@@ -9,6 +9,7 @@ import { type Tool } from "../types.ts";
 
 const lineEnd = "回车或双击结束，单击首个节点闭合";
 const continueEnd = "回车或双击完成，单击另一端闭合";
+const pickPointHint = "单击点或节点换用它，单击空白处移到那里";
 const pickCurveHint = "单击曲线换用它，单击空白处开始画，按住 Ctrl 单击在曲线上开始画，Esc 取消";
 
 export type HintGlyph = { key: string } | { mouse: "left" | "right" | "middle" | "wheel" } | "plus" | "or";
@@ -49,7 +50,8 @@ export const hints: Record<Tool, readonly HintItem[]> = {
     slopeLine: line,
     peak: point("山峰"),
     center: point("圆心"),
-    harbor: point("港湾圆心"),
+    pointPlacement: [hint("单击点或节点换用它", [left], true), hint("单击空白处移到那里", [left], true), cancel,
+        hint("直接移到单击处", [ctrl, "plus", left])],
     textMark: point("文字标记"),
     scaleMark: point("比例尺"),
     section: [hint("单击起点和终点", [left], true), cancel],
@@ -63,7 +65,7 @@ export const hints: Record<Tool, readonly HintItem[]> = {
 const pickCurve = [hint("单击曲线换用它", [left], true), hint("单击空白处开始画", [left], true), cancel,
     hint("在曲线上开始画", [ctrl, "plus", left])];
 
-export function drawingStatus(mode: Exclude<Tool, "select">, name: string, owner?: string, member?: number, names: string[] = [], curve?: GeoDraft["curve"]) {
+export function drawingStatus(mode: Exclude<Tool, "select">, name: string, owner?: string, member?: number, names: string[] = [], curve?: GeoDraft["curve"], position?: GeoDraft["point"]) {
     const label = "“" + name + "”", pen = "回车、双击或单击首点结束", point = "单击地图放置";
     const text: Record<Exclude<Tool, "select">, [string, string, boolean]> = {
         pen: ["新建地件（钢笔）", pen, true],
@@ -76,10 +78,10 @@ export function drawingStatus(mode: Exclude<Tool, "select">, name: string, owner
         shore: ["重画" + label + "的海岸线", pen, true],
         ridge: [member === undefined ? "给" + label + "添加山脊" : "重画" + label + "的山脊线", lineEnd, true],
         valley: [member === undefined ? "给" + label + "添加山谷" : "重画" + label + "的山谷线", lineEnd, true],
-        peak: [member === undefined ? "给" + label + "添加山峰" : "移动" + label + "的山峰", point, false],
+        peak: ["给" + label + "添加山峰", point, false],
         slopeLine: [member === undefined ? "给" + label + "添加坡线" : "重画" + label + "的坡线", lineEnd, true],
         center: ["选择" + label + "的圆心", point, false],
-        harbor: ["选择" + label + "的港湾圆心", point, false],
+        pointPlacement: [position?.title ?? "", position?.target ? pickPointHint : "单击地图移到那里", false],
         textMark: ["新建文字标记", point, false],
         scaleMark: ["新建比例尺", point, false],
         section: ["新建剖面线", "单击起点和终点", false],
@@ -110,6 +112,7 @@ function stripHints(draft: GeoDraft) {
 export function drawingHint(tool: Tool, draft?: GeoDraft): HintItem[] {
     let items = hints[tool];
     if (draft?.curve?.pick) items = pickCurve;
+    else if (draft?.point?.id) items = [hint("移到单击处", [left], true), cancel];
     else if (draft?.radius) items = [finishAngle, cancel];
     else if (draft?.sizing) items = tool === "rect" ? [hint("确定对角", [left], true), cancel, square, noSnap] :
         [hint("确定半径", [left], true), cancel];
